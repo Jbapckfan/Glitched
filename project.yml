@@ -1,0 +1,45 @@
+name: Glitched
+options:
+  bundleIdPrefix: com.glitched
+  deploymentTarget:
+    iOS: "15.0"
+  xcodeVersion: "15.0"
+  developmentLanguage: en
+
+targets:
+  Glitched:
+    type: application
+    platform: iOS
+    sources:
+      - path: Glitched
+        excludes:
+          - "**/.DS_Store"
+    resources:
+      - path: Glitched/Assets/Assets.xcassets
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.glitched.app
+        MARKETING_VERSION: "1.0"
+        CURRENT_PROJECT_VERSION: "1"
+        INFOPLIST_FILE: Glitched/Info.plist
+        DEVELOPMENT_TEAM: ""
+        CODE_SIGN_STYLE: Automatic
+        TARGETED_DEVICE_FAMILY: "1"
+        SWIFT_VERSION: "5.0"
+        ENABLE_PREVIEWS: YES
+    info:
+      path: Glitched/Info.plist
+      properties:
+        CFBundleName: Glitched
+        CFBundleDisplayName: Glitched
+        CFBundleIdentifier: $(PRODUCT_BUNDLE_IDENTIFIER)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleExecutable: $(EXECUTABLE_NAME)
+        CFBundlePackageType: $(PRODUCT_BUNDLE_PACKAGE_TYPE)
+        UILaunchScreen: {}
+        UISupportedInterfaceOrientations:
+          - UIInterfaceOrientationPortrait
+        UIRequiresFullScreen: true
+        NSMicrophoneUsageDescription: "Blow into the microphone to create wind in the game."
+        NSSpeechRecognitionUsageDescription: "Speak words to solve puzzles."
