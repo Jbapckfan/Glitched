@@ -3,12 +3,14 @@ import UIKit
 
 final class BitCharacter: SKSpriteNode {
 
-    private var idleFrames: [SKTexture] = []
-    private var runFrames: [SKTexture] = []
+    private var bodyNode: SKShapeNode?
+    private var eyeLeft: SKShapeNode?
+    private var eyeRight: SKShapeNode?
+
     private(set) var isGrounded: Bool = false
 
-    private let moveSpeed: CGFloat = 180
-    private let jumpImpulse: CGFloat = 420
+    private let moveSpeed: CGFloat = 150
+    private let jumpImpulse: CGFloat = 380
 
     // MARK: - Factory
 
@@ -20,68 +22,131 @@ final class BitCharacter: SKSpriteNode {
 
     private func setup() {
         name = "bit"
-        zPosition = 10
+        zPosition = 100
 
-        loadAnimations()
-        texture = idleFrames.first
+        // Create visual representation using shapes
+        createVisual()
 
-        physicsBody = SKPhysicsBody(rectangleOf: CGSize(width: size.width * 0.8, height: size.height * 0.95))
+        // Physics body
+        physicsBody = SKPhysicsBody(rectangleOf: CGSize(width: size.width * 0.7, height: size.height * 0.9))
         physicsBody?.allowsRotation = false
         physicsBody?.restitution = 0
-        physicsBody?.friction = 0.2
+        physicsBody?.friction = 0.1
+        physicsBody?.linearDamping = 0.5
         physicsBody?.categoryBitMask = PhysicsCategory.player
         physicsBody?.contactTestBitMask = PhysicsCategory.hazard | PhysicsCategory.exit | PhysicsCategory.ground
         physicsBody?.collisionBitMask = PhysicsCategory.ground
-
-        playIdle()
     }
 
-    private func loadAnimations() {
-        // Try loading real assets first
-        let test = SKTexture(imageNamed: "bit_idle_1")
-        if test.size().width > 0 {
-            idleFrames = [
-                SKTexture(imageNamed: "bit_idle_1"),
-                SKTexture(imageNamed: "bit_idle_2")
-            ]
-            runFrames = [
-                SKTexture(imageNamed: "bit_run_1"),
-                SKTexture(imageNamed: "bit_run_2"),
-                SKTexture(imageNamed: "bit_run_3"),
-                SKTexture(imageNamed: "bit_run_4")
-            ]
-        } else {
-            // Placeholder colors
-            idleFrames = [makeColorTexture(.cyan), makeColorTexture(.systemTeal)]
-            runFrames = [
-                makeColorTexture(.green),
-                makeColorTexture(.systemGreen),
-                makeColorTexture(.green),
-                makeColorTexture(.systemGreen)
-            ]
-        }
+    private func createVisual() {
+        // Main body - rounded rectangle (cyan/teal color like the glitch aesthetic)
+        let body = SKShapeNode(rectOf: CGSize(width: 28, height: 44), cornerRadius: 6)
+        body.fillColor = SKColor(red: 0.0, green: 0.9, blue: 0.9, alpha: 1.0) // Cyan
+        body.strokeColor = SKColor(red: 0.0, green: 0.7, blue: 0.7, alpha: 1.0)
+        body.lineWidth = 2
+        body.position = .zero
+        body.zPosition = 1
+        addChild(body)
+        bodyNode = body
+
+        // Left eye
+        let leftEye = SKShapeNode(circleOfRadius: 4)
+        leftEye.fillColor = .black
+        leftEye.strokeColor = .clear
+        leftEye.position = CGPoint(x: -6, y: 8)
+        leftEye.zPosition = 2
+        addChild(leftEye)
+        eyeLeft = leftEye
+
+        // Right eye
+        let rightEye = SKShapeNode(circleOfRadius: 4)
+        rightEye.fillColor = .black
+        rightEye.strokeColor = .clear
+        rightEye.position = CGPoint(x: 6, y: 8)
+        rightEye.zPosition = 2
+        addChild(rightEye)
+        eyeRight = rightEye
+
+        // Eye shine (white dots)
+        let shineLeft = SKShapeNode(circleOfRadius: 1.5)
+        shineLeft.fillColor = .white
+        shineLeft.strokeColor = .clear
+        shineLeft.position = CGPoint(x: 1, y: 1)
+        leftEye.addChild(shineLeft)
+
+        let shineRight = SKShapeNode(circleOfRadius: 1.5)
+        shineRight.fillColor = .white
+        shineRight.strokeColor = .clear
+        shineRight.position = CGPoint(x: 1, y: 1)
+        rightEye.addChild(shineRight)
+
+        // Antenna/glitch effect on top
+        let antenna = SKShapeNode(rectOf: CGSize(width: 4, height: 8))
+        antenna.fillColor = SKColor(red: 0.0, green: 0.9, blue: 0.9, alpha: 1.0)
+        antenna.strokeColor = .clear
+        antenna.position = CGPoint(x: 0, y: 26)
+        antenna.zPosition = 2
+        addChild(antenna)
+
+        // Glitch particles occasionally
+        startGlitchEffect()
     }
 
-    private func makeColorTexture(_ color: UIColor) -> SKTexture {
-        let renderer = UIGraphicsImageRenderer(size: CGSize(width: 32, height: 48))
-        let image = renderer.image { ctx in
-            color.setFill()
-            ctx.fill(CGRect(origin: .zero, size: CGSize(width: 32, height: 48)))
-        }
-        return SKTexture(image: image)
+    private func startGlitchEffect() {
+        let glitch = SKAction.sequence([
+            SKAction.wait(forDuration: Double.random(in: 2.0...5.0)),
+            SKAction.run { [weak self] in
+                self?.playGlitchFlicker()
+            }
+        ])
+        run(SKAction.repeatForever(glitch), withKey: "glitch")
+    }
+
+    private func playGlitchFlicker() {
+        guard let body = bodyNode else { return }
+
+        let originalColor = body.fillColor
+        let glitchColor = SKColor(red: 1.0, green: 0.0, blue: 0.5, alpha: 1.0) // Magenta glitch
+
+        let flicker = SKAction.sequence([
+            SKAction.run { body.fillColor = glitchColor },
+            SKAction.wait(forDuration: 0.05),
+            SKAction.run { body.fillColor = originalColor },
+            SKAction.wait(forDuration: 0.05),
+            SKAction.run { body.fillColor = glitchColor },
+            SKAction.wait(forDuration: 0.03),
+            SKAction.run { body.fillColor = originalColor }
+        ])
+        body.run(flicker)
     }
 
     // MARK: - Movement
 
     func move(direction: CGFloat) {
         guard let body = physicsBody else { return }
+
+        // Set velocity directly
         body.velocity.dx = direction * moveSpeed
 
-        if abs(direction) > 0.1 {
-            xScale = direction > 0 ? 1 : -1
-            playRun()
+        // Flip sprite based on direction
+        if direction > 0.1 {
+            xScale = abs(xScale)
+        } else if direction < -0.1 {
+            xScale = -abs(xScale)
+        }
+
+        // Squash and stretch animation while moving
+        if abs(direction) > 0.1 && isGrounded {
+            if action(forKey: "walk") == nil {
+                let walk = SKAction.sequence([
+                    SKAction.scaleY(to: 0.95, duration: 0.1),
+                    SKAction.scaleY(to: 1.0, duration: 0.1)
+                ])
+                run(SKAction.repeatForever(walk), withKey: "walk")
+            }
         } else {
-            playIdle()
+            removeAction(forKey: "walk")
+            run(SKAction.scaleY(to: 1.0, duration: 0.1))
         }
     }
 
@@ -90,47 +155,60 @@ final class BitCharacter: SKSpriteNode {
         body.velocity.dy = 0
         body.applyImpulse(CGVector(dx: 0, dy: jumpImpulse))
         isGrounded = false
+
+        // Jump squash animation
+        let jumpAnim = SKAction.sequence([
+            SKAction.scaleY(to: 0.7, duration: 0.05),
+            SKAction.scaleY(to: 1.2, duration: 0.1),
+            SKAction.scaleY(to: 1.0, duration: 0.15)
+        ])
+        run(jumpAnim)
     }
 
     func setGrounded(_ grounded: Bool) {
+        let wasGrounded = isGrounded
         isGrounded = grounded
-    }
 
-    // MARK: - Animations
-
-    private func playIdle() {
-        guard action(forKey: "idle") == nil else { return }
-        removeAction(forKey: "run")
-        run(.repeatForever(.animate(with: idleFrames, timePerFrame: 0.4)), withKey: "idle")
-    }
-
-    private func playRun() {
-        guard action(forKey: "run") == nil else { return }
-        removeAction(forKey: "idle")
-        run(.repeatForever(.animate(with: runFrames, timePerFrame: 0.08)), withKey: "run")
+        // Landing squash
+        if grounded && !wasGrounded {
+            let land = SKAction.sequence([
+                SKAction.scaleY(to: 0.8, duration: 0.05),
+                SKAction.scaleY(to: 1.0, duration: 0.1)
+            ])
+            run(land)
+        }
     }
 
     func playBufferDeath(respawnAt point: CGPoint, completion: @escaping () -> Void) {
         removeAllActions()
         physicsBody?.isDynamic = false
 
-        // Loading spinner effect
-        let spinner = SKLabelNode(text: "⏳")
-        spinner.fontSize = 20
-        addChild(spinner)
-        spinner.run(.repeatForever(.rotate(byAngle: .pi, duration: 0.3)))
-
-        run(.sequence([
-            .wait(forDuration: 0.8),
-            .run { [weak self] in
-                spinner.removeFromParent()
+        // Death effect - glitch out
+        let deathEffect = SKAction.sequence([
+            SKAction.group([
+                SKAction.fadeAlpha(to: 0.3, duration: 0.1),
+                SKAction.scale(to: 1.3, duration: 0.1)
+            ]),
+            SKAction.group([
+                SKAction.fadeAlpha(to: 1.0, duration: 0.1),
+                SKAction.scale(to: 0.8, duration: 0.1)
+            ]),
+            SKAction.group([
+                SKAction.fadeAlpha(to: 0.0, duration: 0.2),
+                SKAction.scale(to: 0.5, duration: 0.2)
+            ]),
+            SKAction.wait(forDuration: 0.3),
+            SKAction.run { [weak self] in
                 self?.position = point
+                self?.setScale(1.0)
+                self?.alpha = 1.0
                 self?.physicsBody?.isDynamic = true
                 self?.physicsBody?.velocity = .zero
-                self?.playIdle()
+                self?.startGlitchEffect()
                 completion()
             }
-        ]))
+        ])
+        run(deathEffect)
     }
 }
 
