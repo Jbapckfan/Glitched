@@ -140,11 +140,11 @@ final class HeaderScene: BaseLevelScene, SKPhysicsContactDelegate {
     private func spawnBridge() {
         bridgeSpawned = true
 
-        let bridgeWidth = pitEndX - pitStartX + 20  // Slight overlap
-        let bridge = SKSpriteNode(color: .cyan, size: CGSize(width: bridgeWidth, height: 16))
+        let bridgeWidth = pitEndX - pitStartX + 40  // More overlap for easier walking
+        let bridge = SKSpriteNode(color: .cyan, size: CGSize(width: bridgeWidth, height: 20))
         bridge.position = CGPoint(
-            x: pitStartX + bridgeWidth / 2 - 10,
-            y: groundHeight + 8
+            x: pitStartX + bridgeWidth / 2 - 20,
+            y: groundHeight  // Flush with ground level
         )
         bridge.physicsBody = SKPhysicsBody(rectangleOf: bridge.size)
         bridge.physicsBody?.isDynamic = false
