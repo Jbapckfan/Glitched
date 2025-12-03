@@ -80,11 +80,13 @@ final class WindBridgeScene: BaseLevelScene, SKPhysicsContactDelegate {
 
     private func setupBridge() {
         // Bridge extends from right side toward left
-        bridgeFullWidth = chasmEndX - chasmStartX + 20
+        bridgeFullWidth = chasmEndX - chasmStartX + 40  // More overlap
 
-        bridge = SKSpriteNode(color: .cyan, size: CGSize(width: 0, height: 16))
+        let bridgeHeight: CGFloat = 16
+        bridge = SKSpriteNode(color: .cyan, size: CGSize(width: 0, height: bridgeHeight))
         bridge.anchorPoint = CGPoint(x: 1, y: 0.5)  // Anchor on right side
-        bridge.position = CGPoint(x: chasmEndX, y: groundHeight + 8)
+        // Position so top of bridge aligns with top of platforms
+        bridge.position = CGPoint(x: chasmEndX + 20, y: groundHeight - bridgeHeight / 2)
         bridge.zPosition = 2
         addChild(bridge)
 
