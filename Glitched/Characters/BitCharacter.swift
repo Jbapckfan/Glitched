@@ -282,16 +282,24 @@ final class BitCharacter: SKSpriteNode {
 
         let originalBodyColor = body.fillColor
         let originalHeadColor = head.fillColor
+        let originalLeftLegColor = leftLeg?.fillColor ?? primaryColor
+        let originalRightLegColor = rightLeg?.fillColor ?? primaryColor
+
+        let tintedColor = color.withAlphaComponent(0.5)
 
         let flicker = SKAction.sequence([
-            SKAction.run {
-                body.fillColor = color.withAlphaComponent(0.3)
-                head.fillColor = color.withAlphaComponent(0.3)
+            SKAction.run { [weak self] in
+                body.fillColor = tintedColor
+                head.fillColor = tintedColor
+                self?.leftLeg?.fillColor = tintedColor
+                self?.rightLeg?.fillColor = tintedColor
             },
             SKAction.wait(forDuration: 0.03),
-            SKAction.run {
+            SKAction.run { [weak self] in
                 body.fillColor = originalBodyColor
                 head.fillColor = originalHeadColor
+                self?.leftLeg?.fillColor = originalLeftLegColor
+                self?.rightLeg?.fillColor = originalRightLegColor
             }
         ])
         run(flicker)
@@ -302,36 +310,44 @@ final class BitCharacter: SKSpriteNode {
 
         let originalBodyColor = body.fillColor
         let originalHeadColor = head.fillColor
-
-        // Create offset ghost
-        let ghost = SKShapeNode(rectOf: CGSize(width: 40, height: 56))
-        ghost.fillColor = color.withAlphaComponent(0.4)
-        ghost.strokeColor = .clear
-        ghost.position = CGPoint(x: CGFloat.random(in: -4...4), y: CGFloat.random(in: -2...2))
-        ghost.zPosition = 10
-        ghost.blendMode = .add
-        addChild(ghost)
+        let originalLeftLegColor = leftLeg?.fillColor ?? primaryColor
+        let originalRightLegColor = rightLeg?.fillColor ?? primaryColor
+        let originalLeftArmColor = leftArm?.fillColor ?? primaryColor
+        let originalRightArmColor = rightArm?.fillColor ?? primaryColor
 
         let flicker = SKAction.sequence([
-            SKAction.run {
+            SKAction.run { [weak self] in
                 body.fillColor = color
                 head.fillColor = color
+                self?.leftLeg?.fillColor = color
+                self?.rightLeg?.fillColor = color
+                self?.leftArm?.fillColor = color
+                self?.rightArm?.fillColor = color
             },
             SKAction.wait(forDuration: 0.04),
-            SKAction.run {
+            SKAction.run { [weak self] in
                 body.fillColor = originalBodyColor
                 head.fillColor = originalHeadColor
+                self?.leftLeg?.fillColor = originalLeftLegColor
+                self?.rightLeg?.fillColor = originalRightLegColor
+                self?.leftArm?.fillColor = originalLeftArmColor
+                self?.rightArm?.fillColor = originalRightArmColor
             },
             SKAction.wait(forDuration: 0.03),
-            SKAction.run {
-                body.fillColor = color.withAlphaComponent(0.5)
-                head.fillColor = color.withAlphaComponent(0.5)
+            SKAction.run { [weak self] in
+                body.fillColor = color.withAlphaComponent(0.7)
+                head.fillColor = color.withAlphaComponent(0.7)
+                self?.leftLeg?.fillColor = color.withAlphaComponent(0.7)
+                self?.rightLeg?.fillColor = color.withAlphaComponent(0.7)
             },
             SKAction.wait(forDuration: 0.02),
-            SKAction.run {
+            SKAction.run { [weak self] in
                 body.fillColor = originalBodyColor
                 head.fillColor = originalHeadColor
-                ghost.removeFromParent()
+                self?.leftLeg?.fillColor = originalLeftLegColor
+                self?.rightLeg?.fillColor = originalRightLegColor
+                self?.leftArm?.fillColor = originalLeftArmColor
+                self?.rightArm?.fillColor = originalRightArmColor
             }
         ])
         run(flicker)
@@ -342,66 +358,48 @@ final class BitCharacter: SKSpriteNode {
 
         let originalBodyColor = body.fillColor
         let originalHeadColor = head.fillColor
+        let originalLeftLegColor = leftLeg?.fillColor ?? primaryColor
+        let originalRightLegColor = rightLeg?.fillColor ?? primaryColor
+        let originalLeftArmColor = leftArm?.fillColor ?? primaryColor
+        let originalRightArmColor = rightArm?.fillColor ?? primaryColor
         let secondColor = glitchColors.randomElement() ?? color
 
-        // Create multiple offset ghosts for chromatic aberration
-        let ghostRed = SKShapeNode(rectOf: CGSize(width: 42, height: 58))
-        ghostRed.fillColor = SKColor.red.withAlphaComponent(0.3)
-        ghostRed.strokeColor = .clear
-        ghostRed.position = CGPoint(x: -3, y: 1)
-        ghostRed.zPosition = 9
-        ghostRed.blendMode = .add
-        addChild(ghostRed)
-
-        let ghostBlue = SKShapeNode(rectOf: CGSize(width: 42, height: 58))
-        ghostBlue.fillColor = SKColor.blue.withAlphaComponent(0.3)
-        ghostBlue.strokeColor = .clear
-        ghostBlue.position = CGPoint(x: 3, y: -1)
-        ghostBlue.zPosition = 9
-        ghostBlue.blendMode = .add
-        addChild(ghostBlue)
-
-        // Horizontal scan line
-        let scanLine = SKShapeNode(rectOf: CGSize(width: 50, height: 3))
-        scanLine.fillColor = .white
-        scanLine.strokeColor = .clear
-        scanLine.position = CGPoint(x: 0, y: -30)
-        scanLine.zPosition = 11
-        scanLine.alpha = 0.7
-        addChild(scanLine)
-
-        // Animate scan line
-        scanLine.run(SKAction.sequence([
-            SKAction.moveTo(y: 40, duration: 0.15),
-            SKAction.removeFromParent()
-        ]))
-
-        let flickerCount = Int.random(in: 3...6)
+        let flickerCount = Int.random(in: 4...8)
         var flickerActions: [SKAction] = []
 
         for i in 0..<flickerCount {
             let useSecondColor = i % 2 == 1
             let currentColor = useSecondColor ? secondColor : color
-            let duration = Double.random(in: 0.02...0.06)
+            let duration = Double.random(in: 0.02...0.05)
 
-            flickerActions.append(SKAction.run {
+            flickerActions.append(SKAction.run { [weak self] in
+                // Flash all body parts
                 body.fillColor = currentColor
                 head.fillColor = currentColor
-                // Slight position jitter
-                self.position.x += CGFloat.random(in: -1...1)
+                self?.leftLeg?.fillColor = currentColor
+                self?.rightLeg?.fillColor = currentColor
+                self?.leftArm?.fillColor = currentColor
+                self?.rightArm?.fillColor = currentColor
+
+                // Offset individual parts slightly for chromatic effect
+                body.position.x += CGFloat.random(in: -2...2)
+                head.position.x += CGFloat.random(in: -1...1)
             })
             flickerActions.append(SKAction.wait(forDuration: duration))
-            flickerActions.append(SKAction.run {
+            flickerActions.append(SKAction.run { [weak self] in
                 body.fillColor = originalBodyColor
                 head.fillColor = originalHeadColor
+                self?.leftLeg?.fillColor = originalLeftLegColor
+                self?.rightLeg?.fillColor = originalRightLegColor
+                self?.leftArm?.fillColor = originalLeftArmColor
+                self?.rightArm?.fillColor = originalRightArmColor
+
+                // Reset positions
+                body.position.x = 0
+                head.position.x = 0
             })
             flickerActions.append(SKAction.wait(forDuration: Double.random(in: 0.01...0.03)))
         }
-
-        flickerActions.append(SKAction.run {
-            ghostRed.removeFromParent()
-            ghostBlue.removeFromParent()
-        })
 
         run(SKAction.sequence(flickerActions))
     }
