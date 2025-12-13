@@ -1,0 +1,1236 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>GLITCHED</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            background: #000;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            font-family: 'Courier New', monospace;
+            overflow: hidden;
+            touch-action: none;
+        }
+        #gameContainer {
+            position: relative;
+            width: 100%;
+            max-width: 500px;
+            aspect-ratio: 9/16;
+        }
+        canvas {
+            width: 100%;
+            height: 100%;
+            display: block;
+        }
+        #controls {
+            position: absolute;
+            bottom: 10px;
+            left: 50%;
+            transform: translateX(-50%);
+            color: #444;
+            font-size: 10px;
+            text-align: center;
+            pointer-events: none;
+        }
+        #header {
+            position: absolute;
+            top: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: linear-gradient(180deg, #222 0%, #111 100%);
+            border: 2px solid #0ff;
+            border-radius: 8px;
+            padding: 8px 20px;
+            color: #0ff;
+            font-size: 14px;
+            cursor: grab;
+            user-select: none;
+            z-index: 100;
+            display: none;
+            box-shadow: 0 0 15px rgba(0, 255, 255, 0.3);
+        }
+        #header:active { cursor: grabbing; }
+        #header.dragging { opacity: 0.8; }
+    </style>
+</head>
+<body>
+    <div id="gameContainer">
+        <canvas id="game"></canvas>
+        <div id="header">LEVEL 1</div>
+        <div id="controls">Arrow Keys / WASD to move | Space / Up to jump</div>
+    </div>
+
+<script>
+// ============================================
+// GLITCHED - Web Version
+// A platformer with glitch aesthetics
+// ============================================
+
+const canvas = document.getElementById('game');
+const ctx = canvas.getContext('2d');
+const header = document.getElementById('header');
+
+// Canvas sizing
+function resize() {
+    const container = document.getElementById('gameContainer');
+    const rect = container.getBoundingClientRect();
+    canvas.width = 400;
+    canvas.height = 700;
+}
+resize();
+window.addEventListener('resize', resize);
+
+// ============================================
+// GAME STATE
+// ============================================
+const GameState = {
+    BOOT: 'boot',
+    LEVEL1: 'level1',
+    LEVEL2: 'level2',
+    LEVEL3: 'level3',
+    TRANSITIONING: 'transitioning',
+    WON: 'won'
+};
+
+let currentState = GameState.BOOT;
+let levelComplete = false;
+
+// ============================================
+// COLORS & VISUALS
+// ============================================
+const Colors = {
+    primary: '#ffffff',
+    secondary: '#e6e6e6',
+    stroke: '#000000',
+    background: '#0a0a15',
+    ground: '#333333',
+    hazard: '#ff0040',
+    exit: '#00ff00',
+    bridge: '#00ffff',
+    glitch: ['#ff0080', '#00ffff', '#ffff00', '#00ff00']
+};
+
+// ============================================
+// BIT CHARACTER
+// ============================================
+class BitCharacter {
+    constructor(x, y) {
+        this.x = x;
+        this.y = y;
+        this.width = 40;
+        this.height = 56;
+        this.vx = 0;
+        this.vy = 0;
+        this.speed = 150;
+        this.jumpForce = 450;
+        this.grounded = false;
+        this.facing = 1;
+        this.walkPhase = 0;
+        this.isWalking = false;
+
+        // Glitch effect
+        this.glitchTimer = 0;
+        this.glitchColor = null;
+        this.glitchIntensity = 0;
+        this.nextGlitch = Math.random() * 3 + 1;
+
+        // Animation
+        this.breathPhase = 0;
+        this.blinkTimer = Math.random() * 4 + 2;
+        this.isBlinking = false;
+
+        // Death animation
+        this.isDead = false;
+        this.deathTimer = 0;
+        this.respawnPoint = { x, y };
+        this.alpha = 1;
+        this.scale = 1;
+        this.rotation = 0;
+    }
+
+    update(dt, keys) {
+        if (this.isDead) {
+            this.updateDeath(dt);
+            return;
+        }
+
+        // Movement
+        let moveDir = 0;
+        if (keys.left) moveDir -= 1;
+        if (keys.right) moveDir += 1;
+
+        this.vx = moveDir * this.speed;
+        if (moveDir !== 0) this.facing = moveDir;
+
+        // Walking animation
+        if (Math.abs(moveDir) > 0 && this.grounded) {
+            this.isWalking = true;
+            this.walkPhase += dt * 12;
+        } else {
+            this.isWalking = false;
+            this.walkPhase = 0;
+        }
+
+        // Jump
+        if (keys.jump && this.grounded) {
+            this.vy = -this.jumpForce;
+            this.grounded = false;
+        }
+
+        // Gravity
+        this.vy += 1200 * dt;
+
+        // Apply velocity
+        this.x += this.vx * dt;
+        this.y += this.vy * dt;
+
+        // Breathing animation
+        this.breathPhase += dt * 2;
+
+        // Blinking
+        this.blinkTimer -= dt;
+        if (this.blinkTimer <= 0) {
+            this.isBlinking = true;
+            setTimeout(() => this.isBlinking = false, 100);
+            this.blinkTimer = Math.random() * 4 + 2;
+        }
+
+        // Glitch effect scheduling
+        this.nextGlitch -= dt;
+        if (this.nextGlitch <= 0) {
+            this.triggerGlitch();
+            this.nextGlitch = Math.random() * 4 + 0.5;
+        }
+
+        // Glitch timer
+        if (this.glitchTimer > 0) {
+            this.glitchTimer -= dt;
+        }
+    }
+
+    triggerGlitch() {
+        this.glitchColor = Colors.glitch[Math.floor(Math.random() * Colors.glitch.length)];
+        this.glitchIntensity = Math.random();
+        this.glitchTimer = 0.05 + Math.random() * 0.1;
+    }
+
+    updateDeath(dt) {
+        this.deathTimer += dt;
+        if (this.deathTimer < 0.5) {
+            // Glitch out
+            this.glitchTimer = 0.1;
+            this.glitchColor = Colors.glitch[Math.floor(Math.random() * 4)];
+            this.x += (Math.random() - 0.5) * 6;
+            this.y += (Math.random() - 0.5) * 4;
+        } else if (this.deathTimer < 0.8) {
+            // Dissolve
+            this.alpha = 1 - (this.deathTimer - 0.5) / 0.3;
+            this.scale = 1 - (this.deathTimer - 0.5) / 0.3 * 0.7;
+            this.rotation += dt * 20;
+        } else if (this.deathTimer < 1.0) {
+            // Wait
+        } else {
+            // Respawn
+            this.x = this.respawnPoint.x;
+            this.y = this.respawnPoint.y;
+            this.vx = 0;
+            this.vy = 0;
+            this.alpha = 1;
+            this.scale = 1;
+            this.rotation = 0;
+            this.isDead = false;
+            this.deathTimer = 0;
+            this.grounded = true;
+        }
+    }
+
+    die() {
+        if (!this.isDead) {
+            this.isDead = true;
+            this.deathTimer = 0;
+        }
+    }
+
+    draw(ctx) {
+        ctx.save();
+        ctx.translate(this.x, this.y);
+        ctx.scale(this.facing * this.scale, this.scale);
+        ctx.rotate(this.rotation);
+        ctx.globalAlpha = this.alpha;
+
+        const breathOffset = Math.sin(this.breathPhase) * 1;
+        const fillColor = this.glitchTimer > 0 ? this.glitchColor : Colors.primary;
+
+        // Legs
+        const leftLegAngle = this.isWalking ? Math.sin(this.walkPhase) * 0.5 : 0;
+        const rightLegAngle = this.isWalking ? Math.sin(this.walkPhase + Math.PI) * 0.5 : 0;
+
+        // Left leg
+        ctx.save();
+        ctx.translate(-7, 8);
+        ctx.rotate(leftLegAngle);
+        ctx.fillStyle = fillColor;
+        ctx.strokeStyle = Colors.stroke;
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        ctx.roundRect(-3, 0, 6, 16, 2);
+        ctx.fill();
+        ctx.stroke();
+        // Foot
+        ctx.fillStyle = Colors.stroke;
+        ctx.beginPath();
+        ctx.roundRect(-4, 14, 8, 6, 2);
+        ctx.fill();
+        ctx.restore();
+
+        // Right leg
+        ctx.save();
+        ctx.translate(7, 8);
+        ctx.rotate(rightLegAngle);
+        ctx.fillStyle = fillColor;
+        ctx.strokeStyle = Colors.stroke;
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        ctx.roundRect(-3, 0, 6, 16, 2);
+        ctx.fill();
+        ctx.stroke();
+        // Foot
+        ctx.fillStyle = Colors.stroke;
+        ctx.beginPath();
+        ctx.roundRect(-4, 14, 8, 6, 2);
+        ctx.fill();
+        ctx.restore();
+
+        // Body
+        const bodyY = -4 + breathOffset + (this.isWalking ? Math.abs(Math.sin(this.walkPhase * 2)) * 1.5 : 0);
+        ctx.fillStyle = fillColor;
+        ctx.strokeStyle = Colors.stroke;
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.roundRect(-11, bodyY - 12, 22, 24, 4);
+        ctx.fill();
+        ctx.stroke();
+
+        // Body stripe
+        ctx.fillStyle = Colors.secondary;
+        ctx.fillRect(-7, bodyY - 6, 14, 3);
+
+        // Arms
+        const armSwing = this.isWalking ? 0.35 : 0;
+
+        // Left arm
+        ctx.save();
+        ctx.translate(-14, bodyY - 2);
+        ctx.rotate(Math.sin(this.walkPhase + Math.PI) * armSwing);
+        ctx.fillStyle = fillColor;
+        ctx.strokeStyle = Colors.stroke;
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.roundRect(-2.5, -7, 5, 14, 2);
+        ctx.fill();
+        ctx.stroke();
+        ctx.restore();
+
+        // Right arm
+        ctx.save();
+        ctx.translate(14, bodyY - 2);
+        ctx.rotate(Math.sin(this.walkPhase) * armSwing);
+        ctx.fillStyle = fillColor;
+        ctx.strokeStyle = Colors.stroke;
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.roundRect(-2.5, -7, 5, 14, 2);
+        ctx.fill();
+        ctx.stroke();
+        ctx.restore();
+
+        // Head
+        const headY = -28 + breathOffset * 0.8;
+        ctx.fillStyle = fillColor;
+        ctx.strokeStyle = Colors.stroke;
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.roundRect(-12, headY - 12, 24, 24, 6);
+        ctx.fill();
+        ctx.stroke();
+
+        // Eyes
+        const eyeHeight = this.isBlinking ? 1 : 9;
+        const eyeY = headY + 2;
+
+        // Left eye
+        ctx.fillStyle = '#fff';
+        ctx.strokeStyle = Colors.stroke;
+        ctx.lineWidth = 1;
+        ctx.fillRect(-8.5, eyeY - eyeHeight/2, 7, eyeHeight);
+        ctx.strokeRect(-8.5, eyeY - eyeHeight/2, 7, eyeHeight);
+        if (!this.isBlinking) {
+            ctx.fillStyle = '#000';
+            ctx.fillRect(-4.5, eyeY - 2.5, 3, 5);
+        }
+
+        // Right eye
+        ctx.fillStyle = '#fff';
+        ctx.fillRect(1.5, eyeY - eyeHeight/2, 7, eyeHeight);
+        ctx.strokeRect(1.5, eyeY - eyeHeight/2, 7, eyeHeight);
+        if (!this.isBlinking) {
+            ctx.fillStyle = '#000';
+            ctx.fillRect(5.5, eyeY - 2.5, 3, 5);
+        }
+
+        ctx.restore();
+    }
+}
+
+// ============================================
+// BOOT SEQUENCE LEVEL
+// ============================================
+class BootLevel {
+    constructor() {
+        this.progress = 0.99;
+        this.isDragging = false;
+        this.complete = false;
+        this.bit = new BitCharacter(canvas.width / 2, canvas.height * 0.65);
+        this.bit.grounded = true;
+        this.flashAlpha = 0;
+        this.transitionTimer = 0;
+    }
+
+    handleMouseDown(x, y) {
+        const handleX = 60 + this.progress * 280;
+        const handleY = canvas.height / 2;
+        if (Math.abs(x - handleX) < 20 && Math.abs(y - handleY) < 20) {
+            this.isDragging = true;
+        }
+    }
+
+    handleMouseMove(x, y) {
+        if (this.isDragging && !this.complete) {
+            const barStart = 60;
+            const barWidth = 280;
+            const newProgress = Math.max(this.progress, Math.min(1, (x - barStart) / barWidth));
+            this.progress = newProgress;
+        }
+    }
+
+    handleMouseUp() {
+        this.isDragging = false;
+        if (this.progress >= 1 && !this.complete) {
+            this.complete = true;
+            this.flashAlpha = 0.8;
+        }
+    }
+
+    update(dt) {
+        this.bit.update(dt, {});
+
+        if (this.complete) {
+            this.flashAlpha = Math.max(0, this.flashAlpha - dt * 3);
+            this.transitionTimer += dt;
+            if (this.transitionTimer > 1.5) {
+                return GameState.LEVEL1;
+            }
+        }
+        return null;
+    }
+
+    draw(ctx) {
+        // Background
+        ctx.fillStyle = '#000';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+        // Title
+        ctx.fillStyle = '#0f0';
+        ctx.font = 'bold 22px Courier New';
+        ctx.textAlign = 'center';
+        ctx.fillText('GLITCHED OS v0.1', canvas.width / 2, canvas.height * 0.2);
+
+        ctx.font = '14px Courier New';
+        ctx.fillText('Initializing...', canvas.width / 2, canvas.height * 0.26);
+
+        // Progress bar
+        const barY = canvas.height / 2;
+        const barWidth = 280;
+        const barHeight = 24;
+        const barX = 60;
+
+        // Outline
+        ctx.strokeStyle = '#0f0';
+        ctx.lineWidth = 2;
+        ctx.strokeRect(barX, barY - barHeight/2, barWidth, barHeight);
+
+        // Fill
+        ctx.fillStyle = '#0f0';
+        ctx.fillRect(barX + 3, barY - barHeight/2 + 3, (barWidth - 6) * this.progress, barHeight - 6);
+
+        // Handle
+        const handleX = barX + this.progress * barWidth;
+        ctx.fillStyle = this.complete ? '#0f0' : '#0ff';
+        ctx.strokeStyle = '#fff';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.arc(handleX, barY, 16, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.stroke();
+
+        // Percent
+        ctx.fillStyle = '#0f0';
+        ctx.font = 'bold 18px Courier New';
+        ctx.fillText(Math.floor(this.progress * 100) + '%', canvas.width / 2, barY + 45);
+
+        // Hint
+        if (!this.complete) {
+            ctx.globalAlpha = 0.5 + Math.sin(Date.now() / 500) * 0.3;
+            ctx.font = '12px Courier New';
+            ctx.fillStyle = '#666';
+            ctx.fillText('< DRAG TO COMPLETE >', canvas.width / 2, barY + 70);
+            ctx.globalAlpha = 1;
+        }
+
+        // Bit character
+        this.bit.draw(ctx);
+
+        // Flash
+        if (this.flashAlpha > 0) {
+            ctx.fillStyle = `rgba(255, 255, 255, ${this.flashAlpha})`;
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+        }
+    }
+}
+
+// ============================================
+// LEVEL 1 - HEADER BRIDGE
+// ============================================
+class Level1 {
+    constructor() {
+        this.groundHeight = 120;
+        this.pitStart = 140;
+        this.pitEnd = 260;
+
+        this.bit = new BitCharacter(70, canvas.height - this.groundHeight - 40);
+        this.bit.respawnPoint = { x: 70, y: canvas.height - this.groundHeight - 40 };
+
+        this.bridgeSpawned = false;
+        this.bridgeAlpha = 0;
+        this.bridgeScale = 0.5;
+
+        this.exitPulse = 0;
+        this.complete = false;
+        this.transitionTimer = 0;
+
+        // Show draggable header
+        header.style.display = 'block';
+        this.setupHeaderDrag();
+    }
+
+    setupHeaderDrag() {
+        let isDragging = false;
+        let startX, startY;
+
+        const onStart = (e) => {
+            isDragging = true;
+            const touch = e.touches ? e.touches[0] : e;
+            startX = touch.clientX - header.offsetLeft;
+            startY = touch.clientY - header.offsetTop;
+            header.classList.add('dragging');
+        };
+
+        const onMove = (e) => {
+            if (!isDragging) return;
+            e.preventDefault();
+            const touch = e.touches ? e.touches[0] : e;
+            header.style.left = (touch.clientX - startX) + 'px';
+            header.style.top = (touch.clientY - startY) + 'px';
+            header.style.transform = 'none';
+        };
+
+        const onEnd = (e) => {
+            if (!isDragging) return;
+            isDragging = false;
+            header.classList.remove('dragging');
+
+            // Check if dropped over pit
+            const rect = header.getBoundingClientRect();
+            const canvasRect = canvas.getBoundingClientRect();
+            const relX = (rect.left + rect.width/2 - canvasRect.left) / canvasRect.width * canvas.width;
+            const relY = (rect.top + rect.height/2 - canvasRect.top) / canvasRect.height * canvas.height;
+
+            if (relX > this.pitStart && relX < this.pitEnd &&
+                relY > canvas.height - this.groundHeight - 100 && !this.bridgeSpawned) {
+                this.bridgeSpawned = true;
+                header.style.display = 'none';
+            } else {
+                // Reset position
+                header.style.left = '50%';
+                header.style.top = '20px';
+                header.style.transform = 'translateX(-50%)';
+            }
+        };
+
+        header.addEventListener('mousedown', onStart);
+        header.addEventListener('touchstart', onStart);
+        document.addEventListener('mousemove', onMove);
+        document.addEventListener('touchmove', onMove, { passive: false });
+        document.addEventListener('mouseup', onEnd);
+        document.addEventListener('touchend', onEnd);
+    }
+
+    update(dt, keys) {
+        this.bit.update(dt, keys);
+        this.exitPulse += dt * 4;
+
+        // Bridge animation
+        if (this.bridgeSpawned) {
+            this.bridgeAlpha = Math.min(1, this.bridgeAlpha + dt * 4);
+            this.bridgeScale = Math.min(1, this.bridgeScale + dt * 4);
+        }
+
+        // Ground collision
+        const groundY = canvas.height - this.groundHeight;
+        const charBottom = this.bit.y + 28;
+
+        // Check if over pit
+        const overPit = this.bit.x > this.pitStart && this.bit.x < this.pitEnd;
+        const bridgeTop = groundY - 8;
+
+        if (overPit && !this.bridgeSpawned) {
+            // Fall into pit - check for spikes
+            if (charBottom >= canvas.height - 30) {
+                this.bit.die();
+            }
+            this.bit.grounded = false;
+        } else if (overPit && this.bridgeSpawned) {
+            // Bridge collision
+            if (charBottom >= bridgeTop && this.bit.vy >= 0) {
+                this.bit.y = bridgeTop - 28;
+                this.bit.vy = 0;
+                this.bit.grounded = true;
+            }
+        } else {
+            // Normal ground
+            if (charBottom >= groundY) {
+                this.bit.y = groundY - 28;
+                this.bit.vy = 0;
+                this.bit.grounded = true;
+            }
+        }
+
+        // Boundary
+        this.bit.x = Math.max(40, Math.min(canvas.width - 40, this.bit.x));
+
+        // Exit check
+        const exitX = canvas.width - 50;
+        if (this.bit.x > exitX - 30 && !this.complete) {
+            this.complete = true;
+        }
+
+        if (this.complete) {
+            this.transitionTimer += dt;
+            this.bit.alpha = Math.max(0, 1 - this.transitionTimer * 2);
+            if (this.transitionTimer > 1) {
+                header.style.display = 'none';
+                return GameState.LEVEL2;
+            }
+        }
+
+        return null;
+    }
+
+    draw(ctx) {
+        // Background
+        ctx.fillStyle = Colors.background;
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+        // Level title
+        ctx.fillStyle = '#444';
+        ctx.font = '12px Courier New';
+        ctx.textAlign = 'left';
+        ctx.fillText('LEVEL 1: THE HEADER', 20, 30);
+
+        // Ground - left
+        ctx.fillStyle = Colors.ground;
+        ctx.fillRect(0, canvas.height - this.groundHeight, this.pitStart, this.groundHeight);
+
+        // Ground - right
+        ctx.fillRect(this.pitEnd, canvas.height - this.groundHeight, canvas.width - this.pitEnd, this.groundHeight);
+
+        // Spikes
+        const spikeCount = 8;
+        const spikeWidth = (this.pitEnd - this.pitStart) / spikeCount;
+        ctx.fillStyle = Colors.hazard;
+        for (let i = 0; i < spikeCount; i++) {
+            ctx.beginPath();
+            ctx.moveTo(this.pitStart + i * spikeWidth, canvas.height - 10);
+            ctx.lineTo(this.pitStart + i * spikeWidth + spikeWidth/2, canvas.height - 30);
+            ctx.lineTo(this.pitStart + (i + 1) * spikeWidth, canvas.height - 10);
+            ctx.closePath();
+            ctx.fill();
+        }
+        ctx.fillRect(this.pitStart, canvas.height - 10, this.pitEnd - this.pitStart, 10);
+
+        // Bridge
+        if (this.bridgeSpawned) {
+            ctx.save();
+            ctx.globalAlpha = this.bridgeAlpha;
+            const bridgeWidth = (this.pitEnd - this.pitStart + 60) * this.bridgeScale;
+            const bridgeX = this.pitStart + (this.pitEnd - this.pitStart) / 2;
+            ctx.fillStyle = Colors.bridge;
+            ctx.fillRect(bridgeX - bridgeWidth/2, canvas.height - this.groundHeight - 8, bridgeWidth, 16);
+            ctx.restore();
+        }
+
+        // Exit
+        const exitX = canvas.width - 50;
+        const exitY = canvas.height - this.groundHeight - 25;
+        ctx.fillStyle = Colors.exit;
+        ctx.fillRect(exitX - 15, exitY - 25, 30, 50);
+
+        // Exit glow
+        ctx.strokeStyle = Colors.exit;
+        ctx.lineWidth = 2;
+        ctx.globalAlpha = 0.3 + Math.sin(this.exitPulse) * 0.3;
+        ctx.strokeRect(exitX - 20, exitY - 30, 40, 60);
+        ctx.globalAlpha = 1;
+
+        // Hint
+        if (!this.bridgeSpawned) {
+            ctx.fillStyle = '#666';
+            ctx.font = '11px Courier New';
+            ctx.textAlign = 'center';
+            ctx.globalAlpha = 0.5 + Math.sin(Date.now() / 500) * 0.3;
+            ctx.fillText('Drag the header to bridge the gap', canvas.width / 2, 60);
+            ctx.globalAlpha = 1;
+        }
+
+        // Character
+        this.bit.draw(ctx);
+    }
+}
+
+// ============================================
+// LEVEL 2 - WIND/BLOW BRIDGE
+// ============================================
+class Level2 {
+    constructor() {
+        this.groundHeight = 120;
+        this.chasmStart = 120;
+        this.chasmEnd = 320;
+
+        this.bit = new BitCharacter(60, canvas.height - this.groundHeight - 40);
+        this.bit.respawnPoint = { x: 60, y: canvas.height - this.groundHeight - 40 };
+
+        this.bridgeWidth = 0;
+        this.bridgeTarget = 0;
+        this.maxBridgeWidth = this.chasmEnd - this.chasmStart + 40;
+
+        this.isBlowing = false;
+        this.blowStrength = 0;
+        this.windParticles = [];
+
+        this.exitPulse = 0;
+        this.complete = false;
+        this.transitionTimer = 0;
+
+        // Create wind particles
+        for (let i = 0; i < 8; i++) {
+            this.windParticles.push({
+                x: this.chasmStart + i * 25,
+                y: canvas.height - this.groundHeight - 30 + Math.random() * 20 - 10,
+                alpha: 0,
+                baseX: this.chasmStart + i * 25
+            });
+        }
+    }
+
+    handleMouseDown() {
+        this.isBlowing = true;
+    }
+
+    handleMouseUp() {
+        this.isBlowing = false;
+    }
+
+    update(dt, keys) {
+        this.bit.update(dt, keys);
+        this.exitPulse += dt * 4;
+
+        // Blowing mechanic (hold to extend bridge)
+        if (this.isBlowing || keys.blow) {
+            this.blowStrength = Math.min(1, this.blowStrength + dt * 3);
+            this.bridgeTarget = this.maxBridgeWidth * this.blowStrength;
+        } else {
+            this.blowStrength = Math.max(0, this.blowStrength - dt * 2);
+        }
+
+        // Smooth bridge extension
+        this.bridgeWidth += (this.bridgeTarget - this.bridgeWidth) * dt * 5;
+
+        // Retract when not blowing
+        if (!this.isBlowing && !keys.blow) {
+            this.bridgeWidth = Math.max(0, this.bridgeWidth - dt * 80);
+        }
+
+        // Wind particles
+        for (let p of this.windParticles) {
+            if (this.isBlowing || keys.blow) {
+                p.alpha = Math.min(this.blowStrength, p.alpha + dt * 5);
+                p.x += this.blowStrength * 100 * dt;
+                if (p.x > this.chasmEnd + 30) {
+                    p.x = p.baseX;
+                    p.y = canvas.height - this.groundHeight - 30 + Math.random() * 20 - 10;
+                }
+            } else {
+                p.alpha = Math.max(0, p.alpha - dt * 3);
+                if (p.alpha <= 0) {
+                    p.x = p.baseX;
+                }
+            }
+        }
+
+        // Ground collision
+        const groundY = canvas.height - this.groundHeight;
+        const charBottom = this.bit.y + 28;
+
+        const overChasm = this.bit.x > this.chasmStart && this.bit.x < this.chasmEnd;
+        const bridgeReaches = this.bit.x < this.chasmEnd - this.bridgeWidth + 40;
+
+        if (overChasm && (bridgeReaches || this.bridgeWidth < 20)) {
+            // Fall into chasm
+            if (this.bit.y > canvas.height + 50) {
+                this.bit.die();
+            }
+            this.bit.grounded = false;
+        } else if (overChasm && !bridgeReaches) {
+            // On bridge
+            if (charBottom >= groundY - 8 && this.bit.vy >= 0) {
+                this.bit.y = groundY - 36;
+                this.bit.vy = 0;
+                this.bit.grounded = true;
+            }
+        } else {
+            // Normal ground
+            if (charBottom >= groundY) {
+                this.bit.y = groundY - 28;
+                this.bit.vy = 0;
+                this.bit.grounded = true;
+            }
+        }
+
+        // Boundary
+        this.bit.x = Math.max(40, Math.min(canvas.width - 40, this.bit.x));
+
+        // Exit check
+        if (this.bit.x > canvas.width - 70 && !this.complete) {
+            this.complete = true;
+        }
+
+        if (this.complete) {
+            this.transitionTimer += dt;
+            this.bit.alpha = Math.max(0, 1 - this.transitionTimer * 2);
+            if (this.transitionTimer > 1) {
+                return GameState.LEVEL3;
+            }
+        }
+
+        return null;
+    }
+
+    draw(ctx) {
+        // Background
+        ctx.fillStyle = '#020210';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+        // Level title
+        ctx.fillStyle = '#444';
+        ctx.font = '12px Courier New';
+        ctx.textAlign = 'left';
+        ctx.fillText('LEVEL 2: THE WIND', 20, 30);
+
+        // Ground - left
+        ctx.fillStyle = Colors.ground;
+        ctx.fillRect(0, canvas.height - this.groundHeight, this.chasmStart, this.groundHeight);
+
+        // Ground - right
+        ctx.fillRect(this.chasmEnd, canvas.height - this.groundHeight, canvas.width - this.chasmEnd, this.groundHeight);
+
+        // Chasm darkness
+        ctx.fillStyle = '#000005';
+        ctx.fillRect(this.chasmStart, canvas.height - this.groundHeight, this.chasmEnd - this.chasmStart, this.groundHeight);
+
+        // Bridge (extends from right)
+        if (this.bridgeWidth > 5) {
+            ctx.fillStyle = Colors.bridge;
+            ctx.fillRect(this.chasmEnd + 20 - this.bridgeWidth, canvas.height - this.groundHeight - 8, this.bridgeWidth, 16);
+        }
+
+        // Wind particles
+        for (let p of this.windParticles) {
+            if (p.alpha > 0) {
+                ctx.fillStyle = `rgba(255, 255, 255, ${p.alpha * 0.7})`;
+                ctx.beginPath();
+                ctx.arc(p.x, p.y, 3, 0, Math.PI * 2);
+                ctx.fill();
+            }
+        }
+
+        // Exit
+        const exitX = canvas.width - 50;
+        const exitY = canvas.height - this.groundHeight - 25;
+        ctx.fillStyle = Colors.exit;
+        ctx.fillRect(exitX - 15, exitY - 25, 30, 50);
+
+        // Exit glow
+        ctx.strokeStyle = Colors.exit;
+        ctx.lineWidth = 2;
+        ctx.globalAlpha = 0.3 + Math.sin(this.exitPulse) * 0.3;
+        ctx.strokeRect(exitX - 20, exitY - 30, 40, 60);
+        ctx.globalAlpha = 1;
+
+        // Hint
+        ctx.fillStyle = '#666';
+        ctx.font = '11px Courier New';
+        ctx.textAlign = 'center';
+        ctx.globalAlpha = 0.5 + Math.sin(Date.now() / 500) * 0.3;
+        ctx.fillText('Hold CLICK or B to blow wind', canvas.width / 2, 60);
+        ctx.globalAlpha = 1;
+
+        // Character
+        this.bit.draw(ctx);
+    }
+}
+
+// ============================================
+// LEVEL 3 - STATIC/FINAL
+// ============================================
+class Level3 {
+    constructor() {
+        this.groundHeight = 120;
+        this.platforms = [
+            { x: 0, w: 100 },
+            { x: 150, w: 80 },
+            { x: 280, w: 80 }
+        ];
+
+        this.bit = new BitCharacter(50, canvas.height - this.groundHeight - 40);
+        this.bit.respawnPoint = { x: 50, y: canvas.height - this.groundHeight - 40 };
+
+        this.staticNoise = [];
+        for (let i = 0; i < 50; i++) {
+            this.staticNoise.push({
+                x: Math.random() * canvas.width,
+                y: Math.random() * canvas.height,
+                w: Math.random() * 30 + 5,
+                h: Math.random() * 3 + 1,
+                speed: Math.random() * 200 + 100
+            });
+        }
+
+        this.exitPulse = 0;
+        this.complete = false;
+        this.transitionTimer = 0;
+    }
+
+    update(dt, keys) {
+        this.bit.update(dt, keys);
+        this.exitPulse += dt * 4;
+
+        // Static noise animation
+        for (let s of this.staticNoise) {
+            s.x += s.speed * dt;
+            if (s.x > canvas.width) {
+                s.x = -s.w;
+                s.y = Math.random() * canvas.height;
+            }
+        }
+
+        // Platform collision
+        const groundY = canvas.height - this.groundHeight;
+        const charBottom = this.bit.y + 28;
+        let onPlatform = false;
+
+        for (let plat of this.platforms) {
+            if (this.bit.x > plat.x - 20 && this.bit.x < plat.x + plat.w + 20) {
+                if (charBottom >= groundY && this.bit.vy >= 0) {
+                    this.bit.y = groundY - 28;
+                    this.bit.vy = 0;
+                    this.bit.grounded = true;
+                    onPlatform = true;
+                }
+            }
+        }
+
+        if (!onPlatform && charBottom < groundY) {
+            this.bit.grounded = false;
+        }
+
+        // Fall death
+        if (this.bit.y > canvas.height + 50) {
+            this.bit.die();
+        }
+
+        // Boundary
+        this.bit.x = Math.max(40, Math.min(canvas.width - 40, this.bit.x));
+
+        // Exit check
+        if (this.bit.x > canvas.width - 70 && !this.complete) {
+            this.complete = true;
+        }
+
+        if (this.complete) {
+            this.transitionTimer += dt;
+            this.bit.alpha = Math.max(0, 1 - this.transitionTimer * 2);
+            if (this.transitionTimer > 1) {
+                return GameState.WON;
+            }
+        }
+
+        return null;
+    }
+
+    draw(ctx) {
+        // Background
+        ctx.fillStyle = '#080810';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+        // Static noise
+        for (let s of this.staticNoise) {
+            ctx.fillStyle = `rgba(255, 255, 255, ${Math.random() * 0.3})`;
+            ctx.fillRect(s.x, s.y, s.w, s.h);
+        }
+
+        // Level title
+        ctx.fillStyle = '#444';
+        ctx.font = '12px Courier New';
+        ctx.textAlign = 'left';
+        ctx.fillText('LEVEL 3: THE STATIC', 20, 30);
+
+        // Platforms
+        const groundY = canvas.height - this.groundHeight;
+        ctx.fillStyle = Colors.ground;
+        for (let plat of this.platforms) {
+            ctx.fillRect(plat.x, groundY, plat.w, this.groundHeight);
+        }
+
+        // Exit platform
+        ctx.fillRect(canvas.width - 80, groundY, 80, this.groundHeight);
+
+        // Exit
+        const exitX = canvas.width - 40;
+        const exitY = groundY - 25;
+        ctx.fillStyle = Colors.exit;
+        ctx.fillRect(exitX - 15, exitY - 25, 30, 50);
+
+        // Exit glow
+        ctx.strokeStyle = Colors.exit;
+        ctx.lineWidth = 2;
+        ctx.globalAlpha = 0.3 + Math.sin(this.exitPulse) * 0.3;
+        ctx.strokeRect(exitX - 20, exitY - 30, 40, 60);
+        ctx.globalAlpha = 1;
+
+        // Hint
+        ctx.fillStyle = '#666';
+        ctx.font = '11px Courier New';
+        ctx.textAlign = 'center';
+        ctx.globalAlpha = 0.5 + Math.sin(Date.now() / 500) * 0.3;
+        ctx.fillText('Jump across the platforms!', canvas.width / 2, 60);
+        ctx.globalAlpha = 1;
+
+        // Character
+        this.bit.draw(ctx);
+    }
+}
+
+// ============================================
+// WIN SCREEN
+// ============================================
+class WinScreen {
+    constructor() {
+        this.timer = 0;
+        this.bit = new BitCharacter(canvas.width / 2, canvas.height * 0.5);
+        this.bit.grounded = true;
+    }
+
+    update(dt) {
+        this.timer += dt;
+        this.bit.update(dt, {});
+        return null;
+    }
+
+    draw(ctx) {
+        ctx.fillStyle = '#000';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+        // Glitch effect background
+        if (Math.random() > 0.95) {
+            ctx.fillStyle = Colors.glitch[Math.floor(Math.random() * 4)];
+            ctx.globalAlpha = 0.1;
+            ctx.fillRect(0, Math.random() * canvas.height, canvas.width, Math.random() * 20);
+            ctx.globalAlpha = 1;
+        }
+
+        ctx.fillStyle = '#0f0';
+        ctx.font = 'bold 32px Courier New';
+        ctx.textAlign = 'center';
+        ctx.fillText('SYSTEM RESTORED', canvas.width / 2, canvas.height * 0.25);
+
+        ctx.font = '16px Courier New';
+        ctx.fillStyle = '#0ff';
+        ctx.fillText('BIT has escaped the glitch!', canvas.width / 2, canvas.height * 0.32);
+
+        this.bit.draw(ctx);
+
+        ctx.font = '14px Courier New';
+        ctx.fillStyle = '#666';
+        const blink = Math.sin(this.timer * 3) > 0;
+        if (blink) {
+            ctx.fillText('Thanks for playing!', canvas.width / 2, canvas.height * 0.75);
+        }
+
+        ctx.font = '11px Courier New';
+        ctx.fillStyle = '#444';
+        ctx.fillText('Press R to restart', canvas.width / 2, canvas.height * 0.85);
+    }
+}
+
+// ============================================
+// MAIN GAME LOOP
+// ============================================
+let currentLevel = null;
+let keys = { left: false, right: false, jump: false, blow: false };
+let lastTime = 0;
+
+function initLevel(state) {
+    currentState = state;
+    header.style.display = 'none';
+
+    switch(state) {
+        case GameState.BOOT:
+            currentLevel = new BootLevel();
+            break;
+        case GameState.LEVEL1:
+            currentLevel = new Level1();
+            break;
+        case GameState.LEVEL2:
+            currentLevel = new Level2();
+            break;
+        case GameState.LEVEL3:
+            currentLevel = new Level3();
+            break;
+        case GameState.WON:
+            currentLevel = new WinScreen();
+            break;
+    }
+}
+
+function gameLoop(timestamp) {
+    const dt = Math.min((timestamp - lastTime) / 1000, 0.05);
+    lastTime = timestamp;
+
+    // Update
+    const nextState = currentLevel.update(dt, keys);
+    if (nextState) {
+        initLevel(nextState);
+    }
+
+    // Draw
+    currentLevel.draw(ctx);
+
+    requestAnimationFrame(gameLoop);
+}
+
+// Input handling
+document.addEventListener('keydown', (e) => {
+    if (e.key === 'ArrowLeft' || e.key === 'a' || e.key === 'A') keys.left = true;
+    if (e.key === 'ArrowRight' || e.key === 'd' || e.key === 'D') keys.right = true;
+    if (e.key === 'ArrowUp' || e.key === 'w' || e.key === 'W' || e.key === ' ') keys.jump = true;
+    if (e.key === 'b' || e.key === 'B') keys.blow = true;
+    if (e.key === 'r' || e.key === 'R') {
+        initLevel(GameState.BOOT);
+    }
+});
+
+document.addEventListener('keyup', (e) => {
+    if (e.key === 'ArrowLeft' || e.key === 'a' || e.key === 'A') keys.left = false;
+    if (e.key === 'ArrowRight' || e.key === 'd' || e.key === 'D') keys.right = false;
+    if (e.key === 'ArrowUp' || e.key === 'w' || e.key === 'W' || e.key === ' ') keys.jump = false;
+    if (e.key === 'b' || e.key === 'B') keys.blow = false;
+});
+
+// Mouse/touch for boot level and wind level
+canvas.addEventListener('mousedown', (e) => {
+    const rect = canvas.getBoundingClientRect();
+    const x = (e.clientX - rect.left) / rect.width * canvas.width;
+    const y = (e.clientY - rect.top) / rect.height * canvas.height;
+
+    if (currentLevel.handleMouseDown) currentLevel.handleMouseDown(x, y);
+});
+
+canvas.addEventListener('mousemove', (e) => {
+    const rect = canvas.getBoundingClientRect();
+    const x = (e.clientX - rect.left) / rect.width * canvas.width;
+    const y = (e.clientY - rect.top) / rect.height * canvas.height;
+
+    if (currentLevel.handleMouseMove) currentLevel.handleMouseMove(x, y);
+});
+
+canvas.addEventListener('mouseup', () => {
+    if (currentLevel.handleMouseUp) currentLevel.handleMouseUp();
+});
+
+// Touch controls for movement
+let touchStartX = null;
+canvas.addEventListener('touchstart', (e) => {
+    e.preventDefault();
+    const touch = e.touches[0];
+    const rect = canvas.getBoundingClientRect();
+    const x = (touch.clientX - rect.left) / rect.width * canvas.width;
+    const y = (touch.clientY - rect.top) / rect.height * canvas.height;
+
+    touchStartX = x;
+
+    if (currentLevel.handleMouseDown) currentLevel.handleMouseDown(x, y);
+
+    // Tap to jump
+    if (y < canvas.height * 0.5) {
+        keys.jump = true;
+        setTimeout(() => keys.jump = false, 100);
+    }
+});
+
+canvas.addEventListener('touchmove', (e) => {
+    e.preventDefault();
+    const touch = e.touches[0];
+    const rect = canvas.getBoundingClientRect();
+    const x = (touch.clientX - rect.left) / rect.width * canvas.width;
+    const y = (touch.clientY - rect.top) / rect.height * canvas.height;
+
+    if (currentLevel.handleMouseMove) currentLevel.handleMouseMove(x, y);
+
+    // Movement based on touch position
+    if (touchStartX !== null) {
+        if (x < canvas.width * 0.4) keys.left = true;
+        else keys.left = false;
+        if (x > canvas.width * 0.6) keys.right = true;
+        else keys.right = false;
+    }
+});
+
+canvas.addEventListener('touchend', (e) => {
+    e.preventDefault();
+    keys.left = false;
+    keys.right = false;
+    touchStartX = null;
+    if (currentLevel.handleMouseUp) currentLevel.handleMouseUp();
+});
+
+// Start game
+initLevel(GameState.BOOT);
+requestAnimationFrame(gameLoop);
+</script>
+</body>
+</html>
