@@ -6,7 +6,7 @@ enum GameInputEvent {
     case jumpPressed
     case moveDirection(CGFloat)
 
-    // Hardware/OS inputs
+    // World 1: Hardware/OS inputs
     case shakeDetected
     case micLevelChanged(power: Float)
     case volumeChanged(level: Float)
@@ -18,7 +18,22 @@ enum GameInputEvent {
     case appBackgrounded(deltaTime: TimeInterval)
     case appForegrounded
     case timePassageSimulated(years: Double)
+
+    // World 2: Control Surface inputs
+    case notificationTapped(id: String, isCorrect: Bool)
+    case notificationReceived(id: String)
     case clipboardUpdated(value: String?)
+    case clipboardImageDetected(matchesPattern: Bool)
+    case wifiStateChanged(isEnabled: Bool)
+    case focusModeChanged(isEnabled: Bool)
+    case lowPowerModeChanged(isEnabled: Bool)
+    case shakeUndoTriggered
+    case appSwitcherPeeked(duration: TimeInterval)
+    case faceIDResult(recognized: Bool)
+    case airplaneModeChanged(isEnabled: Bool)
+    case appReinstallDetected
+
+    // Legacy/Utility inputs
     case notificationFired(id: String)
     case proximityFlipped(isCovered: Bool)
     case timedPressBegan

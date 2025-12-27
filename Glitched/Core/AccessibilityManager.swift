@@ -3,6 +3,7 @@ import SwiftUI
 import Combine
 
 enum MechanicType: String, CaseIterable {
+    // World 1: Hardware Awakening
     case dragHUD
     case microphone
     case shake
@@ -13,8 +14,20 @@ enum MechanicType: String, CaseIterable {
     case darkMode
     case orientation
     case appBackgrounding
-    case clipboard
+
+    // World 2: Control Surface
     case notification
+    case clipboard
+    case wifi
+    case focusMode       // Do Not Disturb
+    case lowPowerMode
+    case shakeUndo       // Shake to Undo
+    case appSwitcher
+    case faceID
+    case appDeletion     // Meta finale
+    case airplaneMode
+
+    // Utility/Future
     case proximity
     case timedPress
     case hapticPattern

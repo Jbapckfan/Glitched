@@ -43,7 +43,9 @@ struct SpriteKitContainer: UIViewRepresentable {
         view.showsNodeCount = true
         #endif
 
-        let scene = LevelFactory.makeScene(for: levelID, size: UIScreen.main.bounds.size)
+        // Use a default size initially; will be updated when view lays out
+        let initialSize = UIScreen.main.bounds.size
+        let scene = LevelFactory.makeScene(for: levelID, size: initialSize)
         view.presentScene(scene)
 
         return view

@@ -4,35 +4,36 @@ import UIKit
 
 final class OrientationScene: BaseLevelScene, SKPhysicsContactDelegate {
 
+    // MARK: - Line Art Style
+    private let fillColor = SKColor.white
+    private let strokeColor = SKColor.black
+    private let lineWidth: CGFloat = 2.5
+
     // MARK: - Properties
     private var bit: BitCharacter!
     private var playerController: PlayerController!
     private var spawnPoint: CGPoint = .zero
 
-    private var crusherWall: SKSpriteNode!
+    private var worldNode: SKNode!
+    private var crusherWall: SKNode!
     private var corridor: SKNode!
-    private var corridorTop: SKSpriteNode!
-    private var corridorBottom: SKSpriteNode!
-    private var corridorGap: CGFloat = 20 // Portrait: too narrow
+    private var corridorGap: CGFloat = 25
 
     private var isLandscape: Bool = false
-    private var worldNode: SKNode! // Container for stretchable world
-
-    private let portraitGap: CGFloat = 25
-    private let landscapeGap: CGFloat = 100
-    private let bitWidth: CGFloat = 40
-
-    // Crusher animation
-    private var crusherBaseX: CGFloat = 0
     private var isCrusherActive = true
+    private var crusherBaseX: CGFloat = 0
 
-    private var hintNode: SKNode?
+    private let portraitGap: CGFloat = 18   // Clearly impossible (player is 22pts wide)
+    private let landscapeGap: CGFloat = 100  // Comfortable passage in landscape
+
+    private var instructionPanel: SKNode?
+    private var lineElements: [SKNode] = []
 
     // MARK: - Configuration
 
     override func configureScene() {
         levelID = LevelID(world: .world1, index: 9)
-        backgroundColor = SKColor(white: 0.95, alpha: 1)
+        backgroundColor = fillColor
 
         physicsWorld.gravity = CGVector(dx: 0, dy: -20)
         physicsWorld.contactDelegate = self
@@ -43,87 +44,165 @@ final class OrientationScene: BaseLevelScene, SKPhysicsContactDelegate {
         // Check initial orientation
         isLandscape = UIDevice.current.orientation.isLandscape
 
-        // Create world container
+        // Create world container (for scale transform)
         worldNode = SKNode()
         worldNode.position = CGPoint(x: size.width / 2, y: size.height / 2)
         addChild(worldNode)
 
+        setupBackground()
+        setupLevelTitle()
         buildLevel()
-        showHint()
+        showInstructionPanel()
         setupBit()
 
-        // Apply initial orientation state
         updateWorldScale(animated: false)
     }
 
-    // MARK: - Level Construction
+    // MARK: - Background
+
+    private func setupBackground() {
+        // Aspect ratio grid (emphasizes the stretching)
+        drawAspectGrid()
+
+        // Arrows pointing to orientation
+        drawOrientationArrows()
+
+        // Ceiling structure
+        drawCeilingBeams()
+    }
+
+    private func drawAspectGrid() {
+        let gridSpacing: CGFloat = 50
+        let halfW = size.width / 2
+        let halfH = size.height / 2
+
+        // Vertical lines
+        for x in stride(from: -halfW, through: halfW, by: gridSpacing) {
+            let line = SKShapeNode()
+            let path = CGMutablePath()
+            path.move(to: CGPoint(x: x, y: -halfH + 50))
+            path.addLine(to: CGPoint(x: x, y: halfH - 50))
+            line.path = path
+            line.strokeColor = strokeColor
+            line.lineWidth = lineWidth * 0.2
+            line.alpha = 0.15
+            line.zPosition = -30
+            worldNode.addChild(line)
+            lineElements.append(line)
+        }
+
+        // Horizontal lines
+        for y in stride(from: -halfH + 50, through: halfH - 50, by: gridSpacing) {
+            let line = SKShapeNode()
+            let path = CGMutablePath()
+            path.move(to: CGPoint(x: -halfW, y: y))
+            path.addLine(to: CGPoint(x: halfW, y: y))
+            line.path = path
+            line.strokeColor = strokeColor
+            line.lineWidth = lineWidth * 0.2
+            line.alpha = 0.15
+            line.zPosition = -30
+            worldNode.addChild(line)
+            lineElements.append(line)
+        }
+    }
+
+    private func drawOrientationArrows() {
+        // Horizontal stretch arrows at top
+        let arrowY: CGFloat = 180
+
+        // Left arrow
+        let leftArrow = createHorizontalArrow(pointing: .left)
+        leftArrow.position = CGPoint(x: -120, y: arrowY)
+        leftArrow.alpha = 0.3
+        worldNode.addChild(leftArrow)
+        lineElements.append(leftArrow)
+
+        // Right arrow
+        let rightArrow = createHorizontalArrow(pointing: .right)
+        rightArrow.position = CGPoint(x: 120, y: arrowY)
+        rightArrow.alpha = 0.3
+        worldNode.addChild(rightArrow)
+        lineElements.append(rightArrow)
+    }
+
+    private enum ArrowDirection { case left, right }
+
+    private func createHorizontalArrow(pointing: ArrowDirection) -> SKShapeNode {
+        let arrow = SKShapeNode()
+        let path = CGMutablePath()
+        let dir: CGFloat = pointing == .left ? -1 : 1
+
+        // Arrow shaft
+        path.move(to: CGPoint(x: 0, y: 0))
+        path.addLine(to: CGPoint(x: dir * 40, y: 0))
+
+        // Arrow head
+        path.move(to: CGPoint(x: dir * 30, y: 8))
+        path.addLine(to: CGPoint(x: dir * 40, y: 0))
+        path.addLine(to: CGPoint(x: dir * 30, y: -8))
+
+        arrow.path = path
+        arrow.strokeColor = strokeColor
+        arrow.lineWidth = lineWidth * 0.6
+        return arrow
+    }
+
+    private func drawCeilingBeams() {
+        let halfW = size.width / 2
+
+        for x in stride(from: -halfW + 50, through: halfW - 50, by: 80) {
+            let beam = SKShapeNode(rectOf: CGSize(width: 10, height: 30))
+            beam.fillColor = fillColor
+            beam.strokeColor = strokeColor
+            beam.lineWidth = lineWidth * 0.4
+            beam.position = CGPoint(x: x, y: size.height / 2 - 35)
+            beam.zPosition = -25
+            worldNode.addChild(beam)
+            lineElements.append(beam)
+        }
+    }
+
+    private func setupLevelTitle() {
+        let title = SKLabelNode(text: "LEVEL 9")
+        title.fontName = "Helvetica-Bold"
+        title.fontSize = 28
+        title.fontColor = strokeColor
+        title.position = CGPoint(x: -size.width / 2 + 80, y: size.height / 2 - 60)
+        title.horizontalAlignmentMode = .left
+        title.zPosition = 100
+        worldNode.addChild(title)
+        lineElements.append(title)
+
+        let underline = SKShapeNode()
+        let underlinePath = CGMutablePath()
+        underlinePath.move(to: CGPoint(x: 0, y: -10))
+        underlinePath.addLine(to: CGPoint(x: 100, y: -10))
+        underline.path = underlinePath
+        underline.strokeColor = strokeColor
+        underline.lineWidth = lineWidth
+        underline.position = title.position
+        underline.zPosition = 100
+        worldNode.addChild(underline)
+        lineElements.append(underline)
+    }
+
+    // MARK: - Level Building
 
     private func buildLevel() {
-        // Crusher wall (left side, menacing)
-        crusherWall = SKSpriteNode(color: .black, size: CGSize(width: 120, height: 300))
-        crusherWall.position = CGPoint(x: -220, y: 0)
-        crusherWall.zPosition = 10
-        worldNode.addChild(crusherWall)
-        crusherBaseX = crusherWall.position.x
-
-        // Add speed lines to crusher
-        addCrusherSpeedLines()
+        // Crusher wall
+        createCrusher()
 
         // Floor
-        let floor = SKSpriteNode(color: SKColor(white: 0.1, alpha: 1), size: CGSize(width: 800, height: 20))
-        floor.position = CGPoint(x: 100, y: -120)
-        floor.physicsBody = SKPhysicsBody(rectangleOf: floor.size)
-        floor.physicsBody?.isDynamic = false
-        floor.physicsBody?.categoryBitMask = PhysicsCategory.ground
-        floor.name = "ground"
-        worldNode.addChild(floor)
+        createFloor()
 
-        // Corridor structure
-        corridor = SKNode()
-        corridor.position = CGPoint(x: 50, y: -60)
-        worldNode.addChild(corridor)
+        // Narrow corridor
+        createCorridor()
 
-        // Corridor top wall
-        corridorTop = SKSpriteNode(color: .black, size: CGSize(width: 400, height: 30))
-        corridorTop.position = CGPoint(x: 200, y: corridorGap / 2 + 15)
-        corridor.addChild(corridorTop)
+        // Exit
+        createExit()
 
-        // Corridor bottom wall
-        corridorBottom = SKSpriteNode(color: .black, size: CGSize(width: 400, height: 30))
-        corridorBottom.position = CGPoint(x: 200, y: -corridorGap / 2 - 15)
-        corridor.addChild(corridorBottom)
-
-        // Corridor physics (blocking walls)
-        updateCorridorPhysics()
-
-        // Glass corridor visual (perspective lines)
-        addCorridorPerspectiveLines()
-
-        // Exit at end of corridor
-        let exit = SKSpriteNode(color: .clear, size: CGSize(width: 40, height: 60))
-        exit.position = CGPoint(x: 480, y: -60)
-        exit.physicsBody = SKPhysicsBody(rectangleOf: exit.size)
-        exit.physicsBody?.isDynamic = false
-        exit.physicsBody?.categoryBitMask = PhysicsCategory.exit
-        exit.name = "exit"
-        worldNode.addChild(exit)
-
-        // Exit beacon
-        let beacon = SKShapeNode(circleOfRadius: 25)
-        beacon.position = CGPoint(x: 480, y: -60)
-        beacon.fillColor = SKColor(red: 0, green: 1, blue: 0, alpha: 0.2)
-        beacon.strokeColor = .clear
-        beacon.glowWidth = 15
-        beacon.zPosition = -1
-        worldNode.addChild(beacon)
-
-        let pulse = SKAction.sequence([
-            SKAction.fadeAlpha(to: 0.1, duration: 1.0),
-            SKAction.fadeAlpha(to: 0.3, duration: 1.0)
-        ])
-        beacon.run(SKAction.repeatForever(pulse))
-
-        // Death zone (if crushed)
+        // Death zone behind crusher
         let deathZone = SKNode()
         deathZone.position = CGPoint(x: -280, y: 0)
         deathZone.physicsBody = SKPhysicsBody(rectangleOf: CGSize(width: 50, height: 400))
@@ -133,68 +212,453 @@ final class OrientationScene: BaseLevelScene, SKPhysicsContactDelegate {
         worldNode.addChild(deathZone)
     }
 
-    private func addCrusherSpeedLines() {
-        for i in 0..<8 {
-            let line = SKSpriteNode(color: SKColor(white: 0.3, alpha: 1),
-                                    size: CGSize(width: CGFloat.random(in: 30...60), height: 3))
-            line.position = CGPoint(
-                x: crusherWall.size.width / 2 + line.size.width / 2 + CGFloat.random(in: 5...20),
-                y: CGFloat(i - 4) * 30 + CGFloat.random(in: -10...10)
-            )
-            line.alpha = CGFloat.random(in: 0.3...0.7)
-            crusherWall.addChild(line)
+    private func createCrusher() {
+        crusherWall = SKNode()
+        crusherWall.position = CGPoint(x: -220, y: 0)
+        crusherWall.zPosition = 10
+        worldNode.addChild(crusherWall)
+        crusherBaseX = crusherWall.position.x
 
-            // Animate speed lines
-            let flicker = SKAction.sequence([
-                SKAction.fadeAlpha(to: 0.2, duration: 0.1),
-                SKAction.fadeAlpha(to: 0.7, duration: 0.1)
-            ])
-            line.run(SKAction.repeatForever(flicker))
+        // Main crusher body - BIGGER and more menacing
+        let body = SKShapeNode(rectOf: CGSize(width: 150, height: 320))
+        body.fillColor = fillColor
+        body.strokeColor = strokeColor
+        body.lineWidth = lineWidth * 2.0
+        crusherWall.addChild(body)
+        lineElements.append(body)
+
+        // Industrial hazard stripes (diagonal warning pattern)
+        for i in 0..<7 {
+            let stripe = SKShapeNode()
+            let stripePath = CGMutablePath()
+            let y = CGFloat(i - 3) * 45
+            stripePath.move(to: CGPoint(x: -70, y: y - 20))
+            stripePath.addLine(to: CGPoint(x: 70, y: y + 20))
+            stripe.path = stripePath
+            stripe.strokeColor = strokeColor
+            stripe.lineWidth = lineWidth * 0.8
+            crusherWall.addChild(stripe)
+            lineElements.append(stripe)
         }
+
+        // Giant warning triangle - SKULL instead of just "!"
+        let warning = createDangerSkull()
+        warning.position = CGPoint(x: 0, y: 50)
+        warning.setScale(1.8)
+        crusherWall.addChild(warning)
+        lineElements.append(warning)
+
+        // Hydraulic pistons on sides
+        for side in [-1.0, 1.0] {
+            let piston = SKShapeNode(rectOf: CGSize(width: 20, height: 80))
+            piston.fillColor = fillColor
+            piston.strokeColor = strokeColor
+            piston.lineWidth = lineWidth
+            piston.position = CGPoint(x: CGFloat(side) * 85, y: -60)
+            crusherWall.addChild(piston)
+            lineElements.append(piston)
+
+            // Piston rod
+            let rod = SKShapeNode(rectOf: CGSize(width: 8, height: 40))
+            rod.fillColor = strokeColor
+            rod.strokeColor = strokeColor
+            rod.position = CGPoint(x: CGFloat(side) * 85, y: -110)
+            crusherWall.addChild(rod)
+            lineElements.append(rod)
+        }
+
+        // Grinding teeth at front edge
+        for i in 0..<8 {
+            let tooth = SKShapeNode()
+            let toothPath = CGMutablePath()
+            let y = CGFloat(i - 4) * 35 + 17
+            toothPath.move(to: CGPoint(x: 75, y: y - 12))
+            toothPath.addLine(to: CGPoint(x: 95, y: y))
+            toothPath.addLine(to: CGPoint(x: 75, y: y + 12))
+            tooth.path = toothPath
+            tooth.fillColor = fillColor
+            tooth.strokeColor = strokeColor
+            tooth.lineWidth = lineWidth
+            crusherWall.addChild(tooth)
+            lineElements.append(tooth)
+        }
+
+        // Speed lines - more aggressive
+        for i in 0..<10 {
+            let speedLine = SKShapeNode()
+            let speedPath = CGMutablePath()
+            let y = CGFloat(i - 5) * 30 + CGFloat.random(in: -8...8)
+            let length = CGFloat.random(in: 35...70)
+            speedPath.move(to: CGPoint(x: 98, y: y))
+            speedPath.addLine(to: CGPoint(x: 98 + length, y: y))
+            speedLine.path = speedPath
+            speedLine.strokeColor = strokeColor
+            speedLine.lineWidth = lineWidth * 0.5
+            speedLine.alpha = CGFloat.random(in: 0.4...0.8)
+            crusherWall.addChild(speedLine)
+            lineElements.append(speedLine)
+
+            // Aggressive flicker animation
+            speedLine.run(.repeatForever(.sequence([
+                .fadeAlpha(to: 0.1, duration: 0.05),
+                .fadeAlpha(to: 0.8, duration: 0.05)
+            ])))
+        }
+
+        // Ominous rumble animation
+        crusherWall.run(.repeatForever(.sequence([
+            .moveBy(x: 0, y: 2, duration: 0.1),
+            .moveBy(x: 0, y: -4, duration: 0.1),
+            .moveBy(x: 0, y: 2, duration: 0.1)
+        ])))
     }
 
-    private func addCorridorPerspectiveLines() {
-        // Vertical lines creating glass wall effect
-        for i in 0..<8 {
+    private func createDangerSkull() -> SKNode {
+        let skull = SKNode()
+
+        // Skull outline
+        let head = SKShapeNode(circleOfRadius: 25)
+        head.fillColor = fillColor
+        head.strokeColor = strokeColor
+        head.lineWidth = lineWidth
+        skull.addChild(head)
+
+        // Left eye socket
+        let leftEye = SKShapeNode(circleOfRadius: 7)
+        leftEye.fillColor = strokeColor
+        leftEye.position = CGPoint(x: -10, y: 5)
+        skull.addChild(leftEye)
+
+        // Right eye socket
+        let rightEye = SKShapeNode(circleOfRadius: 7)
+        rightEye.fillColor = strokeColor
+        rightEye.position = CGPoint(x: 10, y: 5)
+        skull.addChild(rightEye)
+
+        // Nose
+        let nose = SKShapeNode()
+        let nosePath = CGMutablePath()
+        nosePath.move(to: CGPoint(x: 0, y: -2))
+        nosePath.addLine(to: CGPoint(x: -4, y: -10))
+        nosePath.addLine(to: CGPoint(x: 4, y: -10))
+        nosePath.closeSubpath()
+        nose.path = nosePath
+        nose.fillColor = strokeColor
+        skull.addChild(nose)
+
+        // Teeth
+        for i in 0..<5 {
+            let tooth = SKShapeNode(rectOf: CGSize(width: 5, height: 8))
+            tooth.fillColor = fillColor
+            tooth.strokeColor = strokeColor
+            tooth.lineWidth = lineWidth * 0.3
+            tooth.position = CGPoint(x: CGFloat(i - 2) * 7, y: -20)
+            skull.addChild(tooth)
+        }
+
+        return skull
+    }
+
+    private func createWarningTriangle() -> SKShapeNode {
+        let triangle = SKShapeNode()
+        let path = CGMutablePath()
+        path.move(to: CGPoint(x: 0, y: 15))
+        path.addLine(to: CGPoint(x: -13, y: -8))
+        path.addLine(to: CGPoint(x: 13, y: -8))
+        path.closeSubpath()
+        triangle.path = path
+        triangle.fillColor = fillColor
+        triangle.strokeColor = strokeColor
+        triangle.lineWidth = lineWidth * 0.6
+
+        // Exclamation mark
+        let exclaim = SKLabelNode(text: "!")
+        exclaim.fontName = "Helvetica-Bold"
+        exclaim.fontSize = 14
+        exclaim.fontColor = strokeColor
+        exclaim.verticalAlignmentMode = .center
+        exclaim.position = CGPoint(x: 0, y: 0)
+        triangle.addChild(exclaim)
+
+        return triangle
+    }
+
+    private func createFloor() {
+        let floor = SKShapeNode(rectOf: CGSize(width: 700, height: 25))
+        floor.fillColor = fillColor
+        floor.strokeColor = strokeColor
+        floor.lineWidth = lineWidth
+        floor.position = CGPoint(x: 100, y: -120)
+        worldNode.addChild(floor)
+        lineElements.append(floor)
+
+        // Floor depth
+        let depth: CGFloat = 6
+        let depthLine = SKShapeNode()
+        let depthPath = CGMutablePath()
+        depthPath.move(to: CGPoint(x: -350, y: 12.5))
+        depthPath.addLine(to: CGPoint(x: -350 - depth, y: 12.5 + depth))
+        depthPath.addLine(to: CGPoint(x: 350 - depth, y: 12.5 + depth))
+        depthPath.addLine(to: CGPoint(x: 350, y: 12.5))
+        depthLine.path = depthPath
+        depthLine.strokeColor = strokeColor
+        depthLine.lineWidth = lineWidth * 0.5
+        depthLine.position = CGPoint(x: 100, y: -120)
+        worldNode.addChild(depthLine)
+        lineElements.append(depthLine)
+
+        // Physics
+        let floorPhysics = SKNode()
+        floorPhysics.position = CGPoint(x: 100, y: -120)
+        floorPhysics.physicsBody = SKPhysicsBody(rectangleOf: CGSize(width: 700, height: 25))
+        floorPhysics.physicsBody?.isDynamic = false
+        floorPhysics.physicsBody?.categoryBitMask = PhysicsCategory.ground
+        floorPhysics.name = "ground"
+        worldNode.addChild(floorPhysics)
+    }
+
+    private func createCorridor() {
+        corridor = SKNode()
+        corridor.position = CGPoint(x: 50, y: -60)
+        worldNode.addChild(corridor)
+
+        // Top wall of corridor
+        let topWall = SKShapeNode(rectOf: CGSize(width: 350, height: 25))
+        topWall.fillColor = fillColor
+        topWall.strokeColor = strokeColor
+        topWall.lineWidth = lineWidth
+        topWall.position = CGPoint(x: 175, y: corridorGap / 2 + 12.5)
+        topWall.name = "corridor_top"
+        corridor.addChild(topWall)
+        lineElements.append(topWall)
+
+        // Bottom wall of corridor
+        let bottomWall = SKShapeNode(rectOf: CGSize(width: 350, height: 25))
+        bottomWall.fillColor = fillColor
+        bottomWall.strokeColor = strokeColor
+        bottomWall.lineWidth = lineWidth
+        bottomWall.position = CGPoint(x: 175, y: -corridorGap / 2 - 12.5)
+        bottomWall.name = "corridor_bottom"
+        corridor.addChild(bottomWall)
+        lineElements.append(bottomWall)
+
+        // Perspective lines inside corridor
+        for i in 0..<7 {
             let x = CGFloat(i) * 50
 
             let topLine = SKShapeNode()
-            let topPath = UIBezierPath()
+            let topPath = CGMutablePath()
             topPath.move(to: CGPoint(x: x, y: corridorGap / 2))
-            topPath.addLine(to: CGPoint(x: x, y: corridorGap / 2 + 80))
-            topLine.path = topPath.cgPath
-            topLine.strokeColor = SKColor(white: 0, alpha: 0.3)
-            topLine.lineWidth = 1
+            topPath.addLine(to: CGPoint(x: x, y: corridorGap / 2 + 60))
+            topLine.path = topPath
+            topLine.strokeColor = strokeColor
+            topLine.lineWidth = lineWidth * 0.3
+            topLine.alpha = 0.4
             corridor.addChild(topLine)
+            lineElements.append(topLine)
 
             let bottomLine = SKShapeNode()
-            let bottomPath = UIBezierPath()
+            let bottomPath = CGMutablePath()
             bottomPath.move(to: CGPoint(x: x, y: -corridorGap / 2))
-            bottomPath.addLine(to: CGPoint(x: x, y: -corridorGap / 2 - 80))
-            bottomLine.path = bottomPath.cgPath
-            bottomLine.strokeColor = SKColor(white: 0, alpha: 0.3)
-            bottomLine.lineWidth = 1
+            bottomPath.addLine(to: CGPoint(x: x, y: -corridorGap / 2 - 60))
+            bottomLine.path = bottomPath
+            bottomLine.strokeColor = strokeColor
+            bottomLine.lineWidth = lineWidth * 0.3
+            bottomLine.alpha = 0.4
             corridor.addChild(bottomLine)
+            lineElements.append(bottomLine)
         }
+
+        // Gap indicator (shows it's too narrow)
+        let gapIndicator = SKShapeNode()
+        let gapPath = CGMutablePath()
+        gapPath.move(to: CGPoint(x: -30, y: corridorGap / 2 - 5))
+        gapPath.addLine(to: CGPoint(x: -30, y: -corridorGap / 2 + 5))
+        gapIndicator.path = gapPath
+        gapIndicator.strokeColor = strokeColor
+        gapIndicator.lineWidth = lineWidth * 0.5
+        gapIndicator.name = "gap_indicator"
+        corridor.addChild(gapIndicator)
+        lineElements.append(gapIndicator)
+
+        // Setup corridor physics
+        updateCorridorPhysics()
     }
 
     private func updateCorridorPhysics() {
-        // Remove old physics
-        corridorTop.physicsBody = nil
-        corridorBottom.physicsBody = nil
+        // Update wall positions
+        if let topWall = corridor.childNode(withName: "corridor_top") as? SKShapeNode {
+            topWall.position.y = corridorGap / 2 + 12.5
+            topWall.physicsBody = nil
+            topWall.physicsBody = SKPhysicsBody(rectangleOf: CGSize(width: 350, height: 25))
+            topWall.physicsBody?.isDynamic = false
+            topWall.physicsBody?.categoryBitMask = PhysicsCategory.ground
+        }
 
-        // Update positions based on gap
-        corridorTop.position.y = corridorGap / 2 + corridorTop.size.height / 2
-        corridorBottom.position.y = -corridorGap / 2 - corridorBottom.size.height / 2
+        if let bottomWall = corridor.childNode(withName: "corridor_bottom") as? SKShapeNode {
+            bottomWall.position.y = -corridorGap / 2 - 12.5
+            bottomWall.physicsBody = nil
+            bottomWall.physicsBody = SKPhysicsBody(rectangleOf: CGSize(width: 350, height: 25))
+            bottomWall.physicsBody?.isDynamic = false
+            bottomWall.physicsBody?.categoryBitMask = PhysicsCategory.ground
+        }
+    }
 
-        // Add physics bodies
-        corridorTop.physicsBody = SKPhysicsBody(rectangleOf: corridorTop.size)
-        corridorTop.physicsBody?.isDynamic = false
-        corridorTop.physicsBody?.categoryBitMask = PhysicsCategory.ground
+    private func createExit() {
+        let exitPos = CGPoint(x: 450, y: -60)
 
-        corridorBottom.physicsBody = SKPhysicsBody(rectangleOf: corridorBottom.size)
-        corridorBottom.physicsBody?.isDynamic = false
-        corridorBottom.physicsBody?.categoryBitMask = PhysicsCategory.ground
+        // Door frame
+        let doorFrame = SKShapeNode(rectOf: CGSize(width: 40, height: 60))
+        doorFrame.fillColor = fillColor
+        doorFrame.strokeColor = strokeColor
+        doorFrame.lineWidth = lineWidth
+        doorFrame.position = exitPos
+        doorFrame.zPosition = 10
+        worldNode.addChild(doorFrame)
+        lineElements.append(doorFrame)
+
+        // Door panels
+        for i in 0..<2 {
+            let panelY = CGFloat(i) * 30 - 15 + 5
+            let panel = SKShapeNode(rectOf: CGSize(width: 30, height: 20))
+            panel.fillColor = .clear
+            panel.strokeColor = strokeColor
+            panel.lineWidth = lineWidth * 0.5
+            panel.position = CGPoint(x: 0, y: panelY)
+            doorFrame.addChild(panel)
+        }
+
+        // Handle
+        let handle = SKShapeNode(circleOfRadius: 3)
+        handle.fillColor = fillColor
+        handle.strokeColor = strokeColor
+        handle.lineWidth = lineWidth * 0.4
+        handle.position = CGPoint(x: 12, y: 0)
+        doorFrame.addChild(handle)
+
+        // Exit trigger
+        let exit = SKSpriteNode(color: .clear, size: CGSize(width: 40, height: 60))
+        exit.position = exitPos
+        exit.physicsBody = SKPhysicsBody(rectangleOf: exit.size)
+        exit.physicsBody?.isDynamic = false
+        exit.physicsBody?.categoryBitMask = PhysicsCategory.exit
+        exit.name = "exit"
+        worldNode.addChild(exit)
+
+        // Arrow
+        let arrow = createDownArrow()
+        arrow.position = CGPoint(x: exitPos.x, y: exitPos.y + 50)
+        arrow.zPosition = 15
+        arrow.run(.repeatForever(.sequence([
+            .moveBy(x: 0, y: -6, duration: 0.4),
+            .moveBy(x: 0, y: 6, duration: 0.4)
+        ])))
+        worldNode.addChild(arrow)
+        lineElements.append(arrow)
+    }
+
+    private func createDownArrow() -> SKShapeNode {
+        let arrow = SKShapeNode()
+        let path = CGMutablePath()
+        path.move(to: CGPoint(x: 0, y: 10))
+        path.addLine(to: CGPoint(x: -8, y: 0))
+        path.addLine(to: CGPoint(x: -3, y: 0))
+        path.addLine(to: CGPoint(x: -3, y: -10))
+        path.addLine(to: CGPoint(x: 3, y: -10))
+        path.addLine(to: CGPoint(x: 3, y: 0))
+        path.addLine(to: CGPoint(x: 8, y: 0))
+        path.closeSubpath()
+        arrow.path = path
+        arrow.fillColor = fillColor
+        arrow.strokeColor = strokeColor
+        arrow.lineWidth = lineWidth * 0.6
+        arrow.zRotation = .pi
+        return arrow
+    }
+
+    // MARK: - Instruction Panel
+
+    private func showInstructionPanel() {
+        instructionPanel = SKNode()
+        instructionPanel?.position = CGPoint(x: 0, y: 130)
+        instructionPanel?.zPosition = 200
+        worldNode.addChild(instructionPanel!)
+
+        // Panel background
+        let panelBG = SKShapeNode(rectOf: CGSize(width: 200, height: 100), cornerRadius: 8)
+        panelBG.fillColor = fillColor
+        panelBG.strokeColor = strokeColor
+        panelBG.lineWidth = lineWidth
+        instructionPanel?.addChild(panelBG)
+        lineElements.append(panelBG)
+
+        // Phone rotating icon
+        let phone = SKShapeNode(rectOf: CGSize(width: 25, height: 45), cornerRadius: 3)
+        phone.fillColor = fillColor
+        phone.strokeColor = strokeColor
+        phone.lineWidth = lineWidth * 0.8
+        phone.position = CGPoint(x: -60, y: 0)
+        instructionPanel?.addChild(phone)
+        lineElements.append(phone)
+
+        // Phone screen
+        let screen = SKShapeNode(rectOf: CGSize(width: 18, height: 32))
+        screen.fillColor = .clear
+        screen.strokeColor = strokeColor
+        screen.lineWidth = lineWidth * 0.4
+        screen.position = CGPoint(x: 0, y: 2)
+        phone.addChild(screen)
+
+        // Rotation arrow around phone
+        let rotationArrow = SKShapeNode()
+        let rotPath = CGMutablePath()
+        rotPath.addArc(center: .zero, radius: 35, startAngle: .pi * 0.7, endAngle: .pi * 0.3, clockwise: true)
+        rotationArrow.path = rotPath
+        rotationArrow.strokeColor = strokeColor
+        rotationArrow.lineWidth = lineWidth * 0.6
+        rotationArrow.position = CGPoint(x: -60, y: 0)
+        instructionPanel?.addChild(rotationArrow)
+        lineElements.append(rotationArrow)
+
+        // Arrow head
+        let arrowHead = SKShapeNode()
+        let headPath = CGMutablePath()
+        headPath.move(to: CGPoint(x: 0, y: 0))
+        headPath.addLine(to: CGPoint(x: -8, y: -5))
+        headPath.move(to: CGPoint(x: 0, y: 0))
+        headPath.addLine(to: CGPoint(x: -8, y: 5))
+        arrowHead.path = headPath
+        arrowHead.strokeColor = strokeColor
+        arrowHead.lineWidth = lineWidth * 0.5
+        arrowHead.position = CGPoint(x: -60 + 35 * cos(.pi * 0.3), y: 35 * sin(.pi * 0.3))
+        arrowHead.zRotation = .pi * 0.3 - .pi / 2
+        instructionPanel?.addChild(arrowHead)
+        lineElements.append(arrowHead)
+
+        // Animate rotation
+        phone.run(.repeatForever(.sequence([
+            .rotate(toAngle: .pi / 2, duration: 0.8),
+            .wait(forDuration: 0.5),
+            .rotate(toAngle: 0, duration: 0.8),
+            .wait(forDuration: 0.5)
+        ])))
+
+        // Text
+        let label = SKLabelNode(text: "ROTATE")
+        label.fontName = "Menlo-Bold"
+        label.fontSize = 16
+        label.fontColor = strokeColor
+        label.position = CGPoint(x: 30, y: 10)
+        instructionPanel?.addChild(label)
+        lineElements.append(label)
+
+        let subLabel = SKLabelNode(text: "LANDSCAPE")
+        subLabel.fontName = "Menlo"
+        subLabel.fontSize = 12
+        subLabel.fontColor = strokeColor
+        subLabel.position = CGPoint(x: 30, y: -10)
+        instructionPanel?.addChild(subLabel)
+        lineElements.append(subLabel)
     }
 
     // MARK: - Setup
@@ -209,44 +673,13 @@ final class OrientationScene: BaseLevelScene, SKPhysicsContactDelegate {
         playerController = PlayerController(character: bit, scene: self)
     }
 
-    private func showHint() {
-        hintNode = SKNode()
-        hintNode?.position = CGPoint(x: 0, y: 100)
-        hintNode?.zPosition = 100
-        worldNode.addChild(hintNode!)
-
-        // Rotate icon
-        let rotateIcon = SKLabelNode(text: "🔄")
-        rotateIcon.fontSize = 32
-        rotateIcon.position = CGPoint(x: -50, y: 0)
-        hintNode?.addChild(rotateIcon)
-
-        // Rotate animation
-        let rotate = SKAction.rotate(byAngle: .pi * 2, duration: 2.0)
-        rotateIcon.run(SKAction.repeatForever(rotate))
-
-        // Text
-        let label = SKLabelNode(text: "ASPECT_RATIO_ERROR")
-        label.fontName = "Menlo"
-        label.fontSize = 14
-        label.fontColor = .black
-        label.position = CGPoint(x: 40, y: -5)
-        hintNode?.addChild(label)
-
-        let blink = SKAction.sequence([
-            SKAction.fadeAlpha(to: 0.3, duration: 0.5),
-            SKAction.fadeAlpha(to: 1.0, duration: 0.5)
-        ])
-        label.run(SKAction.repeatForever(blink))
-    }
-
     // MARK: - Orientation Change
 
     private func updateWorldScale(animated: Bool) {
         let duration = animated ? 0.5 : 0
 
         if isLandscape {
-            // Stretch horizontally
+            // Stretch world horizontally
             let scaleX: CGFloat = 1.4
             let scaleY: CGFloat = 0.85
 
@@ -256,6 +689,14 @@ final class OrientationScene: BaseLevelScene, SKPhysicsContactDelegate {
                 let scale = SKAction.scaleX(to: scaleX, y: scaleY, duration: duration)
                 scale.timingMode = .easeInEaseOut
                 worldNode.run(scale)
+
+                // Animate corridor walls apart
+                if let topWall = corridor.childNode(withName: "corridor_top") {
+                    topWall.run(.moveTo(y: corridorGap / 2 + 12.5, duration: duration))
+                }
+                if let bottomWall = corridor.childNode(withName: "corridor_bottom") {
+                    bottomWall.run(.moveTo(y: -corridorGap / 2 - 12.5, duration: duration))
+                }
             } else {
                 worldNode.xScale = scaleX
                 worldNode.yScale = scaleY
@@ -269,26 +710,32 @@ final class OrientationScene: BaseLevelScene, SKPhysicsContactDelegate {
                 let scale = SKAction.scaleX(to: 1.0, y: 1.0, duration: duration)
                 scale.timingMode = .easeInEaseOut
                 worldNode.run(scale)
+
+                // Animate corridor walls together
+                if let topWall = corridor.childNode(withName: "corridor_top") {
+                    topWall.run(.moveTo(y: corridorGap / 2 + 12.5, duration: duration))
+                }
+                if let bottomWall = corridor.childNode(withName: "corridor_bottom") {
+                    bottomWall.run(.moveTo(y: -corridorGap / 2 - 12.5, duration: duration))
+                }
             } else {
                 worldNode.xScale = 1.0
                 worldNode.yScale = 1.0
             }
         }
 
-        // Update corridor after scale
+        // Update physics after animation
         DispatchQueue.main.asyncAfter(deadline: .now() + duration) { [weak self] in
             self?.updateCorridorPhysics()
         }
 
-        // Hide hint after first rotation to landscape
+        // Hide hint after first landscape rotation
         if isLandscape && animated {
-            hintNode?.run(SKAction.sequence([
-                SKAction.fadeOut(withDuration: 0.3),
-                SKAction.removeFromParent()
+            instructionPanel?.run(.sequence([
+                .fadeOut(withDuration: 0.3),
+                .removeFromParent()
             ]))
-            hintNode = nil
-
-            // Stop crusher threat
+            instructionPanel = nil
             isCrusherActive = false
         }
     }
@@ -298,13 +745,13 @@ final class OrientationScene: BaseLevelScene, SKPhysicsContactDelegate {
     override func updatePlaying(deltaTime: TimeInterval) {
         playerController.update()
 
-        // Crusher creep (only in portrait, creates urgency)
+        // Crusher creep in portrait mode
         if isCrusherActive && !isLandscape {
             let creepSpeed: CGFloat = 8.0 * CGFloat(deltaTime)
             crusherWall.position.x += creepSpeed
 
-            // Check if crusher reached Bit
-            if crusherWall.position.x + crusherWall.size.width / 2 > bit.position.x - 30 {
+            // Check if crusher caught up to Bit
+            if crusherWall.position.x + 60 > bit.position.x - 20 {
                 handleDeath()
             }
         }
@@ -319,7 +766,6 @@ final class OrientationScene: BaseLevelScene, SKPhysicsContactDelegate {
                 isLandscape = newIsLandscape
                 updateWorldScale(animated: true)
 
-                // Haptic feedback
                 let generator = UIImpactFeedbackGenerator(style: .medium)
                 generator.impactOccurred()
             }

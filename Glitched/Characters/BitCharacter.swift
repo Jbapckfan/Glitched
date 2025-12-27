@@ -4,39 +4,52 @@ import UIKit
 final class BitCharacter: SKSpriteNode {
 
     // Visual components
-    private var headNode: SKShapeNode?
     private var bodyNode: SKShapeNode?
-    private var eyeLeft: SKShapeNode?
-    private var eyeRight: SKShapeNode?
+    private var headNode: SKShapeNode?  // Helmet
+    private var visorNode: SKShapeNode?
     private var leftArm: SKShapeNode?
     private var rightArm: SKShapeNode?
     private var leftLeg: SKShapeNode?
     private var rightLeg: SKShapeNode?
     private var leftFoot: SKShapeNode?
     private var rightFoot: SKShapeNode?
+    private var backpack: SKShapeNode?
+    private var antenna: SKShapeNode?
 
     private(set) var isGrounded: Bool = false
     private var isWalking: Bool = false
     private var walkPhase: CGFloat = 0
 
-    private let moveSpeed: CGFloat = 150
-    private let jumpImpulse: CGFloat = 380
+    private let moveSpeed: CGFloat = 220  // Faster, snappier movement
+    private let jumpImpulse: CGFloat = 520  // Good jump height
 
-    // Colors - Black and white with glitch accents
-    private let primaryColor = SKColor.white
-    private let secondaryColor = SKColor(white: 0.9, alpha: 1.0)
+    // Colors - Clean black and white line art style
+    private let fillColor = SKColor.white
     private let strokeColor = SKColor.black
+    private let lineWidth: CGFloat = 2.0
+
+    // Glitch colors - expanded palette for more variety
     private let glitchColors: [SKColor] = [
-        SKColor(red: 1.0, green: 0.0, blue: 0.5, alpha: 1.0),  // Magenta
+        SKColor(red: 1.0, green: 0.0, blue: 0.5, alpha: 1.0),  // Magenta/Pink
         SKColor(red: 0.0, green: 1.0, blue: 1.0, alpha: 1.0),  // Cyan
+        SKColor(red: 1.0, green: 0.0, blue: 0.0, alpha: 1.0),  // Red
+        SKColor(red: 0.0, green: 1.0, blue: 0.0, alpha: 1.0),  // Green
+        SKColor(red: 0.0, green: 0.5, blue: 1.0, alpha: 1.0),  // Blue
         SKColor(red: 1.0, green: 1.0, blue: 0.0, alpha: 1.0),  // Yellow
-        SKColor(red: 0.0, green: 1.0, blue: 0.0, alpha: 1.0)   // Green
+        SKColor(red: 1.0, green: 0.5, blue: 0.0, alpha: 1.0),  // Orange
+        SKColor(red: 0.6, green: 0.0, blue: 1.0, alpha: 1.0),  // Purple
     ]
+
+    // Static/noise overlay nodes
+    private var staticNodes: [SKShapeNode] = []
+    private var glitchOverlay: SKSpriteNode?
 
     // MARK: - Factory
 
     static func make() -> BitCharacter {
-        let char = BitCharacter(texture: nil, color: .clear, size: CGSize(width: 40, height: 56))
+        // Use texture:nil and color:.clear to ensure no visible sprite rectangle
+        let char = BitCharacter(texture: nil, color: .clear, size: CGSize(width: 44, height: 64))
+        char.colorBlendFactor = 0  // Ensure no color blending
         char.setup()
         return char
     }
@@ -45,143 +58,190 @@ final class BitCharacter: SKSpriteNode {
         name = "bit"
         zPosition = 100
 
-        // Create visual representation
-        createVisual()
+        // Ensure no visible sprite background
+        self.color = .clear
+        self.colorBlendFactor = 0
+        self.alpha = 1.0
 
-        // Physics body - slightly smaller than visual
-        physicsBody = SKPhysicsBody(rectangleOf: CGSize(width: size.width * 0.6, height: size.height * 0.85))
+        createAstronautVisual()
+
+        // Physics body - slightly smaller than visual for better feel
+        physicsBody = SKPhysicsBody(rectangleOf: CGSize(width: size.width * 0.5, height: size.height * 0.85))
         physicsBody?.allowsRotation = false
         physicsBody?.restitution = 0
-        physicsBody?.friction = 0.1
-        physicsBody?.linearDamping = 0.5
+        physicsBody?.friction = 0.2
+        physicsBody?.linearDamping = 0.1  // Less damping for snappier movement
         physicsBody?.categoryBitMask = PhysicsCategory.player
         physicsBody?.contactTestBitMask = PhysicsCategory.hazard | PhysicsCategory.exit | PhysicsCategory.ground
         physicsBody?.collisionBitMask = PhysicsCategory.ground
     }
 
-    private func createVisual() {
-        // Character structure from bottom to top:
-        // Legs/Feet -> Body -> Arms -> Head -> Eyes
-
+    private func createAstronautVisual() {
         // === LEGS ===
-        // Left leg - thigh
-        let leftLegNode = SKShapeNode(rectOf: CGSize(width: 6, height: 16), cornerRadius: 2)
-        leftLegNode.fillColor = primaryColor
+        // Left leg
+        let leftLegPath = CGMutablePath()
+        leftLegPath.addRoundedRect(in: CGRect(x: -4, y: -14, width: 8, height: 18), cornerWidth: 3, cornerHeight: 3)
+        let leftLegNode = SKShapeNode(path: leftLegPath)
+        leftLegNode.fillColor = fillColor
         leftLegNode.strokeColor = strokeColor
-        leftLegNode.lineWidth = 1.5
-        leftLegNode.position = CGPoint(x: -7, y: -20)
+        leftLegNode.lineWidth = lineWidth
+        leftLegNode.position = CGPoint(x: -8, y: -18)
         leftLegNode.zPosition = 0
         addChild(leftLegNode)
         leftLeg = leftLegNode
 
-        // Left foot
-        let leftFootNode = SKShapeNode(rectOf: CGSize(width: 8, height: 6), cornerRadius: 2)
-        leftFootNode.fillColor = strokeColor
+        // Left boot
+        let leftFootPath = CGMutablePath()
+        leftFootPath.addRoundedRect(in: CGRect(x: -5, y: -8, width: 10, height: 10), cornerWidth: 3, cornerHeight: 3)
+        let leftFootNode = SKShapeNode(path: leftFootPath)
+        leftFootNode.fillColor = fillColor
         leftFootNode.strokeColor = strokeColor
-        leftFootNode.lineWidth = 1
-        leftFootNode.position = CGPoint(x: 0, y: -10)
+        leftFootNode.lineWidth = lineWidth
+        leftFootNode.position = CGPoint(x: 0, y: -12)
         leftLegNode.addChild(leftFootNode)
         leftFoot = leftFootNode
 
-        // Right leg - thigh
-        let rightLegNode = SKShapeNode(rectOf: CGSize(width: 6, height: 16), cornerRadius: 2)
-        rightLegNode.fillColor = primaryColor
+        // Right leg
+        let rightLegPath = CGMutablePath()
+        rightLegPath.addRoundedRect(in: CGRect(x: -4, y: -14, width: 8, height: 18), cornerWidth: 3, cornerHeight: 3)
+        let rightLegNode = SKShapeNode(path: rightLegPath)
+        rightLegNode.fillColor = fillColor
         rightLegNode.strokeColor = strokeColor
-        rightLegNode.lineWidth = 1.5
-        rightLegNode.position = CGPoint(x: 7, y: -20)
+        rightLegNode.lineWidth = lineWidth
+        rightLegNode.position = CGPoint(x: 8, y: -18)
         rightLegNode.zPosition = 0
         addChild(rightLegNode)
         rightLeg = rightLegNode
 
-        // Right foot
-        let rightFootNode = SKShapeNode(rectOf: CGSize(width: 8, height: 6), cornerRadius: 2)
-        rightFootNode.fillColor = strokeColor
+        // Right boot
+        let rightFootPath = CGMutablePath()
+        rightFootPath.addRoundedRect(in: CGRect(x: -5, y: -8, width: 10, height: 10), cornerWidth: 3, cornerHeight: 3)
+        let rightFootNode = SKShapeNode(path: rightFootPath)
+        rightFootNode.fillColor = fillColor
         rightFootNode.strokeColor = strokeColor
-        rightFootNode.lineWidth = 1
-        rightFootNode.position = CGPoint(x: 0, y: -10)
+        rightFootNode.lineWidth = lineWidth
+        rightFootNode.position = CGPoint(x: 0, y: -12)
         rightLegNode.addChild(rightFootNode)
         rightFoot = rightFootNode
 
-        // === BODY (torso) ===
-        let body = SKShapeNode(rectOf: CGSize(width: 22, height: 24), cornerRadius: 4)
-        body.fillColor = primaryColor
+        // === BODY (spacesuit torso) ===
+        let bodyPath = CGMutablePath()
+        bodyPath.addRoundedRect(in: CGRect(x: -12, y: -14, width: 24, height: 28), cornerWidth: 6, cornerHeight: 6)
+        let body = SKShapeNode(path: bodyPath)
+        body.fillColor = fillColor
         body.strokeColor = strokeColor
-        body.lineWidth = 2
-        body.position = CGPoint(x: 0, y: -4)
+        body.lineWidth = lineWidth
+        body.position = CGPoint(x: 0, y: 0)
         body.zPosition = 1
         addChild(body)
         bodyNode = body
 
-        // Body detail - simple pixel pattern
-        let bodyStripe = SKShapeNode(rectOf: CGSize(width: 14, height: 3))
-        bodyStripe.fillColor = secondaryColor
-        bodyStripe.strokeColor = .clear
-        bodyStripe.position = CGPoint(x: 0, y: -4)
-        body.addChild(bodyStripe)
+        // Chest panel detail
+        let chestPanel = SKShapeNode(rectOf: CGSize(width: 12, height: 8), cornerRadius: 2)
+        chestPanel.fillColor = fillColor
+        chestPanel.strokeColor = strokeColor
+        chestPanel.lineWidth = 1.5
+        chestPanel.position = CGPoint(x: 0, y: 2)
+        body.addChild(chestPanel)
+
+        // Panel buttons
+        let button1 = SKShapeNode(circleOfRadius: 1.5)
+        button1.fillColor = strokeColor
+        button1.strokeColor = .clear
+        button1.position = CGPoint(x: -3, y: 0)
+        chestPanel.addChild(button1)
+
+        let button2 = SKShapeNode(circleOfRadius: 1.5)
+        button2.fillColor = strokeColor
+        button2.strokeColor = .clear
+        button2.position = CGPoint(x: 3, y: 0)
+        chestPanel.addChild(button2)
+
+        // === BACKPACK ===
+        let backpackPath = CGMutablePath()
+        backpackPath.addRoundedRect(in: CGRect(x: -6, y: -10, width: 12, height: 20), cornerWidth: 3, cornerHeight: 3)
+        let backpackNode = SKShapeNode(path: backpackPath)
+        backpackNode.fillColor = fillColor
+        backpackNode.strokeColor = strokeColor
+        backpackNode.lineWidth = lineWidth
+        backpackNode.position = CGPoint(x: -14, y: 2)
+        backpackNode.zPosition = 0
+        addChild(backpackNode)
+        backpack = backpackNode
 
         // === ARMS ===
         // Left arm
-        let leftArmNode = SKShapeNode(rectOf: CGSize(width: 5, height: 14), cornerRadius: 2)
-        leftArmNode.fillColor = primaryColor
+        let leftArmPath = CGMutablePath()
+        leftArmPath.addRoundedRect(in: CGRect(x: -3, y: -12, width: 7, height: 16), cornerWidth: 3, cornerHeight: 3)
+        let leftArmNode = SKShapeNode(path: leftArmPath)
+        leftArmNode.fillColor = fillColor
         leftArmNode.strokeColor = strokeColor
-        leftArmNode.lineWidth = 1
-        leftArmNode.position = CGPoint(x: -14, y: -2)
+        leftArmNode.lineWidth = lineWidth
+        leftArmNode.position = CGPoint(x: -14, y: 0)
         leftArmNode.zPosition = 2
         addChild(leftArmNode)
         leftArm = leftArmNode
 
         // Right arm
-        let rightArmNode = SKShapeNode(rectOf: CGSize(width: 5, height: 14), cornerRadius: 2)
-        rightArmNode.fillColor = primaryColor
+        let rightArmPath = CGMutablePath()
+        rightArmPath.addRoundedRect(in: CGRect(x: -4, y: -12, width: 7, height: 16), cornerWidth: 3, cornerHeight: 3)
+        let rightArmNode = SKShapeNode(path: rightArmPath)
+        rightArmNode.fillColor = fillColor
         rightArmNode.strokeColor = strokeColor
-        rightArmNode.lineWidth = 1
-        rightArmNode.position = CGPoint(x: 14, y: -2)
+        rightArmNode.lineWidth = lineWidth
+        rightArmNode.position = CGPoint(x: 14, y: 0)
         rightArmNode.zPosition = 2
         addChild(rightArmNode)
         rightArm = rightArmNode
 
-        // === HEAD ===
-        let head = SKShapeNode(rectOf: CGSize(width: 24, height: 24), cornerRadius: 6)
-        head.fillColor = primaryColor
-        head.strokeColor = strokeColor
-        head.lineWidth = 2
-        head.position = CGPoint(x: 0, y: 18)
-        head.zPosition = 3
-        addChild(head)
-        headNode = head
+        // === HELMET ===
+        let helmetPath = CGMutablePath()
+        helmetPath.addRoundedRect(in: CGRect(x: -14, y: -12, width: 28, height: 28), cornerWidth: 10, cornerHeight: 10)
+        let helmet = SKShapeNode(path: helmetPath)
+        helmet.fillColor = fillColor
+        helmet.strokeColor = strokeColor
+        helmet.lineWidth = lineWidth
+        helmet.position = CGPoint(x: 0, y: 22)
+        helmet.zPosition = 3
+        addChild(helmet)
+        headNode = helmet
 
-        // === EYES ===
-        // Left eye - pixel style
-        let leftEyeBg = SKShapeNode(rectOf: CGSize(width: 7, height: 9))
-        leftEyeBg.fillColor = .white
-        leftEyeBg.strokeColor = strokeColor
-        leftEyeBg.lineWidth = 1
-        leftEyeBg.position = CGPoint(x: -5, y: 2)
-        leftEyeBg.zPosition = 1
-        head.addChild(leftEyeBg)
+        // Visor (dark rounded rectangle)
+        let visorPath = CGMutablePath()
+        visorPath.addRoundedRect(in: CGRect(x: -9, y: -7, width: 18, height: 14), cornerWidth: 5, cornerHeight: 5)
+        let visor = SKShapeNode(path: visorPath)
+        visor.fillColor = SKColor(white: 0.1, alpha: 1.0)
+        visor.strokeColor = strokeColor
+        visor.lineWidth = 1.5
+        visor.position = CGPoint(x: 0, y: 0)
+        visor.zPosition = 1
+        helmet.addChild(visor)
+        visorNode = visor
 
-        let leftPupil = SKShapeNode(rectOf: CGSize(width: 3, height: 5))
-        leftPupil.fillColor = .black
-        leftPupil.strokeColor = .clear
-        leftPupil.position = CGPoint(x: 1, y: 0)
-        leftEyeBg.addChild(leftPupil)
-        eyeLeft = leftEyeBg
+        // Visor reflection
+        let reflection = SKShapeNode(rectOf: CGSize(width: 4, height: 8), cornerRadius: 2)
+        reflection.fillColor = SKColor(white: 0.4, alpha: 0.5)
+        reflection.strokeColor = .clear
+        reflection.position = CGPoint(x: 4, y: 2)
+        visor.addChild(reflection)
 
-        // Right eye - pixel style
-        let rightEyeBg = SKShapeNode(rectOf: CGSize(width: 7, height: 9))
-        rightEyeBg.fillColor = .white
-        rightEyeBg.strokeColor = strokeColor
-        rightEyeBg.lineWidth = 1
-        rightEyeBg.position = CGPoint(x: 5, y: 2)
-        rightEyeBg.zPosition = 1
-        head.addChild(rightEyeBg)
+        // === ANTENNA ===
+        let antennaBase = SKShapeNode(rectOf: CGSize(width: 3, height: 12))
+        antennaBase.fillColor = fillColor
+        antennaBase.strokeColor = strokeColor
+        antennaBase.lineWidth = 1.5
+        antennaBase.position = CGPoint(x: 10, y: 12)
+        antennaBase.zPosition = 4
+        helmet.addChild(antennaBase)
+        antenna = antennaBase
 
-        let rightPupil = SKShapeNode(rectOf: CGSize(width: 3, height: 5))
-        rightPupil.fillColor = .black
-        rightPupil.strokeColor = .clear
-        rightPupil.position = CGPoint(x: 1, y: 0)
-        rightEyeBg.addChild(rightPupil)
-        eyeRight = rightEyeBg
+        // Antenna tip
+        let antennaTip = SKShapeNode(circleOfRadius: 3)
+        antennaTip.fillColor = fillColor
+        antennaTip.strokeColor = strokeColor
+        antennaTip.lineWidth = 1.5
+        antennaTip.position = CGPoint(x: 0, y: 8)
+        antennaBase.addChild(antennaTip)
 
         // Start effects
         startGlitchEffect()
@@ -191,47 +251,24 @@ final class BitCharacter: SKSpriteNode {
     private func startIdleAnimation() {
         // Subtle breathing animation
         let breathe = SKAction.sequence([
-            SKAction.scaleY(to: 1.015, duration: 1.2),
-            SKAction.scaleY(to: 0.985, duration: 1.2)
+            SKAction.scaleY(to: 1.01, duration: 1.5),
+            SKAction.scaleY(to: 0.99, duration: 1.5)
         ])
         run(SKAction.repeatForever(breathe), withKey: "idle")
-
-        // Eye blink occasionally
-        let blink = SKAction.sequence([
-            SKAction.wait(forDuration: Double.random(in: 2.5...6.0)),
-            SKAction.run { [weak self] in
-                self?.playBlink()
-            }
-        ])
-        run(SKAction.repeatForever(blink), withKey: "blink")
-    }
-
-    private func playBlink() {
-        guard let leftEye = eyeLeft, let rightEye = eyeRight else { return }
-
-        let close = SKAction.scaleY(to: 0.1, duration: 0.04)
-        let open = SKAction.scaleY(to: 1.0, duration: 0.04)
-        let blinkAction = SKAction.sequence([close, SKAction.wait(forDuration: 0.08), open])
-
-        leftEye.run(blinkAction)
-        rightEye.run(blinkAction)
     }
 
     private func startGlitchEffect() {
-        // Schedule irregular glitch intervals
         scheduleNextGlitch()
     }
 
     private func scheduleNextGlitch() {
-        // Irregular intervals - sometimes quick bursts, sometimes longer waits
         let intervals: [ClosedRange<Double>] = [
-            0.5...1.5,   // Quick glitch
-            2.0...4.0,   // Medium wait
-            5.0...10.0,  // Long wait
-            0.1...0.3    // Rapid fire (rare)
+            0.5...1.5,
+            2.0...4.0,
+            5.0...10.0,
+            0.1...0.3
         ]
 
-        // Weight towards medium/long waits
         let weights = [0.15, 0.45, 0.35, 0.05]
         let random = Double.random(in: 0...1)
         var cumulative: Double = 0
@@ -258,21 +295,16 @@ final class BitCharacter: SKSpriteNode {
     }
 
     private func playGlitchFlicker() {
-        guard bodyNode != nil, headNode != nil else { return }
+        guard let body = bodyNode, let head = headNode else { return }
 
         let glitchColor = glitchColors.randomElement() ?? glitchColors[0]
-
-        // Determine glitch intensity (sometimes subtle, sometimes intense)
         let intensity = Double.random(in: 0...1)
 
-        if intensity < 0.3 {
-            // Subtle glitch - just a quick color flash
+        if intensity < 0.4 {
             playSubtleGlitch(color: glitchColor)
-        } else if intensity < 0.7 {
-            // Medium glitch - color flash with slight offset
+        } else if intensity < 0.8 {
             playMediumGlitch(color: glitchColor)
         } else {
-            // Intense glitch - full chromatic aberration effect
             playIntenseGlitch(color: glitchColor)
         }
     }
@@ -280,26 +312,34 @@ final class BitCharacter: SKSpriteNode {
     private func playSubtleGlitch(color: SKColor) {
         guard let body = bodyNode, let head = headNode else { return }
 
-        let originalBodyColor = body.fillColor
-        let originalHeadColor = head.fillColor
-        let originalLeftLegColor = leftLeg?.fillColor ?? primaryColor
-        let originalRightLegColor = rightLeg?.fillColor ?? primaryColor
-
-        let tintedColor = color.withAlphaComponent(0.5)
+        // Pick 2-3 random colors for multi-color effect
+        let color1 = glitchColors.randomElement() ?? color
+        let color2 = glitchColors.randomElement() ?? color
 
         let flicker = SKAction.sequence([
+            // First flash - one color on stroke
             SKAction.run { [weak self] in
-                body.fillColor = tintedColor
-                head.fillColor = tintedColor
-                self?.leftLeg?.fillColor = tintedColor
-                self?.rightLeg?.fillColor = tintedColor
+                body.strokeColor = color1
+                head.strokeColor = color2
+                self?.leftLeg?.strokeColor = color1
+                self?.rightLeg?.strokeColor = color2
             },
             SKAction.wait(forDuration: 0.03),
+            // Quick reset
             SKAction.run { [weak self] in
-                body.fillColor = originalBodyColor
-                head.fillColor = originalHeadColor
-                self?.leftLeg?.fillColor = originalLeftLegColor
-                self?.rightLeg?.fillColor = originalRightLegColor
+                body.strokeColor = self?.strokeColor ?? .black
+                head.strokeColor = self?.strokeColor ?? .black
+                self?.leftLeg?.strokeColor = self?.strokeColor ?? .black
+                self?.rightLeg?.strokeColor = self?.strokeColor ?? .black
+            },
+            SKAction.wait(forDuration: 0.02),
+            // Second micro-flash
+            SKAction.run { [weak self] in
+                self?.visorNode?.fillColor = color1.withAlphaComponent(0.5)
+            },
+            SKAction.wait(forDuration: 0.02),
+            SKAction.run { [weak self] in
+                self?.visorNode?.fillColor = SKColor(white: 0.1, alpha: 1.0)
             }
         ])
         run(flicker)
@@ -308,100 +348,235 @@ final class BitCharacter: SKSpriteNode {
     private func playMediumGlitch(color: SKColor) {
         guard let body = bodyNode, let head = headNode else { return }
 
-        let originalBodyColor = body.fillColor
-        let originalHeadColor = head.fillColor
-        let originalLeftLegColor = leftLeg?.fillColor ?? primaryColor
-        let originalRightLegColor = rightLeg?.fillColor ?? primaryColor
-        let originalLeftArmColor = leftArm?.fillColor ?? primaryColor
-        let originalRightArmColor = rightArm?.fillColor ?? primaryColor
+        // Pick multiple random colors
+        let colors = (0..<3).map { _ in glitchColors.randomElement() ?? color }
 
-        let flicker = SKAction.sequence([
-            SKAction.run { [weak self] in
-                body.fillColor = color
-                head.fillColor = color
-                self?.leftLeg?.fillColor = color
-                self?.rightLeg?.fillColor = color
-                self?.leftArm?.fillColor = color
-                self?.rightArm?.fillColor = color
-            },
-            SKAction.wait(forDuration: 0.04),
-            SKAction.run { [weak self] in
-                body.fillColor = originalBodyColor
-                head.fillColor = originalHeadColor
-                self?.leftLeg?.fillColor = originalLeftLegColor
-                self?.rightLeg?.fillColor = originalRightLegColor
-                self?.leftArm?.fillColor = originalLeftArmColor
-                self?.rightArm?.fillColor = originalRightArmColor
-            },
-            SKAction.wait(forDuration: 0.03),
-            SKAction.run { [weak self] in
-                body.fillColor = color.withAlphaComponent(0.7)
-                head.fillColor = color.withAlphaComponent(0.7)
-                self?.leftLeg?.fillColor = color.withAlphaComponent(0.7)
-                self?.rightLeg?.fillColor = color.withAlphaComponent(0.7)
-            },
-            SKAction.wait(forDuration: 0.02),
-            SKAction.run { [weak self] in
-                body.fillColor = originalBodyColor
-                head.fillColor = originalHeadColor
-                self?.leftLeg?.fillColor = originalLeftLegColor
-                self?.rightLeg?.fillColor = originalRightLegColor
-                self?.leftArm?.fillColor = originalLeftArmColor
-                self?.rightArm?.fillColor = originalRightArmColor
-            }
-        ])
-        run(flicker)
+        var actions: [SKAction] = []
+
+        // Create scanline effect
+        let scanline = SKShapeNode(rectOf: CGSize(width: 50, height: 3))
+        scanline.fillColor = colors[0].withAlphaComponent(0.6)
+        scanline.strokeColor = .clear
+        scanline.position = CGPoint(x: 0, y: -40)
+        scanline.zPosition = 200
+        addChild(scanline)
+
+        actions.append(SKAction.run { [weak self] in
+            // Multi-color stroke chaos
+            body.strokeColor = colors[0]
+            head.strokeColor = colors[1]
+            self?.leftLeg?.strokeColor = colors[2]
+            self?.rightLeg?.strokeColor = colors[0]
+            self?.leftArm?.strokeColor = colors[1]
+            self?.rightArm?.strokeColor = colors[2]
+
+            // Chromatic aberration - slight position offset
+            body.position.x = CGFloat.random(in: -2...2)
+            head.position.x = CGFloat.random(in: -1.5...1.5)
+        })
+
+        // Scanline animation
+        actions.append(SKAction.run {
+            scanline.run(SKAction.sequence([
+                SKAction.moveTo(y: 40, duration: 0.08),
+                SKAction.removeFromParent()
+            ]))
+        })
+
+        actions.append(SKAction.wait(forDuration: 0.04))
+
+        // Flicker between colors
+        for i in 0..<3 {
+            let c = colors[i % colors.count]
+            actions.append(SKAction.run { [weak self] in
+                body.strokeColor = c
+                head.strokeColor = self?.glitchColors.randomElement() ?? c
+            })
+            actions.append(SKAction.wait(forDuration: 0.02))
+        }
+
+        // Reset
+        actions.append(SKAction.run { [weak self] in
+            body.strokeColor = self?.strokeColor ?? .black
+            head.strokeColor = self?.strokeColor ?? .black
+            self?.leftLeg?.strokeColor = self?.strokeColor ?? .black
+            self?.rightLeg?.strokeColor = self?.strokeColor ?? .black
+            self?.leftArm?.strokeColor = self?.strokeColor ?? .black
+            self?.rightArm?.strokeColor = self?.strokeColor ?? .black
+            body.position.x = 0
+            head.position.x = 0
+        })
+
+        run(SKAction.sequence(actions))
     }
 
     private func playIntenseGlitch(color: SKColor) {
         guard let body = bodyNode, let head = headNode else { return }
 
-        let originalBodyColor = body.fillColor
-        let originalHeadColor = head.fillColor
-        let originalLeftLegColor = leftLeg?.fillColor ?? primaryColor
-        let originalRightLegColor = rightLeg?.fillColor ?? primaryColor
-        let originalLeftArmColor = leftArm?.fillColor ?? primaryColor
-        let originalRightArmColor = rightArm?.fillColor ?? primaryColor
-        let secondColor = glitchColors.randomElement() ?? color
-
-        let flickerCount = Int.random(in: 4...8)
+        let flickerCount = Int.random(in: 6...12)
         var flickerActions: [SKAction] = []
 
+        // Create static noise overlay
+        let staticOverlay = createStaticNoise()
+        staticOverlay.zPosition = 150
+        addChild(staticOverlay)
+
+        // Create RGB split ghost copies
+        let redGhost = createGhostCopy(tint: SKColor.red.withAlphaComponent(0.4))
+        let cyanGhost = createGhostCopy(tint: SKColor.cyan.withAlphaComponent(0.4))
+        redGhost.position = CGPoint(x: -3, y: 1)
+        cyanGhost.position = CGPoint(x: 3, y: -1)
+        redGhost.zPosition = 99
+        cyanGhost.zPosition = 99
+        addChild(redGhost)
+        addChild(cyanGhost)
+
+        flickerActions.append(SKAction.run {
+            staticOverlay.alpha = 0.7
+            redGhost.alpha = 0.5
+            cyanGhost.alpha = 0.5
+        })
+
         for i in 0..<flickerCount {
-            let useSecondColor = i % 2 == 1
-            let currentColor = useSecondColor ? secondColor : color
-            let duration = Double.random(in: 0.02...0.05)
+            // Pick random colors each frame
+            let c1 = glitchColors.randomElement() ?? color
+            let c2 = glitchColors.randomElement() ?? color
+            let c3 = glitchColors.randomElement() ?? color
+            let duration = Double.random(in: 0.015...0.04)
 
             flickerActions.append(SKAction.run { [weak self] in
-                // Flash all body parts
-                body.fillColor = currentColor
-                head.fillColor = currentColor
-                self?.leftLeg?.fillColor = currentColor
-                self?.rightLeg?.fillColor = currentColor
-                self?.leftArm?.fillColor = currentColor
-                self?.rightArm?.fillColor = currentColor
+                // Crazy multi-color strokes
+                body.strokeColor = c1
+                head.strokeColor = c2
+                self?.leftLeg?.strokeColor = c3
+                self?.rightLeg?.strokeColor = c1
+                self?.leftArm?.strokeColor = c2
+                self?.rightArm?.strokeColor = c3
+                self?.backpack?.strokeColor = c1
+                self?.visorNode?.fillColor = c2.withAlphaComponent(0.3)
 
-                // Offset individual parts slightly for chromatic effect
-                body.position.x += CGFloat.random(in: -2...2)
-                head.position.x += CGFloat.random(in: -1...1)
+                // Heavy chromatic aberration
+                let offsetX = CGFloat.random(in: -4...4)
+                let offsetY = CGFloat.random(in: -2...2)
+                body.position = CGPoint(x: offsetX, y: offsetY)
+                head.position = CGPoint(x: 22 + offsetY, y: offsetX * 0.5)
+
+                // Randomly hide/show parts for "corruption" effect
+                if Int.random(in: 0...3) == 0 {
+                    self?.leftArm?.alpha = 0
+                } else {
+                    self?.leftArm?.alpha = 1
+                }
+                if Int.random(in: 0...3) == 0 {
+                    self?.rightLeg?.alpha = 0
+                } else {
+                    self?.rightLeg?.alpha = 1
+                }
+
+                // Update ghost positions for jitter
+                redGhost.position = CGPoint(x: CGFloat.random(in: (-5)...(-2)), y: CGFloat.random(in: 0...2))
+                cyanGhost.position = CGPoint(x: CGFloat.random(in: 2...5), y: CGFloat.random(in: (-2)...0))
+
+                // Static noise intensity varies
+                staticOverlay.alpha = CGFloat.random(in: 0.3...0.8)
             })
+
             flickerActions.append(SKAction.wait(forDuration: duration))
-            flickerActions.append(SKAction.run { [weak self] in
-                body.fillColor = originalBodyColor
-                head.fillColor = originalHeadColor
-                self?.leftLeg?.fillColor = originalLeftLegColor
-                self?.rightLeg?.fillColor = originalRightLegColor
-                self?.leftArm?.fillColor = originalLeftArmColor
-                self?.rightArm?.fillColor = originalRightArmColor
 
-                // Reset positions
-                body.position.x = 0
-                head.position.x = 0
-            })
-            flickerActions.append(SKAction.wait(forDuration: Double.random(in: 0.01...0.03)))
+            // Occasional "normal" flash between chaos
+            if i % 3 == 0 {
+                flickerActions.append(SKAction.run { [weak self] in
+                    body.strokeColor = self?.strokeColor ?? .black
+                    head.strokeColor = self?.strokeColor ?? .black
+                    body.position = .zero
+                    head.position = CGPoint(x: 0, y: 22)
+                })
+                flickerActions.append(SKAction.wait(forDuration: 0.02))
+            }
         }
 
+        // Final reset
+        flickerActions.append(SKAction.run { [weak self] in
+            body.strokeColor = self?.strokeColor ?? .black
+            head.strokeColor = self?.strokeColor ?? .black
+            self?.leftLeg?.strokeColor = self?.strokeColor ?? .black
+            self?.rightLeg?.strokeColor = self?.strokeColor ?? .black
+            self?.leftArm?.strokeColor = self?.strokeColor ?? .black
+            self?.rightArm?.strokeColor = self?.strokeColor ?? .black
+            self?.backpack?.strokeColor = self?.strokeColor ?? .black
+            self?.visorNode?.fillColor = SKColor(white: 0.1, alpha: 1.0)
+
+            body.position = .zero
+            head.position = CGPoint(x: 0, y: 22)
+
+            self?.leftArm?.alpha = 1
+            self?.rightArm?.alpha = 1
+            self?.leftLeg?.alpha = 1
+            self?.rightLeg?.alpha = 1
+
+            staticOverlay.removeFromParent()
+            redGhost.removeFromParent()
+            cyanGhost.removeFromParent()
+        })
+
         run(SKAction.sequence(flickerActions))
+    }
+
+    // MARK: - Glitch Helper Functions
+
+    private func createStaticNoise() -> SKNode {
+        let container = SKNode()
+        let noiseSize = CGSize(width: 50, height: 70)
+
+        // Create random static lines
+        for _ in 0..<20 {
+            let line = SKShapeNode()
+            let path = CGMutablePath()
+            let y = CGFloat.random(in: -noiseSize.height/2...noiseSize.height/2)
+            let width = CGFloat.random(in: 5...noiseSize.width)
+            let x = CGFloat.random(in: -noiseSize.width/2...noiseSize.width/2 - width)
+            path.move(to: CGPoint(x: x, y: y))
+            path.addLine(to: CGPoint(x: x + width, y: y))
+            line.path = path
+            line.strokeColor = SKColor.white.withAlphaComponent(CGFloat.random(in: 0.3...0.8))
+            line.lineWidth = CGFloat.random(in: 1...3)
+            container.addChild(line)
+        }
+
+        // Add some static dots
+        for _ in 0..<15 {
+            let dot = SKShapeNode(circleOfRadius: CGFloat.random(in: 1...2))
+            dot.fillColor = glitchColors.randomElement()?.withAlphaComponent(0.6) ?? .white
+            dot.strokeColor = .clear
+            dot.position = CGPoint(
+                x: CGFloat.random(in: -noiseSize.width/2...noiseSize.width/2),
+                y: CGFloat.random(in: -noiseSize.height/2...noiseSize.height/2)
+            )
+            container.addChild(dot)
+        }
+
+        return container
+    }
+
+    private func createGhostCopy(tint: SKColor) -> SKNode {
+        let ghost = SKNode()
+
+        // Simplified ghost body
+        let ghostBody = SKShapeNode(rectOf: CGSize(width: 24, height: 28), cornerRadius: 6)
+        ghostBody.fillColor = .clear
+        ghostBody.strokeColor = tint
+        ghostBody.lineWidth = 1.5
+        ghost.addChild(ghostBody)
+
+        // Ghost head
+        let ghostHead = SKShapeNode(rectOf: CGSize(width: 28, height: 28), cornerRadius: 10)
+        ghostHead.fillColor = .clear
+        ghostHead.strokeColor = tint
+        ghostHead.lineWidth = 1.5
+        ghostHead.position = CGPoint(x: 0, y: 22)
+        ghost.addChild(ghostHead)
+
+        return ghost
     }
 
     // MARK: - Movement
@@ -409,24 +584,20 @@ final class BitCharacter: SKSpriteNode {
     func move(direction: CGFloat) {
         guard let body = physicsBody else { return }
 
-        // Set velocity directly
         body.velocity.dx = direction * moveSpeed
 
-        // Flip sprite based on direction
         if direction > 0.1 {
             xScale = abs(xScale)
         } else if direction < -0.1 {
             xScale = -abs(xScale)
         }
 
-        // Walking animation with legs
         if abs(direction) > 0.1 && isGrounded {
             if !isWalking {
                 isWalking = true
                 removeAction(forKey: "idle")
                 walkPhase = 0
             }
-            // Update walk animation each frame for fluid motion
             updateWalkAnimation(deltaTime: 1.0/60.0)
         } else {
             if isWalking {
@@ -441,36 +612,30 @@ final class BitCharacter: SKSpriteNode {
         guard let leftLeg = leftLeg, let rightLeg = rightLeg,
               let leftArm = leftArm, let rightArm = rightArm else { return }
 
-        // Fluid sine-wave based walk cycle
-        let walkSpeed: CGFloat = 12.0  // Speed of walk cycle
+        let walkSpeed: CGFloat = 12.0
         walkPhase += CGFloat(deltaTime) * walkSpeed
 
-        // Leg swing using sine wave for smooth motion
-        let legSwing: CGFloat = 0.5  // Max rotation in radians
+        let legSwing: CGFloat = 0.45
         let leftLegAngle = sin(walkPhase) * legSwing
-        let rightLegAngle = sin(walkPhase + .pi) * legSwing  // Opposite phase
+        let rightLegAngle = sin(walkPhase + .pi) * legSwing
 
         leftLeg.zRotation = leftLegAngle
         rightLeg.zRotation = rightLegAngle
 
-        // Feet stay relatively flat (counter-rotate slightly)
         leftFoot?.zRotation = -leftLegAngle * 0.3
         rightFoot?.zRotation = -rightLegAngle * 0.3
 
-        // Arms swing opposite to legs
-        let armSwing: CGFloat = 0.35
+        let armSwing: CGFloat = 0.3
         leftArm.zRotation = sin(walkPhase + .pi) * armSwing
         rightArm.zRotation = sin(walkPhase) * armSwing
 
-        // Subtle body bob (double frequency of legs)
-        let bobAmount: CGFloat = 1.5
+        let bobAmount: CGFloat = 1.2
         let bob = abs(sin(walkPhase * 2)) * bobAmount
-        bodyNode?.position.y = -4 + bob
-        headNode?.position.y = 18 + bob * 0.8
+        bodyNode?.position.y = bob
+        headNode?.position.y = 22 + bob * 0.8
     }
 
     private func stopWalkAnimation() {
-        // Smoothly reset to neutral pose
         let resetDuration: TimeInterval = 0.12
 
         leftLeg?.run(SKAction.rotate(toAngle: 0, duration: resetDuration))
@@ -479,59 +644,72 @@ final class BitCharacter: SKSpriteNode {
         rightFoot?.run(SKAction.rotate(toAngle: 0, duration: resetDuration))
         leftArm?.run(SKAction.rotate(toAngle: 0, duration: resetDuration))
         rightArm?.run(SKAction.rotate(toAngle: 0, duration: resetDuration))
-        bodyNode?.run(SKAction.moveTo(y: -4, duration: resetDuration))
-        headNode?.run(SKAction.moveTo(y: 18, duration: resetDuration))
+        bodyNode?.run(SKAction.moveTo(y: 0, duration: resetDuration))
+        headNode?.run(SKAction.moveTo(y: 22, duration: resetDuration))
 
         walkPhase = 0
     }
 
     func jump() {
         guard let body = physicsBody, isGrounded else { return }
-        body.velocity.dy = 0
+
+        // Cap existing upward velocity to prevent stacking jumps
+        body.velocity.dy = min(body.velocity.dy, 0)
+
+        // Apply jump impulse
         body.applyImpulse(CGVector(dx: 0, dy: jumpImpulse))
+
+        // Immediately cap the velocity to prevent flying off screen
+        let maxJumpVelocity: CGFloat = 550
+        if body.velocity.dy > maxJumpVelocity {
+            body.velocity.dy = maxJumpVelocity
+        }
+
         isGrounded = false
         isWalking = false
 
         stopWalkAnimation()
         removeAction(forKey: "idle")
 
-        // Jump animation - tuck legs and raise arms
         let tuckDuration: TimeInterval = 0.1
-        leftLeg?.run(SKAction.rotate(toAngle: 0.6, duration: tuckDuration))
-        rightLeg?.run(SKAction.rotate(toAngle: -0.6, duration: tuckDuration))
-        leftArm?.run(SKAction.rotate(toAngle: -1.0, duration: tuckDuration))
-        rightArm?.run(SKAction.rotate(toAngle: 1.0, duration: tuckDuration))
+        leftLeg?.run(SKAction.rotate(toAngle: 0.5, duration: tuckDuration))
+        rightLeg?.run(SKAction.rotate(toAngle: -0.5, duration: tuckDuration))
+        leftArm?.run(SKAction.rotate(toAngle: -0.8, duration: tuckDuration))
+        rightArm?.run(SKAction.rotate(toAngle: 0.8, duration: tuckDuration))
 
-        // Jump squash/stretch animation
         let jumpAnim = SKAction.sequence([
-            SKAction.scaleY(to: 0.8, duration: 0.05),
-            SKAction.scaleY(to: 1.15, duration: 0.1),
+            SKAction.scaleY(to: 0.85, duration: 0.05),
+            SKAction.scaleY(to: 1.1, duration: 0.1),
             SKAction.scaleY(to: 1.0, duration: 0.15)
         ])
         run(jumpAnim)
+    }
+
+    /// Call this in the scene's update to cap velocity
+    func clampVelocity() {
+        guard let body = physicsBody else { return }
+        let maxVelocity: CGFloat = 500
+        body.velocity.dy = max(min(body.velocity.dy, maxVelocity), -maxVelocity)
+        body.velocity.dx = max(min(body.velocity.dx, maxVelocity), -maxVelocity)
     }
 
     func setGrounded(_ grounded: Bool) {
         let wasGrounded = isGrounded
         isGrounded = grounded
 
-        // Landing
         if grounded && !wasGrounded {
-            // Reset limbs smoothly
             let resetDuration: TimeInterval = 0.1
             leftLeg?.run(SKAction.rotate(toAngle: 0, duration: resetDuration))
             rightLeg?.run(SKAction.rotate(toAngle: 0, duration: resetDuration))
             leftArm?.run(SKAction.rotate(toAngle: 0, duration: resetDuration))
             rightArm?.run(SKAction.rotate(toAngle: 0, duration: resetDuration))
 
-            // Landing squash
             let land = SKAction.sequence([
-                SKAction.scaleY(to: 0.85, duration: 0.05),
+                SKAction.scaleY(to: 0.88, duration: 0.05),
                 SKAction.scaleY(to: 1.0, duration: 0.1)
             ])
             run(land)
 
-            // Restart idle if not moving
             if !isWalking {
                 startIdleAnimation()
             }
@@ -546,39 +724,35 @@ final class BitCharacter: SKSpriteNode {
 
         let glitchColor = glitchColors.randomElement() ?? glitchColors[0]
 
-        // Death effect - intense glitch out
         let deathEffect = SKAction.sequence([
-            // Rapid glitch flashes
             SKAction.repeat(SKAction.sequence([
                 SKAction.run { [weak self] in
-                    self?.bodyNode?.fillColor = glitchColor
-                    self?.headNode?.fillColor = glitchColor
+                    self?.bodyNode?.strokeColor = glitchColor
+                    self?.headNode?.strokeColor = glitchColor
                     self?.position.x += CGFloat.random(in: -3...3)
                     self?.position.y += CGFloat.random(in: -2...2)
                 },
                 SKAction.wait(forDuration: 0.03),
                 SKAction.run { [weak self] in
-                    self?.bodyNode?.fillColor = self?.primaryColor ?? .white
-                    self?.headNode?.fillColor = self?.primaryColor ?? .white
+                    self?.bodyNode?.strokeColor = self?.strokeColor ?? .black
+                    self?.headNode?.strokeColor = self?.strokeColor ?? .black
                 },
                 SKAction.wait(forDuration: 0.02)
             ]), count: 8),
-            // Dissolve
             SKAction.group([
                 SKAction.fadeAlpha(to: 0.0, duration: 0.3),
                 SKAction.scale(to: 0.3, duration: 0.3),
                 SKAction.rotate(byAngle: .pi * 2, duration: 0.3)
             ]),
             SKAction.wait(forDuration: 0.2),
-            // Respawn
             SKAction.run { [weak self] in
                 guard let self = self else { return }
                 self.position = point
                 self.setScale(1.0)
                 self.zRotation = 0
                 self.alpha = 1.0
-                self.bodyNode?.fillColor = self.primaryColor
-                self.headNode?.fillColor = self.primaryColor
+                self.bodyNode?.strokeColor = self.strokeColor
+                self.headNode?.strokeColor = self.strokeColor
                 self.physicsBody?.isDynamic = true
                 self.physicsBody?.velocity = .zero
                 self.startGlitchEffect()

@@ -33,3 +33,5 @@ fastlane/test_output
 
 # Code Injection
 iOSInjectionProject/
+build/
+LEVEL_BACKUP_BEFORE_REDESIGN.md

@@ -6,12 +6,19 @@ final class PlayerController {
     private weak var scene: SKScene?
 
     private var moveDirection: CGFloat = 0
+    private var touchMoveDirection: CGFloat = 0  // From touch input
     private var touchStartLocation: CGPoint = .zero
+    private var touchStartTime: TimeInterval = 0
     private var isTouching = false
     private var lastTouchLocation: CGPoint = .zero
+    private var hasMoved = false  // Track if significant movement occurred
 
     // Boundary padding
     private let boundaryPadding: CGFloat = 20
+
+    // Tap detection thresholds
+    private let tapMaxDuration: TimeInterval = 0.3  // More forgiving tap window
+    private let tapMaxDistance: CGFloat = 25  // More forgiving movement threshold
 
     init(character: BitCharacter, scene: SKScene) {
         self.character = character
@@ -20,6 +27,22 @@ final class PlayerController {
 
     func update() {
         guard let character = character, let scene = scene else { return }
+
+        // Update keyboard state
+        KeyboardState.shared.update()
+
+        // Keyboard takes priority, then touch
+        let keyboardDir = KeyboardState.shared.horizontalDirection
+        if keyboardDir != 0 {
+            moveDirection = keyboardDir
+        } else {
+            moveDirection = touchMoveDirection
+        }
+
+        // Handle keyboard jump (edge-triggered)
+        if KeyboardState.shared.jumpJustPressed {
+            character.jump()
+        }
 
         // Apply movement
         character.move(direction: moveDirection)
@@ -41,35 +64,59 @@ final class PlayerController {
     func touchBegan(at point: CGPoint) {
         isTouching = true
         touchStartLocation = point
+        touchStartTime = CACurrentMediaTime()
         lastTouchLocation = point
-        updateMoveDirection(from: point)
+        hasMoved = false
+
+        // Start moving immediately for responsive feel
+        updateTouchMoveDirection(from: point)
     }
 
     func touchMoved(at point: CGPoint) {
         guard isTouching else { return }
         lastTouchLocation = point
-        updateMoveDirection(from: point)
+
+        // Check if we've moved enough to consider this a drag (not a tap)
+        let distance = hypot(point.x - touchStartLocation.x, point.y - touchStartLocation.y)
+        if distance > tapMaxDistance {
+            hasMoved = true
+        }
+
+        updateTouchMoveDirection(from: point)
     }
 
     func touchEnded(at point: CGPoint) {
-        // Check for swipe up to jump
-        let verticalSwipe = point.y - touchStartLocation.y
-        if verticalSwipe > 50 {
+        let touchDuration = CACurrentMediaTime() - touchStartTime
+        let touchDistance = hypot(point.x - touchStartLocation.x, point.y - touchStartLocation.y)
+
+        // Detect tap: short duration AND minimal movement
+        let isTap = touchDuration < tapMaxDuration && touchDistance < tapMaxDistance
+
+        if isTap {
+            // Tap detected - jump!
             character?.jump()
         }
 
-        // Stop movement
-        moveDirection = 0
+        // Also still support swipe up for jump (backwards compatibility)
+        let verticalSwipe = point.y - touchStartLocation.y
+        if verticalSwipe > 40 && !isTap {
+            character?.jump()
+        }
+
+        // Stop touch movement
+        touchMoveDirection = 0
         isTouching = false
+        hasMoved = false
     }
 
     func cancel() {
-        moveDirection = 0
+        touchMoveDirection = 0
         isTouching = false
+        hasMoved = false
     }
 
-    private func updateMoveDirection(from point: CGPoint) {
-        guard let scene = scene, let character = character else { return }
+    private func updateTouchMoveDirection(from point: CGPoint) {
+        guard let character = character else { return }
 
         // Calculate direction based on touch position relative to character
         let characterScreenX = character.position.x
@@ -77,15 +124,15 @@ final class PlayerController {
         // If touch is to the left of character, move left; if right, move right
         let touchDelta = point.x - characterScreenX
 
-        // Dead zone in the middle (don't move if touch is very close to character)
-        let deadZone: CGFloat = 30
+        // Smaller dead zone for more responsive feel
+        let deadZone: CGFloat = 20
 
         if touchDelta < -deadZone {
-            moveDirection = -1
+            touchMoveDirection = -1
         } else if touchDelta > deadZone {
-            moveDirection = 1
+            touchMoveDirection = 1
         } else {
-            moveDirection = 0
+            touchMoveDirection = 0
         }
     }
 }

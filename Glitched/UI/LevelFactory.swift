@@ -5,8 +5,11 @@ enum LevelFactory {
         let scene: BaseLevelScene
 
         switch (levelID.world, levelID.index) {
+        // World 0: Tutorial
         case (.world0, 0):
             scene = BootSequenceScene(size: size)
+
+        // World 1: Hardware Awakening
         case (.world1, 1):
             scene = HeaderScene(size: size)
         case (.world1, 2):
@@ -27,6 +30,29 @@ enum LevelFactory {
             scene = OrientationScene(size: size)
         case (.world1, 10):
             scene = TimeTravelScene(size: size)
+
+        // World 2: Control Surface
+        case (.world2, 11):
+            scene = NotificationScene(size: size)
+        case (.world2, 12):
+            scene = ClipboardScene(size: size)
+        case (.world2, 13):
+            scene = WiFiScene(size: size)
+        case (.world2, 14):
+            scene = FocusModeScene(size: size)
+        case (.world2, 15):
+            scene = LowPowerScene(size: size)
+        case (.world2, 16):
+            scene = ShakeUndoScene(size: size)
+        case (.world2, 17):
+            scene = AirplaneModeScene(size: size)
+        case (.world2, 18):
+            scene = AppSwitcherScene(size: size)
+        case (.world2, 19):
+            scene = FaceIDScene(size: size)
+        case (.world2, 20):
+            scene = MetaFinaleScene(size: size)
+
         default:
             // Placeholder for unimplemented levels
             scene = BootSequenceScene(size: size)

@@ -9,6 +9,7 @@ final class DeviceManagerCoordinator {
 
     private init() {
         managers = [
+            // World 1: Hardware Awakening
             MicrophoneManager.shared,
             MotionManager.shared,
             BatteryManager.shared,
@@ -17,9 +18,17 @@ final class DeviceManagerCoordinator {
             AppearanceManager.shared,
             OrientationManager.shared,
             BackgroundTimeManager.shared,
-            // Add other managers as implemented:
-            // ProximityManager.shared,
-            // etc.
+
+            // World 2: Control Surface
+            NotificationGameManager.shared,
+            ClipboardManager.shared,
+            NetworkManager.shared,
+            FocusModeManager.shared,
+            PowerModeManager.shared,
+            ShakeUndoManager.shared,
+            AppSwitcherManager.shared,
+            AuthenticationManager.shared,
+            ReinstallManager.shared,
         ]
 
         // Observe app lifecycle
