@@ -1,0 +1,1483 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <title>GLITCHED - Full Game</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            background: #000;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            font-family: 'Courier New', monospace;
+            overflow: hidden;
+            touch-action: none;
+        }
+        #gameContainer {
+            position: relative;
+            width: 100%;
+            max-width: 420px;
+            aspect-ratio: 9/16;
+            background: #000;
+        }
+        canvas {
+            width: 100%;
+            height: 100%;
+            display: block;
+            image-rendering: pixelated;
+        }
+        #uiOverlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+        }
+        #header {
+            position: absolute;
+            top: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: linear-gradient(180deg, #222 0%, #111 100%);
+            border: 2px solid #0ff;
+            border-radius: 8px;
+            padding: 8px 20px;
+            color: #0ff;
+            font-size: 14px;
+            cursor: grab;
+            user-select: none;
+            z-index: 100;
+            display: none;
+            box-shadow: 0 0 15px rgba(0,255,255,0.3);
+            pointer-events: auto;
+        }
+        #header:active { cursor: grabbing; }
+        #controls {
+            position: absolute;
+            bottom: 60px;
+            left: 0;
+            width: 100%;
+            display: flex;
+            justify-content: space-between;
+            padding: 0 10px;
+            pointer-events: auto;
+        }
+        .ctrl-btn {
+            width: 60px;
+            height: 60px;
+            border-radius: 50%;
+            background: rgba(255,255,255,0.1);
+            border: 2px solid rgba(255,255,255,0.3);
+            color: #fff;
+            font-size: 24px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            user-select: none;
+        }
+        .ctrl-btn:active { background: rgba(255,255,255,0.3); }
+        #leftControls, #rightControls { display: flex; gap: 10px; }
+        #levelIndicator {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            color: #666;
+            font-size: 11px;
+            pointer-events: none;
+        }
+        #actionHint {
+            position: absolute;
+            bottom: 130px;
+            left: 50%;
+            transform: translateX(-50%);
+            color: #0ff;
+            font-size: 12px;
+            text-align: center;
+            pointer-events: none;
+            opacity: 0.8;
+        }
+        #specialBtn {
+            position: absolute;
+            bottom: 130px;
+            right: 15px;
+            width: 70px;
+            height: 40px;
+            border-radius: 8px;
+            background: rgba(0,255,255,0.2);
+            border: 2px solid #0ff;
+            color: #0ff;
+            font-size: 11px;
+            cursor: pointer;
+            pointer-events: auto;
+            display: none;
+        }
+        #specialBtn:active { background: rgba(0,255,255,0.5); }
+        #slider {
+            position: absolute;
+            bottom: 180px;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 200px;
+            pointer-events: auto;
+            display: none;
+        }
+        #darkToggle {
+            position: absolute;
+            top: 60px;
+            right: 15px;
+            width: 50px;
+            height: 26px;
+            border-radius: 13px;
+            background: #333;
+            border: 2px solid #666;
+            cursor: pointer;
+            pointer-events: auto;
+            display: none;
+        }
+        #darkToggle::after {
+            content: '';
+            position: absolute;
+            top: 2px;
+            left: 2px;
+            width: 18px;
+            height: 18px;
+            border-radius: 50%;
+            background: #fff;
+            transition: left 0.2s;
+        }
+        #darkToggle.on { background: #0f0; }
+        #darkToggle.on::after { left: 26px; }
+    </style>
+</head>
+<body>
+    <div id="gameContainer">
+        <canvas id="game"></canvas>
+        <div id="uiOverlay">
+            <div id="levelIndicator">LEVEL 0</div>
+            <div id="header">LEVEL 1</div>
+            <div id="actionHint"></div>
+            <button id="specialBtn">ACTION</button>
+            <input type="range" id="slider" min="0" max="100" value="20">
+            <div id="darkToggle"></div>
+            <div id="controls">
+                <div id="leftControls">
+                    <button class="ctrl-btn" id="btnLeft">&#9664;</button>
+                    <button class="ctrl-btn" id="btnRight">&#9654;</button>
+                </div>
+                <div id="rightControls">
+                    <button class="ctrl-btn" id="btnJump">&#9650;</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+<script>
+const canvas = document.getElementById('game');
+const ctx = canvas.getContext('2d');
+canvas.width = 400;
+canvas.height = 700;
+
+// UI Elements
+const header = document.getElementById('header');
+const levelIndicator = document.getElementById('levelIndicator');
+const actionHint = document.getElementById('actionHint');
+const specialBtn = document.getElementById('specialBtn');
+const slider = document.getElementById('slider');
+const darkToggle = document.getElementById('darkToggle');
+
+// Game State
+let currentLevel = 0;
+let gameState = 'playing';
+let transitionTimer = 0;
+
+// Input
+const keys = { left: false, right: false, jump: false, action: false };
+let actionHeld = false;
+let actionHoldTime = 0;
+
+// Colors
+const GLITCH_COLORS = ['#ff0080', '#00ffff', '#ffff00', '#00ff00'];
+
+// ==========================================
+// BIT CHARACTER CLASS
+// ==========================================
+class Bit {
+    constructor(x, y) {
+        this.x = x; this.y = y;
+        this.vx = 0; this.vy = 0;
+        this.width = 36; this.height = 52;
+        this.speed = 160; this.jumpForce = 420;
+        this.grounded = false; this.facing = 1;
+        this.walkPhase = 0; this.breathPhase = 0;
+        this.blinkTimer = 3; this.isBlinking = false;
+        this.glitchTimer = 0; this.glitchColor = null;
+        this.nextGlitch = Math.random() * 2 + 1;
+        this.isDead = false; this.deathTimer = 0;
+        this.alpha = 1; this.scale = 1; this.rotation = 0;
+        this.spawnX = x; this.spawnY = y;
+    }
+
+    update(dt) {
+        if (this.isDead) { this.updateDeath(dt); return; }
+
+        let moveDir = 0;
+        if (keys.left) moveDir -= 1;
+        if (keys.right) moveDir += 1;
+        this.vx = moveDir * this.speed;
+        if (moveDir !== 0) this.facing = moveDir;
+
+        if (Math.abs(moveDir) > 0 && this.grounded) this.walkPhase += dt * 12;
+        else this.walkPhase = 0;
+
+        if (keys.jump && this.grounded) {
+            this.vy = -this.jumpForce;
+            this.grounded = false;
+            keys.jump = false;
+        }
+
+        this.vy += 1100 * dt;
+        this.x += this.vx * dt;
+        this.y += this.vy * dt;
+        this.breathPhase += dt * 2;
+
+        this.blinkTimer -= dt;
+        if (this.blinkTimer <= 0) {
+            this.isBlinking = true;
+            setTimeout(() => this.isBlinking = false, 100);
+            this.blinkTimer = Math.random() * 4 + 2;
+        }
+
+        this.nextGlitch -= dt;
+        if (this.nextGlitch <= 0) {
+            this.glitchColor = GLITCH_COLORS[Math.floor(Math.random() * 4)];
+            this.glitchTimer = 0.05 + Math.random() * 0.1;
+            this.nextGlitch = Math.random() * 3 + 0.5;
+        }
+        if (this.glitchTimer > 0) this.glitchTimer -= dt;
+    }
+
+    updateDeath(dt) {
+        this.deathTimer += dt;
+        if (this.deathTimer < 0.4) {
+            this.glitchTimer = 0.1;
+            this.glitchColor = GLITCH_COLORS[Math.floor(Math.random() * 4)];
+            this.x += (Math.random() - 0.5) * 6;
+        } else if (this.deathTimer < 0.7) {
+            this.alpha = 1 - (this.deathTimer - 0.4) / 0.3;
+            this.scale = 1 - (this.deathTimer - 0.4) / 0.3 * 0.7;
+            this.rotation += dt * 15;
+        } else if (this.deathTimer > 1.0) {
+            this.respawn();
+        }
+    }
+
+    die() { if (!this.isDead) { this.isDead = true; this.deathTimer = 0; } }
+
+    respawn() {
+        this.x = this.spawnX; this.y = this.spawnY;
+        this.vx = 0; this.vy = 0;
+        this.alpha = 1; this.scale = 1; this.rotation = 0;
+        this.isDead = false; this.deathTimer = 0;
+        this.grounded = true;
+    }
+
+    draw(ctx) {
+        ctx.save();
+        ctx.translate(this.x, this.y);
+        ctx.scale(this.facing * this.scale, this.scale);
+        ctx.rotate(this.rotation);
+        ctx.globalAlpha = this.alpha;
+
+        const fill = this.glitchTimer > 0 ? this.glitchColor : '#fff';
+        const stroke = '#000';
+        const breathY = Math.sin(this.breathPhase) * 1;
+
+        // Legs
+        const lAngle = Math.sin(this.walkPhase) * 0.5;
+        const rAngle = Math.sin(this.walkPhase + Math.PI) * 0.5;
+
+        ctx.save(); ctx.translate(-6, 6); ctx.rotate(lAngle);
+        ctx.fillStyle = fill; ctx.strokeStyle = stroke; ctx.lineWidth = 1.5;
+        ctx.beginPath(); ctx.roundRect(-2.5, 0, 5, 14, 2); ctx.fill(); ctx.stroke();
+        ctx.fillStyle = stroke; ctx.beginPath(); ctx.roundRect(-3, 12, 6, 5, 2); ctx.fill();
+        ctx.restore();
+
+        ctx.save(); ctx.translate(6, 6); ctx.rotate(rAngle);
+        ctx.fillStyle = fill; ctx.strokeStyle = stroke;
+        ctx.beginPath(); ctx.roundRect(-2.5, 0, 5, 14, 2); ctx.fill(); ctx.stroke();
+        ctx.fillStyle = stroke; ctx.beginPath(); ctx.roundRect(-3, 12, 6, 5, 2); ctx.fill();
+        ctx.restore();
+
+        // Body
+        ctx.fillStyle = fill; ctx.strokeStyle = stroke; ctx.lineWidth = 2;
+        ctx.beginPath(); ctx.roundRect(-10, -6 + breathY, 20, 22, 4); ctx.fill(); ctx.stroke();
+        ctx.fillStyle = '#e6e6e6'; ctx.fillRect(-6, -2 + breathY, 12, 3);
+
+        // Arms
+        ctx.save(); ctx.translate(-12, -2 + breathY); ctx.rotate(Math.sin(this.walkPhase + Math.PI) * 0.3);
+        ctx.fillStyle = fill; ctx.strokeStyle = stroke; ctx.lineWidth = 1;
+        ctx.beginPath(); ctx.roundRect(-2, -5, 4, 12, 2); ctx.fill(); ctx.stroke();
+        ctx.restore();
+
+        ctx.save(); ctx.translate(12, -2 + breathY); ctx.rotate(Math.sin(this.walkPhase) * 0.3);
+        ctx.fillStyle = fill;
+        ctx.beginPath(); ctx.roundRect(-2, -5, 4, 12, 2); ctx.fill(); ctx.stroke();
+        ctx.restore();
+
+        // Head
+        ctx.fillStyle = fill; ctx.strokeStyle = stroke; ctx.lineWidth = 2;
+        ctx.beginPath(); ctx.roundRect(-10, -28 + breathY * 0.8, 20, 20, 5); ctx.fill(); ctx.stroke();
+
+        // Eyes
+        const eyeH = this.isBlinking ? 1 : 7;
+        ctx.fillStyle = '#fff'; ctx.strokeStyle = stroke; ctx.lineWidth = 1;
+        ctx.fillRect(-7, -22 + breathY * 0.8, 5, eyeH); ctx.strokeRect(-7, -22 + breathY * 0.8, 5, eyeH);
+        ctx.fillRect(2, -22 + breathY * 0.8, 5, eyeH); ctx.strokeRect(2, -22 + breathY * 0.8, 5, eyeH);
+        if (!this.isBlinking) {
+            ctx.fillStyle = '#000';
+            ctx.fillRect(-4, -20 + breathY * 0.8, 2, 4);
+            ctx.fillRect(5, -20 + breathY * 0.8, 2, 4);
+        }
+        ctx.restore();
+    }
+}
+
+// ==========================================
+// LEVEL BASE CLASS
+// ==========================================
+class Level {
+    constructor() {
+        this.bit = null;
+        this.groundY = 580;
+        this.platforms = [];
+        this.hazards = [];
+        this.exitX = 360; this.exitY = 530;
+        this.complete = false;
+        this.transitionTimer = 0;
+        this.exitPulse = 0;
+    }
+    init() {}
+    update(dt) {
+        if (this.complete) {
+            this.transitionTimer += dt;
+            if (this.bit) this.bit.alpha = Math.max(0, 1 - this.transitionTimer * 2);
+            if (this.transitionTimer > 1) return true;
+            return false;
+        }
+        if (this.bit && !this.bit.isDead) {
+            this.bit.update(dt);
+            this.handleCollisions();
+            this.bit.x = Math.max(25, Math.min(canvas.width - 25, this.bit.x));
+            if (this.bit.y > canvas.height + 50) this.bit.die();
+        } else if (this.bit) {
+            this.bit.update(dt);
+        }
+        this.exitPulse += dt * 4;
+        return false;
+    }
+    handleCollisions() {
+        if (!this.bit) return;
+        let onGround = false;
+        for (let p of this.platforms) {
+            if (this.bit.x > p.x - p.w/2 - 15 && this.bit.x < p.x + p.w/2 + 15) {
+                if (this.bit.y + 26 >= p.y - p.h/2 && this.bit.y + 26 <= p.y + p.h/2 + 10 && this.bit.vy >= 0) {
+                    this.bit.y = p.y - p.h/2 - 26;
+                    this.bit.vy = 0;
+                    onGround = true;
+                }
+            }
+        }
+        this.bit.grounded = onGround;
+        for (let h of this.hazards) {
+            if (Math.abs(this.bit.x - h.x) < h.w/2 + 10 && Math.abs(this.bit.y - h.y) < h.h/2 + 20) {
+                this.bit.die();
+            }
+        }
+        if (Math.abs(this.bit.x - this.exitX) < 25 && Math.abs(this.bit.y - this.exitY) < 40 && !this.complete) {
+            this.complete = true;
+        }
+    }
+    draw(ctx) {}
+    drawExit(ctx, x, y) {
+        ctx.fillStyle = '#00ff00';
+        ctx.fillRect(x - 15, y - 25, 30, 50);
+        ctx.strokeStyle = '#00ff00';
+        ctx.lineWidth = 2;
+        ctx.globalAlpha = 0.3 + Math.sin(this.exitPulse) * 0.3;
+        ctx.strokeRect(x - 20, y - 30, 40, 60);
+        ctx.globalAlpha = 1;
+    }
+    cleanup() {
+        header.style.display = 'none';
+        specialBtn.style.display = 'none';
+        slider.style.display = 'none';
+        darkToggle.style.display = 'none';
+        actionHint.textContent = '';
+    }
+}
+
+// ==========================================
+// LEVEL 0: BOOT SEQUENCE
+// ==========================================
+class Level0_Boot extends Level {
+    constructor() {
+        super();
+        this.progress = 0.99;
+        this.isDragging = false;
+        this.flashAlpha = 0;
+    }
+    init() {
+        this.bit = new Bit(canvas.width/2, canvas.height * 0.6);
+        this.bit.grounded = true;
+        actionHint.textContent = 'Drag the handle to 100%';
+    }
+    handleMouse(type, x, y) {
+        const handleX = 60 + this.progress * 280;
+        const handleY = canvas.height / 2;
+        if (type === 'down' && Math.abs(x - handleX) < 25 && Math.abs(y - handleY) < 25) this.isDragging = true;
+        if (type === 'move' && this.isDragging && !this.complete) {
+            this.progress = Math.max(this.progress, Math.min(1, (x - 60) / 280));
+        }
+        if (type === 'up') {
+            this.isDragging = false;
+            if (this.progress >= 1 && !this.complete) { this.complete = true; this.flashAlpha = 0.8; }
+        }
+    }
+    update(dt) {
+        this.bit.update(dt);
+        if (this.complete) {
+            this.flashAlpha = Math.max(0, this.flashAlpha - dt * 3);
+            this.transitionTimer += dt;
+            if (this.transitionTimer > 1.5) return true;
+        }
+        return false;
+    }
+    draw(ctx) {
+        ctx.fillStyle = '#000';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        ctx.fillStyle = '#0f0';
+        ctx.font = 'bold 22px Courier New';
+        ctx.textAlign = 'center';
+        ctx.fillText('GLITCHED OS v0.1', canvas.width/2, canvas.height * 0.2);
+        ctx.font = '14px Courier New';
+        ctx.fillText('Initializing...', canvas.width/2, canvas.height * 0.26);
+
+        const barY = canvas.height / 2, barW = 280, barX = 60;
+        ctx.strokeStyle = '#0f0'; ctx.lineWidth = 2;
+        ctx.strokeRect(barX, barY - 12, barW, 24);
+        ctx.fillStyle = '#0f0';
+        ctx.fillRect(barX + 3, barY - 9, (barW - 6) * this.progress, 18);
+
+        const handleX = barX + this.progress * barW;
+        ctx.fillStyle = this.complete ? '#0f0' : '#0ff';
+        ctx.beginPath(); ctx.arc(handleX, barY, 16, 0, Math.PI * 2); ctx.fill();
+        ctx.strokeStyle = '#fff'; ctx.stroke();
+
+        ctx.fillStyle = '#0f0';
+        ctx.font = 'bold 18px Courier New';
+        ctx.fillText(Math.floor(this.progress * 100) + '%', canvas.width/2, barY + 50);
+
+        this.bit.draw(ctx);
+
+        if (this.flashAlpha > 0) {
+            ctx.fillStyle = `rgba(255,255,255,${this.flashAlpha})`;
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+        }
+    }
+}
+
+// ==========================================
+// LEVEL 1: HEADER BRIDGE
+// ==========================================
+class Level1_Header extends Level {
+    constructor() {
+        super();
+        this.pitStart = 140; this.pitEnd = 260;
+        this.bridgeSpawned = false;
+        this.bridgeAlpha = 0;
+    }
+    init() {
+        this.groundY = 580;
+        this.bit = new Bit(70, this.groundY - 70);
+        this.bit.spawnX = 70; this.bit.spawnY = this.groundY - 70;
+        this.platforms = [
+            { x: this.pitStart/2, y: this.groundY, w: this.pitStart, h: 40 },
+            { x: this.pitEnd + (canvas.width - this.pitEnd)/2, y: this.groundY, w: canvas.width - this.pitEnd, h: 40 }
+        ];
+        this.hazards = [{ x: (this.pitStart + this.pitEnd)/2, y: canvas.height - 15, w: this.pitEnd - this.pitStart, h: 30 }];
+        this.exitX = canvas.width - 50; this.exitY = this.groundY - 45;
+
+        header.style.display = 'block';
+        header.style.left = '50%'; header.style.top = '20px'; header.style.transform = 'translateX(-50%)';
+        actionHint.textContent = 'Drag header over the pit';
+        this.setupDrag();
+    }
+    setupDrag() {
+        let dragging = false, startX, startY;
+        const onStart = (e) => {
+            dragging = true;
+            const t = e.touches ? e.touches[0] : e;
+            startX = t.clientX - header.offsetLeft;
+            startY = t.clientY - header.offsetTop;
+        };
+        const onMove = (e) => {
+            if (!dragging) return;
+            e.preventDefault();
+            const t = e.touches ? e.touches[0] : e;
+            header.style.left = (t.clientX - startX) + 'px';
+            header.style.top = (t.clientY - startY) + 'px';
+            header.style.transform = 'none';
+        };
+        const onEnd = () => {
+            if (!dragging) return;
+            dragging = false;
+            const rect = header.getBoundingClientRect();
+            const cRect = canvas.getBoundingClientRect();
+            const relX = (rect.left + rect.width/2 - cRect.left) / cRect.width * canvas.width;
+            const relY = (rect.top + rect.height/2 - cRect.top) / cRect.height * canvas.height;
+            if (relX > this.pitStart && relX < this.pitEnd && relY > 200 && !this.bridgeSpawned) {
+                this.bridgeSpawned = true;
+                header.style.display = 'none';
+                this.platforms.push({ x: (this.pitStart + this.pitEnd)/2, y: this.groundY - 8, w: this.pitEnd - this.pitStart + 60, h: 16 });
+                actionHint.textContent = '';
+            } else {
+                header.style.left = '50%'; header.style.top = '20px'; header.style.transform = 'translateX(-50%)';
+            }
+        };
+        header.onmousedown = onStart; header.ontouchstart = onStart;
+        document.onmousemove = onMove; document.ontouchmove = onMove;
+        document.onmouseup = onEnd; document.ontouchend = onEnd;
+    }
+    update(dt) {
+        if (this.bridgeSpawned) this.bridgeAlpha = Math.min(1, this.bridgeAlpha + dt * 4);
+        return super.update(dt);
+    }
+    draw(ctx) {
+        ctx.fillStyle = '#0a0a15'; ctx.fillRect(0, 0, canvas.width, canvas.height);
+        ctx.fillStyle = '#333';
+        ctx.fillRect(0, this.groundY - 20, this.pitStart, 60);
+        ctx.fillRect(this.pitEnd, this.groundY - 20, canvas.width - this.pitEnd, 60);
+
+        // Spikes
+        ctx.fillStyle = '#ff0040';
+        const sw = (this.pitEnd - this.pitStart) / 8;
+        for (let i = 0; i < 8; i++) {
+            ctx.beginPath();
+            ctx.moveTo(this.pitStart + i * sw, canvas.height - 10);
+            ctx.lineTo(this.pitStart + i * sw + sw/2, canvas.height - 35);
+            ctx.lineTo(this.pitStart + (i+1) * sw, canvas.height - 10);
+            ctx.fill();
+        }
+        ctx.fillRect(this.pitStart, canvas.height - 10, this.pitEnd - this.pitStart, 10);
+
+        if (this.bridgeSpawned) {
+            ctx.globalAlpha = this.bridgeAlpha;
+            ctx.fillStyle = '#0ff';
+            ctx.fillRect(this.pitStart - 30, this.groundY - 16, this.pitEnd - this.pitStart + 60, 16);
+            ctx.globalAlpha = 1;
+        }
+
+        this.drawExit(ctx, this.exitX, this.exitY);
+        if (this.bit) this.bit.draw(ctx);
+    }
+    cleanup() { super.cleanup(); document.onmousemove = null; document.onmouseup = null; }
+}
+
+// ==========================================
+// LEVEL 2: WIND BRIDGE
+// ==========================================
+class Level2_Wind extends Level {
+    constructor() {
+        super();
+        this.chasmStart = 120; this.chasmEnd = 300;
+        this.bridgeWidth = 0; this.maxBridge = 220;
+        this.particles = [];
+    }
+    init() {
+        this.groundY = 580;
+        this.bit = new Bit(60, this.groundY - 70);
+        this.bit.spawnX = 60; this.bit.spawnY = this.groundY - 70;
+        this.platforms = [
+            { x: this.chasmStart/2, y: this.groundY, w: this.chasmStart, h: 40 },
+            { x: this.chasmEnd + (canvas.width - this.chasmEnd)/2, y: this.groundY, w: canvas.width - this.chasmEnd, h: 40 }
+        ];
+        this.exitX = canvas.width - 50; this.exitY = this.groundY - 45;
+        for (let i = 0; i < 8; i++) this.particles.push({ x: this.chasmStart + i * 25, y: this.groundY - 50, alpha: 0, baseX: this.chasmStart + i * 25 });
+
+        specialBtn.style.display = 'block';
+        specialBtn.textContent = 'BLOW';
+        actionHint.textContent = 'Hold BLOW to extend bridge';
+    }
+    update(dt) {
+        const blowing = actionHeld;
+        if (blowing) {
+            this.bridgeWidth = Math.min(this.maxBridge, this.bridgeWidth + dt * 150);
+            for (let p of this.particles) {
+                p.alpha = Math.min(0.8, p.alpha + dt * 5);
+                p.x += 80 * dt;
+                if (p.x > this.chasmEnd + 30) { p.x = p.baseX; p.y = this.groundY - 50 + Math.random() * 20 - 10; }
+            }
+        } else {
+            this.bridgeWidth = Math.max(0, this.bridgeWidth - dt * 100);
+            for (let p of this.particles) p.alpha = Math.max(0, p.alpha - dt * 3);
+        }
+
+        // Dynamic bridge platform
+        this.platforms = [
+            { x: this.chasmStart/2, y: this.groundY, w: this.chasmStart, h: 40 },
+            { x: this.chasmEnd + (canvas.width - this.chasmEnd)/2, y: this.groundY, w: canvas.width - this.chasmEnd, h: 40 }
+        ];
+        if (this.bridgeWidth > 20) {
+            this.platforms.push({ x: this.chasmEnd + 10 - this.bridgeWidth/2, y: this.groundY - 8, w: this.bridgeWidth, h: 16 });
+        }
+
+        if (this.bit && this.bit.y > canvas.height - 50) this.bit.die();
+        return super.update(dt);
+    }
+    draw(ctx) {
+        ctx.fillStyle = '#020210'; ctx.fillRect(0, 0, canvas.width, canvas.height);
+        ctx.fillStyle = '#333';
+        ctx.fillRect(0, this.groundY - 20, this.chasmStart, 60);
+        ctx.fillRect(this.chasmEnd, this.groundY - 20, canvas.width - this.chasmEnd, 60);
+
+        if (this.bridgeWidth > 5) {
+            ctx.fillStyle = '#0ff';
+            ctx.fillRect(this.chasmEnd + 10 - this.bridgeWidth, this.groundY - 16, this.bridgeWidth, 16);
+        }
+
+        for (let p of this.particles) {
+            if (p.alpha > 0) {
+                ctx.fillStyle = `rgba(255,255,255,${p.alpha})`;
+                ctx.beginPath(); ctx.arc(p.x, p.y, 3, 0, Math.PI * 2); ctx.fill();
+            }
+        }
+
+        this.drawExit(ctx, this.exitX, this.exitY);
+        if (this.bit) this.bit.draw(ctx);
+    }
+}
+
+// ==========================================
+// LEVEL 3: STATIC - SHAKE TO CLEAR
+// ==========================================
+class Level3_Static extends Level {
+    constructor() {
+        super();
+        this.staticAlpha = 0.9;
+        this.stairPlatforms = [];
+    }
+    init() {
+        this.groundY = 560;
+        this.bit = new Bit(80, this.groundY - 70);
+        this.bit.spawnX = 80; this.bit.spawnY = this.groundY - 70;
+
+        this.platforms = [{ x: 100, y: this.groundY, w: 180, h: 30 }];
+        for (let i = 0; i < 6; i++) {
+            this.stairPlatforms.push({ x: 200 + i * 70, y: this.groundY - 40 - i * 45, w: 80, h: 18, visible: false });
+        }
+        this.platforms.push({ x: canvas.width - 80, y: this.groundY - 280, w: 120, h: 30 });
+        this.exitX = canvas.width - 80; this.exitY = this.groundY - 320;
+
+        specialBtn.style.display = 'block';
+        specialBtn.textContent = 'SHAKE';
+        actionHint.textContent = 'Press SHAKE to clear static';
+    }
+    update(dt) {
+        if (actionHeld && this.staticAlpha > 0) {
+            this.staticAlpha = 0;
+            for (let p of this.stairPlatforms) p.visible = true;
+            actionHeld = false;
+        }
+
+        this.staticAlpha = Math.min(0.9, this.staticAlpha + dt * 0.15);
+
+        this.platforms = [{ x: 100, y: this.groundY, w: 180, h: 30 }, { x: canvas.width - 80, y: this.groundY - 280, w: 120, h: 30 }];
+        for (let p of this.stairPlatforms) {
+            if (this.staticAlpha < 0.5) this.platforms.push(p);
+        }
+
+        if (this.bit && this.bit.y > canvas.height + 50) this.bit.die();
+        return super.update(dt);
+    }
+    draw(ctx) {
+        ctx.fillStyle = '#e6e6e6'; ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+        ctx.fillStyle = '#fff';
+        ctx.fillRect(10, this.groundY - 30, 180, 50);
+        ctx.fillRect(canvas.width - 140, this.groundY - 310, 120, 50);
+
+        ctx.fillStyle = '#000';
+        for (let p of this.stairPlatforms) {
+            ctx.globalAlpha = this.staticAlpha < 0.5 ? 1 : 0.3;
+            ctx.fillRect(p.x - p.w/2, p.y - p.h/2, p.w, p.h);
+        }
+        ctx.globalAlpha = 1;
+        ctx.fillRect(10, this.groundY - 15, 180, 30);
+        ctx.fillRect(canvas.width - 140, this.groundY - 295, 120, 30);
+
+        // Static overlay
+        if (this.staticAlpha > 0) {
+            ctx.globalAlpha = this.staticAlpha;
+            for (let i = 0; i < 500; i++) {
+                ctx.fillStyle = Math.random() > 0.5 ? '#000' : '#fff';
+                ctx.fillRect(Math.random() * canvas.width, Math.random() * canvas.height, Math.random() * 4 + 1, Math.random() * 4 + 1);
+            }
+            ctx.globalAlpha = 1;
+        }
+
+        this.drawExit(ctx, this.exitX, this.exitY);
+        if (this.bit) this.bit.draw(ctx);
+    }
+}
+
+// ==========================================
+// LEVEL 4: VOLUME - SLEEPING CREATURE
+// ==========================================
+class Level4_Volume extends Level {
+    constructor() {
+        super();
+        this.volumeLevel = 0.3;
+        this.creatureAwake = false;
+        this.creatureAlertTimer = 0;
+    }
+    init() {
+        this.groundY = 560;
+        this.bit = new Bit(60, this.groundY - 70);
+        this.bit.spawnX = 60; this.bit.spawnY = this.groundY - 70;
+        this.platforms = [{ x: canvas.width/2, y: this.groundY, w: canvas.width, h: 40 }];
+        this.exitX = canvas.width - 50; this.exitY = this.groundY - 45;
+
+        slider.style.display = 'block';
+        slider.value = 30;
+        actionHint.textContent = 'Keep volume LOW to sneak past';
+    }
+    update(dt) {
+        this.volumeLevel = slider.value / 100;
+
+        if (this.volumeLevel > 0.5) {
+            this.creatureAwake = true;
+            this.creatureAlertTimer = 2;
+        } else if (this.creatureAlertTimer > 0) {
+            this.creatureAlertTimer -= dt;
+            if (this.creatureAlertTimer <= 0) this.creatureAwake = false;
+        }
+
+        // Kill if creature awake and player in range
+        if (this.creatureAwake && this.bit && Math.abs(this.bit.x - canvas.width/2) < 150) {
+            this.bit.die();
+        }
+
+        return super.update(dt);
+    }
+    draw(ctx) {
+        ctx.fillStyle = '#f0f0f0'; ctx.fillRect(0, 0, canvas.width, canvas.height);
+        ctx.fillStyle = '#000'; ctx.fillRect(0, this.groundY - 20, canvas.width, 60);
+
+        // Creature
+        const cx = canvas.width / 2, cy = this.groundY - 60;
+        ctx.fillStyle = '#000';
+        ctx.fillRect(cx - 80, cy - 30, 160, 60);
+        ctx.fillRect(cx + 50, cy - 50, 50, 40);
+
+        // Eyes
+        ctx.fillStyle = this.creatureAwake ? '#f00' : '#fff';
+        const eyeH = this.creatureAwake ? 12 : 3;
+        ctx.fillRect(cx + 55, cy - 35, 15, eyeH);
+        ctx.fillRect(cx + 75, cy - 35, 15, eyeH);
+
+        // Sleep indicator
+        if (!this.creatureAwake) {
+            ctx.fillStyle = '#666';
+            ctx.font = '20px Courier New';
+            ctx.fillText('zzZ', cx + 100, cy - 60);
+        } else {
+            ctx.fillStyle = '#f00';
+            ctx.font = 'bold 30px Courier New';
+            ctx.fillText('!', cx + 70, cy - 70);
+        }
+
+        // Detection zone
+        ctx.strokeStyle = this.creatureAwake ? 'rgba(255,0,0,0.5)' : 'rgba(100,100,100,0.3)';
+        ctx.lineWidth = 2;
+        ctx.beginPath(); ctx.arc(cx, cy, 150, 0, Math.PI * 2); ctx.stroke();
+
+        // Volume indicator
+        ctx.fillStyle = this.volumeLevel > 0.5 ? '#f00' : '#0f0';
+        ctx.fillRect(20, 50, 60 * this.volumeLevel, 10);
+        ctx.strokeStyle = '#000'; ctx.strokeRect(20, 50, 60, 10);
+
+        this.drawExit(ctx, this.exitX, this.exitY);
+        if (this.bit) this.bit.draw(ctx);
+    }
+}
+
+// ==========================================
+// LEVEL 5: CHARGING - GIANT PLUG
+// ==========================================
+class Level5_Charging extends Level {
+    constructor() {
+        super();
+        this.plugY = canvas.height + 100;
+        this.plugActivated = false;
+        this.plugTargetY = 200;
+    }
+    init() {
+        this.groundY = 560;
+        this.bit = new Bit(canvas.width/2, this.groundY - 70);
+        this.bit.spawnX = canvas.width/2; this.bit.spawnY = this.groundY - 70;
+        this.platforms = [{ x: canvas.width/2, y: this.groundY, w: 200, h: 20 }];
+        this.exitX = canvas.width/2 - 60; this.exitY = 120;
+
+        specialBtn.style.display = 'block';
+        specialBtn.textContent = 'PLUG IN';
+        actionHint.textContent = 'Press PLUG IN to charge';
+    }
+    update(dt) {
+        if (actionHeld && !this.plugActivated) {
+            this.plugActivated = true;
+            actionHeld = false;
+        }
+
+        if (this.plugActivated) {
+            this.plugY = Math.max(this.plugTargetY, this.plugY - dt * 300);
+        }
+
+        this.platforms = [{ x: canvas.width/2, y: this.groundY, w: 200, h: 20 }];
+        if (this.plugActivated) {
+            this.platforms.push({ x: canvas.width/2, y: this.plugY + 50, w: 140, h: 20 });
+        }
+        this.platforms.push({ x: canvas.width/2 - 60, y: 100, w: 100, h: 20 });
+
+        if (this.bit && this.bit.y > canvas.height + 50) this.bit.die();
+        return super.update(dt);
+    }
+    draw(ctx) {
+        ctx.fillStyle = '#000'; ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+        // Shaft walls
+        ctx.fillStyle = '#1a1a1a';
+        ctx.fillRect(canvas.width/2 - 130, 0, 30, canvas.height);
+        ctx.fillRect(canvas.width/2 + 100, 0, 30, canvas.height);
+
+        // Platforms
+        ctx.fillStyle = '#fff';
+        ctx.fillRect(canvas.width/2 - 100, this.groundY - 10, 200, 20);
+        ctx.fillRect(canvas.width/2 - 110, 90, 100, 20);
+
+        // Battery icon
+        ctx.strokeStyle = '#fff'; ctx.lineWidth = 3;
+        ctx.strokeRect(canvas.width/2 + 50, canvas.height/2 - 50, 50, 80);
+        ctx.fillStyle = this.plugActivated ? '#0f0' : '#f00';
+        ctx.fillRect(canvas.width/2 + 55, canvas.height/2 + 10, 40, 15);
+
+        // Giant plug
+        ctx.fillStyle = '#fff';
+        ctx.fillRect(canvas.width/2 - 60, this.plugY, 120, 70);
+        ctx.fillRect(canvas.width/2 - 40, this.plugY + 70, 20, 50);
+        ctx.fillRect(canvas.width/2 + 20, this.plugY + 70, 20, 50);
+
+        this.drawExit(ctx, this.exitX, this.exitY);
+        if (this.bit) this.bit.draw(ctx);
+    }
+}
+
+// ==========================================
+// LEVEL 6: BRIGHTNESS - UV PLATFORMS
+// ==========================================
+class Level6_Brightness extends Level {
+    constructor() {
+        super();
+        this.brightness = 0.2;
+        this.uvPlatforms = [];
+    }
+    init() {
+        this.groundY = 600;
+        this.bit = new Bit(80, this.groundY - 70);
+        this.bit.spawnX = 80; this.bit.spawnY = this.groundY - 70;
+
+        this.platforms = [{ x: 80, y: this.groundY, w: 120, h: 25 }];
+        this.uvPlatforms = [
+            { x: 180, y: 530, w: 90, h: 20 },
+            { x: 280, y: 460, w: 90, h: 20 },
+            { x: 380, y: 390, w: 90, h: 20 },
+            { x: 320, y: 320, w: 90, h: 20 },
+            { x: 220, y: 250, w: 90, h: 20 },
+        ];
+        this.platforms.push({ x: 320, y: 180, w: 120, h: 25 });
+        this.exitX = 320; this.exitY = 135;
+
+        slider.style.display = 'block';
+        slider.value = 20;
+        actionHint.textContent = 'Increase brightness to reveal platforms';
+    }
+    update(dt) {
+        this.brightness = slider.value / 100;
+
+        this.platforms = [{ x: 80, y: this.groundY, w: 120, h: 25 }, { x: 320, y: 180, w: 120, h: 25 }];
+        if (this.brightness > 0.5) {
+            for (let p of this.uvPlatforms) this.platforms.push(p);
+        }
+
+        if (this.bit && this.bit.y > canvas.height + 50) this.bit.die();
+        return super.update(dt);
+    }
+    draw(ctx) {
+        ctx.fillStyle = '#000'; ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+        // Start platform
+        ctx.fillStyle = '#333';
+        ctx.fillRect(20, this.groundY - 12, 120, 25);
+        ctx.fillRect(260, 168, 120, 25);
+
+        // UV platforms
+        for (let p of this.uvPlatforms) {
+            const alpha = this.brightness > 0.5 ? 1 : this.brightness * 1.5;
+            ctx.fillStyle = `rgba(200,220,255,${alpha})`;
+            ctx.fillRect(p.x - p.w/2, p.y - p.h/2, p.w, p.h);
+            ctx.strokeStyle = `rgba(200,220,255,${alpha * 0.5})`;
+            ctx.lineWidth = 2;
+            ctx.strokeRect(p.x - p.w/2 - 2, p.y - p.h/2 - 2, p.w + 4, p.h + 4);
+        }
+
+        // Brightness indicator
+        ctx.fillStyle = '#ff0';
+        ctx.font = '24px Arial';
+        ctx.fillText('☀️', 20, 40);
+        ctx.fillStyle = '#fff';
+        ctx.fillRect(50, 30, 60 * this.brightness, 10);
+        ctx.strokeStyle = '#fff'; ctx.strokeRect(50, 30, 60, 10);
+
+        // Bit eyes glow in dark
+        if (this.bit && this.brightness < 0.3) {
+            ctx.fillStyle = '#fff';
+            ctx.beginPath(); ctx.arc(this.bit.x - 5, this.bit.y - 18, 4, 0, Math.PI * 2); ctx.fill();
+            ctx.beginPath(); ctx.arc(this.bit.x + 5, this.bit.y - 18, 4, 0, Math.PI * 2); ctx.fill();
+        }
+
+        this.drawExit(ctx, this.exitX, this.exitY);
+        if (this.bit) this.bit.draw(ctx);
+    }
+}
+
+// ==========================================
+// LEVEL 7: SCREENSHOT - FLICKERING BRIDGE
+// ==========================================
+class Level7_Screenshot extends Level {
+    constructor() {
+        super();
+        this.bridgeFrozen = false;
+        this.freezeTimer = 0;
+        this.flickerOn = false;
+        this.flickerTimer = 0;
+    }
+    init() {
+        this.groundY = 500;
+        this.bit = new Bit(80, this.groundY - 70);
+        this.bit.spawnX = 80; this.bit.spawnY = this.groundY - 70;
+        this.platforms = [
+            { x: 80, y: this.groundY, w: 140, h: 20 },
+            { x: canvas.width - 80, y: this.groundY, w: 140, h: 20 }
+        ];
+        this.exitX = canvas.width - 80; this.exitY = this.groundY - 45;
+
+        specialBtn.style.display = 'block';
+        specialBtn.textContent = 'CAPTURE';
+        actionHint.textContent = 'Press CAPTURE to freeze bridge (5s)';
+    }
+    update(dt) {
+        if (actionHeld && !this.bridgeFrozen) {
+            this.bridgeFrozen = true;
+            this.freezeTimer = 5;
+            actionHeld = false;
+        }
+
+        if (this.bridgeFrozen) {
+            this.freezeTimer -= dt;
+            if (this.freezeTimer <= 0) this.bridgeFrozen = false;
+        } else {
+            this.flickerTimer += dt;
+            if (this.flickerTimer > (this.flickerOn ? 0.02 : 0.3)) {
+                this.flickerTimer = 0;
+                this.flickerOn = !this.flickerOn;
+            }
+        }
+
+        this.platforms = [
+            { x: 80, y: this.groundY, w: 140, h: 20 },
+            { x: canvas.width - 80, y: this.groundY, w: 140, h: 20 }
+        ];
+        if (this.bridgeFrozen || this.flickerOn) {
+            this.platforms.push({ x: canvas.width/2, y: this.groundY, w: 200, h: 15 });
+        }
+
+        if (this.bit && this.bit.y > canvas.height + 50) this.bit.die();
+        return super.update(dt);
+    }
+    draw(ctx) {
+        ctx.fillStyle = '#1a1a2e'; ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+        // Fog
+        ctx.fillStyle = 'rgba(100,100,120,0.3)';
+        ctx.fillRect(0, canvas.height/2 - 50, canvas.width, 150);
+
+        // Cliffs
+        ctx.fillStyle = '#111';
+        ctx.fillRect(10, this.groundY - 100, 140, 200);
+        ctx.fillRect(canvas.width - 150, this.groundY - 100, 140, 200);
+
+        // Bridge
+        const bridgeAlpha = this.bridgeFrozen ? 1 : (this.flickerOn ? 0.8 : 0.05);
+        ctx.globalAlpha = bridgeAlpha;
+        ctx.fillStyle = '#fff';
+        ctx.fillRect(150, this.groundY - 8, 100, 15);
+        ctx.fillRect(250, this.groundY - 8, 50, 15);
+        ctx.globalAlpha = 1;
+
+        // Timer
+        if (this.bridgeFrozen) {
+            ctx.fillStyle = this.freezeTimer < 2 ? '#f00' : '#fff';
+            ctx.font = 'bold 30px Courier New';
+            ctx.textAlign = 'center';
+            ctx.fillText(Math.ceil(this.freezeTimer), canvas.width/2, 80);
+        }
+
+        this.drawExit(ctx, this.exitX, this.exitY);
+        if (this.bit) this.bit.draw(ctx);
+    }
+}
+
+// ==========================================
+// LEVEL 8: DARK MODE - UNLOCK DOOR
+// ==========================================
+class Level8_DarkMode extends Level {
+    constructor() {
+        super();
+        this.isDark = false;
+        this.doorUnlocked = false;
+    }
+    init() {
+        this.groundY = 520;
+        this.bit = new Bit(80, this.groundY - 70);
+        this.bit.spawnX = 80; this.bit.spawnY = this.groundY - 70;
+        this.platforms = [
+            { x: canvas.width/2, y: this.groundY, w: canvas.width - 40, h: 20 },
+            { x: canvas.width/2 + 40, y: this.groundY - 50, w: 80, h: 20 }
+        ];
+        this.exitX = canvas.width/2; this.exitY = 300;
+
+        darkToggle.style.display = 'block';
+        darkToggle.classList.remove('on');
+        actionHint.textContent = 'Toggle dark mode to unlock door';
+
+        darkToggle.onclick = () => {
+            this.isDark = !this.isDark;
+            darkToggle.classList.toggle('on', this.isDark);
+            this.doorUnlocked = this.isDark;
+        };
+    }
+    handleCollisions() {
+        super.handleCollisions();
+        // Only allow exit if door unlocked
+        if (!this.doorUnlocked && this.complete) this.complete = false;
+    }
+    draw(ctx) {
+        const bg = this.isDark ? '#000' : '#fff';
+        const fg = this.isDark ? '#fff' : '#000';
+
+        ctx.fillStyle = bg; ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+        // Grid floor
+        ctx.strokeStyle = fg;
+        ctx.lineWidth = 1;
+        for (let x = 0; x < canvas.width; x += 30) {
+            ctx.beginPath(); ctx.moveTo(x, this.groundY - 20); ctx.lineTo(x, this.groundY + 40); ctx.stroke();
+        }
+        for (let y = this.groundY - 20; y < this.groundY + 40; y += 15) {
+            ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(canvas.width, y); ctx.stroke();
+        }
+
+        // Door
+        ctx.strokeStyle = fg; ctx.lineWidth = 3;
+        ctx.strokeRect(canvas.width/2 - 35, 260, 70, 100);
+        ctx.strokeRect(canvas.width/2 - 30, 265, 60, 90);
+
+        // Lock
+        ctx.font = '24px Arial';
+        ctx.fillStyle = fg;
+        ctx.textAlign = 'center';
+        ctx.fillText(this.doorUnlocked ? '🔓' : '🔒', canvas.width/2, 320);
+
+        // Status light
+        ctx.fillStyle = this.doorUnlocked ? '#0f0' : '#f00';
+        ctx.beginPath(); ctx.arc(canvas.width/2 + 45, 285, 6, 0, Math.PI * 2); ctx.fill();
+
+        // Moon sensor
+        ctx.strokeStyle = fg; ctx.lineWidth = 2;
+        ctx.strokeRect(canvas.width/2 - 20, 220, 40, 30);
+        ctx.font = '20px Arial';
+        ctx.fillText('🌙', canvas.width/2, 242);
+
+        // Step
+        ctx.fillStyle = fg;
+        ctx.fillRect(canvas.width/2 - 40, this.groundY - 60, 80, 20);
+
+        if (this.bit) {
+            // Override bit colors for this level
+            ctx.save();
+            this.bit.draw(ctx);
+            ctx.restore();
+        }
+    }
+}
+
+// ==========================================
+// LEVEL 9: ORIENTATION - WIDEN CORRIDOR
+// ==========================================
+class Level9_Orientation extends Level {
+    constructor() {
+        super();
+        this.isLandscape = false;
+        this.corridorGap = 25;
+        this.crusherX = -150;
+    }
+    init() {
+        this.groundY = canvas.height/2 + 100;
+        this.bit = new Bit(80, this.groundY - 70);
+        this.bit.spawnX = 80; this.bit.spawnY = this.groundY - 70;
+        this.exitX = canvas.width - 50; this.exitY = this.groundY - 45;
+
+        specialBtn.style.display = 'block';
+        specialBtn.textContent = 'ROTATE';
+        actionHint.textContent = 'Press ROTATE to widen corridor';
+    }
+    update(dt) {
+        if (actionHeld) {
+            this.isLandscape = true;
+            this.corridorGap = 80;
+            actionHeld = false;
+        }
+
+        if (!this.isLandscape) {
+            this.crusherX += dt * 15;
+            if (this.bit && this.crusherX > this.bit.x - 50) this.bit.die();
+        }
+
+        // Corridor blocks passage if gap too small
+        this.platforms = [{ x: canvas.width/2, y: this.groundY, w: canvas.width, h: 20 }];
+
+        // Add corridor walls if not landscape
+        if (!this.isLandscape && this.bit) {
+            const inCorridor = this.bit.x > 150 && this.bit.x < canvas.width - 100;
+            if (inCorridor && Math.abs(this.bit.y - (this.groundY - 80)) < 40) {
+                // Block if corridor too narrow for bit
+                if (this.corridorGap < 50) {
+                    this.bit.x = Math.min(this.bit.x, 150);
+                }
+            }
+        }
+
+        return super.update(dt);
+    }
+    draw(ctx) {
+        ctx.fillStyle = '#f0f0f0'; ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+        // Crusher
+        ctx.fillStyle = '#000';
+        ctx.fillRect(this.crusherX - 50, this.groundY - 200, 100, 250);
+
+        // Speed lines
+        ctx.strokeStyle = '#333';
+        for (let i = 0; i < 5; i++) {
+            ctx.beginPath();
+            ctx.moveTo(this.crusherX + 50, this.groundY - 180 + i * 40);
+            ctx.lineTo(this.crusherX + 80, this.groundY - 180 + i * 40);
+            ctx.stroke();
+        }
+
+        // Corridor
+        const corridorY = this.groundY - 80;
+        ctx.fillStyle = '#000';
+        ctx.fillRect(150, corridorY - this.corridorGap - 30, canvas.width - 200, 30);
+        ctx.fillRect(150, corridorY + this.corridorGap, canvas.width - 200, 30);
+
+        // Floor
+        ctx.fillRect(0, this.groundY - 10, canvas.width, 30);
+
+        // Warning text
+        if (!this.isLandscape) {
+            ctx.fillStyle = '#f00';
+            ctx.font = '14px Courier New';
+            ctx.textAlign = 'center';
+            ctx.fillText('ASPECT_RATIO_ERROR', canvas.width/2, 80);
+        }
+
+        this.drawExit(ctx, this.exitX, this.exitY);
+        if (this.bit) this.bit.draw(ctx);
+    }
+}
+
+// ==========================================
+// LEVEL 10: TIME TRAVEL - GROW TREE
+// ==========================================
+class Level10_TimeTravel extends Level {
+    constructor() {
+        super();
+        this.timeHeld = 0;
+        this.treeGrown = false;
+        this.treeScale = 0.1;
+    }
+    init() {
+        this.groundY = 520;
+        this.bit = new Bit(80, this.groundY - 70);
+        this.bit.spawnX = 80; this.bit.spawnY = this.groundY - 70;
+        this.platforms = [{ x: canvas.width/2, y: this.groundY, w: canvas.width - 40, h: 20 }];
+        this.exitX = canvas.width - 50; this.exitY = 100;
+
+        specialBtn.style.display = 'block';
+        specialBtn.textContent = 'WAIT';
+        actionHint.textContent = 'Hold WAIT to pass time (grow tree)';
+    }
+    update(dt) {
+        if (actionHeld && !this.treeGrown) {
+            this.timeHeld += dt;
+            if (this.timeHeld > 3) {
+                this.treeGrown = true;
+            }
+        }
+
+        if (this.treeGrown) {
+            this.treeScale = Math.min(1, this.treeScale + dt * 0.5);
+        }
+
+        this.platforms = [{ x: canvas.width/2, y: this.groundY, w: canvas.width - 40, h: 20 }];
+        if (this.treeGrown && this.treeScale > 0.5) {
+            // Tree branches as platforms
+            this.platforms.push({ x: 130, y: this.groundY - 100, w: 80, h: 15 });
+            this.platforms.push({ x: 220, y: this.groundY - 180, w: 80, h: 15 });
+            this.platforms.push({ x: 150, y: this.groundY - 260, w: 80, h: 15 });
+            this.platforms.push({ x: 250, y: this.groundY - 340, w: 80, h: 15 });
+        }
+        this.platforms.push({ x: canvas.width - 60, y: 130, w: 100, h: 20 });
+
+        return super.update(dt);
+    }
+    draw(ctx) {
+        ctx.fillStyle = '#f0f0f0'; ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+        // Ground
+        ctx.fillStyle = '#000';
+        ctx.fillRect(20, this.groundY - 10, canvas.width - 40, 30);
+
+        // Exit platform
+        ctx.fillRect(canvas.width - 110, 120, 100, 20);
+        ctx.fillStyle = '#000';
+        ctx.fillRect(canvas.width - 80, 50, 60, 200);
+
+        // Tree
+        const tx = 180, ty = this.groundY - 10;
+        ctx.save();
+        ctx.translate(tx, ty);
+        ctx.scale(this.treeScale, this.treeScale);
+
+        if (!this.treeGrown || this.treeScale < 0.3) {
+            // Sapling
+            ctx.fillStyle = '#000';
+            ctx.fillRect(-2, -40, 4, 40);
+            ctx.beginPath(); ctx.ellipse(-10, -35, 8, 5, -0.3, 0, Math.PI * 2); ctx.fill();
+            ctx.beginPath(); ctx.ellipse(10, -45, 8, 5, 0.3, 0, Math.PI * 2); ctx.fill();
+        } else {
+            // Full tree
+            ctx.fillStyle = '#000';
+            ctx.beginPath();
+            ctx.moveTo(-15, 0); ctx.lineTo(-8, -200); ctx.lineTo(8, -200); ctx.lineTo(15, 0);
+            ctx.fill();
+
+            // Branches
+            ctx.fillRect(-70, -90, 80, 15);
+            ctx.fillRect(10, -170, 80, 15);
+            ctx.fillRect(-60, -250, 80, 15);
+            ctx.fillRect(30, -330, 80, 15);
+
+            // Canopy
+            for (let i = 0; i < 5; i++) {
+                ctx.beginPath();
+                ctx.ellipse(-30 + i * 30, -380 + Math.random() * 30, 30, 20, 0, 0, Math.PI * 2);
+                ctx.fill();
+            }
+        }
+        ctx.restore();
+
+        // Clock
+        ctx.font = '30px Arial';
+        ctx.fillText('🕐', tx - 10, ty - 250 * this.treeScale - 50);
+
+        // Sign
+        ctx.fillStyle = '#000';
+        ctx.font = '12px Courier New';
+        ctx.textAlign = 'center';
+        ctx.fillText('GROWTH TIME: 10 YEARS', tx + 80, ty - 50);
+
+        // Progress
+        if (!this.treeGrown) {
+            ctx.fillStyle = '#0ff';
+            ctx.fillRect(100, 60, 200 * (this.timeHeld / 3), 10);
+            ctx.strokeStyle = '#000';
+            ctx.strokeRect(100, 60, 200, 10);
+        }
+
+        this.drawExit(ctx, this.exitX, this.exitY);
+        if (this.bit) this.bit.draw(ctx);
+    }
+}
+
+// ==========================================
+// WIN SCREEN
+// ==========================================
+class WinScreen extends Level {
+    constructor() { super(); this.timer = 0; }
+    init() {
+        this.bit = new Bit(canvas.width/2, canvas.height * 0.55);
+        this.bit.grounded = true;
+        actionHint.textContent = 'Press R to restart';
+    }
+    update(dt) { this.timer += dt; this.bit.update(dt); return false; }
+    draw(ctx) {
+        ctx.fillStyle = '#000'; ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+        // Glitch lines
+        if (Math.random() > 0.95) {
+            ctx.fillStyle = GLITCH_COLORS[Math.floor(Math.random() * 4)];
+            ctx.globalAlpha = 0.15;
+            ctx.fillRect(0, Math.random() * canvas.height, canvas.width, Math.random() * 20);
+            ctx.globalAlpha = 1;
+        }
+
+        ctx.fillStyle = '#0f0';
+        ctx.font = 'bold 28px Courier New';
+        ctx.textAlign = 'center';
+        ctx.fillText('SYSTEM RESTORED', canvas.width/2, canvas.height * 0.2);
+
+        ctx.fillStyle = '#0ff';
+        ctx.font = '16px Courier New';
+        ctx.fillText('BIT has escaped the glitch!', canvas.width/2, canvas.height * 0.28);
+
+        this.bit.draw(ctx);
+
+        ctx.font = '14px Courier New';
+        ctx.fillStyle = '#666';
+        if (Math.sin(this.timer * 3) > 0) ctx.fillText('Thanks for playing!', canvas.width/2, canvas.height * 0.75);
+        ctx.fillStyle = '#444';
+        ctx.fillText('Press R to restart', canvas.width/2, canvas.height * 0.85);
+    }
+}
+
+// ==========================================
+// MAIN GAME
+// ==========================================
+const LEVELS = [Level0_Boot, Level1_Header, Level2_Wind, Level3_Static, Level4_Volume, Level5_Charging, Level6_Brightness, Level7_Screenshot, Level8_DarkMode, Level9_Orientation, Level10_TimeTravel, WinScreen];
+let level = null;
+let lastTime = 0;
+
+function loadLevel(idx) {
+    currentLevel = idx;
+    if (level) level.cleanup();
+    level = new LEVELS[idx]();
+    level.init();
+    levelIndicator.textContent = idx < 11 ? `LEVEL ${idx}` : 'COMPLETE';
+}
+
+function gameLoop(ts) {
+    const dt = Math.min((ts - lastTime) / 1000, 0.05);
+    lastTime = ts;
+
+    if (actionHeld) actionHoldTime += dt;
+
+    if (level.update(dt)) {
+        loadLevel(Math.min(currentLevel + 1, LEVELS.length - 1));
+    }
+
+    level.draw(ctx);
+    requestAnimationFrame(gameLoop);
+}
+
+// Input
+document.addEventListener('keydown', e => {
+    if (e.key === 'ArrowLeft' || e.key === 'a') keys.left = true;
+    if (e.key === 'ArrowRight' || e.key === 'd') keys.right = true;
+    if (e.key === 'ArrowUp' || e.key === 'w' || e.key === ' ') keys.jump = true;
+    if (e.key === 'r') loadLevel(0);
+});
+document.addEventListener('keyup', e => {
+    if (e.key === 'ArrowLeft' || e.key === 'a') keys.left = false;
+    if (e.key === 'ArrowRight' || e.key === 'd') keys.right = false;
+    if (e.key === 'ArrowUp' || e.key === 'w' || e.key === ' ') keys.jump = false;
+});
+
+// Touch controls
+document.getElementById('btnLeft').ontouchstart = () => keys.left = true;
+document.getElementById('btnLeft').ontouchend = () => keys.left = false;
+document.getElementById('btnRight').ontouchstart = () => keys.right = true;
+document.getElementById('btnRight').ontouchend = () => keys.right = false;
+document.getElementById('btnJump').ontouchstart = () => keys.jump = true;
+document.getElementById('btnJump').ontouchend = () => keys.jump = false;
+
+// Mouse fallback
+document.getElementById('btnLeft').onmousedown = () => keys.left = true;
+document.getElementById('btnLeft').onmouseup = () => keys.left = false;
+document.getElementById('btnRight').onmousedown = () => keys.right = true;
+document.getElementById('btnRight').onmouseup = () => keys.right = false;
+document.getElementById('btnJump').onmousedown = () => keys.jump = true;
+document.getElementById('btnJump').onmouseup = () => keys.jump = false;
+
+// Special button
+specialBtn.ontouchstart = specialBtn.onmousedown = () => { actionHeld = true; actionHoldTime = 0; };
+specialBtn.ontouchend = specialBtn.onmouseup = () => actionHeld = false;
+
+// Canvas mouse for boot level
+canvas.addEventListener('mousedown', e => {
+    const rect = canvas.getBoundingClientRect();
+    const x = (e.clientX - rect.left) / rect.width * canvas.width;
+    const y = (e.clientY - rect.top) / rect.height * canvas.height;
+    if (level.handleMouse) level.handleMouse('down', x, y);
+});
+canvas.addEventListener('mousemove', e => {
+    const rect = canvas.getBoundingClientRect();
+    const x = (e.clientX - rect.left) / rect.width * canvas.width;
+    const y = (e.clientY - rect.top) / rect.height * canvas.height;
+    if (level.handleMouse) level.handleMouse('move', x, y);
+});
+canvas.addEventListener('mouseup', () => { if (level.handleMouse) level.handleMouse('up', 0, 0); });
+
+canvas.addEventListener('touchstart', e => {
+    e.preventDefault();
+    const rect = canvas.getBoundingClientRect();
+    const t = e.touches[0];
+    const x = (t.clientX - rect.left) / rect.width * canvas.width;
+    const y = (t.clientY - rect.top) / rect.height * canvas.height;
+    if (level.handleMouse) level.handleMouse('down', x, y);
+});
+canvas.addEventListener('touchmove', e => {
+    e.preventDefault();
+    const rect = canvas.getBoundingClientRect();
+    const t = e.touches[0];
+    const x = (t.clientX - rect.left) / rect.width * canvas.width;
+    const y = (t.clientY - rect.top) / rect.height * canvas.height;
+    if (level.handleMouse) level.handleMouse('move', x, y);
+});
+canvas.addEventListener('touchend', e => {
+    e.preventDefault();
+    if (level.handleMouse) level.handleMouse('up', 0, 0);
+});
+
+// Start
+loadLevel(0);
+requestAnimationFrame(gameLoop);
+</script>
+</body>
+</html>
