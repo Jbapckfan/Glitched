@@ -1,5 +1,4 @@
 import SpriteKit
-import Combine
 
 final class WindBridgeScene: BaseLevelScene, SKPhysicsContactDelegate {
 
@@ -24,6 +23,7 @@ final class WindBridgeScene: BaseLevelScene, SKPhysicsContactDelegate {
 
     private var windParticles: [SKShapeNode] = []
     private var lastMicLevel: Float = 0
+    private var hasShownBlowCommentary = false
 
     // MARK: - Configuration
 
@@ -381,6 +381,7 @@ final class WindBridgeScene: BaseLevelScene, SKPhysicsContactDelegate {
         bit = BitCharacter.make()
         bit.position = spawnPoint
         addChild(bit)
+        registerPlayer(bit)
 
         playerController = PlayerController(character: bit, scene: self)
     }
@@ -571,8 +572,60 @@ final class WindBridgeScene: BaseLevelScene, SKPhysicsContactDelegate {
             let boostedPower = min(pow(power, 0.7) * 1.2, 1.0)  // Easier to reach full
             bridgeTargetWidth = bridgeFullWidth * CGFloat(boostedPower)
             animateWind(intensity: power)
+
+            // 4th-wall commentary on first successful blow
+            if power > 0.2 && !hasShownBlowCommentary {
+                hasShownBlowCommentary = true
+                showBlowCommentary()
+            }
+
+            // Overdrive effect at max power
+            if power > 0.85 {
+                triggerOverdriveEffect()
+            }
         default:
             break
+        }
+    }
+
+    private func showBlowCommentary() {
+        let label = SKLabelNode(fontNamed: "Menlo-Bold")
+        label.text = "DID YOU JUST... BLOW ON YOUR PHONE?"
+        label.fontSize = 12
+        label.fontColor = strokeColor
+        label.position = CGPoint(x: size.width / 2, y: size.height / 2 + 80)
+        label.zPosition = 200
+        label.alpha = 0
+        addChild(label)
+
+        label.run(.sequence([
+            .fadeIn(withDuration: 0.2),
+            .wait(forDuration: 3.0),
+            .fadeOut(withDuration: 0.5),
+            .removeFromParent()
+        ]))
+    }
+
+    private func triggerOverdriveEffect() {
+        // Screen shake
+        let shake = SKAction.sequence([
+            .moveBy(x: CGFloat.random(in: -3...3), y: CGFloat.random(in: -2...2), duration: 0.02),
+            .moveBy(x: CGFloat.random(in: -3...3), y: CGFloat.random(in: -2...2), duration: 0.02),
+            .move(to: CGPoint(x: 0, y: 0), duration: 0.02)
+        ])
+        if gameCamera.action(forKey: "overdrive_shake") == nil {
+            gameCamera.run(shake, withKey: "overdrive_shake")
+        }
+
+        // Bridge glow - flash the visible segments white briefly
+        for segment in bridgeSegments where segment.alpha > 0 {
+            if segment.action(forKey: "overdrive_glow") == nil {
+                segment.run(.sequence([
+                    .run { segment.strokeColor = SKColor(white: 0.5, alpha: 1) },
+                    .wait(forDuration: 0.1),
+                    .run { [weak self] in segment.strokeColor = self?.strokeColor ?? .black }
+                ]), withKey: "overdrive_glow")
+            }
         }
     }
 

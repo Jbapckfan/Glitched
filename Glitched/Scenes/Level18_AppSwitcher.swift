@@ -1,5 +1,4 @@
 import SpriteKit
-import Combine
 import UIKit
 
 /// Level 18: App Switcher Peek
@@ -16,12 +15,16 @@ final class AppSwitcherScene: BaseLevelScene, SKPhysicsContactDelegate {
     private var spawnPoint: CGPoint = .zero
 
     private var movingHazards: [SKNode] = []
+    private var hazardDirections: [CGVector] = []  // Store movement directions for trajectory lines
     private var isPeeking = false
     private var peekOverlay: SKShapeNode!
     private var peekTimer: SKLabelNode!
     private var peekTimeRemaining: TimeInterval = 0
+    private var trajectoryLines: [SKShapeNode] = []
 
-    private let maxPeekTime: TimeInterval = 5.0
+    private let basePeekTime: TimeInterval = 5.0
+    private var peekCount = 0
+    private var hasShownFourthWall = false
 
     override func configureScene() {
         levelID = LevelID(world: .world2, index: 18)
@@ -127,6 +130,9 @@ final class AppSwitcherScene: BaseLevelScene, SKPhysicsContactDelegate {
             addChild(hazard)
             movingHazards.append(hazard)
 
+            // Store the direction vector for trajectory prediction
+            hazardDirections.append(CGVector(dx: data.range, dy: 0))
+
             // Fast oscillation
             hazard.run(.repeatForever(.sequence([
                 .moveBy(x: data.range, y: 0, duration: data.speed),
@@ -190,6 +196,7 @@ final class AppSwitcherScene: BaseLevelScene, SKPhysicsContactDelegate {
         exit.physicsBody = SKPhysicsBody(rectangleOf: exit.size)
         exit.physicsBody?.isDynamic = false
         exit.physicsBody?.categoryBitMask = PhysicsCategory.exit
+        exit.physicsBody?.collisionBitMask = 0
         exit.name = "exit"
         addChild(exit)
     }
@@ -227,13 +234,19 @@ final class AppSwitcherScene: BaseLevelScene, SKPhysicsContactDelegate {
         bit = BitCharacter.make()
         bit.position = spawnPoint
         addChild(bit)
+        registerPlayer(bit)
         playerController = PlayerController(character: bit, scene: self)
+    }
+
+    private var currentMaxPeekTime: TimeInterval {
+        return max(1.5, basePeekTime - (Double(peekCount) * 0.75))
     }
 
     private func enterPeekMode() {
         guard !isPeeking else { return }
         isPeeking = true
-        peekTimeRemaining = maxPeekTime
+        peekCount += 1
+        peekTimeRemaining = currentMaxPeekTime
 
         // Pause hazards
         for hazard in movingHazards {
@@ -244,11 +257,107 @@ final class AppSwitcherScene: BaseLevelScene, SKPhysicsContactDelegate {
         peekOverlay.run(.fadeAlpha(to: 1, duration: 0.2))
         peekTimer.run(.fadeAlpha(to: 1, duration: 0.2))
 
+        // Draw trajectory prediction lines
+        showTrajectoryLines()
+
         // Pause physics
         physicsWorld.speed = 0
 
         let generator = UIImpactFeedbackGenerator(style: .medium)
         generator.impactOccurred()
+
+        // 4th wall text on first peek
+        if !hasShownFourthWall {
+            hasShownFourthWall = true
+            showFourthWallText()
+        }
+    }
+
+    // MARK: - Trajectory Prediction Lines
+
+    private func showTrajectoryLines() {
+        // Remove any old trajectory lines
+        removeTrajectoryLines()
+
+        for (index, hazard) in movingHazards.enumerated() {
+            guard index < hazardDirections.count else { continue }
+            let dir = hazardDirections[index]
+
+            // Draw dotted line extending in movement direction (both ways)
+            let line = SKShapeNode()
+            let path = CGMutablePath()
+            let lineLength: CGFloat = 120
+
+            // Line extends in positive and negative direction from current position
+            let startX = hazard.position.x - (dir.dx > 0 ? lineLength / 2 : -lineLength / 2)
+            let endX = hazard.position.x + (dir.dx > 0 ? lineLength / 2 : -lineLength / 2)
+
+            // Create dotted pattern
+            let dashLength: CGFloat = 6
+            let gapLength: CGFloat = 4
+            var currentX = min(startX, endX)
+            let maxX = max(startX, endX)
+
+            while currentX < maxX {
+                let segEnd = min(currentX + dashLength, maxX)
+                path.move(to: CGPoint(x: currentX, y: hazard.position.y))
+                path.addLine(to: CGPoint(x: segEnd, y: hazard.position.y))
+                currentX = segEnd + gapLength
+            }
+
+            line.path = path
+            line.strokeColor = strokeColor
+            line.lineWidth = lineWidth * 0.4
+            line.alpha = 0.5
+            line.zPosition = 399
+            line.name = "trajectory"
+            addChild(line)
+            trajectoryLines.append(line)
+        }
+    }
+
+    private func removeTrajectoryLines() {
+        for line in trajectoryLines {
+            line.removeFromParent()
+        }
+        trajectoryLines.removeAll()
+    }
+
+    // MARK: - 4th Wall Text
+
+    private func showFourthWallText() {
+        let panel = SKNode()
+        panel.position = CGPoint(x: size.width / 2, y: size.height / 2 + 60)
+        panel.zPosition = 500
+        panel.alpha = 0
+        addChild(panel)
+
+        let bg = SKShapeNode(rectOf: CGSize(width: 340, height: 50), cornerRadius: 6)
+        bg.fillColor = fillColor
+        bg.strokeColor = strokeColor
+        bg.lineWidth = lineWidth
+        panel.addChild(bg)
+
+        let line1 = SKLabelNode(text: "I SEE YOU HOVERING OVER THAT OTHER APP.")
+        line1.fontName = "Menlo-Bold"
+        line1.fontSize = 9
+        line1.fontColor = strokeColor
+        line1.position = CGPoint(x: 0, y: 6)
+        panel.addChild(line1)
+
+        let line2 = SKLabelNode(text: "DON'T YOU DARE SWITCH.")
+        line2.fontName = "Menlo-Bold"
+        line2.fontSize = 9
+        line2.fontColor = strokeColor
+        line2.position = CGPoint(x: 0, y: -10)
+        panel.addChild(line2)
+
+        panel.run(.sequence([
+            .fadeIn(withDuration: 0.2),
+            .wait(forDuration: 3.5),
+            .fadeOut(withDuration: 0.5),
+            .removeFromParent()
+        ]))
     }
 
     private func exitPeekMode() {
@@ -263,6 +372,9 @@ final class AppSwitcherScene: BaseLevelScene, SKPhysicsContactDelegate {
         // Hide overlay
         peekOverlay.run(.fadeAlpha(to: 0, duration: 0.2))
         peekTimer.run(.fadeAlpha(to: 0, duration: 0.2))
+
+        // Remove trajectory prediction lines
+        removeTrajectoryLines()
 
         // Resume physics
         physicsWorld.speed = 1

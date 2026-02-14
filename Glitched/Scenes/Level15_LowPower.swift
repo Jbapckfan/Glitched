@@ -1,5 +1,4 @@
 import SpriteKit
-import Combine
 import UIKit
 
 /// Level 15: Low Power Mode
@@ -19,6 +18,9 @@ final class LowPowerScene: BaseLevelScene, SKPhysicsContactDelegate {
     private var isLowPower = false
     private var batteryIndicator: SKNode!
     private var batteryBars: [SKShapeNode] = []
+    private var platformSurfaces: [(shape: SKShapeNode, size: CGSize)] = []  // Track platforms for visual degradation
+    private var fourthWallLabel: SKLabelNode?
+    private var hasShownFourthWall = false
 
     override func configureScene() {
         levelID = LevelID(world: .world2, index: 15)
@@ -73,40 +75,62 @@ final class LowPowerScene: BaseLevelScene, SKPhysicsContactDelegate {
     private func buildLevel() {
         let groundY: CGFloat = 160
 
+        // === SECTION 1: Start area (normal gravity) ===
         // Start platform
-        createPlatform(at: CGPoint(x: 80, y: groundY), size: CGSize(width: 100, height: 30))
+        createPlatform(at: CGPoint(x: 80, y: groundY), size: CGSize(width: 120, height: 30))
 
-        // Gap that requires low power jump
-        createPlatform(at: CGPoint(x: 300, y: groundY + 120), size: CGSize(width: 80, height: 25))
+        // Step-up platform (reachable with normal jump)
+        createPlatform(at: CGPoint(x: 200, y: groundY + 40), size: CGSize(width: 70, height: 25))
 
-        // High platform only reachable in low power
-        createPlatform(at: CGPoint(x: 480, y: groundY + 220), size: CGSize(width: 80, height: 25))
+        // === SECTION 2: Narrow drop (REQUIRES NORMAL GRAVITY to fall through) ===
+        // Ledge before the drop
+        createPlatform(at: CGPoint(x: 290, y: groundY + 80), size: CGSize(width: 60, height: 20))
+
+        // Narrow gap walls - two platforms with a tight gap between them
+        // Player must drop through this narrow gap -- low gravity makes you float too much
+        createPlatform(at: CGPoint(x: 260, y: groundY + 20), size: CGSize(width: 40, height: 15))
+        createPlatform(at: CGPoint(x: 320, y: groundY + 20), size: CGSize(width: 40, height: 15))
+
+        // Catch platform at bottom of drop
+        createPlatform(at: CGPoint(x: 290, y: groundY - 30), size: CGSize(width: 80, height: 20))
+
+        // === SECTION 3: Wide chasm (REQUIRES LOW GRAVITY to float across) ===
+        // The chasm is too wide for a normal jump but floatable in low gravity
+        // Landing platform on far side
+        createPlatform(at: CGPoint(x: 490, y: groundY - 10), size: CGSize(width: 70, height: 20))
+
+        // === SECTION 4: Final drop (REQUIRES NORMAL GRAVITY to drop down) ===
+        // Platform below that needs normal gravity to reach
+        createPlatform(at: CGPoint(x: 560, y: groundY - 80), size: CGSize(width: 80, height: 25))
 
         // Exit platform
-        createPlatform(at: CGPoint(x: size.width - 80, y: groundY), size: CGSize(width: 100, height: 30))
+        createPlatform(at: CGPoint(x: size.width - 80, y: groundY - 80), size: CGSize(width: 100, height: 30))
 
-        createExitDoor(at: CGPoint(x: size.width - 60, y: groundY + 50))
+        createExitDoor(at: CGPoint(x: size.width - 60, y: groundY - 80 + 50))
 
         // Death zone
         let death = SKNode()
-        death.position = CGPoint(x: size.width / 2, y: -50)
+        death.position = CGPoint(x: size.width / 2, y: -100)
         death.physicsBody = SKPhysicsBody(rectangleOf: CGSize(width: size.width * 2, height: 100))
         death.physicsBody?.isDynamic = false
         death.physicsBody?.categoryBitMask = PhysicsCategory.hazard
         addChild(death)
     }
 
-    private func createPlatform(at position: CGPoint, size: CGSize) {
+    private func createPlatform(at position: CGPoint, size platformSize: CGSize) {
         let platform = SKNode()
         platform.position = position
+        platform.name = "power_platform"
 
-        let surface = SKShapeNode(rectOf: size)
+        let surface = SKShapeNode(rectOf: platformSize)
         surface.fillColor = fillColor
         surface.strokeColor = strokeColor
         surface.lineWidth = lineWidth
+        surface.name = "platform_surface"
         platform.addChild(surface)
+        platformSurfaces.append((shape: surface, size: platformSize))
 
-        platform.physicsBody = SKPhysicsBody(rectangleOf: size)
+        platform.physicsBody = SKPhysicsBody(rectangleOf: platformSize)
         platform.physicsBody?.isDynamic = false
         platform.physicsBody?.categoryBitMask = PhysicsCategory.ground
 
@@ -155,6 +179,7 @@ final class LowPowerScene: BaseLevelScene, SKPhysicsContactDelegate {
         exit.physicsBody = SKPhysicsBody(rectangleOf: exit.size)
         exit.physicsBody?.isDynamic = false
         exit.physicsBody?.categoryBitMask = PhysicsCategory.exit
+        exit.physicsBody?.collisionBitMask = 0
         exit.name = "exit"
         addChild(exit)
     }
@@ -192,6 +217,7 @@ final class LowPowerScene: BaseLevelScene, SKPhysicsContactDelegate {
         bit = BitCharacter.make()
         bit.position = spawnPoint
         addChild(bit)
+        registerPlayer(bit)
         playerController = PlayerController(character: bit, scene: self)
     }
 
@@ -219,8 +245,70 @@ final class LowPowerScene: BaseLevelScene, SKPhysicsContactDelegate {
             }
         }
 
+        // 4th-wall text on first toggle to low power
+        if lowPower && !hasShownFourthWall {
+            hasShownFourthWall = true
+            showFourthWallText("LOW POWER MODE? I BARELY HAVE ENOUGH ENERGY TO RENDER THESE PLATFORMS.")
+        }
+
+        // Visual degradation of platforms in low power mode
+        degradePlatformVisuals(lowPower)
+
         let generator = UIImpactFeedbackGenerator(style: lowPower ? .light : .medium)
         generator.impactOccurred()
+    }
+
+    private func showFourthWallText(_ text: String) {
+        fourthWallLabel?.removeFromParent()
+
+        let label = SKLabelNode(text: text)
+        label.fontName = "Menlo-Bold"
+        label.fontSize = 9
+        label.fontColor = strokeColor
+        label.position = CGPoint(x: size.width / 2, y: size.height / 2 + 80)
+        label.zPosition = 500
+        label.alpha = 0
+        label.preferredMaxLayoutWidth = size.width - 60
+        label.numberOfLines = 2
+        addChild(label)
+        fourthWallLabel = label
+
+        label.run(.sequence([
+            .fadeIn(withDuration: 0.3),
+            .wait(forDuration: 4.0),
+            .fadeOut(withDuration: 0.5),
+            .removeFromParent()
+        ]))
+    }
+
+    private func degradePlatformVisuals(_ lowPower: Bool) {
+        for (index, entry) in platformSurfaces.enumerated() {
+            let surface = entry.shape
+            let platSize = entry.size
+
+            if lowPower {
+                // Make some platforms look dashed/incomplete
+                // Every other platform gets degraded more
+                if index % 2 == 0 {
+                    let dashPattern: [CGFloat] = [6, 4]
+                    let dashedPath = CGMutablePath()
+                    dashedPath.addRect(CGRect(x: -platSize.width/2, y: -platSize.height/2,
+                                              width: platSize.width, height: platSize.height))
+                    let dashed = dashedPath.copy(dashingWithPhase: 0, lengths: dashPattern)
+                    surface.path = dashed
+                    surface.alpha = 0.6
+                } else {
+                    surface.alpha = 0.75
+                    surface.lineWidth = lineWidth * 0.5
+                }
+            } else {
+                // Restore solid rectangle path
+                surface.path = UIBezierPath(rect: CGRect(x: -platSize.width/2, y: -platSize.height/2,
+                                                          width: platSize.width, height: platSize.height)).cgPath
+                surface.alpha = 1.0
+                surface.lineWidth = lineWidth
+            }
+        }
     }
 
     override func handleGameInput(_ event: GameInputEvent) {

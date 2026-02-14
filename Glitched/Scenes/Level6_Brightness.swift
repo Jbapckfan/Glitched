@@ -1,5 +1,4 @@
 import SpriteKit
-import Combine
 import UIKit
 
 final class BrightnessScene: BaseLevelScene, SKPhysicsContactDelegate {
@@ -27,6 +26,15 @@ final class BrightnessScene: BaseLevelScene, SKPhysicsContactDelegate {
     private var burnWarning: SKLabelNode?
     private var screenFlash: SKShapeNode?
     private var isBurning = false
+
+    // 4th-wall commentary
+    private var darkCommentaryShown = false
+    private var brightCommentaryShown = false
+
+    // Sun hazard at max brightness
+    private var maxBrightnessSun: SKNode?
+    private var sunRayLines: [SKShapeNode] = []
+    private var isSunHazardActive = false
 
     private var sunIcon: SKNode?
     private var brightnessBar: SKNode?
@@ -56,6 +64,8 @@ final class BrightnessScene: BaseLevelScene, SKPhysicsContactDelegate {
         currentBrightness = CGFloat(UIScreen.main.brightness)
         updatePlatformVisibility()
         updateBurnZones()
+        createMaxBrightnessSun()
+        updateBrightnessCommentary()
     }
 
     // MARK: - Burn Zones (Too Bright = Danger)
@@ -185,6 +195,151 @@ final class BrightnessScene: BaseLevelScene, SKPhysicsContactDelegate {
                 burnWarning?.run(.fadeOut(withDuration: 0.3))
                 screenFlash?.removeAction(forKey: "flash")
                 screenFlash?.run(.fadeOut(withDuration: 0.2))
+            }
+        }
+    }
+
+    // MARK: - 4th-Wall Commentary
+
+    private func updateBrightnessCommentary() {
+        if currentBrightness < 0.1 && !darkCommentaryShown {
+            darkCommentaryShown = true
+            showCommentaryText("I CAN'T SEE EITHER, YOU KNOW.")
+        } else if currentBrightness >= 0.1 {
+            darkCommentaryShown = false
+        }
+
+        if currentBrightness >= 0.95 && !brightCommentaryShown {
+            brightCommentaryShown = true
+            showCommentaryText("MY EYES! THE GOGGLES DO NOTHING!")
+        } else if currentBrightness < 0.95 {
+            brightCommentaryShown = false
+        }
+    }
+
+    private func showCommentaryText(_ text: String) {
+        let label = SKLabelNode(text: text)
+        label.fontName = "Menlo-Bold"
+        label.fontSize = 14
+        label.fontColor = strokeColor
+        label.position = CGPoint(x: size.width / 2, y: size.height / 2 + 80)
+        label.zPosition = 400
+        label.alpha = 0
+        label.name = "commentary_text"
+        addChild(label)
+
+        label.run(.sequence([
+            .fadeIn(withDuration: 0.3),
+            .wait(forDuration: 3.0),
+            .fadeOut(withDuration: 0.5),
+            .removeFromParent()
+        ]))
+    }
+
+    // MARK: - Max Brightness Sun Hazard
+
+    private func createMaxBrightnessSun() {
+        maxBrightnessSun = SKNode()
+        maxBrightnessSun?.position = CGPoint(x: size.width / 2, y: size.height - 60)
+        maxBrightnessSun?.zPosition = 35
+        maxBrightnessSun?.alpha = 0
+        addChild(maxBrightnessSun!)
+
+        // Sun body
+        let sunBody = SKShapeNode(circleOfRadius: 20)
+        sunBody.fillColor = fillColor
+        sunBody.strokeColor = strokeColor
+        sunBody.lineWidth = lineWidth * 1.5
+        sunBody.name = "sun_body"
+        maxBrightnessSun?.addChild(sunBody)
+
+        // Inner detail
+        let innerCircle = SKShapeNode(circleOfRadius: 12)
+        innerCircle.fillColor = .clear
+        innerCircle.strokeColor = strokeColor
+        innerCircle.lineWidth = lineWidth * 0.5
+        maxBrightnessSun?.addChild(innerCircle)
+
+        // Rays around the sun
+        for i in 0..<12 {
+            let angle = CGFloat(i) * (.pi * 2 / 12)
+            let ray = SKShapeNode()
+            let rayPath = CGMutablePath()
+            rayPath.move(to: CGPoint(x: cos(angle) * 24, y: sin(angle) * 24))
+            rayPath.addLine(to: CGPoint(x: cos(angle) * 35, y: sin(angle) * 35))
+            ray.path = rayPath
+            ray.strokeColor = strokeColor
+            ray.lineWidth = lineWidth * 0.6
+            maxBrightnessSun?.addChild(ray)
+        }
+
+        // Animated ray lines that shoot downward
+        for i in 0..<5 {
+            let xOffset = CGFloat(i - 2) * 60
+            let rayLine = SKShapeNode()
+            let rayPath = CGMutablePath()
+            rayPath.move(to: CGPoint(x: xOffset, y: -30))
+            rayPath.addLine(to: CGPoint(x: xOffset, y: -200))
+            rayLine.path = rayPath
+            rayLine.strokeColor = strokeColor
+            rayLine.lineWidth = lineWidth * 0.4
+            rayLine.alpha = 0
+            rayLine.name = "sun_ray_line_\(i)"
+            maxBrightnessSun?.addChild(rayLine)
+            sunRayLines.append(rayLine)
+        }
+
+        // Hazard physics body (initially disabled)
+        let hazardNode = SKNode()
+        hazardNode.position = CGPoint(x: 0, y: -115)
+        hazardNode.physicsBody = SKPhysicsBody(rectangleOf: CGSize(width: 280, height: 50))
+        hazardNode.physicsBody?.isDynamic = false
+        hazardNode.physicsBody?.categoryBitMask = 0
+        hazardNode.name = "sun_hazard_body"
+        maxBrightnessSun?.addChild(hazardNode)
+    }
+
+    private func updateMaxBrightnessSun() {
+        let shouldActivate = currentBrightness >= 0.95
+
+        if shouldActivate != isSunHazardActive {
+            isSunHazardActive = shouldActivate
+
+            if shouldActivate {
+                maxBrightnessSun?.run(.fadeIn(withDuration: 0.3))
+
+                // Animate ray lines shooting down
+                for (i, rayLine) in sunRayLines.enumerated() {
+                    let delay = Double(i) * 0.1
+                    rayLine.run(.sequence([
+                        .wait(forDuration: delay),
+                        .repeatForever(.sequence([
+                            .fadeAlpha(to: 0.7, duration: 0.15),
+                            .fadeAlpha(to: 0.2, duration: 0.15)
+                        ]))
+                    ]), withKey: "ray_pulse")
+                }
+
+                // Enable hazard
+                if let hazard = maxBrightnessSun?.childNode(withName: "sun_hazard_body") {
+                    hazard.physicsBody?.categoryBitMask = PhysicsCategory.hazard
+                }
+
+                // Spin the sun slowly
+                maxBrightnessSun?.run(.repeatForever(.rotate(byAngle: .pi * 2, duration: 8.0)), withKey: "sun_spin")
+            } else {
+                maxBrightnessSun?.run(.fadeOut(withDuration: 0.3))
+
+                for rayLine in sunRayLines {
+                    rayLine.removeAction(forKey: "ray_pulse")
+                    rayLine.alpha = 0
+                }
+
+                if let hazard = maxBrightnessSun?.childNode(withName: "sun_hazard_body") {
+                    hazard.physicsBody?.categoryBitMask = 0
+                }
+
+                maxBrightnessSun?.removeAction(forKey: "sun_spin")
             }
         }
     }
@@ -635,6 +790,7 @@ final class BrightnessScene: BaseLevelScene, SKPhysicsContactDelegate {
         exit.physicsBody = SKPhysicsBody(rectangleOf: exit.size)
         exit.physicsBody?.isDynamic = false
         exit.physicsBody?.categoryBitMask = PhysicsCategory.exit
+        exit.physicsBody?.collisionBitMask = 0
         exit.name = "exit"
         addChild(exit)
 
@@ -897,6 +1053,7 @@ final class BrightnessScene: BaseLevelScene, SKPhysicsContactDelegate {
         bit = BitCharacter.make()
         bit.position = spawnPoint
         addChild(bit)
+        registerPlayer(bit)
 
         playerController = PlayerController(character: bit, scene: self)
     }
@@ -916,6 +1073,8 @@ final class BrightnessScene: BaseLevelScene, SKPhysicsContactDelegate {
             currentBrightness = CGFloat(level)
             updatePlatformVisibility()
             updateBurnZones()
+            updateMaxBrightnessSun()
+            updateBrightnessCommentary()
 
             // Hide instruction panel when brightness raised
             if level > 0.6 && oldBrightness <= 0.6 {

@@ -1,5 +1,4 @@
 import SpriteKit
-import Combine
 import UIKit
 
 /// Level 16: Shake to Undo
@@ -14,8 +13,8 @@ final class ShakeUndoScene: BaseLevelScene, SKPhysicsContactDelegate {
     private var playerController: PlayerController!
     private var spawnPoint: CGPoint = .zero
 
-    // Time rewind system
-    private var positionHistory: [(position: CGPoint, time: TimeInterval)] = []
+    // Time rewind system - now stores platform position too
+    private var positionHistory: [(position: CGPoint, platformPos: CGPoint, time: TimeInterval)] = []
     private let historyDuration: TimeInterval = 3.0
     private let maxHistoryCount = 90  // 3 seconds at 30fps
     private var gameTime: TimeInterval = 0
@@ -23,6 +22,7 @@ final class ShakeUndoScene: BaseLevelScene, SKPhysicsContactDelegate {
     private var undoIcon: SKNode!
     private var undoCount = 3
     private var undoLabel: SKLabelNode!
+    private var hasUsedUndo = false
 
     // Moving platform
     private var movingPlatform: SKNode!
@@ -191,6 +191,7 @@ final class ShakeUndoScene: BaseLevelScene, SKPhysicsContactDelegate {
         exit.physicsBody = SKPhysicsBody(rectangleOf: exit.size)
         exit.physicsBody?.isDynamic = false
         exit.physicsBody?.categoryBitMask = PhysicsCategory.exit
+        exit.physicsBody?.collisionBitMask = 0
         exit.name = "exit"
         addChild(exit)
     }
@@ -228,11 +229,12 @@ final class ShakeUndoScene: BaseLevelScene, SKPhysicsContactDelegate {
         bit = BitCharacter.make()
         bit.position = spawnPoint
         addChild(bit)
+        registerPlayer(bit)
         playerController = PlayerController(character: bit, scene: self)
     }
 
     private func recordPosition() {
-        positionHistory.append((position: bit.position, time: gameTime))
+        positionHistory.append((position: bit.position, platformPos: movingPlatform.position, time: gameTime))
 
         // Trim old history
         while positionHistory.count > maxHistoryCount {
@@ -240,23 +242,117 @@ final class ShakeUndoScene: BaseLevelScene, SKPhysicsContactDelegate {
         }
     }
 
+    // MARK: - Ghost Trail Effect
+
+    private func createGhostTrail() {
+        // Sample 6 evenly-spaced positions from the history buffer for ghost images
+        guard positionHistory.count > 6 else { return }
+        let step = max(1, positionHistory.count / 6)
+
+        for i in stride(from: 0, to: min(positionHistory.count, step * 6), by: step) {
+            let entry = positionHistory[i]
+            let ghostAlpha = CGFloat(i) / CGFloat(positionHistory.count) * 0.5
+
+            // Create a ghost copy of the character shape
+            let ghost = SKShapeNode(rectOf: CGSize(width: 20, height: 28), cornerRadius: 4)
+            ghost.fillColor = fillColor
+            ghost.strokeColor = strokeColor
+            ghost.lineWidth = lineWidth * 0.6
+            ghost.alpha = ghostAlpha + 0.1
+            ghost.position = entry.position
+            ghost.zPosition = 90
+
+            // Small visor line to hint at character shape
+            let visor = SKShapeNode(rectOf: CGSize(width: 12, height: 4), cornerRadius: 1)
+            visor.fillColor = strokeColor
+            visor.strokeColor = strokeColor
+            visor.lineWidth = 0.5
+            visor.position = CGPoint(x: 0, y: 5)
+            ghost.addChild(visor)
+
+            addChild(ghost)
+
+            // Fade out and remove
+            ghost.run(.sequence([
+                .fadeOut(withDuration: 0.5),
+                .removeFromParent()
+            ]))
+        }
+    }
+
+    // MARK: - 4th Wall Text
+
+    private func showFourthWallText() {
+        let panel = SKNode()
+        panel.position = CGPoint(x: size.width / 2, y: size.height / 2 + 80)
+        panel.zPosition = 500
+        panel.alpha = 0
+        addChild(panel)
+
+        let bg = SKShapeNode(rectOf: CGSize(width: 340, height: 50), cornerRadius: 6)
+        bg.fillColor = fillColor
+        bg.strokeColor = strokeColor
+        bg.lineWidth = lineWidth
+        panel.addChild(bg)
+
+        let line1 = SKLabelNode(text: "SHAKING ME WON'T FIX YOUR")
+        line1.fontName = "Menlo-Bold"
+        line1.fontSize = 10
+        line1.fontColor = strokeColor
+        line1.position = CGPoint(x: 0, y: 6)
+        panel.addChild(line1)
+
+        let line2 = SKLabelNode(text: "MISTAKES IN REAL LIFE. BUT HERE? SURE.")
+        line2.fontName = "Menlo-Bold"
+        line2.fontSize = 10
+        line2.fontColor = strokeColor
+        line2.position = CGPoint(x: 0, y: -10)
+        panel.addChild(line2)
+
+        panel.run(.sequence([
+            .fadeIn(withDuration: 0.2),
+            .wait(forDuration: 3.5),
+            .fadeOut(withDuration: 0.5),
+            .removeFromParent()
+        ]))
+    }
+
     private func performUndo() {
-        guard undoCount > 0 else { return }
-        guard positionHistory.count > 10 else { return }
+        guard undoCount > 0, positionHistory.count > 10 else {
+            // Feedback when undo fails
+            JuiceManager.shared.shake(intensity: .light, duration: 0.2)
+            JuiceManager.shared.popText("NO UNDOS LEFT", at: CGPoint(x: size.width / 2, y: size.height / 2), color: strokeColor, fontSize: 18)
+            AudioManager.shared.playDanger()
+            return
+        }
 
         undoCount -= 1
         undoLabel.text = "x\(undoCount)"
 
+        // 4th wall text on first undo
+        if !hasUsedUndo {
+            hasUsedUndo = true
+            showFourthWallText()
+        }
+
         // Find position from ~3 seconds ago
         let targetTime = gameTime - historyDuration
         var targetPosition = spawnPoint
+        var targetPlatformPos = movingPlatform.position
 
         for entry in positionHistory.reversed() {
             if entry.time <= targetTime {
                 targetPosition = entry.position
+                targetPlatformPos = entry.platformPos
                 break
             }
         }
+
+        // Ghost trail effect before teleporting
+        createGhostTrail()
+
+        // Rewind the moving platform position too
+        movingPlatform.run(.move(to: targetPlatformPos, duration: 0.2))
 
         // Rewind effect
         bit.run(.sequence([
@@ -280,11 +376,8 @@ final class ShakeUndoScene: BaseLevelScene, SKPhysicsContactDelegate {
         let generator = UIImpactFeedbackGenerator(style: .heavy)
         generator.impactOccurred()
 
-        // Animate undo icon
-        undoIcon.run(.sequence([
-            .rotate(byAngle: -.pi * 2, duration: 0.3),
-            .rotate(toAngle: 0, duration: 0)
-        ]))
+        // Animate undo icon with smooth continuous rotation
+        undoIcon.run(.rotate(byAngle: -.pi * 2, duration: 0.3))
     }
 
     override func handleGameInput(_ event: GameInputEvent) {

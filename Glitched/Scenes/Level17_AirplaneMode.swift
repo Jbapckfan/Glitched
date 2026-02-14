@@ -1,5 +1,4 @@
 import SpriteKit
-import Combine
 import UIKit
 
 /// Level 17: Airplane Mode
@@ -19,6 +18,9 @@ final class AirplaneModeScene: BaseLevelScene, SKPhysicsContactDelegate {
     private var flyingPositions: [CGPoint] = []
     private var isAirplaneMode = false
     private var airplaneIcon: SKNode!
+    private var hasShownFourthWall = false
+    private var turbulenceTime: TimeInterval = 0
+    private let platformDelayOffsets: [TimeInterval] = [0.0, 0.3, 0.6]
 
     override func configureScene() {
         levelID = LevelID(world: .world2, index: 17)
@@ -47,6 +49,13 @@ final class AirplaneModeScene: BaseLevelScene, SKPhysicsContactDelegate {
             cloud.alpha = 0.15
             cloud.zPosition = -10
             addChild(cloud)
+
+            // Slow horizontal drift animation
+            let drift = SKAction.sequence([
+                .moveBy(x: 30, y: 0, duration: 8),
+                .moveBy(x: -30, y: 0, duration: 8)
+            ])
+            cloud.run(.repeatForever(drift))
         }
     }
 
@@ -220,6 +229,7 @@ final class AirplaneModeScene: BaseLevelScene, SKPhysicsContactDelegate {
         exit.physicsBody = SKPhysicsBody(rectangleOf: exit.size)
         exit.physicsBody?.isDynamic = false
         exit.physicsBody?.categoryBitMask = PhysicsCategory.exit
+        exit.physicsBody?.collisionBitMask = 0
         exit.name = "exit"
         addChild(exit)
     }
@@ -257,16 +267,21 @@ final class AirplaneModeScene: BaseLevelScene, SKPhysicsContactDelegate {
         bit = BitCharacter.make()
         bit.position = spawnPoint
         addChild(bit)
+        registerPlayer(bit)
         playerController = PlayerController(character: bit, scene: self)
     }
 
     private func updateAirplaneState(_ enabled: Bool) {
         isAirplaneMode = enabled
 
-        // Animate platforms to new positions
+        // Animate platforms with staggered timing offsets
         for (index, platform) in flyingPlatforms.enumerated() {
             let targetPos = enabled ? flyingPositions[index] : landedPositions[index]
-            platform.run(.move(to: targetPos, duration: 0.5))
+            let delay = index < platformDelayOffsets.count ? platformDelayOffsets[index] : 0
+            platform.run(.sequence([
+                .wait(forDuration: delay),
+                .move(to: targetPos, duration: 0.5)
+            ]))
         }
 
         // Update icon
@@ -280,6 +295,49 @@ final class AirplaneModeScene: BaseLevelScene, SKPhysicsContactDelegate {
 
         let generator = UIImpactFeedbackGenerator(style: enabled ? .heavy : .light)
         generator.impactOccurred()
+
+        // 4th wall text on first airplane mode toggle
+        if enabled && !hasShownFourthWall {
+            hasShownFourthWall = true
+            showFourthWallText()
+        }
+    }
+
+    // MARK: - 4th Wall Text
+
+    private func showFourthWallText() {
+        let panel = SKNode()
+        panel.position = CGPoint(x: size.width / 2, y: size.height / 2 + 100)
+        panel.zPosition = 500
+        panel.alpha = 0
+        addChild(panel)
+
+        let bg = SKShapeNode(rectOf: CGSize(width: 340, height: 50), cornerRadius: 6)
+        bg.fillColor = fillColor
+        bg.strokeColor = strokeColor
+        bg.lineWidth = lineWidth
+        panel.addChild(bg)
+
+        let line1 = SKLabelNode(text: "AIRPLANE MODE? WHERE DO YOU THINK")
+        line1.fontName = "Menlo-Bold"
+        line1.fontSize = 10
+        line1.fontColor = strokeColor
+        line1.position = CGPoint(x: 0, y: 6)
+        panel.addChild(line1)
+
+        let line2 = SKLabelNode(text: "I'M GOING? I LIVE IN YOUR PHONE.")
+        line2.fontName = "Menlo-Bold"
+        line2.fontSize = 10
+        line2.fontColor = strokeColor
+        line2.position = CGPoint(x: 0, y: -10)
+        panel.addChild(line2)
+
+        panel.run(.sequence([
+            .fadeIn(withDuration: 0.2),
+            .wait(forDuration: 3.5),
+            .fadeOut(withDuration: 0.5),
+            .removeFromParent()
+        ]))
     }
 
     override func handleGameInput(_ event: GameInputEvent) {
@@ -312,6 +370,20 @@ final class AirplaneModeScene: BaseLevelScene, SKPhysicsContactDelegate {
 
     override func updatePlaying(deltaTime: TimeInterval) {
         playerController.update()
+
+        // Turbulence: when Airplane Mode is ON, flying platforms wobble slightly
+        if isAirplaneMode {
+            turbulenceTime += deltaTime
+            for (index, platform) in flyingPlatforms.enumerated() {
+                let freq = 3.0 + Double(index) * 0.7
+                let ampX: CGFloat = 1.5
+                let ampY: CGFloat = 2.0
+                let offsetX = ampX * CGFloat(sin(turbulenceTime * freq + Double(index) * 1.2))
+                let offsetY = ampY * CGFloat(cos(turbulenceTime * freq * 0.8 + Double(index) * 0.9))
+                let target = flyingPositions[index]
+                platform.position = CGPoint(x: target.x + offsetX, y: target.y + offsetY)
+            }
+        }
     }
 
     func didBegin(_ contact: SKPhysicsContact) {

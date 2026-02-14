@@ -1,5 +1,4 @@
 import SpriteKit
-import Combine
 import UIKit
 
 final class TimeTravelScene: BaseLevelScene, SKPhysicsContactDelegate {
@@ -331,6 +330,7 @@ final class TimeTravelScene: BaseLevelScene, SKPhysicsContactDelegate {
         exit.physicsBody = SKPhysicsBody(rectangleOf: exit.size)
         exit.physicsBody?.isDynamic = false
         exit.physicsBody?.categoryBitMask = PhysicsCategory.exit
+        exit.physicsBody?.collisionBitMask = 0
         exit.name = "exit"
         addChild(exit)
 
@@ -402,55 +402,6 @@ final class TimeTravelScene: BaseLevelScene, SKPhysicsContactDelegate {
         leaf.position = position
         leaf.zRotation = rotation
         return leaf
-    }
-
-    // MARK: - Full Tree
-
-    private func createFullTree() {
-        fullTreeNode = SKNode()
-        fullTreeNode?.name = "full_tree"
-        fullTreeNode?.alpha = 0
-        treeContainer.addChild(fullTreeNode!)
-
-        // Trunk
-        let trunk = SKShapeNode()
-        let trunkPath = CGMutablePath()
-        trunkPath.move(to: CGPoint(x: -20, y: 0))
-        trunkPath.addLine(to: CGPoint(x: -12, y: 200))
-        trunkPath.addLine(to: CGPoint(x: 12, y: 200))
-        trunkPath.addLine(to: CGPoint(x: 20, y: 0))
-        trunkPath.closeSubpath()
-        trunk.path = trunkPath
-        trunk.fillColor = fillColor
-        trunk.strokeColor = strokeColor
-        trunk.lineWidth = lineWidth
-        fullTreeNode?.addChild(trunk)
-        lineElements.append(trunk)
-
-        // Main branches (climbable platforms)
-        let branchData: [(CGPoint, CGFloat, CGSize)] = [
-            (CGPoint(x: -80, y: 80), -0.2, CGSize(width: 100, height: 20)),
-            (CGPoint(x: 70, y: 140), 0.15, CGSize(width: 110, height: 20)),
-            (CGPoint(x: -60, y: 200), -0.1, CGSize(width: 90, height: 20)),
-            (CGPoint(x: 90, y: 260), 0.2, CGSize(width: 120, height: 20)),
-            (CGPoint(x: 0, y: 320), 0, CGSize(width: 100, height: 20)),
-            (CGPoint(x: 110, y: 380), 0.1, CGSize(width: 110, height: 20)),
-        ]
-
-        for (position, rotation, branchSize) in branchData {
-            let branch = createBranch(at: position, rotation: rotation, size: branchSize)
-            fullTreeNode?.addChild(branch)
-            treeBranches.append(branch)
-        }
-
-        // Decorative smaller branches
-        addDecorativeBranches()
-
-        // Roots
-        addRoots()
-
-        // Canopy
-        addCanopy()
     }
 
     private func createBranch(at position: CGPoint, rotation: CGFloat, size branchSize: CGSize) -> SKNode {
@@ -715,6 +666,7 @@ final class TimeTravelScene: BaseLevelScene, SKPhysicsContactDelegate {
         bit = BitCharacter.make()
         bit.position = spawnPoint
         addChild(bit)
+        registerPlayer(bit)
 
         playerController = PlayerController(character: bit, scene: self)
     }
@@ -725,11 +677,56 @@ final class TimeTravelScene: BaseLevelScene, SKPhysicsContactDelegate {
         let newYears = gameYears + (deltaTime * timeMultiplier)
         gameYears = newYears
 
-        if gameYears >= requiredYears && currentTreeState != .ancientTree {
+        // Show 4th-wall return commentary
+        showReturnCommentary(secondsAway: deltaTime)
+
+        // Determine target tree state based on time away
+        let targetState: TreeState
+        if deltaTime >= 30 || gameYears >= requiredYears {
+            targetState = .ancientTree
+        } else if deltaTime >= 15 {
+            targetState = .matureTree
+        } else if deltaTime >= 5 {
+            targetState = .youngTree
+        } else {
+            targetState = currentTreeState
+        }
+
+        if targetState.rawValue > currentTreeState.rawValue {
             showSyncingAnimation {
-                self.growTree()
+                self.growTreeToStage(targetState)
             }
         }
+    }
+
+    private func showReturnCommentary(secondsAway: TimeInterval) {
+        if secondsAway < 2.0 {
+            // Very quick return
+            showCommentaryText("THAT WAS FAST. COMMITMENT ISSUES?")
+        } else {
+            let rounded = Int(secondsAway)
+            showCommentaryText("YOU WERE GONE FOR \(rounded) SECONDS. I COUNTED EVERY ONE.")
+        }
+    }
+
+    private func showCommentaryText(_ text: String) {
+        let label = SKLabelNode(text: text)
+        label.fontName = "Menlo-Bold"
+        label.fontSize = 12
+        label.fontColor = strokeColor
+        label.position = CGPoint(x: size.width / 2, y: size.height / 2 + 80)
+        label.zPosition = 500
+        label.alpha = 0
+        label.name = "return_commentary"
+        addChild(label)
+
+        label.run(.sequence([
+            .wait(forDuration: 2.0),
+            .fadeIn(withDuration: 0.3),
+            .wait(forDuration: 3.5),
+            .fadeOut(withDuration: 0.5),
+            .removeFromParent()
+        ]))
     }
 
     private func showSyncingAnimation(completion: @escaping () -> Void) {
@@ -766,18 +763,22 @@ final class TimeTravelScene: BaseLevelScene, SKPhysicsContactDelegate {
             .removeFromParent()
         ])
 
-        flash.run(flashSequence) {
-            self.syncingLabel?.removeFromParent()
+        flash.run(flashSequence) { [weak self] in
+            self?.syncingLabel?.removeFromParent()
             completion()
         }
     }
 
-    private func growTree() {
-        currentTreeState = .ancientTree
+    private func growTreeToStage(_ stage: TreeState) {
+        currentTreeState = stage
 
-        if fullTreeNode == nil {
-            createFullTree()
-        }
+        // Clear previous tree if exists
+        fullTreeNode?.removeFromParent()
+        fullTreeNode = nil
+        treeBranches.removeAll()
+
+        // Build the tree for this stage
+        createTreeForStage(stage)
 
         // Hide sapling
         saplingNode?.run(.fadeOut(withDuration: 0.3))
@@ -797,23 +798,27 @@ final class TimeTravelScene: BaseLevelScene, SKPhysicsContactDelegate {
             .moveBy(x: 10, y: 0, duration: 0.05),
             .moveBy(x: -5, y: 0, duration: 0.05)
         ])
-        run(.repeat(shake, count: 10))
+        let shakeCount = stage == .ancientTree ? 10 : (stage == .matureTree ? 6 : 3)
+        run(.repeat(shake, count: shakeCount))
 
         // Haptic
-        let generator = UIImpactFeedbackGenerator(style: .heavy)
+        let generator = UIImpactFeedbackGenerator(style: stage == .ancientTree ? .heavy : .medium)
         generator.impactOccurred()
 
-        // Hide clock and sign
-        clockDisplay?.run(.fadeOut(withDuration: 0.5))
-        signNode?.run(.fadeOut(withDuration: 0.5))
+        // Only activate exit for ancient tree (full growth)
+        if stage == .ancientTree {
+            // Hide clock and sign
+            clockDisplay?.run(.fadeOut(withDuration: 0.5))
+            signNode?.run(.fadeOut(withDuration: 0.5))
 
-        // Activate exit arrow
-        if let arrow = childNode(withName: "exit_arrow") {
-            arrow.run(.fadeAlpha(to: 1.0, duration: 0.5))
-            arrow.run(.repeatForever(.sequence([
-                .moveBy(x: 0, y: -6, duration: 0.4),
-                .moveBy(x: 0, y: 6, duration: 0.4)
-            ])))
+            // Activate exit arrow
+            if let arrow = childNode(withName: "exit_arrow") {
+                arrow.run(.fadeAlpha(to: 1.0, duration: 0.5))
+                arrow.run(.repeatForever(.sequence([
+                    .moveBy(x: 0, y: -6, duration: 0.4),
+                    .moveBy(x: 0, y: 6, duration: 0.4)
+                ])))
+            }
         }
 
         // Hide instruction panel
@@ -822,6 +827,140 @@ final class TimeTravelScene: BaseLevelScene, SKPhysicsContactDelegate {
             .removeFromParent()
         ]))
         instructionPanel = nil
+    }
+
+    private func createTreeForStage(_ stage: TreeState) {
+        fullTreeNode = SKNode()
+        fullTreeNode?.name = "full_tree"
+        fullTreeNode?.alpha = 0
+        treeContainer.addChild(fullTreeNode!)
+
+        switch stage {
+        case .sapling:
+            break
+
+        case .youngTree:
+            // Small bush: short trunk + 1 branch platform
+            let trunk = createTrunk(height: 80)
+            fullTreeNode?.addChild(trunk)
+
+            let branch = createBranch(
+                at: CGPoint(x: -50, y: 70),
+                rotation: -0.15,
+                size: CGSize(width: 80, height: 20)
+            )
+            fullTreeNode?.addChild(branch)
+            treeBranches.append(branch)
+
+            // Small canopy
+            let cluster = SKShapeNode(ellipseOf: CGSize(width: 60, height: 40))
+            cluster.position = CGPoint(x: 0, y: 100)
+            cluster.fillColor = fillColor
+            cluster.strokeColor = strokeColor
+            cluster.lineWidth = lineWidth * 0.6
+            fullTreeNode?.addChild(cluster)
+
+        case .matureTree:
+            // Medium tree: taller trunk + 2 branch platforms
+            let trunk = createTrunk(height: 150)
+            fullTreeNode?.addChild(trunk)
+
+            let branch1 = createBranch(
+                at: CGPoint(x: -70, y: 80),
+                rotation: -0.15,
+                size: CGSize(width: 90, height: 20)
+            )
+            fullTreeNode?.addChild(branch1)
+            treeBranches.append(branch1)
+
+            let branch2 = createBranch(
+                at: CGPoint(x: 60, y: 140),
+                rotation: 0.12,
+                size: CGSize(width: 100, height: 20)
+            )
+            fullTreeNode?.addChild(branch2)
+            treeBranches.append(branch2)
+
+            // Medium canopy
+            for i in 0..<3 {
+                let cluster = SKShapeNode(ellipseOf: CGSize(width: 55, height: 40))
+                cluster.position = CGPoint(
+                    x: CGFloat(i - 1) * 40,
+                    y: CGFloat.random(in: 160...200)
+                )
+                cluster.fillColor = fillColor
+                cluster.strokeColor = strokeColor
+                cluster.lineWidth = lineWidth * 0.6
+                fullTreeNode?.addChild(cluster)
+            }
+
+            addRoots()
+
+        case .ancientTree:
+            // Full tree: tall trunk + 3 branch platforms reaching high
+            createFullTreeContent()
+        }
+    }
+
+    private func createTrunk(height: CGFloat) -> SKShapeNode {
+        let trunk = SKShapeNode()
+        let trunkPath = CGMutablePath()
+        let topWidth: CGFloat = max(8, 12 - (200 - height) * 0.02)
+        let bottomWidth: CGFloat = max(12, 20 - (200 - height) * 0.04)
+        trunkPath.move(to: CGPoint(x: -bottomWidth, y: 0))
+        trunkPath.addLine(to: CGPoint(x: -topWidth, y: height))
+        trunkPath.addLine(to: CGPoint(x: topWidth, y: height))
+        trunkPath.addLine(to: CGPoint(x: bottomWidth, y: 0))
+        trunkPath.closeSubpath()
+        trunk.path = trunkPath
+        trunk.fillColor = fillColor
+        trunk.strokeColor = strokeColor
+        trunk.lineWidth = lineWidth
+        lineElements.append(trunk)
+        return trunk
+    }
+
+    private func createFullTreeContent() {
+        // This replaces the old createFullTree content inside the node
+        // Trunk
+        let trunk = SKShapeNode()
+        let trunkPath = CGMutablePath()
+        trunkPath.move(to: CGPoint(x: -20, y: 0))
+        trunkPath.addLine(to: CGPoint(x: -12, y: 200))
+        trunkPath.addLine(to: CGPoint(x: 12, y: 200))
+        trunkPath.addLine(to: CGPoint(x: 20, y: 0))
+        trunkPath.closeSubpath()
+        trunk.path = trunkPath
+        trunk.fillColor = fillColor
+        trunk.strokeColor = strokeColor
+        trunk.lineWidth = lineWidth
+        fullTreeNode?.addChild(trunk)
+        lineElements.append(trunk)
+
+        // Main branches (3 climbable platforms reaching toward the cliff)
+        let branchData: [(CGPoint, CGFloat, CGSize)] = [
+            (CGPoint(x: -80, y: 80), -0.2, CGSize(width: 100, height: 20)),
+            (CGPoint(x: 70, y: 140), 0.15, CGSize(width: 110, height: 20)),
+            (CGPoint(x: -60, y: 200), -0.1, CGSize(width: 90, height: 20)),
+            (CGPoint(x: 90, y: 260), 0.2, CGSize(width: 120, height: 20)),
+            (CGPoint(x: 0, y: 320), 0, CGSize(width: 100, height: 20)),
+            (CGPoint(x: 110, y: 380), 0.1, CGSize(width: 110, height: 20)),
+        ]
+
+        for (position, rotation, branchSize) in branchData {
+            let branch = createBranch(at: position, rotation: rotation, size: branchSize)
+            fullTreeNode?.addChild(branch)
+            treeBranches.append(branch)
+        }
+
+        // Decorative smaller branches
+        addDecorativeBranches()
+
+        // Roots
+        addRoots()
+
+        // Canopy
+        addCanopy()
     }
 
     // MARK: - Update
@@ -838,9 +977,24 @@ final class TimeTravelScene: BaseLevelScene, SKPhysicsContactDelegate {
             applyTimePassage(deltaTime: deltaTime)
         case .timePassageSimulated(let years):
             gameYears += years
-            if gameYears >= requiredYears && currentTreeState != .ancientTree {
+            // Simulate time away based on years for stage calculation
+            let simulatedSeconds = years / timeMultiplier
+            showReturnCommentary(secondsAway: simulatedSeconds)
+
+            let targetState: TreeState
+            if simulatedSeconds >= 30 || gameYears >= requiredYears {
+                targetState = .ancientTree
+            } else if simulatedSeconds >= 15 {
+                targetState = .matureTree
+            } else if simulatedSeconds >= 5 {
+                targetState = .youngTree
+            } else {
+                targetState = currentTreeState
+            }
+
+            if targetState.rawValue > currentTreeState.rawValue {
                 showSyncingAnimation {
-                    self.growTree()
+                    self.growTreeToStage(targetState)
                 }
             }
         default:

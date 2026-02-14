@@ -27,6 +27,18 @@ enum MechanicType: String, CaseIterable {
     case appDeletion     // Meta finale
     case airplaneMode
 
+    // World 3: Data Corruption
+    case voiceCommand    // Siri / Speech commands
+    case batteryLevel    // Battery percentage
+    case deviceName      // Device owner name
+    case storageSpace    // Storage / Cache
+    case timeOfDay       // Calendar / Clock
+
+    // World 4: Reality Break
+    case locale          // Language / Locale
+    case voiceOver       // Accessibility / VoiceOver
+    case airdrop         // AirDrop
+
     // Utility/Future
     case proximity
     case timedPress

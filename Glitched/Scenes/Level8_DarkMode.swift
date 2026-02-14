@@ -1,5 +1,4 @@
 import SpriteKit
-import Combine
 import UIKit
 
 final class DarkModeScene: BaseLevelScene, SKPhysicsContactDelegate {
@@ -29,6 +28,12 @@ final class DarkModeScene: BaseLevelScene, SKPhysicsContactDelegate {
     private var darkModePlatforms: [SKNode] = []  // Only solid in dark mode
     private var lightModePlatforms: [SKNode] = [] // Only solid in light mode
 
+    // Hidden dark mode text
+    private var hiddenDarkText: SKLabelNode?
+
+    // Shadow enemy (dark mode only)
+    private var shadowEnemy: SKNode?
+
     // All line elements for color updates
     private var lineElements: [SKNode] = []
 
@@ -57,8 +62,12 @@ final class DarkModeScene: BaseLevelScene, SKPhysicsContactDelegate {
         createMoonSensor()
         showInstructionPanel()
         setupBit()
+        createHiddenDarkText()
+        createShadowEnemy()
 
         updateDoorState()
+        updateHiddenDarkText()
+        updateShadowEnemy()
     }
 
     // MARK: - Background
@@ -733,6 +742,110 @@ final class DarkModeScene: BaseLevelScene, SKPhysicsContactDelegate {
         lineElements.append(subLabel)
     }
 
+    // MARK: - Hidden Dark Mode Text
+
+    private func createHiddenDarkText() {
+        hiddenDarkText = SKLabelNode(text: "PSST. BETWEEN YOU AND ME...")
+        hiddenDarkText?.fontName = "Menlo-Bold"
+        hiddenDarkText?.fontSize = 10
+        hiddenDarkText?.fontColor = .white
+        hiddenDarkText?.position = CGPoint(x: 120, y: 130)
+        hiddenDarkText?.zPosition = 50
+        hiddenDarkText?.alpha = 0
+        addChild(hiddenDarkText!)
+
+        let hiddenDarkText2 = SKLabelNode(text: "LIGHT MODE USERS ARE SUS.")
+        hiddenDarkText2.fontName = "Menlo-Bold"
+        hiddenDarkText2.fontSize = 10
+        hiddenDarkText2.fontColor = .white
+        hiddenDarkText2.position = CGPoint(x: 120, y: 115)
+        hiddenDarkText2.zPosition = 50
+        hiddenDarkText2.alpha = 0
+        hiddenDarkText2.name = "hidden_dark_text_2"
+        addChild(hiddenDarkText2)
+    }
+
+    private func updateHiddenDarkText() {
+        let targetAlpha: CGFloat = isDarkMode ? 0.7 : 0
+        hiddenDarkText?.run(.fadeAlpha(to: targetAlpha, duration: 0.5))
+        if let text2 = childNode(withName: "hidden_dark_text_2") as? SKLabelNode {
+            text2.run(.fadeAlpha(to: targetAlpha, duration: 0.5))
+        }
+    }
+
+    // MARK: - Shadow Enemy
+
+    private func createShadowEnemy() {
+        shadowEnemy = SKNode()
+        shadowEnemy?.position = CGPoint(x: 380, y: 160 + 50 + 25)
+        shadowEnemy?.zPosition = 20
+        shadowEnemy?.alpha = 0
+        addChild(shadowEnemy!)
+
+        // Triangular shadow shape
+        let triangle = SKShapeNode()
+        let triPath = CGMutablePath()
+        triPath.move(to: CGPoint(x: 0, y: 15))
+        triPath.addLine(to: CGPoint(x: -12, y: -8))
+        triPath.addLine(to: CGPoint(x: 12, y: -8))
+        triPath.closeSubpath()
+        triangle.path = triPath
+        triangle.fillColor = .white
+        triangle.strokeColor = .white
+        triangle.lineWidth = lineWidth * 0.6
+        triangle.name = "shadow_triangle"
+        shadowEnemy?.addChild(triangle)
+
+        // Menacing eye
+        let eye = SKShapeNode(circleOfRadius: 3)
+        eye.fillColor = .black
+        eye.strokeColor = .clear
+        eye.position = CGPoint(x: 0, y: 3)
+        eye.name = "shadow_eye"
+        shadowEnemy?.addChild(eye)
+
+        // Physics hazard body (initially disabled)
+        let hazardBody = SKNode()
+        hazardBody.physicsBody = SKPhysicsBody(circleOfRadius: 14)
+        hazardBody.physicsBody?.isDynamic = false
+        hazardBody.physicsBody?.categoryBitMask = 0
+        hazardBody.name = "shadow_hazard"
+        shadowEnemy?.addChild(hazardBody)
+
+        // Patrol animation (move back and forth on the platform)
+        let patrol = SKAction.sequence([
+            .moveBy(x: 40, y: 0, duration: 1.5),
+            .moveBy(x: -40, y: 0, duration: 1.5)
+        ])
+        shadowEnemy?.run(.repeatForever(patrol), withKey: "patrol")
+    }
+
+    private func updateShadowEnemy() {
+        guard let enemy = shadowEnemy else { return }
+
+        if isDarkMode {
+            // Visible and hazardous in dark mode
+            enemy.run(.fadeAlpha(to: 0.9, duration: 0.3))
+            if let hazard = enemy.childNode(withName: "shadow_hazard") {
+                hazard.physicsBody?.categoryBitMask = PhysicsCategory.hazard
+            }
+            // Update colors for dark mode visibility
+            if let triangle = enemy.childNode(withName: "shadow_triangle") as? SKShapeNode {
+                triangle.fillColor = .white
+                triangle.strokeColor = .white
+            }
+            if let eye = enemy.childNode(withName: "shadow_eye") as? SKShapeNode {
+                eye.fillColor = .black
+            }
+        } else {
+            // Invisible and harmless in light mode
+            enemy.run(.fadeAlpha(to: 0, duration: 0.3))
+            if let hazard = enemy.childNode(withName: "shadow_hazard") {
+                hazard.physicsBody?.categoryBitMask = 0
+            }
+        }
+    }
+
     // MARK: - Setup
 
     private func setupBit() {
@@ -741,6 +854,7 @@ final class DarkModeScene: BaseLevelScene, SKPhysicsContactDelegate {
         bit = BitCharacter.make()
         bit.position = spawnPoint
         addChild(bit)
+        registerPlayer(bit)
 
         playerController = PlayerController(character: bit, scene: self)
     }
@@ -765,8 +879,9 @@ final class DarkModeScene: BaseLevelScene, SKPhysicsContactDelegate {
                 shackle.run(.fadeOut(withDuration: 0.2))
             }
 
-            // Status light green
-            statusIndicator?.fillColor = SKColor(red: 0.2, green: 0.8, blue: 0.2, alpha: 1)
+            // Status light: use stroke color (B&W aesthetic)
+            statusIndicator?.fillColor = .clear
+            statusIndicator?.strokeColor = strokeColor
 
             // Activate signal waves
             moonSensor.enumerateChildNodes(withName: "signal_wave_*") { node, _ in
@@ -830,6 +945,7 @@ final class DarkModeScene: BaseLevelScene, SKPhysicsContactDelegate {
         exit.physicsBody = SKPhysicsBody(rectangleOf: exit.size)
         exit.physicsBody?.isDynamic = false
         exit.physicsBody?.categoryBitMask = PhysicsCategory.exit
+        exit.physicsBody?.collisionBitMask = 0
         exit.name = "exit"
         addChild(exit)
     }
@@ -943,6 +1059,8 @@ final class DarkModeScene: BaseLevelScene, SKPhysicsContactDelegate {
                 updateColorScheme(animated: true)
                 updateDoorState()
                 updateDualPlatforms()
+                updateHiddenDarkText()
+                updateShadowEnemy()
             }
         default:
             break

@@ -1,5 +1,4 @@
 import SpriteKit
-import Combine
 import UIKit
 
 final class ScreenshotScene: BaseLevelScene, SKPhysicsContactDelegate {
@@ -34,6 +33,10 @@ final class ScreenshotScene: BaseLevelScene, SKPhysicsContactDelegate {
     // Cooldown
     private var screenshotCooldown: TimeInterval = 0
     private let cooldownDuration: TimeInterval = 2.0
+
+    // Degrading freeze duration
+    private var screenshotCount: Int = 0
+    private var hasShownFirstScreenshotCommentary = false
 
     // MARK: - Configuration
 
@@ -353,6 +356,7 @@ final class ScreenshotScene: BaseLevelScene, SKPhysicsContactDelegate {
         exit.physicsBody = SKPhysicsBody(rectangleOf: exit.size)
         exit.physicsBody?.isDynamic = false
         exit.physicsBody?.categoryBitMask = PhysicsCategory.exit
+        exit.physicsBody?.collisionBitMask = 0
         exit.name = "exit"
         addChild(exit)
 
@@ -583,20 +587,34 @@ final class ScreenshotScene: BaseLevelScene, SKPhysicsContactDelegate {
         timerDisplay?.addChild(timerBG)
 
         // Timer label
-        timerLabel = SKLabelNode(text: "5")
+        timerLabel = SKLabelNode(text: "\(max(0, Int(ceil(frozenTimeRemaining))))")
         timerLabel?.fontName = "Helvetica-Bold"
         timerLabel?.fontSize = 32
         timerLabel?.fontColor = strokeColor
         timerLabel?.verticalAlignmentMode = .center
         timerDisplay?.addChild(timerLabel!)
 
-        // Progress ring (will animate)
+        // Progress ring with countdown animation
         let ring = SKShapeNode(circleOfRadius: 25)
         ring.fillColor = .clear
         ring.strokeColor = strokeColor
         ring.lineWidth = lineWidth * 0.5
         ring.name = "progress_ring"
         timerDisplay?.addChild(ring)
+
+        // Animate the ring shrinking over the freeze duration
+        let duration = frozenTimeRemaining
+        ring.run(.sequence([
+            .customAction(withDuration: duration) { node, elapsed in
+                guard let shape = node as? SKShapeNode else { return }
+                let progress = 1.0 - (elapsed / CGFloat(duration))
+                let startAngle = CGFloat.pi / 2
+                let endAngle = startAngle + (.pi * 2 * progress)
+                let arcPath = CGMutablePath()
+                arcPath.addArc(center: .zero, radius: 25, startAngle: startAngle, endAngle: endAngle, clockwise: false)
+                shape.path = arcPath
+            }
+        ]), withKey: "countdown")
     }
 
     // MARK: - Setup
@@ -607,16 +625,63 @@ final class ScreenshotScene: BaseLevelScene, SKPhysicsContactDelegate {
         bit = BitCharacter.make()
         bit.position = spawnPoint
         addChild(bit)
+        registerPlayer(bit)
 
         playerController = PlayerController(character: bit, scene: self)
     }
 
     // MARK: - Screenshot Freeze
 
+    private func currentFreezeDuration() -> TimeInterval {
+        switch screenshotCount {
+        case 0: return 5.0
+        case 1: return 3.5
+        case 2: return 2.0
+        default: return 1.0
+        }
+    }
+
+    private func showScreenshotCommentary() {
+        guard !hasShownFirstScreenshotCommentary else { return }
+        hasShownFirstScreenshotCommentary = true
+
+        let label = SKLabelNode(text: "YOU JUST SCREENSHOTTED ME.")
+        label.fontName = "Menlo-Bold"
+        label.fontSize = 13
+        label.fontColor = strokeColor
+        label.position = CGPoint(x: size.width / 2, y: size.height / 2 + 60)
+        label.zPosition = 400
+        label.alpha = 0
+        addChild(label)
+
+        let label2 = SKLabelNode(text: "THAT'S IN YOUR CAMERA ROLL NOW. FOREVER.")
+        label2.fontName = "Menlo-Bold"
+        label2.fontSize = 11
+        label2.fontColor = strokeColor
+        label2.position = CGPoint(x: size.width / 2, y: size.height / 2 + 40)
+        label2.zPosition = 400
+        label2.alpha = 0
+        addChild(label2)
+
+        let fadeAction = SKAction.sequence([
+            .fadeIn(withDuration: 0.3),
+            .wait(forDuration: 3.0),
+            .fadeOut(withDuration: 0.5),
+            .removeFromParent()
+        ])
+        label.run(fadeAction)
+        label2.run(fadeAction)
+    }
+
     private func freezeBridge() {
         guard !isBridgeFrozen else { return }
         isBridgeFrozen = true
-        frozenTimeRemaining = freezeDuration
+        let duration = currentFreezeDuration()
+        screenshotCount += 1
+        frozenTimeRemaining = duration
+
+        // Show 4th-wall text on first screenshot
+        showScreenshotCommentary()
 
         // Flash effect (line art style)
         let flash = SKShapeNode(rectOf: size)
@@ -795,6 +860,7 @@ final class ScreenshotScene: BaseLevelScene, SKPhysicsContactDelegate {
     private func handleDeath() {
         guard GameState.shared.levelState == .playing else { return }
         playerController.cancel()
+        screenshotCount = 0
         bit.playBufferDeath(respawnAt: spawnPoint) { [weak self] in
             self?.bit.setGrounded(true)
         }

@@ -9,128 +9,164 @@
 /* Begin PBXBuildFile section */
 		00AB645198D637A0FED2507F /* BrightnessManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7336C3943F02282AC5DBACF8 /* BrightnessManager.swift */; };
 		00DF7007792B952FCE013DD5 /* ProgressManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5E577B8468EA96708AB71BC /* ProgressManager.swift */; };
-		016FFA8EC872104CC026F6DB /* ClipboardManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = BDB4C04F712CED8E11D67583 /* ClipboardManager.swift */; };
+		03AAC790327E0A572082A7F9 /* DeviceNameManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 80A5BB481BDD99C3A39A3BBC /* DeviceNameManager.swift */; };
 		0B2B0AE4A2BCA6D1954800C7 /* BitCharacter.swift in Sources */ = {isa = PBXBuildFile; fileRef = F80099F4DD230213DDF15870 /* BitCharacter.swift */; };
-		0D1E20719089CF47A2503E92 /* FocusModeManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = AFF005CCE79BE18CD7523B0B /* FocusModeManager.swift */; };
+		0E012B163A1DE726DF13E644 /* HapticManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = C183FF931CCBBA2BBEB5D51C /* HapticManager.swift */; };
 		0F0065460F7D2835EBC2E377 /* Level6_Brightness.swift in Sources */ = {isa = PBXBuildFile; fileRef = 72820D4FA4FA2EAB83F9EA7A /* Level6_Brightness.swift */; };
-		1419D7B5CA03D100C8AF187C /* AuthenticationManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4B0E867C0979CA22637673C2 /* AuthenticationManager.swift */; };
+		10C6ECBEE4B25C2488828551 /* PowerModeManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = A652CB7062398A5DB1C2CE50 /* PowerModeManager.swift */; };
+		196D440E41478EE76C402A77 /* ClipboardManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = D065F33B8182B5289FC24557 /* ClipboardManager.swift */; };
 		19712575BDFA3584AA672404 /* GameRootView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C91EADCA77DF81BDDA2F970C /* GameRootView.swift */; };
+		199986AB11BBD61E5FD7DABC /* Level24_StorageSpace.swift in Sources */ = {isa = PBXBuildFile; fileRef = 96D953F74D3EFACD2220FB92 /* Level24_StorageSpace.swift */; };
+		1D437F807F723B4F96D749F6 /* Level26_Locale.swift in Sources */ = {isa = PBXBuildFile; fileRef = E9A6300473FBBF48BA89C785 /* Level26_Locale.swift */; };
+		1E26500DD8DEC185FCA758DF /* Level30_CreditsFinale.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0CE02614FFADA398E933211F /* Level30_CreditsFinale.swift */; };
+		256D225389BE2FCE88476365 /* Level16_ShakeUndo.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7E9C3E53B3C3D7AEE98978BB /* Level16_ShakeUndo.swift */; };
+		265423C850E953AD67649C36 /* AirDropManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0B7FD510F101F5A60DC21BC3 /* AirDropManager.swift */; };
 		26E344FB43860116EF926F81 /* ScreenshotManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 12A02BBDCD1404CA4545F4E5 /* ScreenshotManager.swift */; };
+		27715F9A98FF35048F49A49C /* Level22_BatteryPercent.swift in Sources */ = {isa = PBXBuildFile; fileRef = 73C3BE505E0D9E9AEA919C1D /* Level22_BatteryPercent.swift */; };
 		2ED14A726B4B63F41EABBED4 /* DebugInputPanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5798D022CBE41ACAB6B2D311 /* DebugInputPanel.swift */; };
-		35017582EF51E59F2909D3FC /* Level13_WiFi.swift in Sources */ = {isa = PBXBuildFile; fileRef = 79084A8F232CCBFFE5CADD85 /* Level13_WiFi.swift */; };
-		3A2178ADE888D446AEF7186F /* Level18_AppSwitcher.swift in Sources */ = {isa = PBXBuildFile; fileRef = F88F3D3B0B2F47E764B02651 /* Level18_AppSwitcher.swift */; };
+		309F7347B618CB9D379145D9 /* Level25_TimeOfDay.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9B6E8A08233E5AA54B079AF3 /* Level25_TimeOfDay.swift */; };
+		385F0F50B0DB94B3CF60370E /* AudioManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = D294E1604AB728538A52B49F /* AudioManager.swift */; };
 		3E0151C1311936BF50BAE0DE /* AppearanceManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3EBEED942CAA63CA601034EE /* AppearanceManager.swift */; };
 		3EDDD33EC2F11770CFF82E33 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 8D156C013CB319A0385F7506 /* Assets.xcassets */; };
-		43BE305B7B3166EAA9CFAC3C /* AudioManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = A03137CF0960575EB4CC09DA /* AudioManager.swift */; };
+		3F54EC52F8E9F681A0252439 /* JuiceManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5A30BF53F0063D721F60765 /* JuiceManager.swift */; };
+		4123E694B70A1E5CB5E132FC /* Level29_TheLie.swift in Sources */ = {isa = PBXBuildFile; fileRef = F043D5C26DE91D715EB8AD27 /* Level29_TheLie.swift */; };
 		448C9F4D19B7AAD18DA5AF25 /* LevelFactory.swift in Sources */ = {isa = PBXBuildFile; fileRef = C15F82C8F382DCF8658B8ACD /* LevelFactory.swift */; };
-		4560F141874D4390B0FE2B54 /* HapticManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 30E2210449157312F5D61CAA /* HapticManager.swift */; };
 		48F2531ECFAD8E1C33E19848 /* Level2_Wind.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7A9FC7B1DAEA40528C88510D /* Level2_Wind.swift */; };
+		4E62E1F99379A04312D51755 /* Level15_LowPower.swift in Sources */ = {isa = PBXBuildFile; fileRef = D4FF082F955DAD96BB2F013E /* Level15_LowPower.swift */; };
 		518C9B9F4605DCC99419F2CF /* GameInputEvent.swift in Sources */ = {isa = PBXBuildFile; fileRef = 25D202F0092C63598685BF39 /* GameInputEvent.swift */; };
+		528268B9AADD3080A287E407 /* VoiceOverManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6875D6C339DB4C95CE1B7F47 /* VoiceOverManager.swift */; };
+		539901415D4914E226024D00 /* LocaleManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = C6177BA4C3087E00BE235111 /* LocaleManager.swift */; };
 		54277AD9A2477FB5E1C573A2 /* OrientationManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = C9ADFADAD3DFF4FF015486C7 /* OrientationManager.swift */; };
-		5B9205F20553216725E00621 /* ShakeUndoManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 17EB5C3C4E1CC4340857BCD0 /* ShakeUndoManager.swift */; };
+		5FD1CF9FC1FAE4E8D9ECB6AC /* AuthenticationManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 231CEFB02BA5B2192F8EC955 /* AuthenticationManager.swift */; };
 		6043A2EEEB44943D6C10F7F9 /* InputEventBus.swift in Sources */ = {isa = PBXBuildFile; fileRef = 43E11F392479B2196246F96B /* InputEventBus.swift */; };
-		61D248E1F8CAC0123CD34A0C /* ReinstallManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5AC2299A91C5A34CE4EEF2AA /* ReinstallManager.swift */; };
 		63AEF1BD01913DD4F57F016B /* BaseLevelScene.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1459B00AEA5D4FE5A5026E4B /* BaseLevelScene.swift */; };
 		63B3FC08894FDCD4891421E0 /* LevelHeaderHUD.swift in Sources */ = {isa = PBXBuildFile; fileRef = 60F0989938E81319FCA6BCCA /* LevelHeaderHUD.swift */; };
 		642EF318AA14AFB50E740DE1 /* MotionManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = AD2252F95D146BFD43AF11B5 /* MotionManager.swift */; };
-		6498B2BF68F3AB4B93A71114 /* JuiceManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = C638D27BD8749CA7C0BC0994 /* JuiceManager.swift */; };
-		650511D32F77BE37A4D8A5C6 /* NetworkManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = E0FAF694D8868E7A02AF9CDA /* NetworkManager.swift */; };
-		655146E8DE8961DB7EA4D8D1 /* Level12_Clipboard.swift in Sources */ = {isa = PBXBuildFile; fileRef = DF8D9FCCC872A8DE6AD0FA2B /* Level12_Clipboard.swift */; };
-		680F00B59DE03A8A60472480 /* Level17_AirplaneMode.swift in Sources */ = {isa = PBXBuildFile; fileRef = F162EFF8509431E762665C93 /* Level17_AirplaneMode.swift */; };
-		6E99759F34C76A5231EBC194 /* Level15_LowPower.swift in Sources */ = {isa = PBXBuildFile; fileRef = 56880783589F95BC88929357 /* Level15_LowPower.swift */; };
-		76D2F7EEE078E5CD1F14F6D3 /* Level16_ShakeUndo.swift in Sources */ = {isa = PBXBuildFile; fileRef = 792503FE2788A5C960670AEA /* Level16_ShakeUndo.swift */; };
+		695444AA1972BA14771ED37B /* Level11_Notification.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5BC6120CBE61C500535D8CB0 /* Level11_Notification.swift */; };
+		6D6E0FD4CC3717E4CDF4D56D /* TimeOfDayManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0135D1F3DF2C035A049E736C /* TimeOfDayManager.swift */; };
 		7C19AE5C2EDA2EE18187FE16 /* LevelID.swift in Sources */ = {isa = PBXBuildFile; fileRef = CFEF9968DDA1EDE5D9706C75 /* LevelID.swift */; };
 		7C84D42D3EBE40A2002CB20C /* BatteryManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 63B3641B109025C0DDCE2B5E /* BatteryManager.swift */; };
 		7D019D1EB7D2239D94B71BEB /* DeviceManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7A5AC0459252E64256125FAD /* DeviceManager.swift */; };
+		8382502D8803DFD41E2A4ADC /* KeyboardState.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2ADF34795D77C2FA5AE87204 /* KeyboardState.swift */; };
 		846418D879D061D2C118B43F /* AccessibilityManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 37D78919A88F0739FEF71400 /* AccessibilityManager.swift */; };
+		86491F69A9743078BA9B94E3 /* ParticleFactory.swift in Sources */ = {isa = PBXBuildFile; fileRef = D6134308C7C2DA13566C0225 /* ParticleFactory.swift */; };
+		88181492C4E7B769698A540E /* VoiceCommandManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2D6AD830B25DB30C4F75624E /* VoiceCommandManager.swift */; };
 		8B10CC87C357667A57B35663 /* Level1_Header.swift in Sources */ = {isa = PBXBuildFile; fileRef = E0ADDCE606E466C484DC5D4C /* Level1_Header.swift */; };
-		8B690954EE7B4CF28B94B902 /* Level20_MetaFinale.swift in Sources */ = {isa = PBXBuildFile; fileRef = 056884D02E2EDE0ACC239220 /* Level20_MetaFinale.swift */; };
-		8BE10BBAEB742A4EC9C556B3 /* Level11_Notification.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4BC0FF3B90BD4608EA7225FF /* Level11_Notification.swift */; };
 		8E08BDD841FD28D80A0764B3 /* BackgroundTimeManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 31A1B25865B477718B3D4F81 /* BackgroundTimeManager.swift */; };
-		99599CC121F0815F721411C7 /* KeyboardState.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2FDBB9E07E46C08DCD894A2C /* KeyboardState.swift */; };
+		94078ED69BB6860047F0E4A6 /* FocusModeManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9EE34F192E505BF43AD7942D /* FocusModeManager.swift */; };
+		95C7A569C882408FD704CCF6 /* Level12_Clipboard.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4FA53D85C83A4D6BF7F5703D /* Level12_Clipboard.swift */; };
+		96FBC249607538C9D05297B3 /* NetworkManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 25737AD8252D103BAC560B16 /* NetworkManager.swift */; };
+		9899FF3F9266A63F351F90AB /* Level17_AirplaneMode.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6617AC71A777BF51EA8A8908 /* Level17_AirplaneMode.swift */; };
 		9977B18A7955405E5743454D /* Level3_Static.swift in Sources */ = {isa = PBXBuildFile; fileRef = BE1D0A964286B9ABA49CB3EC /* Level3_Static.swift */; };
-		A01985BA7D840C7D75285972 /* AppSwitcherManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3FA3930BA94F7B7B69153E25 /* AppSwitcherManager.swift */; };
+		A66163737B8B6CF9713FFF92 /* Level28_AirDrop.swift in Sources */ = {isa = PBXBuildFile; fileRef = 26CCA6D83D6B69FE0B1F89C0 /* Level28_AirDrop.swift */; };
+		A78045AE384938D2296429D4 /* ShakeUndoManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7A76E465CE814728482A32EA /* ShakeUndoManager.swift */; };
 		AAC0C4F2B525EE274D5CD1E2 /* PlayerController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7412661102DF49F96A011997 /* PlayerController.swift */; };
+		AB57F6CE52E76C824881CDD5 /* ReinstallManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 24C51F6533163E35F3561B4C /* ReinstallManager.swift */; };
+		AED2765480F15EB9B5B3FCF4 /* Level21_VoiceCommand.swift in Sources */ = {isa = PBXBuildFile; fileRef = 45D735BF0FEB9CAD568E6C55 /* Level21_VoiceCommand.swift */; };
 		B35C6CA2D513CEA1B4552C17 /* Level0_BootSequence.swift in Sources */ = {isa = PBXBuildFile; fileRef = 459CA7CEF086A492555C40B3 /* Level0_BootSequence.swift */; };
 		B4523E24A4B969CF137BB2A1 /* GameState.swift in Sources */ = {isa = PBXBuildFile; fileRef = F4A66C1B6B495950E381E8ED /* GameState.swift */; };
 		B66A488108E3CAE4B944B382 /* Level9_Orientation.swift in Sources */ = {isa = PBXBuildFile; fileRef = A7E6E4D2BFD72F0D56E2522A /* Level9_Orientation.swift */; };
 		BDD6BB84927B2C7EA5CCB5F7 /* GlitchedApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0B9CFD4664A4FF381CD51110 /* GlitchedApp.swift */; };
 		C1F7EB1BC790E6F7EABD2AC4 /* MicrophoneManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = FAA0F6B6AAA702F99C95251C /* MicrophoneManager.swift */; };
-		CDE8E2DEC5B967D73259CE91 /* PowerModeManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = CAA70E2B6E8CC0DBE051426E /* PowerModeManager.swift */; };
-		CF4E39B3B660E6E496D62BD1 /* ParticleFactory.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6C926750FF78E1F48EBE71D0 /* ParticleFactory.swift */; };
-		D485451E55646C0891B57C0C /* Level14_FocusMode.swift in Sources */ = {isa = PBXBuildFile; fileRef = 24C96800B3A29FFCB8D77D0D /* Level14_FocusMode.swift */; };
-		D80A21E379241F4615F7D8CF /* Level19_FaceID.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6256BED22F7182E44C5F1870 /* Level19_FaceID.swift */; };
+		C27424AF0FD9152F60DC580A /* Level27_VoiceOver.swift in Sources */ = {isa = PBXBuildFile; fileRef = 829FF142EAB115F99FD5345A /* Level27_VoiceOver.swift */; };
+		C677B8B74662F8B5F98D83E6 /* Level20_MetaFinale.swift in Sources */ = {isa = PBXBuildFile; fileRef = 711F568B1776028CC88CD672 /* Level20_MetaFinale.swift */; };
+		C92112168CCB7DDEBF8ED4AB /* BatteryLevelManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 813261F5775CAF4D6DC9491A /* BatteryLevelManager.swift */; };
+		CEE18DEF1D8CD01CC864A3C3 /* Level14_FocusMode.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4BCAA13046F01CADFDC5D784 /* Level14_FocusMode.swift */; };
+		D16D040AC7FF1BA508BA6135 /* Level23_DeviceName.swift in Sources */ = {isa = PBXBuildFile; fileRef = B69A5AB4ABFC655178C75B9F /* Level23_DeviceName.swift */; };
+		D6095FBCCD80D0B5FE109D88 /* AppSwitcherManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2951EA0539E27C1CF35F1C90 /* AppSwitcherManager.swift */; };
 		D9201108209D6D5FEA723A16 /* Level8_DarkMode.swift in Sources */ = {isa = PBXBuildFile; fileRef = 38C9348B5753673A50168165 /* Level8_DarkMode.swift */; };
+		E0256E88EB2FA5E7AC81BF61 /* NotificationManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = E10A1FE1B5A071435FC57110 /* NotificationManager.swift */; };
+		E3EA2E8D50135B198E78950C /* StorageSpaceManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 246C54B178876AB9B7C75F86 /* StorageSpaceManager.swift */; };
+		E60C00CA8B0EA29838102835 /* Level18_AppSwitcher.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1CC60FAC853285E300B4F0A5 /* Level18_AppSwitcher.swift */; };
 		E95FC1E629793116B01AD514 /* Level7_Screenshot.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4ABD6259D7C8DF7D947932C8 /* Level7_Screenshot.swift */; };
 		ECB2ABFF278863A8C87D38D4 /* Level10_TimeTravel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 45365B2F5C6B8ED21573E6A3 /* Level10_TimeTravel.swift */; };
 		EF5C7222C4754E9C9A86209E /* Level5_Charging.swift in Sources */ = {isa = PBXBuildFile; fileRef = E94A8D5694571314896A0BB3 /* Level5_Charging.swift */; };
-		F3358A684D820A0CC61A1AA1 /* NotificationManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5E7FC34972B740C785E467EB /* NotificationManager.swift */; };
+		F50D84DD6F9B4450477CC95E /* Level13_WiFi.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3C5CE694F3C08F3B5EE03855 /* Level13_WiFi.swift */; };
 		F851246AAF81D1E714A6565A /* DeviceManagerCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 90C5A4F33588282BB3AF7B97 /* DeviceManagerCoordinator.swift */; };
 		F8A9AADF304F0FDD601994E4 /* Level4_Volume.swift in Sources */ = {isa = PBXBuildFile; fileRef = B970E0065DEF3FB6BD53F97E /* Level4_Volume.swift */; };
+		FD6EFE04416CF1A98179E323 /* Level19_FaceID.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7D66EFF2E436320DB6B65AF8 /* Level19_FaceID.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
-		056884D02E2EDE0ACC239220 /* Level20_MetaFinale.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = Level20_MetaFinale.swift; path = Level20_MetaFinale.swift; sourceTree = "<group>"; };
+		0135D1F3DF2C035A049E736C /* TimeOfDayManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TimeOfDayManager.swift; sourceTree = "<group>"; };
+		0B7FD510F101F5A60DC21BC3 /* AirDropManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AirDropManager.swift; sourceTree = "<group>"; };
 		0B9CFD4664A4FF381CD51110 /* GlitchedApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GlitchedApp.swift; sourceTree = "<group>"; };
+		0CE02614FFADA398E933211F /* Level30_CreditsFinale.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Level30_CreditsFinale.swift; sourceTree = "<group>"; };
 		12A02BBDCD1404CA4545F4E5 /* ScreenshotManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScreenshotManager.swift; sourceTree = "<group>"; };
 		1459B00AEA5D4FE5A5026E4B /* BaseLevelScene.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BaseLevelScene.swift; sourceTree = "<group>"; };
-		17EB5C3C4E1CC4340857BCD0 /* ShakeUndoManager.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = ShakeUndoManager.swift; path = ShakeUndoManager.swift; sourceTree = "<group>"; };
-		24C96800B3A29FFCB8D77D0D /* Level14_FocusMode.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = Level14_FocusMode.swift; path = Level14_FocusMode.swift; sourceTree = "<group>"; };
+		1CC60FAC853285E300B4F0A5 /* Level18_AppSwitcher.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Level18_AppSwitcher.swift; sourceTree = "<group>"; };
+		231CEFB02BA5B2192F8EC955 /* AuthenticationManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuthenticationManager.swift; sourceTree = "<group>"; };
+		246C54B178876AB9B7C75F86 /* StorageSpaceManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StorageSpaceManager.swift; sourceTree = "<group>"; };
+		24C51F6533163E35F3561B4C /* ReinstallManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReinstallManager.swift; sourceTree = "<group>"; };
+		25737AD8252D103BAC560B16 /* NetworkManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NetworkManager.swift; sourceTree = "<group>"; };
 		25D202F0092C63598685BF39 /* GameInputEvent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GameInputEvent.swift; sourceTree = "<group>"; };
+		26CCA6D83D6B69FE0B1F89C0 /* Level28_AirDrop.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Level28_AirDrop.swift; sourceTree = "<group>"; };
 		288B2C30D58D7B698D2213A0 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
-		2FDBB9E07E46C08DCD894A2C /* KeyboardState.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = KeyboardState.swift; path = Input/KeyboardState.swift; sourceTree = "<group>"; };
-		30E2210449157312F5D61CAA /* HapticManager.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = HapticManager.swift; path = HapticManager.swift; sourceTree = "<group>"; };
+		2951EA0539E27C1CF35F1C90 /* AppSwitcherManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppSwitcherManager.swift; sourceTree = "<group>"; };
+		2ADF34795D77C2FA5AE87204 /* KeyboardState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeyboardState.swift; sourceTree = "<group>"; };
+		2D6AD830B25DB30C4F75624E /* VoiceCommandManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceCommandManager.swift; sourceTree = "<group>"; };
 		31A1B25865B477718B3D4F81 /* BackgroundTimeManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BackgroundTimeManager.swift; sourceTree = "<group>"; };
 		37D78919A88F0739FEF71400 /* AccessibilityManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessibilityManager.swift; sourceTree = "<group>"; };
 		38C9348B5753673A50168165 /* Level8_DarkMode.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Level8_DarkMode.swift; sourceTree = "<group>"; };
+		3C5CE694F3C08F3B5EE03855 /* Level13_WiFi.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Level13_WiFi.swift; sourceTree = "<group>"; };
 		3EBEED942CAA63CA601034EE /* AppearanceManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppearanceManager.swift; sourceTree = "<group>"; };
-		3FA3930BA94F7B7B69153E25 /* AppSwitcherManager.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = AppSwitcherManager.swift; path = AppSwitcherManager.swift; sourceTree = "<group>"; };
 		43E11F392479B2196246F96B /* InputEventBus.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InputEventBus.swift; sourceTree = "<group>"; };
 		45365B2F5C6B8ED21573E6A3 /* Level10_TimeTravel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Level10_TimeTravel.swift; sourceTree = "<group>"; };
 		459CA7CEF086A492555C40B3 /* Level0_BootSequence.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Level0_BootSequence.swift; sourceTree = "<group>"; };
+		45D735BF0FEB9CAD568E6C55 /* Level21_VoiceCommand.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Level21_VoiceCommand.swift; sourceTree = "<group>"; };
 		4ABD6259D7C8DF7D947932C8 /* Level7_Screenshot.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Level7_Screenshot.swift; sourceTree = "<group>"; };
-		4B0E867C0979CA22637673C2 /* AuthenticationManager.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = AuthenticationManager.swift; path = AuthenticationManager.swift; sourceTree = "<group>"; };
-		4BC0FF3B90BD4608EA7225FF /* Level11_Notification.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = Level11_Notification.swift; path = Level11_Notification.swift; sourceTree = "<group>"; };
-		56880783589F95BC88929357 /* Level15_LowPower.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = Level15_LowPower.swift; path = Level15_LowPower.swift; sourceTree = "<group>"; };
+		4BCAA13046F01CADFDC5D784 /* Level14_FocusMode.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Level14_FocusMode.swift; sourceTree = "<group>"; };
+		4FA53D85C83A4D6BF7F5703D /* Level12_Clipboard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Level12_Clipboard.swift; sourceTree = "<group>"; };
 		5798D022CBE41ACAB6B2D311 /* DebugInputPanel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DebugInputPanel.swift; sourceTree = "<group>"; };
-		5AC2299A91C5A34CE4EEF2AA /* ReinstallManager.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = ReinstallManager.swift; path = ReinstallManager.swift; sourceTree = "<group>"; };
-		5E7FC34972B740C785E467EB /* NotificationManager.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = NotificationManager.swift; path = NotificationManager.swift; sourceTree = "<group>"; };
+		5BC6120CBE61C500535D8CB0 /* Level11_Notification.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Level11_Notification.swift; sourceTree = "<group>"; };
 		60F0989938E81319FCA6BCCA /* LevelHeaderHUD.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LevelHeaderHUD.swift; sourceTree = "<group>"; };
-		6256BED22F7182E44C5F1870 /* Level19_FaceID.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = Level19_FaceID.swift; path = Level19_FaceID.swift; sourceTree = "<group>"; };
 		63B3641B109025C0DDCE2B5E /* BatteryManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BatteryManager.swift; sourceTree = "<group>"; };
-		6C926750FF78E1F48EBE71D0 /* ParticleFactory.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = ParticleFactory.swift; path = ParticleFactory.swift; sourceTree = "<group>"; };
+		6617AC71A777BF51EA8A8908 /* Level17_AirplaneMode.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Level17_AirplaneMode.swift; sourceTree = "<group>"; };
+		6875D6C339DB4C95CE1B7F47 /* VoiceOverManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceOverManager.swift; sourceTree = "<group>"; };
+		711F568B1776028CC88CD672 /* Level20_MetaFinale.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Level20_MetaFinale.swift; sourceTree = "<group>"; };
 		72820D4FA4FA2EAB83F9EA7A /* Level6_Brightness.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Level6_Brightness.swift; sourceTree = "<group>"; };
 		7336C3943F02282AC5DBACF8 /* BrightnessManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BrightnessManager.swift; sourceTree = "<group>"; };
+		73C3BE505E0D9E9AEA919C1D /* Level22_BatteryPercent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Level22_BatteryPercent.swift; sourceTree = "<group>"; };
 		7412661102DF49F96A011997 /* PlayerController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlayerController.swift; sourceTree = "<group>"; };
-		79084A8F232CCBFFE5CADD85 /* Level13_WiFi.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = Level13_WiFi.swift; path = Level13_WiFi.swift; sourceTree = "<group>"; };
-		792503FE2788A5C960670AEA /* Level16_ShakeUndo.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = Level16_ShakeUndo.swift; path = Level16_ShakeUndo.swift; sourceTree = "<group>"; };
 		7A5AC0459252E64256125FAD /* DeviceManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeviceManager.swift; sourceTree = "<group>"; };
+		7A76E465CE814728482A32EA /* ShakeUndoManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShakeUndoManager.swift; sourceTree = "<group>"; };
 		7A9FC7B1DAEA40528C88510D /* Level2_Wind.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Level2_Wind.swift; sourceTree = "<group>"; };
+		7D66EFF2E436320DB6B65AF8 /* Level19_FaceID.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Level19_FaceID.swift; sourceTree = "<group>"; };
+		7E9C3E53B3C3D7AEE98978BB /* Level16_ShakeUndo.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Level16_ShakeUndo.swift; sourceTree = "<group>"; };
+		80A5BB481BDD99C3A39A3BBC /* DeviceNameManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeviceNameManager.swift; sourceTree = "<group>"; };
+		813261F5775CAF4D6DC9491A /* BatteryLevelManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BatteryLevelManager.swift; sourceTree = "<group>"; };
+		829FF142EAB115F99FD5345A /* Level27_VoiceOver.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Level27_VoiceOver.swift; sourceTree = "<group>"; };
 		8D156C013CB319A0385F7506 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		90C5A4F33588282BB3AF7B97 /* DeviceManagerCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeviceManagerCoordinator.swift; sourceTree = "<group>"; };
-		A03137CF0960575EB4CC09DA /* AudioManager.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = AudioManager.swift; path = AudioManager.swift; sourceTree = "<group>"; };
+		96D953F74D3EFACD2220FB92 /* Level24_StorageSpace.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Level24_StorageSpace.swift; sourceTree = "<group>"; };
+		9B6E8A08233E5AA54B079AF3 /* Level25_TimeOfDay.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Level25_TimeOfDay.swift; sourceTree = "<group>"; };
+		9EE34F192E505BF43AD7942D /* FocusModeManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FocusModeManager.swift; sourceTree = "<group>"; };
+		A5A30BF53F0063D721F60765 /* JuiceManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JuiceManager.swift; sourceTree = "<group>"; };
 		A5E577B8468EA96708AB71BC /* ProgressManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProgressManager.swift; sourceTree = "<group>"; };
+		A652CB7062398A5DB1C2CE50 /* PowerModeManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PowerModeManager.swift; sourceTree = "<group>"; };
 		A7E6E4D2BFD72F0D56E2522A /* Level9_Orientation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Level9_Orientation.swift; sourceTree = "<group>"; };
 		AD2252F95D146BFD43AF11B5 /* MotionManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MotionManager.swift; sourceTree = "<group>"; };
-		AFF005CCE79BE18CD7523B0B /* FocusModeManager.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = FocusModeManager.swift; path = FocusModeManager.swift; sourceTree = "<group>"; };
+		B69A5AB4ABFC655178C75B9F /* Level23_DeviceName.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Level23_DeviceName.swift; sourceTree = "<group>"; };
 		B970E0065DEF3FB6BD53F97E /* Level4_Volume.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Level4_Volume.swift; sourceTree = "<group>"; };
-		BDB4C04F712CED8E11D67583 /* ClipboardManager.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = ClipboardManager.swift; path = ClipboardManager.swift; sourceTree = "<group>"; };
 		BE1D0A964286B9ABA49CB3EC /* Level3_Static.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Level3_Static.swift; sourceTree = "<group>"; };
 		C15F82C8F382DCF8658B8ACD /* LevelFactory.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LevelFactory.swift; sourceTree = "<group>"; };
-		C638D27BD8749CA7C0BC0994 /* JuiceManager.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = JuiceManager.swift; path = JuiceManager.swift; sourceTree = "<group>"; };
+		C183FF931CCBBA2BBEB5D51C /* HapticManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HapticManager.swift; sourceTree = "<group>"; };
+		C6177BA4C3087E00BE235111 /* LocaleManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocaleManager.swift; sourceTree = "<group>"; };
 		C91EADCA77DF81BDDA2F970C /* GameRootView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GameRootView.swift; sourceTree = "<group>"; };
 		C9ADFADAD3DFF4FF015486C7 /* OrientationManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OrientationManager.swift; sourceTree = "<group>"; };
-		CAA70E2B6E8CC0DBE051426E /* PowerModeManager.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = PowerModeManager.swift; path = PowerModeManager.swift; sourceTree = "<group>"; };
 		CFEF9968DDA1EDE5D9706C75 /* LevelID.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LevelID.swift; sourceTree = "<group>"; };
-		DF8D9FCCC872A8DE6AD0FA2B /* Level12_Clipboard.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = Level12_Clipboard.swift; path = Level12_Clipboard.swift; sourceTree = "<group>"; };
+		D065F33B8182B5289FC24557 /* ClipboardManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClipboardManager.swift; sourceTree = "<group>"; };
+		D294E1604AB728538A52B49F /* AudioManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioManager.swift; sourceTree = "<group>"; };
+		D4FF082F955DAD96BB2F013E /* Level15_LowPower.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Level15_LowPower.swift; sourceTree = "<group>"; };
+		D6134308C7C2DA13566C0225 /* ParticleFactory.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ParticleFactory.swift; sourceTree = "<group>"; };
 		E0ADDCE606E466C484DC5D4C /* Level1_Header.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Level1_Header.swift; sourceTree = "<group>"; };
-		E0FAF694D8868E7A02AF9CDA /* NetworkManager.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = NetworkManager.swift; path = NetworkManager.swift; sourceTree = "<group>"; };
+		E10A1FE1B5A071435FC57110 /* NotificationManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotificationManager.swift; sourceTree = "<group>"; };
 		E94A8D5694571314896A0BB3 /* Level5_Charging.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Level5_Charging.swift; sourceTree = "<group>"; };
+		E9A6300473FBBF48BA89C785 /* Level26_Locale.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Level26_Locale.swift; sourceTree = "<group>"; };
 		EF2ED4B8D969089335BDE94C /* Glitched.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = Glitched.app; sourceTree = BUILT_PRODUCTS_DIR; };
-		F162EFF8509431E762665C93 /* Level17_AirplaneMode.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = Level17_AirplaneMode.swift; path = Level17_AirplaneMode.swift; sourceTree = "<group>"; };
+		F043D5C26DE91D715EB8AD27 /* Level29_TheLie.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Level29_TheLie.swift; sourceTree = "<group>"; };
 		F4A66C1B6B495950E381E8ED /* GameState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GameState.swift; sourceTree = "<group>"; };
 		F80099F4DD230213DDF15870 /* BitCharacter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BitCharacter.swift; sourceTree = "<group>"; };
-		F88F3D3B0B2F47E764B02651 /* Level18_AppSwitcher.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = Level18_AppSwitcher.swift; path = Level18_AppSwitcher.swift; sourceTree = "<group>"; };
 		FAA0F6B6AAA702F99C95251C /* MicrophoneManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MicrophoneManager.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
@@ -144,9 +180,9 @@
 				D23058EB1B539A53645E9D5C /* Characters */,
 				75DFE738843ABE0736F9B0B5 /* Core */,
 				A3D440BF537D665EC576FE6D /* DeviceIntegration */,
+				784993C31333890416F94C0C /* Input */,
 				C5CE73DD33952D031B711C45 /* Scenes */,
 				9E2B4D1E23B4CF1E77B73ACC /* UI */,
-				D9A16846DA24B3FE0C0FB634 /* Input */,
 			);
 			path = Glitched;
 			sourceTree = "<group>";
@@ -164,17 +200,25 @@
 			isa = PBXGroup;
 			children = (
 				37D78919A88F0739FEF71400 /* AccessibilityManager.swift */,
+				D294E1604AB728538A52B49F /* AudioManager.swift */,
 				25D202F0092C63598685BF39 /* GameInputEvent.swift */,
 				F4A66C1B6B495950E381E8ED /* GameState.swift */,
+				C183FF931CCBBA2BBEB5D51C /* HapticManager.swift */,
 				43E11F392479B2196246F96B /* InputEventBus.swift */,
+				A5A30BF53F0063D721F60765 /* JuiceManager.swift */,
 				CFEF9968DDA1EDE5D9706C75 /* LevelID.swift */,
+				D6134308C7C2DA13566C0225 /* ParticleFactory.swift */,
 				A5E577B8468EA96708AB71BC /* ProgressManager.swift */,
-				C638D27BD8749CA7C0BC0994 /* JuiceManager.swift */,
-				6C926750FF78E1F48EBE71D0 /* ParticleFactory.swift */,
-				30E2210449157312F5D61CAA /* HapticManager.swift */,
-				A03137CF0960575EB4CC09DA /* AudioManager.swift */,
 			);
 			path = Core;
+			sourceTree = "<group>";
+		};
+		784993C31333890416F94C0C /* Input */ = {
+			isa = PBXGroup;
+			children = (
+				2ADF34795D77C2FA5AE87204 /* KeyboardState.swift */,
+			);
+			path = Input;
 			sourceTree = "<group>";
 		};
 		9E2B4D1E23B4CF1E77B73ACC /* UI */ = {
@@ -190,25 +234,33 @@
 		A3D440BF537D665EC576FE6D /* DeviceIntegration */ = {
 			isa = PBXGroup;
 			children = (
+				0B7FD510F101F5A60DC21BC3 /* AirDropManager.swift */,
 				3EBEED942CAA63CA601034EE /* AppearanceManager.swift */,
+				2951EA0539E27C1CF35F1C90 /* AppSwitcherManager.swift */,
+				231CEFB02BA5B2192F8EC955 /* AuthenticationManager.swift */,
 				31A1B25865B477718B3D4F81 /* BackgroundTimeManager.swift */,
+				813261F5775CAF4D6DC9491A /* BatteryLevelManager.swift */,
 				63B3641B109025C0DDCE2B5E /* BatteryManager.swift */,
 				7336C3943F02282AC5DBACF8 /* BrightnessManager.swift */,
+				D065F33B8182B5289FC24557 /* ClipboardManager.swift */,
 				7A5AC0459252E64256125FAD /* DeviceManager.swift */,
 				90C5A4F33588282BB3AF7B97 /* DeviceManagerCoordinator.swift */,
+				80A5BB481BDD99C3A39A3BBC /* DeviceNameManager.swift */,
+				9EE34F192E505BF43AD7942D /* FocusModeManager.swift */,
+				C6177BA4C3087E00BE235111 /* LocaleManager.swift */,
 				FAA0F6B6AAA702F99C95251C /* MicrophoneManager.swift */,
 				AD2252F95D146BFD43AF11B5 /* MotionManager.swift */,
+				25737AD8252D103BAC560B16 /* NetworkManager.swift */,
+				E10A1FE1B5A071435FC57110 /* NotificationManager.swift */,
 				C9ADFADAD3DFF4FF015486C7 /* OrientationManager.swift */,
+				A652CB7062398A5DB1C2CE50 /* PowerModeManager.swift */,
+				24C51F6533163E35F3561B4C /* ReinstallManager.swift */,
 				12A02BBDCD1404CA4545F4E5 /* ScreenshotManager.swift */,
-				5E7FC34972B740C785E467EB /* NotificationManager.swift */,
-				BDB4C04F712CED8E11D67583 /* ClipboardManager.swift */,
-				E0FAF694D8868E7A02AF9CDA /* NetworkManager.swift */,
-				AFF005CCE79BE18CD7523B0B /* FocusModeManager.swift */,
-				CAA70E2B6E8CC0DBE051426E /* PowerModeManager.swift */,
-				17EB5C3C4E1CC4340857BCD0 /* ShakeUndoManager.swift */,
-				3FA3930BA94F7B7B69153E25 /* AppSwitcherManager.swift */,
-				4B0E867C0979CA22637673C2 /* AuthenticationManager.swift */,
-				5AC2299A91C5A34CE4EEF2AA /* ReinstallManager.swift */,
+				7A76E465CE814728482A32EA /* ShakeUndoManager.swift */,
+				246C54B178876AB9B7C75F86 /* StorageSpaceManager.swift */,
+				0135D1F3DF2C035A049E736C /* TimeOfDayManager.swift */,
+				2D6AD830B25DB30C4F75624E /* VoiceCommandManager.swift */,
+				6875D6C339DB4C95CE1B7F47 /* VoiceOverManager.swift */,
 			);
 			path = DeviceIntegration;
 			sourceTree = "<group>";
@@ -252,16 +304,26 @@
 				38C9348B5753673A50168165 /* Level8_DarkMode.swift */,
 				A7E6E4D2BFD72F0D56E2522A /* Level9_Orientation.swift */,
 				45365B2F5C6B8ED21573E6A3 /* Level10_TimeTravel.swift */,
-				4BC0FF3B90BD4608EA7225FF /* Level11_Notification.swift */,
-				DF8D9FCCC872A8DE6AD0FA2B /* Level12_Clipboard.swift */,
-				79084A8F232CCBFFE5CADD85 /* Level13_WiFi.swift */,
-				24C96800B3A29FFCB8D77D0D /* Level14_FocusMode.swift */,
-				56880783589F95BC88929357 /* Level15_LowPower.swift */,
-				792503FE2788A5C960670AEA /* Level16_ShakeUndo.swift */,
-				F162EFF8509431E762665C93 /* Level17_AirplaneMode.swift */,
-				F88F3D3B0B2F47E764B02651 /* Level18_AppSwitcher.swift */,
-				6256BED22F7182E44C5F1870 /* Level19_FaceID.swift */,
-				056884D02E2EDE0ACC239220 /* Level20_MetaFinale.swift */,
+				5BC6120CBE61C500535D8CB0 /* Level11_Notification.swift */,
+				4FA53D85C83A4D6BF7F5703D /* Level12_Clipboard.swift */,
+				3C5CE694F3C08F3B5EE03855 /* Level13_WiFi.swift */,
+				4BCAA13046F01CADFDC5D784 /* Level14_FocusMode.swift */,
+				D4FF082F955DAD96BB2F013E /* Level15_LowPower.swift */,
+				7E9C3E53B3C3D7AEE98978BB /* Level16_ShakeUndo.swift */,
+				6617AC71A777BF51EA8A8908 /* Level17_AirplaneMode.swift */,
+				1CC60FAC853285E300B4F0A5 /* Level18_AppSwitcher.swift */,
+				7D66EFF2E436320DB6B65AF8 /* Level19_FaceID.swift */,
+				711F568B1776028CC88CD672 /* Level20_MetaFinale.swift */,
+				45D735BF0FEB9CAD568E6C55 /* Level21_VoiceCommand.swift */,
+				73C3BE505E0D9E9AEA919C1D /* Level22_BatteryPercent.swift */,
+				B69A5AB4ABFC655178C75B9F /* Level23_DeviceName.swift */,
+				96D953F74D3EFACD2220FB92 /* Level24_StorageSpace.swift */,
+				9B6E8A08233E5AA54B079AF3 /* Level25_TimeOfDay.swift */,
+				E9A6300473FBBF48BA89C785 /* Level26_Locale.swift */,
+				829FF142EAB115F99FD5345A /* Level27_VoiceOver.swift */,
+				26CCA6D83D6B69FE0B1F89C0 /* Level28_AirDrop.swift */,
+				F043D5C26DE91D715EB8AD27 /* Level29_TheLie.swift */,
+				0CE02614FFADA398E933211F /* Level30_CreditsFinale.swift */,
 			);
 			path = Scenes;
 			sourceTree = "<group>";
@@ -273,14 +335,6 @@
 				7412661102DF49F96A011997 /* PlayerController.swift */,
 			);
 			path = Characters;
-			sourceTree = "<group>";
-		};
-		D9A16846DA24B3FE0C0FB634 /* Input */ = {
-			isa = PBXGroup;
-			children = (
-				2FDBB9E07E46C08DCD894A2C /* KeyboardState.swift */,
-			);
-			name = Input;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -298,6 +352,8 @@
 			dependencies = (
 			);
 			name = Glitched;
+			packageProductDependencies = (
+			);
 			productName = Glitched;
 			productReference = EF2ED4B8D969089335BDE94C /* Glitched.app */;
 			productType = "com.apple.product-type.application";
@@ -328,7 +384,6 @@
 			mainGroup = BF29292DB7BD41B4EA4CBB9D;
 			minimizedProjectReferenceProxies = 1;
 			preferredProjectObjectVersion = 77;
-			productRefGroup = B6D022D07D4D4520959AEB86 /* Products */;
 			projectDirPath = "";
 			projectRoot = "";
 			targets = (
@@ -354,24 +409,55 @@
 			buildActionMask = 2147483647;
 			files = (
 				846418D879D061D2C118B43F /* AccessibilityManager.swift in Sources */,
+				265423C850E953AD67649C36 /* AirDropManager.swift in Sources */,
+				D6095FBCCD80D0B5FE109D88 /* AppSwitcherManager.swift in Sources */,
 				3E0151C1311936BF50BAE0DE /* AppearanceManager.swift in Sources */,
+				385F0F50B0DB94B3CF60370E /* AudioManager.swift in Sources */,
+				5FD1CF9FC1FAE4E8D9ECB6AC /* AuthenticationManager.swift in Sources */,
 				8E08BDD841FD28D80A0764B3 /* BackgroundTimeManager.swift in Sources */,
 				63AEF1BD01913DD4F57F016B /* BaseLevelScene.swift in Sources */,
+				C92112168CCB7DDEBF8ED4AB /* BatteryLevelManager.swift in Sources */,
 				7C84D42D3EBE40A2002CB20C /* BatteryManager.swift in Sources */,
 				0B2B0AE4A2BCA6D1954800C7 /* BitCharacter.swift in Sources */,
 				00AB645198D637A0FED2507F /* BrightnessManager.swift in Sources */,
+				196D440E41478EE76C402A77 /* ClipboardManager.swift in Sources */,
 				2ED14A726B4B63F41EABBED4 /* DebugInputPanel.swift in Sources */,
 				7D019D1EB7D2239D94B71BEB /* DeviceManager.swift in Sources */,
 				F851246AAF81D1E714A6565A /* DeviceManagerCoordinator.swift in Sources */,
+				03AAC790327E0A572082A7F9 /* DeviceNameManager.swift in Sources */,
+				94078ED69BB6860047F0E4A6 /* FocusModeManager.swift in Sources */,
 				518C9B9F4605DCC99419F2CF /* GameInputEvent.swift in Sources */,
 				19712575BDFA3584AA672404 /* GameRootView.swift in Sources */,
 				B4523E24A4B969CF137BB2A1 /* GameState.swift in Sources */,
 				BDD6BB84927B2C7EA5CCB5F7 /* GlitchedApp.swift in Sources */,
+				0E012B163A1DE726DF13E644 /* HapticManager.swift in Sources */,
 				6043A2EEEB44943D6C10F7F9 /* InputEventBus.swift in Sources */,
+				3F54EC52F8E9F681A0252439 /* JuiceManager.swift in Sources */,
+				8382502D8803DFD41E2A4ADC /* KeyboardState.swift in Sources */,
 				B35C6CA2D513CEA1B4552C17 /* Level0_BootSequence.swift in Sources */,
 				ECB2ABFF278863A8C87D38D4 /* Level10_TimeTravel.swift in Sources */,
+				695444AA1972BA14771ED37B /* Level11_Notification.swift in Sources */,
+				95C7A569C882408FD704CCF6 /* Level12_Clipboard.swift in Sources */,
+				F50D84DD6F9B4450477CC95E /* Level13_WiFi.swift in Sources */,
+				CEE18DEF1D8CD01CC864A3C3 /* Level14_FocusMode.swift in Sources */,
+				4E62E1F99379A04312D51755 /* Level15_LowPower.swift in Sources */,
+				256D225389BE2FCE88476365 /* Level16_ShakeUndo.swift in Sources */,
+				9899FF3F9266A63F351F90AB /* Level17_AirplaneMode.swift in Sources */,
+				E60C00CA8B0EA29838102835 /* Level18_AppSwitcher.swift in Sources */,
+				FD6EFE04416CF1A98179E323 /* Level19_FaceID.swift in Sources */,
 				8B10CC87C357667A57B35663 /* Level1_Header.swift in Sources */,
+				C677B8B74662F8B5F98D83E6 /* Level20_MetaFinale.swift in Sources */,
+				AED2765480F15EB9B5B3FCF4 /* Level21_VoiceCommand.swift in Sources */,
+				27715F9A98FF35048F49A49C /* Level22_BatteryPercent.swift in Sources */,
+				D16D040AC7FF1BA508BA6135 /* Level23_DeviceName.swift in Sources */,
+				199986AB11BBD61E5FD7DABC /* Level24_StorageSpace.swift in Sources */,
+				309F7347B618CB9D379145D9 /* Level25_TimeOfDay.swift in Sources */,
+				1D437F807F723B4F96D749F6 /* Level26_Locale.swift in Sources */,
+				C27424AF0FD9152F60DC580A /* Level27_VoiceOver.swift in Sources */,
+				A66163737B8B6CF9713FFF92 /* Level28_AirDrop.swift in Sources */,
+				4123E694B70A1E5CB5E132FC /* Level29_TheLie.swift in Sources */,
 				48F2531ECFAD8E1C33E19848 /* Level2_Wind.swift in Sources */,
+				1E26500DD8DEC185FCA758DF /* Level30_CreditsFinale.swift in Sources */,
 				9977B18A7955405E5743454D /* Level3_Static.swift in Sources */,
 				F8A9AADF304F0FDD601994E4 /* Level4_Volume.swift in Sources */,
 				EF5C7222C4754E9C9A86209E /* Level5_Charging.swift in Sources */,
@@ -382,36 +468,23 @@
 				448C9F4D19B7AAD18DA5AF25 /* LevelFactory.swift in Sources */,
 				63B3FC08894FDCD4891421E0 /* LevelHeaderHUD.swift in Sources */,
 				7C19AE5C2EDA2EE18187FE16 /* LevelID.swift in Sources */,
+				539901415D4914E226024D00 /* LocaleManager.swift in Sources */,
 				C1F7EB1BC790E6F7EABD2AC4 /* MicrophoneManager.swift in Sources */,
 				642EF318AA14AFB50E740DE1 /* MotionManager.swift in Sources */,
+				96FBC249607538C9D05297B3 /* NetworkManager.swift in Sources */,
+				E0256E88EB2FA5E7AC81BF61 /* NotificationManager.swift in Sources */,
 				54277AD9A2477FB5E1C573A2 /* OrientationManager.swift in Sources */,
+				86491F69A9743078BA9B94E3 /* ParticleFactory.swift in Sources */,
 				AAC0C4F2B525EE274D5CD1E2 /* PlayerController.swift in Sources */,
+				10C6ECBEE4B25C2488828551 /* PowerModeManager.swift in Sources */,
 				00DF7007792B952FCE013DD5 /* ProgressManager.swift in Sources */,
+				AB57F6CE52E76C824881CDD5 /* ReinstallManager.swift in Sources */,
 				26E344FB43860116EF926F81 /* ScreenshotManager.swift in Sources */,
-				8BE10BBAEB742A4EC9C556B3 /* Level11_Notification.swift in Sources */,
-				655146E8DE8961DB7EA4D8D1 /* Level12_Clipboard.swift in Sources */,
-				35017582EF51E59F2909D3FC /* Level13_WiFi.swift in Sources */,
-				D485451E55646C0891B57C0C /* Level14_FocusMode.swift in Sources */,
-				6E99759F34C76A5231EBC194 /* Level15_LowPower.swift in Sources */,
-				76D2F7EEE078E5CD1F14F6D3 /* Level16_ShakeUndo.swift in Sources */,
-				680F00B59DE03A8A60472480 /* Level17_AirplaneMode.swift in Sources */,
-				3A2178ADE888D446AEF7186F /* Level18_AppSwitcher.swift in Sources */,
-				D80A21E379241F4615F7D8CF /* Level19_FaceID.swift in Sources */,
-				8B690954EE7B4CF28B94B902 /* Level20_MetaFinale.swift in Sources */,
-				F3358A684D820A0CC61A1AA1 /* NotificationManager.swift in Sources */,
-				016FFA8EC872104CC026F6DB /* ClipboardManager.swift in Sources */,
-				650511D32F77BE37A4D8A5C6 /* NetworkManager.swift in Sources */,
-				0D1E20719089CF47A2503E92 /* FocusModeManager.swift in Sources */,
-				CDE8E2DEC5B967D73259CE91 /* PowerModeManager.swift in Sources */,
-				5B9205F20553216725E00621 /* ShakeUndoManager.swift in Sources */,
-				A01985BA7D840C7D75285972 /* AppSwitcherManager.swift in Sources */,
-				1419D7B5CA03D100C8AF187C /* AuthenticationManager.swift in Sources */,
-				61D248E1F8CAC0123CD34A0C /* ReinstallManager.swift in Sources */,
-				6498B2BF68F3AB4B93A71114 /* JuiceManager.swift in Sources */,
-				CF4E39B3B660E6E496D62BD1 /* ParticleFactory.swift in Sources */,
-				4560F141874D4390B0FE2B54 /* HapticManager.swift in Sources */,
-				43BE305B7B3166EAA9CFAC3C /* AudioManager.swift in Sources */,
-				99599CC121F0815F721411C7 /* KeyboardState.swift in Sources */,
+				A78045AE384938D2296429D4 /* ShakeUndoManager.swift in Sources */,
+				E3EA2E8D50135B198E78950C /* StorageSpaceManager.swift in Sources */,
+				6D6E0FD4CC3717E4CDF4D56D /* TimeOfDayManager.swift in Sources */,
+				88181492C4E7B769698A540E /* VoiceCommandManager.swift in Sources */,
+				528268B9AADD3080A287E407 /* VoiceOverManager.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -555,7 +628,7 @@
 				PRODUCT_BUNDLE_IDENTIFIER = com.glitched.app;
 				SDKROOT = iphoneos;
 				SWIFT_VERSION = 5.0;
-				TARGETED_DEVICE_FAMILY = "1,2";
+				TARGETED_DEVICE_FAMILY = 1;
 			};
 			name = Release;
 		};
@@ -577,7 +650,7 @@
 				PRODUCT_BUNDLE_IDENTIFIER = com.glitched.app;
 				SDKROOT = iphoneos;
 				SWIFT_VERSION = 5.0;
-				TARGETED_DEVICE_FAMILY = "1,2";
+				TARGETED_DEVICE_FAMILY = 1;
 			};
 			name = Debug;
 		};

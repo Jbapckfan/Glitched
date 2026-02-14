@@ -1,4 +1,5 @@
 import SpriteKit
+import Foundation
 
 final class BootSequenceScene: BaseLevelScene {
 
@@ -18,6 +19,14 @@ final class BootSequenceScene: BaseLevelScene {
     private var bootComplete = false
     private var digitalRain: SKNode?
     private var cursorNode: SKShapeNode?
+
+    // MARK: - Helpers
+
+    private static func currentTimeString() -> String {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "HH:mm"
+        return formatter.string(from: Date())
+    }
 
     // MARK: - Lifecycle
 
@@ -75,6 +84,7 @@ final class BootSequenceScene: BaseLevelScene {
             ("[OK] physics.ko", 2.5),
             ("[OK] consciousness.ko", 2.7),
             ("[WARN] fourth_wall.ko - UNSTABLE", 3.0),
+            ("OPERATOR TIME: \(Self.currentTimeString()) ... NOTED.", 3.15),
             ("", 3.3),
             ("ERROR: Corruption detected in sector 0x4F4F", 3.5),
             ("Attempting recovery...", 3.9),
@@ -444,17 +454,43 @@ final class BootSequenceScene: BaseLevelScene {
             hint.run(.fadeOut(withDuration: 0.2))
         }
 
-        // Epic glitch transition
+        // Fake crash moment - screen goes black
         run(.sequence([
-            .run {
+            .run { [weak self] in
                 JuiceManager.shared.glitchEffect(duration: 0.3)
                 JuiceManager.shared.shake(intensity: .medium, duration: 0.2)
+                // Screen goes black
+                self?.backgroundColor = .black
+                self?.contentNode.alpha = 0
+                self?.digitalRain?.alpha = 0
             },
-            .wait(forDuration: 0.15),
-            .run {
+            .wait(forDuration: 1.0),
+            .run { [weak self] in
+                // "JUST KIDDING" text
+                let jkLabel = SKLabelNode(fontNamed: "Menlo-Bold")
+                jkLabel.text = "JUST KIDDING"
+                jkLabel.fontSize = 28
+                jkLabel.fontColor = .white
+                jkLabel.position = CGPoint(x: 0, y: 0)
+                jkLabel.zPosition = 1000
+                jkLabel.alpha = 0
+                self?.addChild(jkLabel)
+                jkLabel.run(.sequence([
+                    .fadeIn(withDuration: 0.15),
+                    .wait(forDuration: 1.0),
+                    .fadeOut(withDuration: 0.2),
+                    .removeFromParent()
+                ]))
+                HapticManager.shared.light()
+            },
+            .wait(forDuration: 1.4),
+            .run { [weak self] in
+                // Restore screen
+                self?.backgroundColor = .white
+                self?.contentNode.alpha = 1
                 JuiceManager.shared.flash(color: .white, duration: 0.2)
             },
-            .wait(forDuration: 0.1),
+            .wait(forDuration: 0.2),
             .run {
                 // "SYSTEM LOADED" text (at origin + offset since camera is at origin)
                 JuiceManager.shared.popText("SYSTEM LOADED", at: CGPoint(x: 0, y: 80), color: .black, fontSize: 28)
@@ -469,9 +505,9 @@ final class BootSequenceScene: BaseLevelScene {
 
         succeedLevel()
 
-        // Transition to Level 1 after delay
+        // Transition to Level 1 after delay (increased to account for fake crash)
         run(.sequence([
-            .wait(forDuration: 1.2),
+            .wait(forDuration: 3.5),
             .run { [weak self] in
                 self?.transitionToLevel1()
             }

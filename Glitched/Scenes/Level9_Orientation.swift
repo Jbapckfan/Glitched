@@ -1,5 +1,4 @@
 import SpriteKit
-import Combine
 import UIKit
 
 final class OrientationScene: BaseLevelScene, SKPhysicsContactDelegate {
@@ -28,6 +27,10 @@ final class OrientationScene: BaseLevelScene, SKPhysicsContactDelegate {
 
     private var instructionPanel: SKNode?
     private var lineElements: [SKNode] = []
+
+    // Rapid rotation detection (4th-wall dizzy text)
+    private var rotationTimestamps: [TimeInterval] = []
+    private var hasShownDizzyCommentary = false
 
     // MARK: - Configuration
 
@@ -359,30 +362,6 @@ final class OrientationScene: BaseLevelScene, SKPhysicsContactDelegate {
         return skull
     }
 
-    private func createWarningTriangle() -> SKShapeNode {
-        let triangle = SKShapeNode()
-        let path = CGMutablePath()
-        path.move(to: CGPoint(x: 0, y: 15))
-        path.addLine(to: CGPoint(x: -13, y: -8))
-        path.addLine(to: CGPoint(x: 13, y: -8))
-        path.closeSubpath()
-        triangle.path = path
-        triangle.fillColor = fillColor
-        triangle.strokeColor = strokeColor
-        triangle.lineWidth = lineWidth * 0.6
-
-        // Exclamation mark
-        let exclaim = SKLabelNode(text: "!")
-        exclaim.fontName = "Helvetica-Bold"
-        exclaim.fontSize = 14
-        exclaim.fontColor = strokeColor
-        exclaim.verticalAlignmentMode = .center
-        exclaim.position = CGPoint(x: 0, y: 0)
-        triangle.addChild(exclaim)
-
-        return triangle
-    }
-
     private func createFloor() {
         let floor = SKShapeNode(rectOf: CGSize(width: 700, height: 25))
         floor.fillColor = fillColor
@@ -542,6 +521,7 @@ final class OrientationScene: BaseLevelScene, SKPhysicsContactDelegate {
         exit.physicsBody = SKPhysicsBody(rectangleOf: exit.size)
         exit.physicsBody?.isDynamic = false
         exit.physicsBody?.categoryBitMask = PhysicsCategory.exit
+        exit.physicsBody?.collisionBitMask = 0
         exit.name = "exit"
         worldNode.addChild(exit)
 
@@ -669,6 +649,7 @@ final class OrientationScene: BaseLevelScene, SKPhysicsContactDelegate {
         bit = BitCharacter.make()
         bit.position = spawnPoint
         worldNode.addChild(bit)
+        registerPlayer(bit)
 
         playerController = PlayerController(character: bit, scene: self)
     }
@@ -768,10 +749,62 @@ final class OrientationScene: BaseLevelScene, SKPhysicsContactDelegate {
 
                 let generator = UIImpactFeedbackGenerator(style: .medium)
                 generator.impactOccurred()
+
+                trackRotation()
             }
         default:
             break
         }
+    }
+
+    // MARK: - Rapid Rotation Detection
+
+    private func trackRotation() {
+        let now = CACurrentMediaTime()
+        rotationTimestamps.append(now)
+
+        // Remove timestamps older than 5 seconds
+        rotationTimestamps = rotationTimestamps.filter { now - $0 <= 5.0 }
+
+        // 3+ rotations in 5 seconds triggers dizzy text
+        if rotationTimestamps.count >= 3 && !hasShownDizzyCommentary {
+            hasShownDizzyCommentary = true
+            showDizzyCommentary()
+
+            // Allow showing again after cooldown
+            DispatchQueue.main.asyncAfter(deadline: .now() + 10.0) { [weak self] in
+                self?.hasShownDizzyCommentary = false
+            }
+        }
+    }
+
+    private func showDizzyCommentary() {
+        let label = SKLabelNode(text: "I'M GETTING DIZZY.")
+        label.fontName = "Menlo-Bold"
+        label.fontSize = 14
+        label.fontColor = strokeColor
+        label.position = CGPoint(x: 0, y: 60)
+        label.zPosition = 400
+        label.alpha = 0
+        worldNode.addChild(label)
+
+        let label2 = SKLabelNode(text: "ARE YOU DOING THIS ON THE BUS?")
+        label2.fontName = "Menlo-Bold"
+        label2.fontSize = 12
+        label2.fontColor = strokeColor
+        label2.position = CGPoint(x: 0, y: 40)
+        label2.zPosition = 400
+        label2.alpha = 0
+        worldNode.addChild(label2)
+
+        let fadeAction = SKAction.sequence([
+            .fadeIn(withDuration: 0.3),
+            .wait(forDuration: 3.0),
+            .fadeOut(withDuration: 0.5),
+            .removeFromParent()
+        ])
+        label.run(fadeAction)
+        label2.run(fadeAction)
     }
 
     // MARK: - Touch Handling

@@ -1,11 +1,59 @@
 import SpriteKit
-import Combine
 import UIKit
+import Security
 
-/// Level 20: The Meta Finale - Delete to Win
+// MARK: - Keychain Helper for Reinstall Detection
+
+private struct KeychainHelper {
+    private static let service = "com.glitched.game"
+
+    static func save(key: String, value: String) {
+        guard let data = value.data(using: .utf8) else { return }
+
+        // Delete existing item first
+        delete(key: key)
+
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: service,
+            kSecAttrAccount as String: key,
+            kSecValueData as String: data
+        ]
+
+        SecItemAdd(query as CFDictionary, nil)
+    }
+
+    static func load(key: String) -> String? {
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: service,
+            kSecAttrAccount as String: key,
+            kSecReturnData as String: true,
+            kSecMatchLimit as String: kSecMatchLimitOne
+        ]
+
+        var result: AnyObject?
+        let status = SecItemCopyMatching(query as CFDictionary, &result)
+
+        guard status == errSecSuccess, let data = result as? Data else { return nil }
+        return String(data: data, encoding: .utf8)
+    }
+
+    static func delete(key: String) {
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: service,
+            kSecAttrAccount as String: key
+        ]
+
+        SecItemDelete(query as CFDictionary)
+    }
+}
+
+/// Level 20: Delete to Win
 /// Concept: The ultimate fourth-wall break. The exit is blocked by a "corrupted data" wall.
 /// The only way to clear it is to delete and reinstall the app. Your progress is saved in iCloud.
-/// This is the most meta puzzle in the game.
+/// No longer the finale - leads to Level 21.
 final class MetaFinaleScene: BaseLevelScene, SKPhysicsContactDelegate {
 
     private let fillColor = SKColor.white
@@ -28,6 +76,7 @@ final class MetaFinaleScene: BaseLevelScene, SKPhysicsContactDelegate {
     private var warningOverlay: SKShapeNode?
     private var hasShownIntro = false
     private var corruptionProximity: CGFloat = 0
+    private var hasShownFakeReview = false
 
     override func configureScene() {
         levelID = LevelID(world: .world2, index: 20)
@@ -130,9 +179,6 @@ final class MetaFinaleScene: BaseLevelScene, SKPhysicsContactDelegate {
         addChild(warningOverlay!)
 
         checkIfReinstalled()
-
-        // Register player for effects
-        playerNode = bit
     }
 
     private func setupBackground() {
@@ -160,7 +206,7 @@ final class MetaFinaleScene: BaseLevelScene, SKPhysicsContactDelegate {
         title.zPosition = 100
         addChild(title)
 
-        let subtitle = SKLabelNode(text: "FINAL LEVEL")
+        let subtitle = SKLabelNode(text: "DELETE TO PROCEED")
         subtitle.fontName = "Menlo-Bold"
         subtitle.fontSize = 12
         subtitle.fontColor = strokeColor
@@ -264,7 +310,7 @@ final class MetaFinaleScene: BaseLevelScene, SKPhysicsContactDelegate {
         addChild(hintLabel)
 
         // Progress saved indicator
-        progressSavedLabel = SKLabelNode(text: "☁️ PROGRESS SAVED TO CLOUD")
+        progressSavedLabel = SKLabelNode(text: "PROGRESS SAVED TO CLOUD")
         progressSavedLabel.fontName = "Menlo"
         progressSavedLabel.fontSize = 10
         progressSavedLabel.fontColor = strokeColor
@@ -306,6 +352,7 @@ final class MetaFinaleScene: BaseLevelScene, SKPhysicsContactDelegate {
         exit.physicsBody = SKPhysicsBody(rectangleOf: exit.size)
         exit.physicsBody?.isDynamic = false
         exit.physicsBody?.categoryBitMask = PhysicsCategory.exit
+        exit.physicsBody?.collisionBitMask = 0
         exit.name = "exit"
         addChild(exit)
     }
@@ -321,7 +368,7 @@ final class MetaFinaleScene: BaseLevelScene, SKPhysicsContactDelegate {
         bg.strokeColor = strokeColor
         panel.addChild(bg)
 
-        let text1 = SKLabelNode(text: "THE FINAL PUZZLE")
+        let text1 = SKLabelNode(text: "THE CORRUPTION GATE")
         text1.fontName = "Menlo-Bold"
         text1.fontSize = 14
         text1.fontColor = strokeColor
@@ -358,17 +405,33 @@ final class MetaFinaleScene: BaseLevelScene, SKPhysicsContactDelegate {
         bit = BitCharacter.make()
         bit.position = spawnPoint
         addChild(bit)
+        registerPlayer(bit)
         playerController = PlayerController(character: bit, scene: self)
     }
 
     private func checkIfReinstalled() {
-        // Check UserDefaults for reinstall flag
-        let wasReinstalled = UserDefaults.standard.bool(forKey: "glitched_level20_reinstalled")
+        // Use Keychain for reinstall detection - Keychain persists across app deletions
+        let seenBefore = KeychainHelper.load(key: "level20_seen")
+        let hasBeenCleared = KeychainHelper.load(key: "level20_cleared")
 
-        if wasReinstalled {
+        if seenBefore != nil && hasBeenCleared == nil {
+            // We saw level 20 before, but the app was deleted and reinstalled
+            // (UserDefaults would be gone, but Keychain persists)
+            // Check if UserDefaults flag is missing (indicates reinstall)
+            let udSeen = UserDefaults.standard.bool(forKey: "glitched_level20_seen")
+            if !udSeen {
+                // App was deleted and reinstalled!
+                clearCorruption()
+                return
+            }
+        }
+
+        if hasBeenCleared != nil {
+            // Already cleared corruption in a previous session
             clearCorruption()
         } else {
-            // Mark that we've seen level 20 (for reinstall detection)
+            // Mark that we've seen level 20 in both Keychain and UserDefaults
+            KeychainHelper.save(key: "level20_seen", value: "true")
             UserDefaults.standard.set(true, forKey: "glitched_level20_seen")
 
             // Save progress to iCloud
@@ -482,8 +545,81 @@ final class MetaFinaleScene: BaseLevelScene, SKPhysicsContactDelegate {
         // Pop text
         JuiceManager.shared.popText("SYSTEM RESTORED", at: CGPoint(x: size.width / 2, y: size.height / 2 + 50), color: .green, fontSize: 24)
 
-        // Clear the reinstall flag for next playthrough
-        UserDefaults.standard.set(false, forKey: "glitched_level20_reinstalled")
+        // Mark as cleared in Keychain
+        KeychainHelper.save(key: "level20_cleared", value: "true")
+    }
+
+    // MARK: - Fake Review Prompt (4th Wall)
+
+    private func showFakeReviewPrompt() {
+        guard !hasShownFakeReview else { return }
+        hasShownFakeReview = true
+
+        let panel = SKNode()
+        panel.position = CGPoint(x: size.width / 2, y: size.height / 2)
+        panel.zPosition = 600
+        panel.alpha = 0
+        addChild(panel)
+
+        // Fake iOS-style alert background
+        let bg = SKShapeNode(rectOf: CGSize(width: 280, height: 140), cornerRadius: 12)
+        bg.fillColor = fillColor
+        bg.strokeColor = strokeColor
+        bg.lineWidth = lineWidth * 1.5
+        panel.addChild(bg)
+
+        let titleLabel = SKLabelNode(text: "ENJOYING GLITCHED?")
+        titleLabel.fontName = "Menlo-Bold"
+        titleLabel.fontSize = 13
+        titleLabel.fontColor = strokeColor
+        titleLabel.position = CGPoint(x: 0, y: 40)
+        panel.addChild(titleLabel)
+
+        let bodyLabel = SKLabelNode(text: "RATE 5 STARS BEFORE")
+        bodyLabel.fontName = "Menlo"
+        bodyLabel.fontSize = 10
+        bodyLabel.fontColor = strokeColor
+        bodyLabel.position = CGPoint(x: 0, y: 15)
+        panel.addChild(bodyLabel)
+
+        let bodyLabel2 = SKLabelNode(text: "YOU DELETE ME.")
+        bodyLabel2.fontName = "Menlo"
+        bodyLabel2.fontSize = 10
+        bodyLabel2.fontColor = strokeColor
+        bodyLabel2.position = CGPoint(x: 0, y: 0)
+        panel.addChild(bodyLabel2)
+
+        // Fake star rating display
+        let stars = SKLabelNode(text: "* * * * *")
+        stars.fontName = "Menlo-Bold"
+        stars.fontSize = 18
+        stars.fontColor = strokeColor
+        stars.position = CGPoint(x: 0, y: -25)
+        panel.addChild(stars)
+
+        // Divider line
+        let divider = SKShapeNode(rectOf: CGSize(width: 260, height: 1))
+        divider.fillColor = strokeColor
+        divider.strokeColor = .clear
+        divider.alpha = 0.3
+        divider.position = CGPoint(x: 0, y: -45)
+        panel.addChild(divider)
+
+        // Fake dismiss button
+        let dismissLabel = SKLabelNode(text: "NOT NOW")
+        dismissLabel.fontName = "Menlo"
+        dismissLabel.fontSize = 10
+        dismissLabel.fontColor = strokeColor
+        dismissLabel.alpha = 0.6
+        dismissLabel.position = CGPoint(x: 0, y: -58)
+        panel.addChild(dismissLabel)
+
+        panel.run(.sequence([
+            .fadeIn(withDuration: 0.3),
+            .wait(forDuration: 4.0),
+            .fadeOut(withDuration: 0.5),
+            .removeFromParent()
+        ]))
     }
 
     override func handleGameInput(_ event: GameInputEvent) {
@@ -497,27 +633,27 @@ final class MetaFinaleScene: BaseLevelScene, SKPhysicsContactDelegate {
 
     override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent?) {
         guard let touch = touches.first else { return }
-        playerController.touchBegan(at: touch.location(in: self))
+        playerController?.touchBegan(at: touch.location(in: self))
     }
 
     override func touchesMoved(_ touches: Set<UITouch>, with event: UIEvent?) {
         guard let touch = touches.first else { return }
-        playerController.touchMoved(at: touch.location(in: self))
+        playerController?.touchMoved(at: touch.location(in: self))
     }
 
     override func touchesEnded(_ touches: Set<UITouch>, with event: UIEvent?) {
         guard let touch = touches.first else { return }
-        playerController.touchEnded(at: touch.location(in: self))
+        playerController?.touchEnded(at: touch.location(in: self))
     }
 
     override func touchesCancelled(_ touches: Set<UITouch>, with event: UIEvent?) {
-        playerController.cancel()
+        playerController?.cancel()
     }
 
     override func updatePlaying(deltaTime: TimeInterval) {
         guard hasShownIntro else { return }
 
-        playerController.update()
+        playerController?.update()
 
         // Calculate proximity to corruption wall
         if !isCleared {
@@ -569,6 +705,11 @@ final class MetaFinaleScene: BaseLevelScene, SKPhysicsContactDelegate {
                     JuiceManager.shared.shake(intensity: .light, duration: 0.1)
                 }
             }
+
+            // Show fake review prompt when player is near the corruption wall
+            if corruptionProximity > 0.6 && !hasShownFakeReview {
+                showFakeReviewPrompt()
+            }
         }
 
         // Animate background static
@@ -602,180 +743,31 @@ final class MetaFinaleScene: BaseLevelScene, SKPhysicsContactDelegate {
 
     private func handleDeath() {
         guard GameState.shared.levelState == .playing else { return }
-        playerController.cancel()
+        playerController?.cancel()
         bit.playBufferDeath(respawnAt: spawnPoint) { [weak self] in self?.bit.setGrounded(true) }
     }
 
     private func handleExit() {
         succeedLevel()
 
-        // Special ending sequence
+        // Normal level completion transition to Level 21
         bit.run(.sequence([
             .fadeOut(withDuration: 0.5),
-            .run { [weak self] in self?.showVictoryScreen() }
+            .run { [weak self] in self?.transitionToNextLevel() }
         ]))
     }
 
-    private func showVictoryScreen() {
-        // ULTIMATE VICTORY SEQUENCE
-
-        // Slow everything down for dramatic effect
-        JuiceManager.shared.slowMotion(factor: 0.2, duration: 2.0)
-
-        // Confetti explosion
-        let confetti = ParticleFactory.shared.createConfetti(in: self)
-        addChild(confetti)
-
-        // Epic haptic pattern
-        HapticManager.shared.victory()
-
-        run(.sequence([
-            .wait(forDuration: 0.5),
-            .run { [weak self] in
-                self?.displayVictoryUI()
-            }
-        ]))
-    }
-
-    private func displayVictoryUI() {
-        let victory = SKNode()
-        victory.position = CGPoint(x: size.width / 2, y: size.height / 2)
-        victory.zPosition = 600
-        addChild(victory)
-
-        // Fade to black background
-        let bg = SKShapeNode(rectOf: CGSize(width: size.width * 2, height: size.height * 2))
-        bg.fillColor = .black
-        bg.position = .zero
-        bg.alpha = 0
-        victory.addChild(bg)
-        bg.run(.fadeAlpha(to: 0.9, duration: 1.0))
-
-        // Glitch effect container
-        let textContainer = SKNode()
-        victory.addChild(textContainer)
-
-        // Main title with glitch animation
-        let title = SKLabelNode(text: "Y O U  W I N")
-        title.fontName = "Menlo-Bold"
-        title.fontSize = 48
-        title.fontColor = .white
-        title.position = CGPoint(x: 0, y: 80)
-        title.alpha = 0
-        textContainer.addChild(title)
-
-        // Glitchy reveal for title
-        title.run(.sequence([
-            .wait(forDuration: 1.0),
-            .run {
-                AudioManager.shared.playGlitch()
-                JuiceManager.shared.glitchEffect(duration: 0.2)
-            },
-            .fadeIn(withDuration: 0.1),
-            .run {
-                HapticManager.shared.heavy()
-            }
-        ]))
-
-        // Subtitle
-        let subtitle = SKLabelNode(text: "THE FOURTH WALL IS BROKEN")
-        subtitle.fontName = "Menlo"
-        subtitle.fontSize = 16
-        subtitle.fontColor = .cyan
-        subtitle.position = CGPoint(x: 0, y: 30)
-        subtitle.alpha = 0
-        textContainer.addChild(subtitle)
-
-        subtitle.run(.sequence([
-            .wait(forDuration: 2.0),
-            .fadeIn(withDuration: 0.5)
-        ]))
-
-        // Personal message - this is the fourth wall break
-        let personalMessage = SKLabelNode(text: "Thank you for playing, truly.")
-        personalMessage.fontName = "Helvetica-Light"
-        personalMessage.fontSize = 14
-        personalMessage.fontColor = .white
-        personalMessage.position = CGPoint(x: 0, y: -20)
-        personalMessage.alpha = 0
-        textContainer.addChild(personalMessage)
-
-        personalMessage.run(.sequence([
-            .wait(forDuration: 3.5),
-            .fadeIn(withDuration: 1.0)
-        ]))
-
-        // Meta message
-        let metaMessage = SKLabelNode(text: "You deleted the app to win. That takes commitment.")
-        metaMessage.fontName = "Menlo"
-        metaMessage.fontSize = 11
-        metaMessage.fontColor = SKColor(white: 0.7, alpha: 1)
-        metaMessage.position = CGPoint(x: 0, y: -50)
-        metaMessage.alpha = 0
-        textContainer.addChild(metaMessage)
-
-        metaMessage.run(.sequence([
-            .wait(forDuration: 5.0),
-            .fadeIn(withDuration: 0.5)
-        ]))
-
-        // Credits
-        let credits = SKLabelNode(text: "GLITCHED")
-        credits.fontName = "Helvetica-Bold"
-        credits.fontSize = 10
-        credits.fontColor = SKColor(white: 0.5, alpha: 1)
-        credits.position = CGPoint(x: 0, y: -100)
-        credits.alpha = 0
-        textContainer.addChild(credits)
-
-        credits.run(.sequence([
-            .wait(forDuration: 6.5),
-            .fadeIn(withDuration: 0.5)
-        ]))
-
-        // Add subtle glitch to entire text container
-        textContainer.run(.repeatForever(.sequence([
-            .wait(forDuration: Double.random(in: 2...5)),
-            .run {
-                textContainer.position.x = CGFloat.random(in: -3...3)
-            },
-            .wait(forDuration: 0.05),
-            .run {
-                textContainer.position = .zero
-            }
-        ])))
-
-        // Add digital rain in background
-        let rain = ParticleFactory.shared.createDigitalRain(in: self)
-        rain.alpha = 0.1
-        rain.zPosition = 599
-        addChild(rain)
-
-        // Transition after delay
-        run(.sequence([
-            .wait(forDuration: 10),
-            .run {
-                JuiceManager.shared.flash(color: .white, duration: 0.5)
-            },
-            .wait(forDuration: 0.5),
-            .run { [weak self] in self?.returnToMenu() }
-        ]))
-    }
-
-    private func returnToMenu() {
+    private func transitionToNextLevel() {
         GameState.shared.setState(.transitioning)
+        let nextLevel = LevelID(world: .world3, index: 21)
+        GameState.shared.load(level: nextLevel)
         guard let view = self.view else { return }
-        // Return to main menu or level select
-        view.presentScene(LevelFactory.makeScene(for: LevelID(world: .world1, index: 0), size: size),
-                          transition: SKTransition.fade(withDuration: 1))
+        view.presentScene(LevelFactory.makeScene(for: nextLevel, size: size), transition: SKTransition.fade(withDuration: 0.5))
     }
 
     override func onLevelSucceeded() {
         ProgressManager.shared.markCompleted(levelID)
         DeviceManagerCoordinator.shared.deactivateAll()
-
-        // Mark game as complete
-        UserDefaults.standard.set(true, forKey: "glitched_game_complete")
     }
 
     override func willMove(from view: SKView) {

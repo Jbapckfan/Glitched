@@ -1,5 +1,4 @@
 import SpriteKit
-import Combine
 import UIKit
 
 /// Level 12: Clipboard
@@ -22,6 +21,8 @@ final class ClipboardScene: BaseLevelScene, SKPhysicsContactDelegate {
     private let correctPassword = "GLITCH3D"
     private var isUnlocked = false
     private var doorBlocker: SKNode?
+    private var clipboardScanLabel: SKLabelNode?
+    private var hasScannedClipboard = false
 
     override func configureScene() {
         levelID = LevelID(world: .world2, index: 12)
@@ -39,6 +40,7 @@ final class ClipboardScene: BaseLevelScene, SKPhysicsContactDelegate {
         createTerminal()
         showInstructionPanel()
         setupBit()
+        scanClipboardOnLoad()
     }
 
     private func setupBackground() {
@@ -192,6 +194,7 @@ final class ClipboardScene: BaseLevelScene, SKPhysicsContactDelegate {
         exit.physicsBody = SKPhysicsBody(rectangleOf: exit.size)
         exit.physicsBody?.isDynamic = false
         exit.physicsBody?.categoryBitMask = PhysicsCategory.exit
+        exit.physicsBody?.collisionBitMask = 0
         exit.name = "exit"
         addChild(exit)
     }
@@ -217,11 +220,59 @@ final class ClipboardScene: BaseLevelScene, SKPhysicsContactDelegate {
         panel.run(.sequence([.wait(forDuration: 5), .fadeOut(withDuration: 0.5), .removeFromParent()]))
     }
 
+    private func scanClipboardOnLoad() {
+        guard !hasScannedClipboard else { return }
+        hasScannedClipboard = true
+
+        if let clipboardContent = UIPasteboard.general.string,
+           !clipboardContent.isEmpty,
+           clipboardContent.uppercased() != correctPassword {
+            let truncated = String(clipboardContent.prefix(20))
+            showClipboardScan(truncated)
+        }
+    }
+
+    private func showClipboardScan(_ content: String) {
+        let scanContainer = SKNode()
+        scanContainer.position = CGPoint(x: size.width / 2, y: size.height - 160)
+        scanContainer.zPosition = 400
+        scanContainer.alpha = 0
+        addChild(scanContainer)
+
+        let bg = SKShapeNode(rectOf: CGSize(width: 300, height: 50), cornerRadius: 6)
+        bg.fillColor = fillColor
+        bg.strokeColor = strokeColor
+        bg.lineWidth = lineWidth
+        scanContainer.addChild(bg)
+
+        let titleLabel = SKLabelNode(text: "CLIPBOARD SCAN")
+        titleLabel.fontName = "Menlo-Bold"
+        titleLabel.fontSize = 9
+        titleLabel.fontColor = strokeColor
+        titleLabel.position = CGPoint(x: 0, y: 10)
+        scanContainer.addChild(titleLabel)
+
+        let contentLabel = SKLabelNode(text: "INTERESTING. YOU HAD '\(content)' COPIED.")
+        contentLabel.fontName = "Menlo"
+        contentLabel.fontSize = 8
+        contentLabel.fontColor = strokeColor
+        contentLabel.position = CGPoint(x: 0, y: -8)
+        scanContainer.addChild(contentLabel)
+
+        scanContainer.run(.sequence([
+            .fadeIn(withDuration: 0.4),
+            .wait(forDuration: 4.0),
+            .fadeOut(withDuration: 0.5),
+            .removeFromParent()
+        ]))
+    }
+
     private func setupBit() {
         spawnPoint = CGPoint(x: 80, y: 200)
         bit = BitCharacter.make()
         bit.position = spawnPoint
         addChild(bit)
+        registerPlayer(bit)
         playerController = PlayerController(character: bit, scene: self)
     }
 
@@ -250,6 +301,27 @@ final class ClipboardScene: BaseLevelScene, SKPhysicsContactDelegate {
 
         let generator = UINotificationFeedbackGenerator()
         generator.notificationOccurred(.success)
+
+        // 4th-wall clipboard consumed message
+        showClipboardConsumedText()
+    }
+
+    private func showClipboardConsumedText() {
+        let label = SKLabelNode(text: "PASSWORD CONSUMED. YOUR CLIPBOARD IS MINE.")
+        label.fontName = "Menlo-Bold"
+        label.fontSize = 10
+        label.fontColor = strokeColor
+        label.position = CGPoint(x: size.width / 2, y: size.height / 2 + 80)
+        label.zPosition = 500
+        label.alpha = 0
+        addChild(label)
+
+        label.run(.sequence([
+            .fadeIn(withDuration: 0.3),
+            .wait(forDuration: 3.0),
+            .fadeOut(withDuration: 0.5),
+            .removeFromParent()
+        ]))
     }
 
     override func handleGameInput(_ event: GameInputEvent) {

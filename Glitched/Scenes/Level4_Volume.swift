@@ -1,5 +1,4 @@
 import SpriteKit
-import Combine
 import AVFoundation
 import UIKit
 
@@ -43,6 +42,24 @@ final class VolumeScene: BaseLevelScene, SKPhysicsContactDelegate {
     private var playerInZone = false
 
     private var volumeIndicator: SKNode!
+
+    // Wolf sleep talking
+    private var sleepTalkLabel: SKLabelNode?
+    private var sleepTalkTimer: TimeInterval = 0
+    private let sleepTalkInterval: TimeInterval = 4.0
+    private var sleepTalkIndex: Int = 0
+    private let sleepTalkLines = [
+        "mmm... he's watching me sleep... creepy...",
+        "zzz... delete... the app... zzz",
+        "mmm... five more levels...",
+        "zzz... who designed this place... zzz",
+        "mmm... is that... a square person... zzz",
+        "zzz... lower the volume... please... zzz"
+    ]
+
+    // Safe zone shrinking
+    private var levelElapsedTime: TimeInterval = 0
+    private var safeZoneShrinkFactor: Float = 1.0
 
     // NEW: Water system - volume controls water level
     private var waterNode: SKShapeNode!
@@ -475,6 +492,7 @@ final class VolumeScene: BaseLevelScene, SKPhysicsContactDelegate {
         bit = BitCharacter.make()
         bit.position = spawnPoint
         addChild(bit)
+        registerPlayer(bit)
 
         playerController = PlayerController(character: bit, scene: self)
     }
@@ -704,9 +722,13 @@ final class VolumeScene: BaseLevelScene, SKPhysicsContactDelegate {
     private func updateCreatureState() {
         let previousState = creatureState
 
-        if currentVolume > wakeThreshold {
+        // Apply safe zone shrinking: thresholds get lower over time
+        let effectiveStirThreshold = stirThreshold * safeZoneShrinkFactor
+        let effectiveWakeThreshold = wakeThreshold * safeZoneShrinkFactor
+
+        if currentVolume > effectiveWakeThreshold {
             creatureState = .awake
-        } else if currentVolume > stirThreshold {
+        } else if currentVolume > effectiveStirThreshold {
             if creatureState == .sleeping {
                 creatureState = .stirring
             }
@@ -794,6 +816,18 @@ final class VolumeScene: BaseLevelScene, SKPhysicsContactDelegate {
     override func updatePlaying(deltaTime: TimeInterval) {
         playerController.update()
 
+        // Track elapsed time for safe zone shrinking
+        levelElapsedTime += deltaTime
+
+        // Shrink the safe volume zone by 10% every 8 seconds
+        let shrinkSteps = Int(levelElapsedTime / 8.0)
+        let newShrinkFactor = max(0.4, 1.0 - Float(shrinkSteps) * 0.10)
+        if newShrinkFactor != safeZoneShrinkFactor {
+            safeZoneShrinkFactor = newShrinkFactor
+            // Re-evaluate creature state with the new tighter thresholds
+            updateCreatureState()
+        }
+
         if creatureState == .returningToSleep {
             returningToSleepTimer -= deltaTime
             if returningToSleepTimer <= 0 {
@@ -808,12 +842,56 @@ final class VolumeScene: BaseLevelScene, SKPhysicsContactDelegate {
             }
         }
 
+        // Wolf sleep talking
+        if creatureState == .sleeping {
+            sleepTalkTimer += deltaTime
+            if sleepTalkTimer >= sleepTalkInterval {
+                sleepTalkTimer = 0
+                showSleepTalk()
+            }
+        } else {
+            sleepTalkTimer = 0
+            // Remove any existing sleep talk bubble
+            sleepTalkLabel?.removeAllActions()
+            sleepTalkLabel?.removeFromParent()
+            sleepTalkLabel = nil
+        }
+
         let distance = hypot(bit.position.x - creature.position.x,
                             bit.position.y - creature.position.y)
         playerInZone = distance < 200
 
         if playerInZone && creatureState == .awake {
             handleDeath()
+        }
+    }
+
+    private func showSleepTalk() {
+        // Remove previous bubble
+        sleepTalkLabel?.removeAllActions()
+        sleepTalkLabel?.removeFromParent()
+
+        let label = SKLabelNode(fontNamed: "Menlo")
+        label.text = sleepTalkLines[sleepTalkIndex % sleepTalkLines.count]
+        label.fontSize = 10
+        label.fontColor = strokeColor
+        label.position = CGPoint(x: 0, y: 100)
+        label.zPosition = 200
+        label.alpha = 0
+        creature.addChild(label)
+        sleepTalkLabel = label
+
+        sleepTalkIndex += 1
+
+        label.run(.sequence([
+            .fadeIn(withDuration: 0.3),
+            .wait(forDuration: 3.0),
+            .fadeOut(withDuration: 0.5),
+            .removeFromParent()
+        ])) { [weak self] in
+            if self?.sleepTalkLabel === label {
+                self?.sleepTalkLabel = nil
+            }
         }
     }
 

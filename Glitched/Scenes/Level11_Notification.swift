@@ -1,5 +1,4 @@
 import SpriteKit
-import Combine
 import UIKit
 import UserNotifications
 
@@ -23,12 +22,21 @@ final class NotificationScene: BaseLevelScene, SKPhysicsContactDelegate {
     private var doorStates: [Bool] = [false, false]  // unlocked state
     private var currentDoorIndex = 0
     private var pendingNotificationId: String?
+    private var notificationRequestCount = 0
+
+    // 4th-wall notification messages (sequential)
+    private let fourthWallMessages = [
+        "BIT IS WAITING FOR YOU IN LEVEL 11",
+        "SERIOUSLY, THE DOOR IS RIGHT THERE",
+        "FINE. I'LL OPEN IT MYSELF."
+    ]
 
     // UI
     private var notificationButton: SKNode!
     private var instructionPanel: SKNode?
     private var bellIcon: SKNode!
     private var waitingIndicator: SKNode?
+    private var fourthWallLabel: SKLabelNode?
 
     // MARK: - Configuration
 
@@ -319,6 +327,7 @@ final class NotificationScene: BaseLevelScene, SKPhysicsContactDelegate {
         exit.physicsBody = SKPhysicsBody(rectangleOf: exit.size)
         exit.physicsBody?.isDynamic = false
         exit.physicsBody?.categoryBitMask = PhysicsCategory.exit
+        exit.physicsBody?.collisionBitMask = 0
         exit.name = "exit"
         addChild(exit)
     }
@@ -370,6 +379,7 @@ final class NotificationScene: BaseLevelScene, SKPhysicsContactDelegate {
         bit = BitCharacter.make()
         bit.position = spawnPoint
         addChild(bit)
+        registerPlayer(bit)
         playerController = PlayerController(character: bit, scene: self)
     }
 
@@ -382,13 +392,38 @@ final class NotificationScene: BaseLevelScene, SKPhysicsContactDelegate {
         let id = "door_unlock_\(currentDoorIndex)_\(Date().timeIntervalSince1970)"
         pendingNotificationId = id
 
-        NotificationGameManager.shared.scheduleNotification(
-            id: id,
-            title: "GLITCHED",
-            body: "Door \(currentDoorIndex + 1) unlock request approved. Tap to confirm.",
-            delay: 3.0,
-            isCorrect: true
-        )
+        // Pick contextual 4th-wall message based on request count
+        let messageIndex = min(notificationRequestCount, fourthWallMessages.count - 1)
+        let notificationBody = fourthWallMessages[messageIndex]
+        notificationRequestCount += 1
+
+        // If this is the 3rd+ request, auto-unlock (the game gives up)
+        if messageIndex == fourthWallMessages.count - 1 {
+            NotificationGameManager.shared.scheduleNotification(
+                id: id,
+                title: "GLITCHED",
+                body: notificationBody,
+                delay: 2.0,
+                isCorrect: true
+            )
+        } else {
+            NotificationGameManager.shared.scheduleNotification(
+                id: id,
+                title: "GLITCHED",
+                body: notificationBody,
+                delay: 3.0,
+                isCorrect: true
+            )
+        }
+
+        // Check notification permission status and show denial text
+        UNUserNotificationCenter.current().getNotificationSettings { [weak self] settings in
+            DispatchQueue.main.async {
+                if settings.authorizationStatus == .denied {
+                    self?.showPermissionDeniedText()
+                }
+            }
+        }
 
         showWaitingIndicator()
 
@@ -401,6 +436,27 @@ final class NotificationScene: BaseLevelScene, SKPhysicsContactDelegate {
 
         let generator = UIImpactFeedbackGenerator(style: .medium)
         generator.impactOccurred()
+    }
+
+    private func showPermissionDeniedText() {
+        fourthWallLabel?.removeFromParent()
+
+        let label = SKLabelNode(text: "YOU WON'T LET ME TALK TO YOU? THIS IS A TRUST EXERCISE.")
+        label.fontName = "Menlo-Bold"
+        label.fontSize = 11
+        label.fontColor = strokeColor
+        label.position = CGPoint(x: size.width / 2, y: size.height / 2 + 50)
+        label.zPosition = 500
+        label.alpha = 0
+        addChild(label)
+        fourthWallLabel = label
+
+        label.run(.sequence([
+            .fadeIn(withDuration: 0.3),
+            .wait(forDuration: 4.0),
+            .fadeOut(withDuration: 0.5),
+            .removeFromParent()
+        ]))
     }
 
     private func showWaitingIndicator() {

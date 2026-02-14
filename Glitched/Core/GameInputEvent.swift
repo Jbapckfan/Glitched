@@ -44,6 +44,17 @@ enum GameInputEvent {
     case speechRecognized(text: String)
     case multiTouch(count: Int, locations: [CGPoint])
 
+    // World 3: Data Corruption inputs
+    case batteryLevelChanged(percentage: Float)
+    case deviceNameRead(name: String)
+    case storageCacheCleared
+    case voiceCommandRecognized(command: String)
+
+    // World 4: Reality Break inputs
+    case localeChanged(language: String)
+    case voiceOverStateChanged(isEnabled: Bool)
+    case airdropReceived(code: String)
+
     // HUD interaction
     case hudDragCompleted(elementID: String, screenPosition: CGPoint)
 }

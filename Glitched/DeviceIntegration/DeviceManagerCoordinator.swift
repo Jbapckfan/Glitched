@@ -29,6 +29,18 @@ final class DeviceManagerCoordinator {
             AppSwitcherManager.shared,
             AuthenticationManager.shared,
             ReinstallManager.shared,
+
+            // World 3: Data Corruption
+            VoiceCommandManager.shared,
+            BatteryLevelManager.shared,
+            DeviceNameManager.shared,
+            StorageSpaceManager.shared,
+            TimeOfDayManager.shared,
+
+            // World 4: Reality Break
+            LocaleManager.shared,
+            VoiceOverManager.shared,
+            AirDropManager.shared,
         ]
 
         // Observe app lifecycle

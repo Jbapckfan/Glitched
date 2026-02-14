@@ -280,6 +280,7 @@ final class HeaderScene: BaseLevelScene, SKPhysicsContactDelegate {
         bit = BitCharacter.make()
         bit.position = spawnPoint
         addChild(bit)
+        registerPlayer(bit)
 
         playerController = PlayerController(character: bit, scene: self)
     }
@@ -456,6 +457,37 @@ final class HeaderScene: BaseLevelScene, SKPhysicsContactDelegate {
             .scale(to: 1.0, duration: 0.3)
         ]))
         bridgePhysics.run(.fadeIn(withDuration: 0.3))
+
+        // 4th-wall glitch text where the header was
+        showHeaderGlitchText()
+    }
+
+    private func showHeaderGlitchText() {
+        let glitchLabel = SKLabelNode(fontNamed: "Menlo-Bold")
+        glitchLabel.text = "HEY, I NEEDED THAT."
+        glitchLabel.fontSize = 14
+        glitchLabel.fontColor = strokeColor
+        glitchLabel.position = CGPoint(x: size.width / 2 + 50, y: size.height - 130)
+        glitchLabel.zPosition = 100
+        glitchLabel.alpha = 0
+        addChild(glitchLabel)
+
+        // Glitch-in effect: flicker then fade out
+        glitchLabel.run(.sequence([
+            .fadeIn(withDuration: 0.05),
+            .wait(forDuration: 0.05),
+            .fadeAlpha(to: 0.3, duration: 0.03),
+            .fadeAlpha(to: 1.0, duration: 0.03),
+            .wait(forDuration: 0.1),
+            .moveBy(x: CGFloat.random(in: -4...4), y: 0, duration: 0.02),
+            .moveBy(x: 0, y: 0, duration: 0.02),
+            .wait(forDuration: 2.0),
+            .group([
+                .fadeOut(withDuration: 0.5),
+                .moveBy(x: CGFloat.random(in: -8...8), y: 0, duration: 0.5)
+            ]),
+            .removeFromParent()
+        ]))
     }
 
     // MARK: - Update
@@ -515,6 +547,7 @@ final class HeaderScene: BaseLevelScene, SKPhysicsContactDelegate {
     // MARK: - Game Events
 
     private func handleDeath() {
+        guard GameState.shared.levelState == .playing else { return }
         playerController.cancel()
         bit.playBufferDeath(respawnAt: spawnPoint) { [weak self] in
             self?.bit.setGrounded(true)

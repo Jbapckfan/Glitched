@@ -1,5 +1,4 @@
 import SpriteKit
-import Combine
 import UIKit
 
 final class ChargingScene: BaseLevelScene, SKPhysicsContactDelegate {
@@ -21,8 +20,20 @@ final class ChargingScene: BaseLevelScene, SKPhysicsContactDelegate {
 
     private var isPlugAnimating = false
     private var hasPlugArrived = false
+    private var isCurrentlyCharging = false
 
     private let shaftWidth: CGFloat = 300
+
+    // Sinking platform state
+    private var plugPlatformBaseY: CGFloat = 0
+    private var plugPlatformCurrentY: CGFloat = 0
+    private let plugSinkRate: CGFloat = 15.0  // Points per second when unplugged
+    private let plugRiseRate: CGFloat = 30.0  // Points per second when plugged back in
+
+    // 4th-wall commentary
+    private var chargingCommentaryLabel: SKLabelNode?
+    private var hasShownPluggedText = false
+    private var hasShownUnpluggedText = false
 
     // MARK: - Configuration
 
@@ -390,6 +401,7 @@ final class ChargingScene: BaseLevelScene, SKPhysicsContactDelegate {
         bit = BitCharacter.make()
         bit.position = spawnPoint
         addChild(bit)
+        registerPlayer(bit)
 
         playerController = PlayerController(character: bit, scene: self)
     }
@@ -561,8 +573,12 @@ final class ChargingScene: BaseLevelScene, SKPhysicsContactDelegate {
         setBatteryCharging()
 
         giantPlug.run(SKAction.sequence([burstUp, pause, riseToTop])) { [weak self] in
-            self?.hasPlugArrived = true
-            self?.isPlugAnimating = false
+            guard let self = self else { return }
+            self.hasPlugArrived = true
+            self.isPlugAnimating = false
+            self.plugPlatformBaseY = self.giantPlug.position.y
+            self.plugPlatformCurrentY = self.giantPlug.position.y
+            self.isCurrentlyCharging = (UIDevice.current.batteryState == .charging || UIDevice.current.batteryState == .full)
         }
 
         let riseShake = createShakeAction(duration: 2.5, amplitudeX: 2, amplitudeY: 2)
@@ -651,11 +667,42 @@ final class ChargingScene: BaseLevelScene, SKPhysicsContactDelegate {
     override func handleGameInput(_ event: GameInputEvent) {
         switch event {
         case .deviceCharging(let isPluggedIn):
+            isCurrentlyCharging = isPluggedIn
             if isPluggedIn {
                 triggerPlugAnimation()
+                showChargingCommentary("FEEDING ME ELECTRICITY? HOW... NURTURING.")
+            } else if hasPlugArrived {
+                showChargingCommentary("COLD. SO COLD.")
             }
         default:
             break
+        }
+    }
+
+    private func showChargingCommentary(_ text: String) {
+        // Remove previous commentary
+        chargingCommentaryLabel?.removeAllActions()
+        chargingCommentaryLabel?.removeFromParent()
+
+        let label = SKLabelNode(fontNamed: "Menlo-Bold")
+        label.text = text
+        label.fontSize = 11
+        label.fontColor = strokeColor
+        label.position = CGPoint(x: size.width / 2, y: size.height / 2 + 60)
+        label.zPosition = 300
+        label.alpha = 0
+        addChild(label)
+        chargingCommentaryLabel = label
+
+        label.run(.sequence([
+            .fadeIn(withDuration: 0.2),
+            .wait(forDuration: 3.0),
+            .fadeOut(withDuration: 0.5),
+            .removeFromParent()
+        ])) { [weak self] in
+            if self?.chargingCommentaryLabel === label {
+                self?.chargingCommentaryLabel = nil
+            }
         }
     }
 
@@ -663,6 +710,21 @@ final class ChargingScene: BaseLevelScene, SKPhysicsContactDelegate {
 
     override func updatePlaying(deltaTime: TimeInterval) {
         playerController.update()
+
+        // Plug platform sinking/rising logic
+        guard hasPlugArrived else { return }
+
+        if isCurrentlyCharging {
+            // Rise back toward base position when plugged in
+            if plugPlatformCurrentY < plugPlatformBaseY {
+                plugPlatformCurrentY = min(plugPlatformCurrentY + plugRiseRate * CGFloat(deltaTime), plugPlatformBaseY)
+                giantPlug.position.y = plugPlatformCurrentY
+            }
+        } else {
+            // Sink slowly when unplugged
+            plugPlatformCurrentY -= plugSinkRate * CGFloat(deltaTime)
+            giantPlug.position.y = plugPlatformCurrentY
+        }
     }
 
     // MARK: - Touch Handling

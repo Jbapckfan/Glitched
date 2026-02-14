@@ -1,5 +1,4 @@
 import SpriteKit
-import Combine
 import UIKit
 
 /// Level 13: WiFi Signal
@@ -19,6 +18,17 @@ final class WiFiScene: BaseLevelScene, SKPhysicsContactDelegate {
     private var signalBars: [SKShapeNode] = []
     private var isWifiEnabled = true
 
+    // Download progress bar
+    private var downloadProgress: CGFloat = 0.0  // 0.0 to 1.0
+    private var downloadBarFill: SKShapeNode!
+    private var downloadBarBG: SKShapeNode!
+    private var downloadLabel: SKLabelNode!
+    private var downloadCompleted = false
+    private let downloadBarWidth: CGFloat = 160
+
+    // 4th-wall text
+    private var wifiStatusLabel: SKLabelNode?
+
     override func configureScene() {
         levelID = LevelID(world: .world2, index: 13)
         backgroundColor = fillColor
@@ -33,6 +43,7 @@ final class WiFiScene: BaseLevelScene, SKPhysicsContactDelegate {
         setupLevelTitle()
         buildLevel()
         createWiFiIndicator()
+        createDownloadBar()
         showInstructionPanel()
         setupBit()
     }
@@ -189,6 +200,104 @@ final class WiFiScene: BaseLevelScene, SKPhysicsContactDelegate {
         }
     }
 
+    private func createDownloadBar() {
+        let barContainer = SKNode()
+        barContainer.position = CGPoint(x: size.width / 2, y: size.height - 100)
+        barContainer.zPosition = 200
+        addChild(barContainer)
+
+        // Label
+        downloadLabel = SKLabelNode(text: "DOWNLOAD: 0%")
+        downloadLabel.fontName = "Menlo-Bold"
+        downloadLabel.fontSize = 10
+        downloadLabel.fontColor = strokeColor
+        downloadLabel.position = CGPoint(x: 0, y: 15)
+        barContainer.addChild(downloadLabel)
+
+        // Background bar
+        downloadBarBG = SKShapeNode(rectOf: CGSize(width: downloadBarWidth, height: 12), cornerRadius: 3)
+        downloadBarBG.fillColor = fillColor
+        downloadBarBG.strokeColor = strokeColor
+        downloadBarBG.lineWidth = lineWidth * 0.6
+        barContainer.addChild(downloadBarBG)
+
+        // Fill bar (starts at zero width)
+        downloadBarFill = SKShapeNode(rectOf: CGSize(width: 1, height: 8), cornerRadius: 2)
+        downloadBarFill.fillColor = strokeColor
+        downloadBarFill.strokeColor = .clear
+        downloadBarFill.position = CGPoint(x: -downloadBarWidth / 2 + 1, y: 0)
+        barContainer.addChild(downloadBarFill)
+    }
+
+    private func updateDownloadBar() {
+        let fillWidth = max(1, downloadBarWidth * downloadProgress)
+        let rect = CGRect(x: -fillWidth / 2, y: -4, width: fillWidth, height: 8)
+        downloadBarFill.path = UIBezierPath(roundedRect: rect, cornerRadius: 2).cgPath
+        downloadBarFill.position = CGPoint(x: -downloadBarWidth / 2 + fillWidth / 2, y: 0)
+
+        let percent = Int(downloadProgress * 100)
+        downloadLabel.text = "DOWNLOAD: \(percent)%"
+
+        if downloadProgress >= 1.0 && !downloadCompleted {
+            downloadCompleted = true
+            downloadLabel.text = "DOWNLOAD COMPLETE"
+            triggerConfettiBurst()
+        }
+    }
+
+    private func triggerConfettiBurst() {
+        // Confetti burst effect
+        for _ in 0..<40 {
+            let confetti = SKShapeNode(rectOf: CGSize(width: CGFloat.random(in: 3...6), height: CGFloat.random(in: 6...12)))
+            confetti.fillColor = strokeColor
+            confetti.strokeColor = strokeColor
+            confetti.lineWidth = lineWidth * 0.3
+            confetti.position = CGPoint(x: size.width / 2, y: size.height - 100)
+            confetti.zPosition = 300
+            addChild(confetti)
+
+            let randomX = CGFloat.random(in: -200...200)
+            let randomY = CGFloat.random(in: 50...250)
+            let randomRotation = CGFloat.random(in: -6...6)
+            let duration = Double.random(in: 0.8...1.5)
+
+            confetti.run(.sequence([
+                .group([
+                    .moveBy(x: randomX, y: randomY, duration: duration * 0.4),
+                    .rotate(byAngle: randomRotation, duration: duration)
+                ]),
+                .group([
+                    .moveBy(x: randomX * 0.3, y: -randomY * 1.5, duration: duration * 0.6),
+                    .fadeOut(withDuration: duration * 0.6)
+                ]),
+                .removeFromParent()
+            ]))
+        }
+
+        JuiceManager.shared.shake(intensity: .light, duration: 0.2)
+    }
+
+    private func showWiFiStatusText(_ text: String) {
+        wifiStatusLabel?.removeFromParent()
+
+        let label = SKLabelNode(text: text)
+        label.fontName = "Menlo-Bold"
+        label.fontSize = 11
+        label.fontColor = strokeColor
+        label.position = CGPoint(x: size.width / 2, y: size.height / 2 + 60)
+        label.zPosition = 500
+        label.alpha = 0
+        addChild(label)
+        wifiStatusLabel = label
+
+        label.run(.sequence([
+            .fadeIn(withDuration: 0.3),
+            .wait(forDuration: 2.5),
+            .fadeOut(withDuration: 0.5),
+            .removeFromParent()
+        ]))
+    }
+
     private func createExitDoor(at position: CGPoint) {
         let frame = SKShapeNode(rectOf: CGSize(width: 40, height: 60))
         frame.fillColor = fillColor
@@ -202,6 +311,7 @@ final class WiFiScene: BaseLevelScene, SKPhysicsContactDelegate {
         exit.physicsBody = SKPhysicsBody(rectangleOf: exit.size)
         exit.physicsBody?.isDynamic = false
         exit.physicsBody?.categoryBitMask = PhysicsCategory.exit
+        exit.physicsBody?.collisionBitMask = 0
         exit.name = "exit"
         addChild(exit)
     }
@@ -231,6 +341,7 @@ final class WiFiScene: BaseLevelScene, SKPhysicsContactDelegate {
         bit = BitCharacter.make()
         bit.position = spawnPoint
         addChild(bit)
+        registerPlayer(bit)
         playerController = PlayerController(character: bit, scene: self)
     }
 
@@ -262,6 +373,13 @@ final class WiFiScene: BaseLevelScene, SKPhysicsContactDelegate {
         // Update signal bars
         for (index, bar) in signalBars.enumerated() {
             bar.alpha = enabled ? 1.0 : (index == 0 ? 0.3 : 0.1)
+        }
+
+        // 4th-wall WiFi text
+        if enabled {
+            showWiFiStatusText("SWEET, SWEET DATA.")
+        } else {
+            showWiFiStatusText("NO INTERNET? HOW AM I SUPPOSED TO PHONE HOME?")
         }
 
         let generator = UIImpactFeedbackGenerator(style: .light)
@@ -298,6 +416,16 @@ final class WiFiScene: BaseLevelScene, SKPhysicsContactDelegate {
 
     override func updatePlaying(deltaTime: TimeInterval) {
         playerController.update()
+
+        // Update download progress bar
+        if !downloadCompleted {
+            if isWifiEnabled {
+                downloadProgress = min(1.0, downloadProgress + CGFloat(deltaTime) * 0.08)
+            } else {
+                downloadProgress = max(0.0, downloadProgress - CGFloat(deltaTime) * 0.12)
+            }
+            updateDownloadBar()
+        }
     }
 
     func didBegin(_ contact: SKPhysicsContact) {

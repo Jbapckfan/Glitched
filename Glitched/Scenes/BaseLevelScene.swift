@@ -12,12 +12,9 @@ class BaseLevelScene: SKScene {
     // Juice system references
     private(set) var gameCamera: SKCameraNode!
     private var scanlineOverlay: SKNode?
-    private var crtEffect: SKShapeNode?
 
     // Player tracking for effects
     weak var playerNode: SKNode?
-    private var lastPlayerPosition: CGPoint = .zero
-    private var lastPlayerVelocity: CGVector = .zero
 
     // MARK: - Lifecycle
 
@@ -270,7 +267,18 @@ class BaseLevelScene: SKScene {
         let dt = lastUpdateTime > 0 ? currentTime - lastUpdateTime : 0
         lastUpdateTime = currentTime
 
+        // Clamp delta time to prevent physics jumps after backgrounding
+        let clampedDt = min(dt, 1.0 / 30.0)
+
         guard GameState.shared.levelState == .playing else { return }
-        updatePlaying(deltaTime: dt)
+        updatePlaying(deltaTime: clampedDt)
+    }
+
+    // MARK: - Helpers
+
+    /// Subclasses should call this after creating their player character
+    /// to enable death explosion effects, landing dust, etc.
+    func registerPlayer(_ node: SKNode) {
+        playerNode = node
     }
 }

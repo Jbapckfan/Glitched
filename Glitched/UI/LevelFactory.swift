@@ -53,6 +53,30 @@ enum LevelFactory {
         case (.world2, 20):
             scene = MetaFinaleScene(size: size)
 
+        // World 3: Data Corruption
+        case (.world3, 21):
+            scene = VoiceCommandScene(size: size)
+        case (.world3, 22):
+            scene = BatteryPercentScene(size: size)
+        case (.world3, 23):
+            scene = DeviceNameScene(size: size)
+        case (.world3, 24):
+            scene = StorageSpaceScene(size: size)
+        case (.world3, 25):
+            scene = TimeOfDayScene(size: size)
+
+        // World 4: Reality Break
+        case (.world4, 26):
+            scene = LocaleScene(size: size)
+        case (.world4, 27):
+            scene = VoiceOverScene(size: size)
+        case (.world4, 28):
+            scene = AirDropScene(size: size)
+        case (.world4, 29):
+            scene = TheLieScene(size: size)
+        case (.world4, 30):
+            scene = CreditsFinaleScene(size: size)
+
         default:
             // Placeholder for unimplemented levels
             scene = BootSequenceScene(size: size)

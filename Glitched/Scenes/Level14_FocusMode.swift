@@ -1,5 +1,4 @@
 import SpriteKit
-import Combine
 import UIKit
 
 /// Level 14: Do Not Disturb / Focus Mode
@@ -19,6 +18,10 @@ final class FocusModeScene: BaseLevelScene, SKPhysicsContactDelegate {
     private var isFocusEnabled = false
     private var exitDoorLocked = true
     private var exitBlocker: SKNode?
+    private var calmOverlay: SKShapeNode?
+    private var focusTextLabel: SKLabelNode?
+    private var orbitalAngles: [Int: CGFloat] = [:]  // hazard index -> current angle
+    private var orbitalCenters: [Int: CGPoint] = [:]   // hazard index -> orbit center
 
     override func configureScene() {
         levelID = LevelID(world: .world2, index: 14)
@@ -43,6 +46,7 @@ final class FocusModeScene: BaseLevelScene, SKPhysicsContactDelegate {
         // Moon crescents pattern
         for i in 0..<6 {
             let moon = createMoonIcon(size: 15)
+            moon.name = "moon_decoration"
             moon.position = CGPoint(x: CGFloat(i) * 100 + 80, y: size.height - 80)
             moon.alpha = 0.15
             moon.zPosition = -10
@@ -109,27 +113,67 @@ final class FocusModeScene: BaseLevelScene, SKPhysicsContactDelegate {
     }
 
     private func createHazards() {
-        // Moving spike hazards
-        let hazardPositions = [
-            CGPoint(x: 180, y: 220),
-            CGPoint(x: 380, y: 280),
-        ]
+        // Hazard 0: Horizontal oscillation (slow)
+        let h0 = createSpike()
+        h0.position = CGPoint(x: 160, y: 220)
+        h0.name = "hazard_0"
+        addChild(h0)
+        hazards.append(h0)
+        h0.run(.repeatForever(.sequence([
+            .moveBy(x: 80, y: 0, duration: 2.0),
+            .moveBy(x: -80, y: 0, duration: 2.0)
+        ])), withKey: "movement")
 
-        for (index, pos) in hazardPositions.enumerated() {
-            let hazard = createSpike()
-            hazard.position = pos
-            hazard.name = "hazard_\(index)"
-            addChild(hazard)
-            hazards.append(hazard)
+        // Hazard 1: Horizontal oscillation (fast)
+        let h1 = createSpike()
+        h1.position = CGPoint(x: 350, y: 260)
+        h1.name = "hazard_1"
+        addChild(h1)
+        hazards.append(h1)
+        h1.run(.repeatForever(.sequence([
+            .moveBy(x: 100, y: 0, duration: 1.0),
+            .moveBy(x: -100, y: 0, duration: 1.0)
+        ])), withKey: "movement")
 
-            // Oscillating movement
-            let moveRange: CGFloat = 60
-            let duration: TimeInterval = 1.5 + Double(index) * 0.3
-            hazard.run(.repeatForever(.sequence([
-                .moveBy(x: moveRange, y: 0, duration: duration),
-                .moveBy(x: -moveRange, y: 0, duration: duration)
-            ])), withKey: "movement")
-        }
+        // Hazard 2: Vertical oscillation
+        let h2 = createSpike()
+        h2.position = CGPoint(x: 230, y: 200)
+        h2.name = "hazard_2"
+        addChild(h2)
+        hazards.append(h2)
+        h2.run(.repeatForever(.sequence([
+            .moveBy(x: 0, y: 80, duration: 1.4),
+            .moveBy(x: 0, y: -80, duration: 1.4)
+        ])), withKey: "movement")
+
+        // Hazard 3: Vertical oscillation (offset)
+        let h3 = createSpike()
+        h3.position = CGPoint(x: 430, y: 300)
+        h3.name = "hazard_3"
+        addChild(h3)
+        hazards.append(h3)
+        h3.run(.repeatForever(.sequence([
+            .moveBy(x: 0, y: -70, duration: 1.8),
+            .moveBy(x: 0, y: 70, duration: 1.8)
+        ])), withKey: "movement")
+
+        // Hazard 4: Orbital/circular movement
+        let h4 = createSpike()
+        h4.position = CGPoint(x: 300, y: 240)
+        h4.name = "hazard_4"
+        addChild(h4)
+        hazards.append(h4)
+        orbitalCenters[4] = CGPoint(x: 300, y: 240)
+        orbitalAngles[4] = 0
+
+        // Hazard 5: Orbital/circular movement (opposite phase)
+        let h5 = createSpike()
+        h5.position = CGPoint(x: 500, y: 250)
+        h5.name = "hazard_5"
+        addChild(h5)
+        hazards.append(h5)
+        orbitalCenters[5] = CGPoint(x: 500, y: 250)
+        orbitalAngles[5] = .pi
     }
 
     private func createSpike() -> SKNode {
@@ -159,6 +203,15 @@ final class FocusModeScene: BaseLevelScene, SKPhysicsContactDelegate {
         moonIcon.position = CGPoint(x: size.width - 50, y: size.height - 50)
         moonIcon.zPosition = 200
         addChild(moonIcon)
+
+        // Pre-create calming overlay (hidden)
+        calmOverlay = SKShapeNode(rectOf: CGSize(width: size.width * 2, height: size.height * 2))
+        calmOverlay?.fillColor = SKColor.white
+        calmOverlay?.strokeColor = .clear
+        calmOverlay?.alpha = 0
+        calmOverlay?.zPosition = 50
+        calmOverlay?.position = CGPoint(x: size.width / 2, y: size.height / 2)
+        addChild(calmOverlay!)
     }
 
     private func createExitDoor(at position: CGPoint) {
@@ -189,6 +242,7 @@ final class FocusModeScene: BaseLevelScene, SKPhysicsContactDelegate {
         exit.physicsBody = SKPhysicsBody(rectangleOf: exit.size)
         exit.physicsBody?.isDynamic = false
         exit.physicsBody?.categoryBitMask = PhysicsCategory.exit
+        exit.physicsBody?.collisionBitMask = 0
         exit.name = "exit"
         addChild(exit)
     }
@@ -226,6 +280,7 @@ final class FocusModeScene: BaseLevelScene, SKPhysicsContactDelegate {
         bit = BitCharacter.make()
         bit.position = spawnPoint
         addChild(bit)
+        registerPlayer(bit)
         playerController = PlayerController(character: bit, scene: self)
     }
 
@@ -255,8 +310,48 @@ final class FocusModeScene: BaseLevelScene, SKPhysicsContactDelegate {
             exitBlocker?.physicsBody?.categoryBitMask = 0
         }
 
+        // 4th-wall text
+        if enabled {
+            showFocusText("DO NOT DISTURB? I AM THE DISTURBANCE.")
+        }
+
+        // Calming visual effect: white overlay + slow particles
+        if enabled {
+            calmOverlay?.run(.fadeAlpha(to: 0.15, duration: 0.5))
+            // Slow down background moon decorations
+            enumerateChildNodes(withName: "moon_decoration") { node, _ in
+                node.speed = 0.3
+            }
+        } else {
+            calmOverlay?.run(.fadeAlpha(to: 0, duration: 0.3))
+            enumerateChildNodes(withName: "moon_decoration") { node, _ in
+                node.speed = 1.0
+            }
+        }
+
         let generator = UIImpactFeedbackGenerator(style: .soft)
         generator.impactOccurred()
+    }
+
+    private func showFocusText(_ text: String) {
+        focusTextLabel?.removeFromParent()
+
+        let label = SKLabelNode(text: text)
+        label.fontName = "Menlo-Bold"
+        label.fontSize = 11
+        label.fontColor = strokeColor
+        label.position = CGPoint(x: size.width / 2, y: size.height / 2 + 70)
+        label.zPosition = 500
+        label.alpha = 0
+        addChild(label)
+        focusTextLabel = label
+
+        label.run(.sequence([
+            .fadeIn(withDuration: 0.3),
+            .wait(forDuration: 3.0),
+            .fadeOut(withDuration: 0.5),
+            .removeFromParent()
+        ]))
     }
 
     override func handleGameInput(_ event: GameInputEvent) {
@@ -289,6 +384,24 @@ final class FocusModeScene: BaseLevelScene, SKPhysicsContactDelegate {
 
     override func updatePlaying(deltaTime: TimeInterval) {
         playerController.update()
+
+        // Update orbital hazards (indices 4 and 5)
+        guard !isFocusEnabled else { return }
+        let orbitalRadius: CGFloat = 40
+        let orbitalSpeed: CGFloat = 2.0
+
+        for index in [4, 5] {
+            guard index < hazards.count,
+                  let center = orbitalCenters[index],
+                  var angle = orbitalAngles[index] else { continue }
+
+            angle += orbitalSpeed * CGFloat(deltaTime)
+            orbitalAngles[index] = angle
+
+            let x = center.x + cos(angle) * orbitalRadius
+            let y = center.y + sin(angle) * orbitalRadius
+            hazards[index].position = CGPoint(x: x, y: y)
+        }
     }
 
     func didBegin(_ contact: SKPhysicsContact) {

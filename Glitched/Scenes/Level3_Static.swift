@@ -1,5 +1,4 @@
 import SpriteKit
-import Combine
 import UIKit
 
 /// Level 3: Static - REDESIGNED
@@ -21,6 +20,7 @@ final class StaticScene: BaseLevelScene, SKPhysicsContactDelegate {
     private var laserEmitters: [SKNode] = []
     private var laserBeams: [SKShapeNode] = []
     private var laserHitZones: [SKNode] = []
+    private var inverseLaserIndex: Int = 3  // Index of the inverse laser (4th laser)
 
     // Static/noise state
     private var currentNoiseLevel: Float = 0.0
@@ -30,6 +30,9 @@ final class StaticScene: BaseLevelScene, SKPhysicsContactDelegate {
     // Thresholds
     private let noiseThresholdToBlock: Float = 0.25  // Noise above this blocks lasers
     private var lasersBlocked: Bool = false
+
+    // 4th-wall commentary
+    private var hasShownNeighborText = false
 
     // TV screens decoration
     private var tvScreens: [SKNode] = []
@@ -276,14 +279,20 @@ final class StaticScene: BaseLevelScene, SKPhysicsContactDelegate {
             size: CGSize(width: 70, height: 25)
         )
 
-        // Exit platform
+        // Platform before the 4th (inverse) laser
         _ = createPlatform(
-            at: CGPoint(x: size.width - 80, y: groundY),
+            at: CGPoint(x: 630, y: groundY + 50),
+            size: CGSize(width: 70, height: 25)
+        )
+
+        // Exit platform (pushed further right for 4th laser)
+        _ = createPlatform(
+            at: CGPoint(x: size.width - 60, y: groundY),
             size: CGSize(width: 100, height: 30)
         )
 
         // Exit door
-        createExitDoor(at: CGPoint(x: size.width - 60, y: groundY + 50))
+        createExitDoor(at: CGPoint(x: size.width - 40, y: groundY + 50))
 
         // Death zone
         let deathZone = SKNode()
@@ -332,15 +341,30 @@ final class StaticScene: BaseLevelScene, SKPhysicsContactDelegate {
     // MARK: - Laser System
 
     private func createLaserSystem() {
-        // Create 3 laser barriers between platforms
+        // Create 3 normal laser barriers + 1 inverse laser near the end
         let laserPositions: [(start: CGPoint, end: CGPoint)] = [
             (CGPoint(x: 155, y: 140), CGPoint(x: 155, y: 280)),
             (CGPoint(x: 295, y: 140), CGPoint(x: 295, y: 320)),
-            (CGPoint(x: 435, y: 140), CGPoint(x: 435, y: 280))
+            (CGPoint(x: 435, y: 140), CGPoint(x: 435, y: 280)),
+            (CGPoint(x: 560, y: 140), CGPoint(x: 560, y: 280))  // 4th laser - INVERSE
         ]
 
         for (index, positions) in laserPositions.enumerated() {
             createLaser(from: positions.start, to: positions.end, index: index)
+        }
+
+        // Mark the 4th laser as inverse with a different visual style (dashed)
+        // and set its initial state to OFF (since we start in silence and it's powered by noise)
+        if inverseLaserIndex < laserBeams.count {
+            let inverseBeam = laserBeams[inverseLaserIndex]
+            inverseBeam.path = inverseBeam.path?.copy(dashingWithPhase: 0, lengths: [4, 8])
+
+            // Inverse laser starts OFF in silence
+            inverseBeam.alpha = 0.15
+            laserHitZones[inverseLaserIndex].physicsBody?.categoryBitMask = 0
+            if let light = laserEmitters[inverseLaserIndex].childNode(withName: "warning_light") as? SKShapeNode {
+                light.fillColor = strokeColor.withAlphaComponent(0.2)
+            }
         }
     }
 
@@ -408,8 +432,13 @@ final class StaticScene: BaseLevelScene, SKPhysicsContactDelegate {
             lasersBlocked = shouldBlock
 
             for (index, beam) in laserBeams.enumerated() {
-                if shouldBlock {
-                    // Noise blocks the lasers - they glitch out!
+                let isInverse = (index == inverseLaserIndex)
+
+                // Inverse laser: BLOCKED by silence, POWERED by noise (opposite behavior)
+                let laserShouldBeOff = isInverse ? !shouldBlock : shouldBlock
+
+                if laserShouldBeOff {
+                    // Laser is off/blocked
                     beam.alpha = 0.15
                     beam.run(.repeatForever(.sequence([
                         .fadeAlpha(to: 0.1, duration: 0.02),
@@ -421,7 +450,7 @@ final class StaticScene: BaseLevelScene, SKPhysicsContactDelegate {
                         light.fillColor = strokeColor.withAlphaComponent(0.2)
                     }
                 } else {
-                    // Silence = deadly lasers
+                    // Laser is on/deadly
                     beam.removeAction(forKey: "blocked_flicker")
                     beam.alpha = 1.0
                     laserHitZones[index].physicsBody?.categoryBitMask = PhysicsCategory.hazard
@@ -432,10 +461,34 @@ final class StaticScene: BaseLevelScene, SKPhysicsContactDelegate {
                 }
             }
 
+            // Show neighbor commentary after first successful laser block
+            if shouldBlock && !hasShownNeighborText {
+                hasShownNeighborText = true
+                showNeighborCommentary()
+            }
+
             // Haptic feedback on state change
             let generator = UIImpactFeedbackGenerator(style: shouldBlock ? .light : .medium)
             generator.impactOccurred()
         }
+    }
+
+    private func showNeighborCommentary() {
+        let label = SKLabelNode(fontNamed: "Menlo-Bold")
+        label.text = "THE NEIGHBORS ARE STARTING TO WORRY."
+        label.fontSize = 11
+        label.fontColor = strokeColor
+        label.position = CGPoint(x: size.width / 2, y: size.height / 2 + 100)
+        label.zPosition = 300
+        label.alpha = 0
+        addChild(label)
+
+        label.run(.sequence([
+            .fadeIn(withDuration: 0.2),
+            .wait(forDuration: 3.0),
+            .fadeOut(withDuration: 0.5),
+            .removeFromParent()
+        ]))
     }
 
     // MARK: - Static Overlay
@@ -443,7 +496,7 @@ final class StaticScene: BaseLevelScene, SKPhysicsContactDelegate {
     private func createStaticOverlay() {
         staticOverlay = SKNode()
         staticOverlay.zPosition = 200
-        staticOverlay.alpha = 0
+        staticOverlay.alpha = 0.8
         addChild(staticOverlay)
 
         // Create static scanlines
@@ -619,6 +672,7 @@ final class StaticScene: BaseLevelScene, SKPhysicsContactDelegate {
         bit = BitCharacter.make()
         bit.position = spawnPoint
         addChild(bit)
+        registerPlayer(bit)
 
         playerController = PlayerController(character: bit, scene: self)
     }
