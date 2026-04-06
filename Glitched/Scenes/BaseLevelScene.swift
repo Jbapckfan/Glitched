@@ -11,7 +11,8 @@ class BaseLevelScene: SKScene {
 
     // Juice system references
     private(set) var gameCamera: SKCameraNode!
-    private var scanlineOverlay: SKNode?
+    private var scanlineOverlay: SKSpriteNode?
+    private var atmosphereNode: SKNode?
 
     // Player tracking for effects
     weak var playerNode: SKNode?
@@ -24,7 +25,7 @@ class BaseLevelScene: SKScene {
         guard !hasConfigured else { return }
         hasConfigured = true
 
-        backgroundColor = .black
+        backgroundColor = VisualConstants.Colors.background
         setupCamera()
         setupVisualEffects()
         subscribeToEvents()
@@ -41,35 +42,76 @@ class BaseLevelScene: SKScene {
 
     private func setupCamera() {
         gameCamera = SKCameraNode()
-        // Default: camera at scene center (platformer levels use traditional coordinate system)
         gameCamera.position = CGPoint(x: size.width / 2, y: size.height / 2)
         addChild(gameCamera)
         camera = gameCamera
     }
 
     private func setupVisualEffects() {
-        // Optional CRT scanline effect for retro feel
         addScanlines()
+        setupBackgroundAtmosphere(mood: .calm) // Default mood
     }
 
     private func addScanlines() {
+        let shader = SKShader(source: """
+            void main() {
+                vec4 color = texture2D(u_texture, v_tex_coord);
+                float scanline = sin(v_tex_coord.y * u_resolution.y * 1.5) * 0.04;
+                gl_FragColor = vec4(color.rgb - scanline, color.a * 0.05);
+            }
+        """)
+        
+        let overlay = SKSpriteNode(color: .black, size: size)
+        overlay.shader = shader
+        overlay.zPosition = 9000
+        overlay.alpha = 1.0
+        
+        scanlineOverlay = overlay
+        gameCamera.addChild(overlay)
+    }
+
+    enum AtmosphereMood {
+        case calm, tense, glitch
+    }
+
+    func setupBackgroundAtmosphere(mood: AtmosphereMood) {
+        atmosphereNode?.removeFromParent()
         let container = SKNode()
-        container.zPosition = 9000
-        container.alpha = 0.03 // Very subtle
+        container.zPosition = -1000
+        atmosphereNode = container
+        addChild(container)
 
-        let lineSpacing: CGFloat = 4
-        var y: CGFloat = -size.height / 2
-        while y < size.height / 2 {
-            let line = SKShapeNode(rectOf: CGSize(width: size.width * 2, height: 1))
-            line.fillColor = .black
-            line.strokeColor = .clear
-            line.position = CGPoint(x: 0, y: y) // Centered on camera
-            container.addChild(line)
-            y += lineSpacing
+        switch mood {
+        case .calm:
+            // Subtle floating particles
+            let particles = SKEmitterNode()
+            particles.particleTexture = SKTexture(imageNamed: "spark") // Assumes some spark texture exists or use default
+            particles.particleBirthRate = 5
+            particles.particleLifetime = 10
+            particles.particlePositionRange = CGVector(dx: size.width, dy: size.height)
+            particles.particleSpeed = 10
+            particles.particleAlpha = 0.1
+            particles.particleScale = 0.2
+            container.addChild(particles)
+            
+        case .tense:
+            // Faster particles + screen edge vignette
+            let particles = SKEmitterNode()
+            particles.particleBirthRate = 20
+            particles.particleLifetime = 3
+            particles.particlePositionRange = CGVector(dx: size.width, dy: size.height)
+            particles.particleSpeed = 50
+            particles.particleAlpha = 0.2
+            container.addChild(particles)
+            
+            JuiceManager.shared.vignettePulse(color: .black, intensity: 0.3)
+            
+        case .glitch:
+            // Chromatic aberration + noise
+            let noise = ParticleFactory.shared.createDigitalRain(in: self)
+            noise.alpha = 0.15
+            container.addChild(noise)
         }
-
-        scanlineOverlay = container
-        gameCamera.addChild(container)
     }
 
     override func willMove(from view: SKView) {

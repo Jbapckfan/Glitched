@@ -19,12 +19,13 @@ final class BitCharacter: SKSpriteNode {
     private(set) var isGrounded: Bool = false
     private var isWalking: Bool = false
     private var walkPhase: CGFloat = 0
+    private var trailNode: SKNode?
 
-    private let moveSpeed: CGFloat = 220  // Faster, snappier movement
-    private let jumpImpulse: CGFloat = 520  // Good jump height
+    private let moveSpeed: CGFloat = 220
+    private let jumpImpulse: CGFloat = 520
 
     // Colors - Clean black and white line art style
-    private let fillColor = SKColor.white
+    private let fillColor = VisualConstants.Colors.foreground
     private let strokeColor = SKColor.black
     private let lineWidth: CGFloat = 2.0
 
@@ -249,12 +250,35 @@ final class BitCharacter: SKSpriteNode {
     }
 
     private func startIdleAnimation() {
-        // Subtle breathing animation
+        // Subtle breathing + antenna pulse
         let breathe = SKAction.sequence([
-            SKAction.scaleY(to: 1.01, duration: 1.5),
-            SKAction.scaleY(to: 0.99, duration: 1.5)
+            SKAction.scaleY(to: 1.015, duration: 1.2),
+            SKAction.scaleY(to: 0.985, duration: 1.2)
         ])
+        
+        let antennaPulse = SKAction.sequence([
+            SKAction.run { [weak self] in self?.antenna?.strokeColor = VisualConstants.Colors.accent },
+            SKAction.wait(forDuration: 0.1),
+            SKAction.run { [weak self] in self?.antenna?.strokeColor = .black },
+            SKAction.wait(forDuration: 3.0)
+        ])
+        
         run(SKAction.repeatForever(breathe), withKey: "idle")
+        antenna?.run(SKAction.repeatForever(antennaPulse))
+    }
+
+    private func updateTrail() {
+        guard isWalking && isGrounded else {
+            trailNode?.removeFromParent()
+            trailNode = nil
+            return
+        }
+        
+        if trailNode == nil {
+            let trail = ParticleFactory.shared.createGlowTrail(following: self, color: VisualConstants.Colors.accent.withAlphaComponent(0.3))
+            parent?.addChild(trail)
+            trailNode = trail
+        }
     }
 
     private func startGlitchEffect() {
@@ -599,11 +623,13 @@ final class BitCharacter: SKSpriteNode {
                 walkPhase = 0
             }
             updateWalkAnimation(deltaTime: 1.0/60.0)
+            updateTrail()
         } else {
             if isWalking {
                 isWalking = false
                 stopWalkAnimation()
                 startIdleAnimation()
+                updateTrail()
             }
         }
     }
@@ -721,38 +747,35 @@ final class BitCharacter: SKSpriteNode {
         stopWalkAnimation()
         physicsBody?.isDynamic = false
         isWalking = false
-
-        let glitchColor = glitchColors.randomElement() ?? glitchColors[0]
+        
+        JuiceManager.shared.shake(intensity: .heavy, duration: 0.4)
+        
+        let explosion = ParticleFactory.shared.createDeathExplosion(at: position, color: VisualConstants.Colors.accent)
+        parent?.addChild(explosion)
 
         let deathEffect = SKAction.sequence([
-            SKAction.repeat(SKAction.sequence([
-                SKAction.run { [weak self] in
-                    self?.bodyNode?.strokeColor = glitchColor
-                    self?.headNode?.strokeColor = glitchColor
-                    self?.position.x += CGFloat.random(in: -3...3)
-                    self?.position.y += CGFloat.random(in: -2...2)
-                },
-                SKAction.wait(forDuration: 0.03),
-                SKAction.run { [weak self] in
-                    self?.bodyNode?.strokeColor = self?.strokeColor ?? .black
-                    self?.headNode?.strokeColor = self?.strokeColor ?? .black
-                },
-                SKAction.wait(forDuration: 0.02)
-            ]), count: 8),
             SKAction.group([
-                SKAction.fadeAlpha(to: 0.0, duration: 0.3),
-                SKAction.scale(to: 0.3, duration: 0.3),
-                SKAction.rotate(byAngle: .pi * 2, duration: 0.3)
+                SKAction.fadeAlpha(to: 0.0, duration: 0.1),
+                SKAction.scale(to: 2.0, duration: 0.1),
+                SKAction.run { [weak self] in self?.playIntenseGlitch(color: .white) }
             ]),
-            SKAction.wait(forDuration: 0.2),
+            SKAction.wait(forDuration: 0.8),
             SKAction.run { [weak self] in
                 guard let self = self else { return }
                 self.position = point
-                self.setScale(1.0)
-                self.zRotation = 0
-                self.alpha = 1.0
-                self.bodyNode?.strokeColor = self.strokeColor
-                self.headNode?.strokeColor = self.strokeColor
+                self.setScale(0.1)
+                self.alpha = 0
+            },
+            // Respawn "reassembly"
+            SKAction.group([
+                SKAction.fadeAlpha(to: 1.0, duration: 0.3),
+                SKAction.scale(to: 1.0, duration: 0.3),
+                SKAction.run { [weak self] in
+                    self?.playMediumGlitch(color: VisualConstants.Colors.accent)
+                }
+            ]),
+            SKAction.run { [weak self] in
+                guard let self = self else { return }
                 self.physicsBody?.isDynamic = true
                 self.physicsBody?.velocity = .zero
                 self.startGlitchEffect()

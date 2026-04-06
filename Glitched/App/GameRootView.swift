@@ -61,8 +61,10 @@ struct SpriteKitContainer: UIViewRepresentable {
         // Handle level changes
         if let currentScene = uiView.scene as? BaseLevelScene,
            currentScene.levelID != levelID {
+            JuiceManager.shared.playSceneTransitionGlitch()
+            
             let newScene = LevelFactory.makeScene(for: levelID, size: uiView.bounds.size)
-            uiView.presentScene(newScene, transition: .fade(withDuration: 0.3))
+            uiView.presentScene(newScene, transition: .crossFade(withDuration: 0.4))
         }
     }
 }
@@ -108,38 +110,60 @@ struct AccessibilityOverlay: View {
 struct PauseMenuView: View {
     var body: some View {
         ZStack {
-            Color.black.opacity(0.7)
+            VisualConstants.Colors.backgroundUI.opacity(0.85)
                 .ignoresSafeArea()
-
-            VStack(spacing: 24) {
-                Text("PAUSED")
-                    .font(.system(size: 36, weight: .bold, design: .monospaced))
-                    .foregroundColor(.white)
-
-                Button("RESUME") {
-                    GameState.shared.togglePause()
-                }
-                .font(.system(size: 20, weight: .medium, design: .monospaced))
-                .foregroundColor(.green)
-                .padding()
-                .background(
-                    RoundedRectangle(cornerRadius: 8)
-                        .stroke(Color.green, lineWidth: 2)
+                .overlay(
+                    Rectangle()
+                        .stroke(VisualConstants.Colors.accentUI, lineWidth: 1)
+                        .padding(20)
                 )
 
-                Button("RESTART LEVEL") {
-                    // Reload current level
-                    let currentID = GameState.shared.currentLevelID
-                    GameState.shared.load(level: currentID)
+            VStack(spacing: 32) {
+                VStack(spacing: 4) {
+                    Text("SYSTEM DIAGNOSTIC: PAUSED")
+                        .font(.custom(VisualConstants.Fonts.terminal, size: 24))
+                        .foregroundColor(VisualConstants.Colors.accentUI)
+                    
+                    Text("STATE: UNSTABLE_DEBUG_MODE")
+                        .font(.custom(VisualConstants.Fonts.terminal, size: 14))
+                        .foregroundColor(VisualConstants.Colors.accentUI.opacity(0.6))
                 }
-                .font(.system(size: 20, weight: .medium, design: .monospaced))
-                .foregroundColor(.yellow)
-                .padding()
-                .background(
-                    RoundedRectangle(cornerRadius: 8)
-                        .stroke(Color.yellow, lineWidth: 2)
-                )
+
+                VStack(spacing: 16) {
+                    PauseMenuButton(title: "REBOOT_LEVEL", color: VisualConstants.Colors.warningUI) {
+                        let currentID = GameState.shared.currentLevelID
+                        GameState.shared.load(level: currentID)
+                    }
+
+                    PauseMenuButton(title: "RESUME_SESSION", color: VisualConstants.Colors.successUI) {
+                        GameState.shared.togglePause()
+                    }
+                    
+                    PauseMenuButton(title: "TERMINATE_PROCESS", color: VisualConstants.Colors.dangerUI) {
+                        // Handle quit logic if applicable
+                    }
+                }
             }
+        }
+    }
+}
+
+struct PauseMenuButton: View {
+    let title: String
+    let color: Color
+    let action: () -> Void
+    
+    var body: some View {
+        Button(action: action) {
+            Text("> \(title)")
+                .font(.custom(VisualConstants.Fonts.terminal, size: 18))
+                .foregroundColor(color)
+                .frame(width: 240, alignment: .leading)
+                .padding()
+                .background(
+                    Rectangle()
+                        .stroke(color, lineWidth: 2)
+                )
         }
     }
 }

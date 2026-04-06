@@ -12,15 +12,33 @@ struct LevelHeaderHUD: View {
             GeometryReader { geometry in
                 VStack(spacing: 8) {
                     // Main header - looks like part of the level
-                    Text("LEVEL 1")
-                        .font(.system(size: 48, weight: .bold, design: .default))
-                        .foregroundColor(.black)
-                        .tracking(2)
+                    Text("LEVEL \(levelID.index)")
+                        .font(.custom(VisualConstants.Fonts.main, size: VisualConstants.Fonts.sizeHUD))
+                        .foregroundColor(VisualConstants.Colors.foregroundUI)
+                        .tracking(4)
+                        .shadow(color: VisualConstants.Colors.accentUI.opacity(0.8), radius: isDragging ? 12 : 4)
+                        .animation(.easeInOut(duration: 1.0).repeatForever(autoreverses: true), value: isDragging)
 
                     // Underline
                     Rectangle()
-                        .fill(Color.black)
+                        .fill(VisualConstants.Colors.foregroundUI)
                         .frame(width: 160, height: 4)
+                        .overlay(
+                            Rectangle()
+                                .fill(VisualConstants.Colors.accentUI)
+                                .opacity(0.5)
+                                .blur(radius: 4)
+                        )
+
+                    // Progress dots
+                    HStack(spacing: 6) {
+                        ForEach(0..<5) { i in
+                            Circle()
+                                .fill(i < levelID.index % 5 ? VisualConstants.Colors.accentUI : Color.gray.opacity(0.3))
+                                .frame(width: 8, height: 8)
+                        }
+                    }
+                    .padding(.top, 4)
 
                     // Down arrow hint
                     Image(systemName: "arrow.down")
@@ -29,16 +47,16 @@ struct LevelHeaderHUD: View {
                         .offset(y: isDragging ? 0 : -5)
                         .animation(.easeInOut(duration: 0.5).repeatForever(autoreverses: true), value: isDragging)
                 }
-                .padding(.horizontal, 20)
-                .padding(.vertical, 12)
+                .padding(.horizontal, 24)
+                .padding(.vertical, 16)
                 .background(
-                    RoundedRectangle(cornerRadius: 4)
-                        .fill(Color.white)
+                    RoundedRectangle(cornerRadius: 2)
+                        .fill(VisualConstants.Colors.backgroundUI)
                         .overlay(
-                            RoundedRectangle(cornerRadius: 4)
-                                .strokeBorder(Color.black, lineWidth: isDragging ? 4 : 2.5)
+                            RoundedRectangle(cornerRadius: 2)
+                                .strokeBorder(isDragging ? VisualConstants.Colors.accentUI : VisualConstants.Colors.foregroundUI, lineWidth: 2)
                         )
-                        .shadow(color: .black.opacity(isDragging ? 0.3 : 0), radius: 8, x: 4, y: 4)
+                        .shadow(color: VisualConstants.Colors.accentUI.opacity(isDragging ? 0.4 : 0.1), radius: 12)
                 )
                 .scaleEffect(isDragging ? 1.05 : 1.0)
                 .offset(dragOffset)

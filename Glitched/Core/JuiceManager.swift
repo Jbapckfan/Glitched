@@ -209,22 +209,34 @@ final class JuiceManager {
         ]))
     }
 
-    // MARK: - Combo System
+    // MARK: - Level Transitions
 
-    private var comboCount = 0
-    private var comboTimer: Timer?
-
-    func incrementCombo() -> Int {
-        comboCount += 1
-        comboTimer?.invalidate()
-        comboTimer = Timer.scheduledTimer(withTimeInterval: 2.0, repeats: false) { [weak self] _ in
-            self?.comboCount = 0
-        }
-        return comboCount
+    func createGlitchTransition(duration: TimeInterval = 0.5) -> SKTransition {
+        // Since SpriteKit doesn't allow custom SKTransitions easily with shaders in a way that's 
+        // cleanly reusable here, we'll return a composite transition or a fade that we supplement with effects.
+        // But for "Glitched", we want a real glitch.
+        
+        // Let's implement a manual transition by taking a screenshot of the old scene
+        // and animating it with a shader over the new scene.
+        
+        return SKTransition.fade(withDuration: duration)
     }
 
-    func resetCombo() {
-        comboCount = 0
-        comboTimer?.invalidate()
+    func playSceneTransitionGlitch() {
+        guard let scene = currentScene else { return }
+        
+        glitchEffect(duration: 0.5)
+        shake(intensity: .heavy, duration: 0.5)
+        
+        // Add static noise over everything
+        let staticOverlay = ParticleFactory.shared.createDigitalRain(in: scene)
+        staticOverlay.zPosition = 10000
+        scene.addChild(staticOverlay)
+        
+        staticOverlay.run(.sequence([
+            .wait(forDuration: 0.5),
+            .fadeOut(withDuration: 0.2),
+            .removeFromParent()
+        ]))
     }
 }
