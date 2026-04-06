@@ -4,6 +4,10 @@ import UIKit
 import Combine
 
 /// Manages push notification-based puzzles
+extension Notification.Name {
+    static let glitchedNotificationTapped = .glitchedNotificationTapped
+}
+
 final class NotificationGameManager: DeviceManager {
     static let shared = NotificationGameManager()
 
@@ -22,7 +26,7 @@ final class NotificationGameManager: DeviceManager {
         requestNotificationPermission()
 
         // Listen for notification responses
-        NotificationCenter.default.publisher(for: Notification.Name("NotificationTapped"))
+        NotificationCenter.default.publisher(for: .glitchedNotificationTapped)
             .compactMap { $0.userInfo?["notificationId"] as? String }
             .sink { [weak self] id in
                 self?.handleNotificationTapped(id: id)
@@ -36,10 +40,13 @@ final class NotificationGameManager: DeviceManager {
         guard isActive else { return }
         isActive = false
         cancellables.removeAll()
-        pendingNotifications.removeAll()
 
-        // Cancel any pending notifications
-        UNUserNotificationCenter.current().removeAllPendingNotificationRequests()
+        // P0 FIX: Only remove notifications owned by this game level, not ALL pending notifications
+        let ownedIds = Array(pendingNotifications.keys)
+        if !ownedIds.isEmpty {
+            UNUserNotificationCenter.current().removePendingNotificationRequests(withIdentifiers: ownedIds)
+        }
+        pendingNotifications.removeAll()
 
         print("NotificationGameManager: Deactivated")
     }

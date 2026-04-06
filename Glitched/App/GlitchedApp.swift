@@ -11,7 +11,7 @@ final class NotificationDelegate: NSObject, UNUserNotificationCenterDelegate {
     ) {
         let userInfo = response.notification.request.content.userInfo
         NotificationCenter.default.post(
-            name: Notification.Name("NotificationTapped"),
+            name: .glitchedNotificationTapped,
             object: nil,
             userInfo: userInfo
         )

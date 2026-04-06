@@ -81,15 +81,19 @@ final class DeviceManagerCoordinator {
 
     func deactivateAll() {
         managers.forEach { $0.deactivate() }
+        // P0 FIX: Clear active mechanics so stale managers don't reactivate on foreground
+        activeMechanics.removeAll()
     }
 
     @objc private func appDidEnterBackground() {
         // Deactivate all managers when app backgrounds
-        deactivateAll()
+        // Note: preserve activeMechanics so foreground can restore them
+        managers.forEach { $0.deactivate() }
     }
 
     @objc private func appWillEnterForeground() {
-        // Reactivate needed managers when app returns
+        // Reactivate needed managers when app returns — only if we still have active mechanics
+        guard !activeMechanics.isEmpty else { return }
         configure(for: activeMechanics)
     }
 }

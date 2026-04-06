@@ -4,6 +4,7 @@ import SpriteKit
 struct GameRootView: View {
     @StateObject private var gameState = GameState.shared
     @StateObject private var accessibility = AccessibilityManager.shared
+    @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
         ZStack {
@@ -28,6 +29,11 @@ struct GameRootView: View {
             #if DEBUG
             DebugInputPanel()
             #endif
+        }
+        // P0 FIX: Bridge system appearance changes to AppearanceManager
+        // so Level 8 (Dark Mode) can detect real dark/light mode toggles
+        .onChange(of: colorScheme) { newScheme in
+            AppearanceManager.shared.handleTraitChange(isDark: newScheme == .dark)
         }
     }
 }

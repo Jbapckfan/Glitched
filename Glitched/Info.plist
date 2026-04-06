@@ -24,6 +24,8 @@
 	<string>Blow into the microphone to create wind in the game.</string>
 	<key>NSSpeechRecognitionUsageDescription</key>
 	<string>Speak words to solve puzzles.</string>
+	<key>NSFaceIDUsageDescription</key>
+	<string>Authenticate to unlock the security vault puzzle.</string>
 	<key>UILaunchScreen</key>
 	<dict/>
 	<key>UIRequiresFullScreen</key>
