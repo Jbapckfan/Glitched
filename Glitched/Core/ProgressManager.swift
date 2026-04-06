@@ -86,6 +86,7 @@ final class ProgressManager {
         case .world2: return 11
         case .world3: return 21
         case .world4: return 26
+        case .world5: return 31
         }
     }
 }

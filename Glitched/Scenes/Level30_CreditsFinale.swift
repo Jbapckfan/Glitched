@@ -521,10 +521,10 @@ final class CreditsFinaleScene: BaseLevelScene, SKPhysicsContactDelegate {
 
     private func returnToBoot() {
         GameState.shared.setState(.transitioning)
-        let bootLevel = LevelID(world: .world0, index: 0)
-        GameState.shared.load(level: bootLevel)
+        let nextLevel = LevelID(world: .world5, index: 31)
+        GameState.shared.load(level: nextLevel)
         guard let view = self.view else { return }
-        view.presentScene(LevelFactory.makeScene(for: bootLevel, size: size), transition: SKTransition.fade(withDuration: 1.5))
+        view.presentScene(LevelFactory.makeScene(for: nextLevel, size: size), transition: SKTransition.fade(withDuration: 1.5))
     }
 
     // MARK: - Input

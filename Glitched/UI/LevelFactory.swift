@@ -77,6 +77,14 @@ enum LevelFactory {
         case (.world4, 30):
             scene = CreditsFinaleScene(size: size)
 
+        // World 5: System Override
+        case (.world5, 31):
+            scene = FlashlightScene(size: size)
+        case (.world5, 32):
+            scene = MultiTouchScene(size: size)
+        case (.world5, 33):
+            scene = AppReviewScene(size: size)
+
         default:
             // Placeholder for unimplemented levels
             scene = BootSequenceScene(size: size)

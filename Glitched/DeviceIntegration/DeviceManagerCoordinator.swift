@@ -52,6 +52,9 @@ final class DeviceManagerCoordinator: DeviceManagerCoordinating {
             LocaleManager.shared,
             VoiceOverManager.shared,
             AirDropManager.shared,
+
+            // World 5: System Override
+            FlashlightManager.shared,
         ]
         for m in builtinManagers { register(m) }
 

@@ -189,6 +189,18 @@ struct AccessibilityOverlay: View {
                     accessibilityButton(for: .airdrop, icon: "airplayaudio", color: .blue) {
                         InputEventBus.shared.post(.airdropReceived(code: "GLITCH"))
                     }
+
+                    // World 5 mechanics
+                    accessibilityButton(for: .flashlight, icon: "flashlight.on.fill", color: .yellow) {
+                        InputEventBus.shared.post(.flashlightChanged(isOn: true))
+                        InputEventBus.shared.post(.flashlightAngleChanged(pitch: -1.2))
+                    }
+                    accessibilityButton(for: .multiTouchPressure, icon: "hand.tap.fill", color: .orange) {
+                        InputEventBus.shared.post(.multiTouch(count: 3, locations: [.zero, .zero, .zero]))
+                    }
+                    accessibilityButton(for: .appReview, icon: "star.fill", color: .yellow) {
+                        InputEventBus.shared.post(.appReviewReturned)
+                    }
                 }
                 .padding(.horizontal, 20)
             }

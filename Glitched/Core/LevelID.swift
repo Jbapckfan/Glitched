@@ -6,6 +6,7 @@ enum World: Int, Codable, CaseIterable {
     case world2 = 2  // Control Surface
     case world3 = 3  // Data Corruption
     case world4 = 4  // Reality Break
+    case world5 = 5  // System Override
 }
 
 struct LevelID: Hashable, Codable {

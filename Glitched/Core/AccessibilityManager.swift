@@ -39,6 +39,11 @@ enum MechanicType: String, CaseIterable {
     case voiceOver       // Accessibility / VoiceOver
     case airdrop         // AirDrop
 
+    // World 5: System Override
+    case flashlight
+    case multiTouchPressure
+    case appReview
+
     // Utility/Future
     case proximity
     case timedPress

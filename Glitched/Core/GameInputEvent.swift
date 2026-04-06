@@ -58,4 +58,9 @@ enum GameInputEvent {
 
     // HUD interaction
     case hudDragCompleted(elementID: String, screenPosition: CGPoint)
+
+    // World 5: System Override inputs
+    case flashlightChanged(isOn: Bool)
+    case flashlightAngleChanged(pitch: Double)
+    case appReviewReturned
 }
