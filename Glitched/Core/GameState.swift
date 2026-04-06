@@ -19,12 +19,18 @@ enum UIState: Equatable {
     case dead
 }
 
+enum AppScreen: Equatable {
+    case worldMap
+    case game
+}
+
 @MainActor
 final class GameState: ObservableObject {
     static let shared = GameState()
 
     @Published private(set) var currentLevelID: LevelID = .boot
     @Published private(set) var levelState: LevelState = .loading
+    @Published private(set) var appScreen: AppScreen = .worldMap
 
     // FIX #6: Single source of truth for UI overlay state
     @Published private(set) var uiState: UIState = .playing
@@ -36,9 +42,15 @@ final class GameState: ObservableObject {
     private init() {}
 
     func load(level id: LevelID) {
+        guard StoreManager.shared.canAccess(level: id) else {
+            appScreen = .worldMap
+            return
+        }
         levelState = .loading
         currentLevelID = id
         uiState = .playing
+        appScreen = .game
+        ProgressManager.shared.setLastPlayedLevel(id)
     }
 
     func setState(_ state: LevelState) {
@@ -59,9 +71,18 @@ final class GameState: ObservableObject {
         if levelState == .playing {
             levelState = .paused
             uiState = .paused
+            AudioManager.shared.pauseAmbientBed()
         } else if levelState == .paused {
             levelState = .playing
             uiState = .playing
+            AudioManager.shared.resumeAmbientBed()
         }
+    }
+
+    func showWorldMap() {
+        DeviceManagerCoordinator.shared.deactivateAll()
+        AudioManager.shared.stopAmbientBed(fadeDuration: 0)
+        uiState = .playing
+        appScreen = .worldMap
     }
 }

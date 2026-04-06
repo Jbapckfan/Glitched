@@ -12,6 +12,14 @@ final class JuiceManager {
 
     private init() {}
 
+    private var reduceScreenShake: Bool {
+        ProgressManager.shared.load().settings.reduceScreenShake
+    }
+
+    private var reduceFlashEffects: Bool {
+        ProgressManager.shared.load().settings.reduceFlashEffects
+    }
+
     func setScene(_ scene: SKScene) {
         currentScene = scene
         if let camera = scene.camera {
@@ -33,7 +41,8 @@ final class JuiceManager {
         for i in 0..<shakeCount {
             let progress = CGFloat(i) / CGFloat(shakeCount)
             let dampening = 1.0 - progress // Fade out shake
-            let magnitude = intensity.magnitude * dampening
+            let baseMagnitude = intensity.magnitude * (reduceScreenShake ? 0.5 : 1.0)
+            let magnitude = baseMagnitude * dampening
 
             let offsetX = CGFloat.random(in: -magnitude...magnitude)
             let offsetY = CGFloat.random(in: -magnitude...magnitude)
@@ -66,6 +75,7 @@ final class JuiceManager {
     // MARK: - Screen Flash
 
     func flash(color: UIColor = .white, duration: TimeInterval = 0.1) {
+        guard !reduceFlashEffects else { return }
         guard let scene = currentScene else { return }
 
         let flash = SKShapeNode(rectOf: CGSize(width: scene.size.width * 2, height: scene.size.height * 2))

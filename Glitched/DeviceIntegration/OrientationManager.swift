@@ -49,7 +49,9 @@ final class OrientationManager: DeviceManager {
         let isLandscape = orientation.isLandscape
 
         DispatchQueue.main.async {
-            InputEventBus.shared.post(.orientationChanged(isLandscape: isLandscape))
+            DispatchQueue.main.async {
+                InputEventBus.shared.post(.orientationChanged(isLandscape: isLandscape))
+            }
         }
     }
 }

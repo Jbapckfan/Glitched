@@ -32,6 +32,7 @@ final class ClipboardScene: BaseLevelScene, SKPhysicsContactDelegate {
         physicsWorld.contactDelegate = self
 
         AccessibilityManager.shared.registerMechanics([.clipboard])
+        ClipboardManager.shared.setExpectedPassword(correctPassword)
         DeviceManagerCoordinator.shared.configure(for: [.clipboard])
 
         setupBackground()
@@ -225,46 +226,9 @@ final class ClipboardScene: BaseLevelScene, SKPhysicsContactDelegate {
         hasScannedClipboard = true
 
         if let clipboardContent = UIPasteboard.general.string,
-           !clipboardContent.isEmpty,
-           clipboardContent.uppercased() != correctPassword {
-            let truncated = String(clipboardContent.prefix(20))
-            showClipboardScan(truncated)
+           clipboardContent.range(of: correctPassword, options: [.caseInsensitive]) != nil {
+            checkPassword(correctPassword)
         }
-    }
-
-    private func showClipboardScan(_ content: String) {
-        let scanContainer = SKNode()
-        scanContainer.position = CGPoint(x: size.width / 2, y: size.height - 160)
-        scanContainer.zPosition = 400
-        scanContainer.alpha = 0
-        addChild(scanContainer)
-
-        let bg = SKShapeNode(rectOf: CGSize(width: 300, height: 50), cornerRadius: 6)
-        bg.fillColor = fillColor
-        bg.strokeColor = strokeColor
-        bg.lineWidth = lineWidth
-        scanContainer.addChild(bg)
-
-        let titleLabel = SKLabelNode(text: "CLIPBOARD SCAN")
-        titleLabel.fontName = "Menlo-Bold"
-        titleLabel.fontSize = 9
-        titleLabel.fontColor = strokeColor
-        titleLabel.position = CGPoint(x: 0, y: 10)
-        scanContainer.addChild(titleLabel)
-
-        let contentLabel = SKLabelNode(text: "INTERESTING. YOU HAD '\(content)' COPIED.")
-        contentLabel.fontName = "Menlo"
-        contentLabel.fontSize = 8
-        contentLabel.fontColor = strokeColor
-        contentLabel.position = CGPoint(x: 0, y: -8)
-        scanContainer.addChild(contentLabel)
-
-        scanContainer.run(.sequence([
-            .fadeIn(withDuration: 0.4),
-            .wait(forDuration: 4.0),
-            .fadeOut(withDuration: 0.5),
-            .removeFromParent()
-        ]))
     }
 
     private func setupBit() {
@@ -277,11 +241,13 @@ final class ClipboardScene: BaseLevelScene, SKPhysicsContactDelegate {
     }
 
     private func checkPassword(_ text: String) {
-        passwordDisplay.text = text.prefix(8).uppercased()
+        passwordDisplay.text = "________"
 
         if text.uppercased() == correctPassword {
+            passwordDisplay.text = correctPassword
             unlock()
         } else {
+            passwordDisplay.text = "INVALID"
             statusLabel.text = "INCORRECT"
             statusLabel.run(.sequence([
                 .wait(forDuration: 1),

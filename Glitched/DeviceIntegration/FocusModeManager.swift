@@ -49,7 +49,9 @@ final class FocusModeManager: DeviceManager {
             self.lastFocusState = isFocusLikelyEnabled
 
             DispatchQueue.main.async {
-                InputEventBus.shared.post(.focusModeChanged(isEnabled: isFocusLikelyEnabled))
+                DispatchQueue.main.async {
+                    InputEventBus.shared.post(.focusModeChanged(isEnabled: isFocusLikelyEnabled))
+                }
             }
         }
     }
@@ -60,7 +62,9 @@ final class FocusModeManager: DeviceManager {
         let newState = !(lastFocusState ?? false)
         lastFocusState = newState
         DispatchQueue.main.async {
-            InputEventBus.shared.post(.focusModeChanged(isEnabled: newState))
+            DispatchQueue.main.async {
+                InputEventBus.shared.post(.focusModeChanged(isEnabled: newState))
+            }
         }
     }
 }

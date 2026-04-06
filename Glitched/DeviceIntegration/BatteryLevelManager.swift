@@ -43,7 +43,9 @@ final class BatteryLevelManager: DeviceManager {
         // batteryLevel returns -1 if monitoring not enabled or on simulator
         let percentage = level >= 0 ? level * 100 : 75 // Default to 75% on simulator
         DispatchQueue.main.async {
-            InputEventBus.shared.post(.batteryLevelChanged(percentage: percentage))
+            DispatchQueue.main.async {
+                InputEventBus.shared.post(.batteryLevelChanged(percentage: percentage))
+            }
         }
     }
 }

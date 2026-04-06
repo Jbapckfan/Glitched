@@ -3,6 +3,7 @@ import SpriteKit
 import MediaPlayer
 
 // FIX #1: Protocol for GameState dependency injection so it can be mocked in tests
+@MainActor
 protocol GameStateProviding: ObservableObject {
     var currentLevelID: LevelID { get }
     var uiState: UIState { get }
@@ -27,7 +28,7 @@ struct GameRootView: View {
                 .opacity(0)
 
             // SpriteKit game
-            SpriteKitContainer(levelID: gameState.currentLevelID)
+            SpriteKitContainer(levelID: gameState.currentLevelID, uiState: gameState.uiState)
                 .ignoresSafeArea()
 
             // HUD layer
@@ -74,6 +75,7 @@ struct VolumeHUDSuppressor: UIViewRepresentable {
 
 struct SpriteKitContainer: UIViewRepresentable {
     let levelID: LevelID
+    let uiState: UIState
 
     func makeUIView(context: Context) -> SKView {
         let view = SKView()
@@ -92,6 +94,8 @@ struct SpriteKitContainer: UIViewRepresentable {
     }
 
     func updateUIView(_ uiView: SKView, context: Context) {
+        uiView.scene?.isPaused = uiState == .paused
+
         // Handle level changes
         if let currentScene = uiView.scene as? BaseLevelScene,
            currentScene.levelID != levelID {
@@ -262,6 +266,10 @@ struct PauseMenuView: View {
                         GameState.shared.togglePause()
                     }
 
+                    PauseMenuButton(title: "RETURN_TO_MAP", color: VisualConstants.Colors.accentUI, fontSize: buttonFontSize, buttonWidth: buttonWidth) {
+                        GameState.shared.showWorldMap()
+                    }
+
                     PauseMenuButton(title: "TERMINATE_PROCESS", color: VisualConstants.Colors.dangerUI, fontSize: buttonFontSize, buttonWidth: buttonWidth) {
                         // Handle quit logic if applicable
                     }
@@ -294,6 +302,10 @@ struct PauseMenuButton: View {
     }
 }
 
-#Preview {
-    GameRootView()
+#if DEBUG
+struct GameRootView_Previews: PreviewProvider {
+    static var previews: some View {
+        GameRootView()
+    }
 }
+#endif

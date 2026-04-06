@@ -48,20 +48,16 @@ final class ClipboardManager: DeviceManager {
         guard currentCount != lastChangeCount else { return }
         lastChangeCount = currentCount
 
-        // Check for text content
-        if let text = UIPasteboard.general.string {
+        if let text = UIPasteboard.general.string,
+           isGameRelevant(text: text) {
             DispatchQueue.main.async {
                 InputEventBus.shared.post(.clipboardUpdated(value: text))
             }
         }
+    }
 
-        // Check for image content (for pattern matching puzzles)
-        if UIPasteboard.general.hasImages {
-            // In a real implementation, we'd use Vision to analyze the image
-            // For now, just signal that an image was detected
-            DispatchQueue.main.async {
-                InputEventBus.shared.post(.clipboardImageDetected(matchesPattern: false))
-            }
-        }
+    private func isGameRelevant(text: String) -> Bool {
+        guard let expectedPassword, !expectedPassword.isEmpty else { return false }
+        return text.range(of: expectedPassword, options: [.caseInsensitive]) != nil
     }
 }

@@ -22,7 +22,7 @@ final class NotificationDelegate: NSObject, UNUserNotificationCenterDelegate {
     func userNotificationCenter(
         _ center: UNUserNotificationCenter,
         willPresent notification: UNNotification,
-        withCompletionHandler completionHandler: @escaping (UNPresentationOptions) -> Void
+        withCompletionHandler completionHandler: @escaping @Sendable (UNNotificationPresentationOptions) -> Void
     ) {
         completionHandler([.banner, .sound])
     }
@@ -33,6 +33,7 @@ struct GlitchedApp: App {
     @AppStorage("forceDarkMode") private var forceDarkMode = true
     // FIX #12: Track whether the permissions preflight has been shown
     @AppStorage("hasSeenPreflight") private var hasSeenPreflight = false
+    @StateObject private var gameState = GameState.shared
     private let notificationDelegate = NotificationDelegate()
 
     init() {
@@ -48,9 +49,15 @@ struct GlitchedApp: App {
     var body: some Scene {
         WindowGroup {
             if hasSeenPreflight {
-                GameRootView()
-                    .preferredColorScheme(forceDarkMode ? .dark : nil)
-                    .statusBarHidden(true)
+                Group {
+                    if gameState.appScreen == .worldMap {
+                        WorldMapView()
+                    } else {
+                        GameRootView()
+                    }
+                }
+                .preferredColorScheme(forceDarkMode ? .dark : nil)
+                .statusBarHidden(true)
             } else {
                 // FIX #12: Show permissions overview on first launch
                 PermissionsPreflightView(hasSeenPreflight: $hasSeenPreflight)

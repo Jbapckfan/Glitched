@@ -54,7 +54,9 @@ final class StorageSpaceManager: DeviceManager {
         if !FileManager.default.fileExists(atPath: url.path) {
             // Cache was cleared by user via Settings
             DispatchQueue.main.async {
-                InputEventBus.shared.post(.storageCacheCleared)
+                DispatchQueue.main.async {
+                    InputEventBus.shared.post(.storageCacheCleared)
+                }
             }
         }
     }

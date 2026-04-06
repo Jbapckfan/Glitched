@@ -16,7 +16,9 @@ final class AppearanceManager: DeviceManager {
 
         // Send initial state
         let isDark = UITraitCollection.current.userInterfaceStyle == .dark
-        InputEventBus.shared.post(.darkModeChanged(isDark: isDark))
+        DispatchQueue.main.async {
+            InputEventBus.shared.post(.darkModeChanged(isDark: isDark))
+        }
 
         print("AppearanceManager: Activated")
     }
@@ -30,6 +32,8 @@ final class AppearanceManager: DeviceManager {
     // Called from scene's traitCollectionDidChange
     func handleTraitChange(isDark: Bool) {
         guard isActive else { return }
-        InputEventBus.shared.post(.darkModeChanged(isDark: isDark))
+        DispatchQueue.main.async {
+            InputEventBus.shared.post(.darkModeChanged(isDark: isDark))
+        }
     }
 }

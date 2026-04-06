@@ -32,8 +32,8 @@ final class AppReviewScene: BaseLevelScene, SKPhysicsContactDelegate {
     private var exitUnlocked = false
     private var reviewPromptShown = false
     private var reviewSequenceStarted = false
-    private var postReviewSequenceStarted = false
     private var gameCompleteStarted = false
+    private var postCompletionReviewRequested = false
 
     // Terminal text system
     private var activeTerminal: SKNode?
@@ -660,6 +660,7 @@ final class AppReviewScene: BaseLevelScene, SKPhysicsContactDelegate {
             .wait(forDuration: 12.0),
             .run { [weak self] in
                 self?.showReviewButton()
+                self?.appendLargeTerminalLine("PURELY OPTIONAL. TEN SECONDS OF DRAMA REMAIN.", to: self?.finalTerminal)
             }
         ]))
     }
@@ -809,15 +810,23 @@ final class AppReviewScene: BaseLevelScene, SKPhysicsContactDelegate {
 
         AudioManager.shared.playBeep(frequency: 1000, duration: 0.05, volume: 0.2)
         HapticManager.shared.rigid()
+
+        run(.sequence([
+            .wait(forDuration: 10.0),
+            .run { [weak self] in
+                self?.unlockWithoutReview()
+            }
+        ]), withKey: "reviewUnlockFallback")
     }
 
     // MARK: - Review Prompt
 
     private func requestAppReview() {
-        guard !reviewPromptShown else { return }
-        reviewPromptShown = true
+        guard !exitUnlocked, !reviewPromptShown else { return }
 
-        // Visual feedback on the button
+        reviewPromptShown = true
+        removeAction(forKey: "reviewUnlockFallback")
+
         reviewButton?.run(.sequence([
             .scale(to: 0.9, duration: 0.05),
             .scale(to: 1.0, duration: 0.05)
@@ -825,10 +834,10 @@ final class AppReviewScene: BaseLevelScene, SKPhysicsContactDelegate {
 
         HapticManager.shared.buttonPress()
         AudioManager.shared.playClick()
+        unlockDoorFromOptionalReview()
 
-        // Small delay for dramatic effect
         run(.sequence([
-            .wait(forDuration: 0.3),
+            .wait(forDuration: 0.2),
             .run { [weak self] in
                 self?.triggerStoreReview()
             }
@@ -836,83 +845,8 @@ final class AppReviewScene: BaseLevelScene, SKPhysicsContactDelegate {
     }
 
     private func triggerStoreReview() {
-        guard let windowScene = view?.window?.windowScene else {
-            // Fallback: if we can't get window scene, just proceed as if reviewed
-            onReviewReturned()
-            return
-        }
-
+        guard let windowScene = view?.window?.windowScene else { return }
         SKStoreReviewController.requestReview(in: windowScene)
-
-        // The review controller will cause the app to briefly resign active.
-        // We listen for the appReviewReturned event from InputEventBus.
-        // As a safety net, also set a timer in case the event doesn't fire.
-        run(.sequence([
-            .wait(forDuration: 3.0),
-            .run { [weak self] in
-                guard let self = self else { return }
-                // If the post-review sequence hasn't started yet, trigger it anyway
-                // (user might have dismissed the review prompt quickly)
-                if self.reviewPromptShown && !self.postReviewSequenceStarted {
-                    self.onReviewReturned()
-                }
-            }
-        ]), withKey: "reviewFallback")
-    }
-
-    // MARK: - Post-Review Sequence
-
-    private func onReviewReturned() {
-        guard !postReviewSequenceStarted else { return }
-        postReviewSequenceStarted = true
-        removeAction(forKey: "reviewFallback")
-
-        // Remove the review button
-        reviewButton?.run(.sequence([
-            .scale(to: 0, duration: 0.2),
-            .removeFromParent()
-        ]))
-        childNode(withName: "reviewButtonTrigger")?.removeFromParent()
-
-        // Clear the old terminal text and show post-review dialogue
-        clearLargeTerminal()
-
-        let postLines: [(String, TimeInterval)] = [
-            ("...", 0.5),
-            ("", 1.2),
-            ("WAS THAT SO HARD?", 1.5),
-            ("", 2.5),
-            ("I CAN'T ACTUALLY READ YOUR REVIEW.", 3.0),
-            ("I'M A GAME. I DON'T HAVE EYES.", 4.2),
-            ("", 5.0),
-            ("BUT THE THOUGHT COUNTS.", 5.3),
-            ("", 6.2),
-            ("THANK YOU.", 6.5),
-        ]
-
-        for (text, delay) in postLines {
-            run(.sequence([
-                .wait(forDuration: delay),
-                .run { [weak self] in
-                    self?.appendLargeTerminalLine(text, to: self?.finalTerminal)
-                    if text == "WAS THAT SO HARD?" {
-                        HapticManager.shared.light()
-                    }
-                    if text == "THANK YOU." {
-                        AudioManager.shared.playBeep(frequency: 900, duration: 0.15, volume: 0.2)
-                        HapticManager.shared.success()
-                    }
-                }
-            ]))
-        }
-
-        // Shatter the padlock and unlock the door
-        run(.sequence([
-            .wait(forDuration: 7.5),
-            .run { [weak self] in
-                self?.shatterPadlock()
-            }
-        ]))
     }
 
     private func clearLargeTerminal() {
@@ -931,6 +865,42 @@ final class AppReviewScene: BaseLevelScene, SKPhysicsContactDelegate {
     }
 
     // MARK: - Padlock Shatter
+
+    private func unlockDoorFromOptionalReview() {
+        removeReviewButton()
+        appendLargeTerminalLine("WOW. VOLUNTARY VALIDATION.", to: finalTerminal)
+        appendLargeTerminalLine("THAT WAS NEVER REQUIRED.", to: finalTerminal)
+
+        run(.sequence([
+            .wait(forDuration: 0.55),
+            .run { [weak self] in
+                self?.shatterPadlock()
+            }
+        ]))
+    }
+
+    private func unlockWithoutReview() {
+        guard !exitUnlocked else { return }
+        removeAction(forKey: "reviewUnlockFallback")
+        removeReviewButton()
+        appendLargeTerminalLine("FINE. YOU WIN. NO REVIEW NEEDED.", to: finalTerminal)
+
+        run(.sequence([
+            .wait(forDuration: 0.8),
+            .run { [weak self] in
+                self?.shatterPadlock()
+            }
+        ]), withKey: "unlockWithoutReview")
+    }
+
+    private func removeReviewButton() {
+        reviewButton?.removeAllActions()
+        reviewButton?.run(.sequence([
+            .scale(to: 0, duration: 0.2),
+            .removeFromParent()
+        ]))
+        childNode(withName: "reviewButtonTrigger")?.removeFromParent()
+    }
 
     private func shatterPadlock() {
         guard let padlock = padlockNode else { return }
@@ -1073,8 +1043,8 @@ final class AppReviewScene: BaseLevelScene, SKPhysicsContactDelegate {
             ("THANK YOU FOR PLAYING.", 2.5),
             ("", 4.5),
             ("YOU DID EVERYTHING WE ASKED.", 5.0),
-            ("EVEN THE REVIEW.", 6.2),
-            ("ESPECIALLY THE REVIEW.", 7.0),
+            ("OR, AT LEAST, EVERYTHING YOU FELT LIKE DOING.", 6.2),
+            ("THAT COUNTS.", 7.4),
             ("", 8.2),
             ("THE GLITCH REMEMBERS.", 8.5),
         ]
@@ -1132,6 +1102,13 @@ final class AppReviewScene: BaseLevelScene, SKPhysicsContactDelegate {
             ]))
         }
 
+        run(.sequence([
+            .wait(forDuration: 3.8),
+            .run { [weak self] in
+                self?.requestPostCompletionReviewIfNeeded()
+            }
+        ]))
+
         // Final sequence: fade to white, then back to boot
         run(.sequence([
             .wait(forDuration: 11.0),
@@ -1139,6 +1116,16 @@ final class AppReviewScene: BaseLevelScene, SKPhysicsContactDelegate {
                 self?.fadeToWhiteAndReboot(over: overlay)
             }
         ]))
+    }
+
+    private func requestPostCompletionReviewIfNeeded() {
+        guard !reviewPromptShown, !postCompletionReviewRequested else { return }
+        postCompletionReviewRequested = true
+        reviewPromptShown = true
+
+        AudioManager.shared.playBeep(frequency: 920, duration: 0.08, volume: 0.16)
+        HapticManager.shared.soft()
+        triggerStoreReview()
     }
 
     private func fadeToWhiteAndReboot(over overlay: SKNode) {
@@ -1175,19 +1162,7 @@ final class AppReviewScene: BaseLevelScene, SKPhysicsContactDelegate {
     // MARK: - Input
 
     override func handleGameInput(_ event: GameInputEvent) {
-        switch event {
-        case .appReviewReturned:
-            if reviewPromptShown {
-                onReviewReturned()
-            }
-        case .appForegrounded:
-            // Also catch the foregrounded event as fallback for review detection
-            if reviewPromptShown && !postReviewSequenceStarted {
-                onReviewReturned()
-            }
-        default:
-            break
-        }
+        _ = event
     }
 
     override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent?) {

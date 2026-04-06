@@ -50,7 +50,9 @@ final class NetworkManager: DeviceManager {
         if lastWifiState != hasWifi {
             lastWifiState = hasWifi
             DispatchQueue.main.async {
-                InputEventBus.shared.post(.wifiStateChanged(isEnabled: hasWifi))
+                DispatchQueue.main.async {
+                    InputEventBus.shared.post(.wifiStateChanged(isEnabled: hasWifi))
+                }
             }
         }
 
@@ -59,7 +61,9 @@ final class NetworkManager: DeviceManager {
         if lastAirplaneState != isAirplaneMode {
             lastAirplaneState = isAirplaneMode
             DispatchQueue.main.async {
-                InputEventBus.shared.post(.airplaneModeChanged(isEnabled: isAirplaneMode))
+                DispatchQueue.main.async {
+                    InputEventBus.shared.post(.airplaneModeChanged(isEnabled: isAirplaneMode))
+                }
             }
         }
     }

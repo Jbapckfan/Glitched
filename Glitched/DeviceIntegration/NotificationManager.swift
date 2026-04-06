@@ -5,7 +5,7 @@ import Combine
 
 /// Manages push notification-based puzzles
 extension Notification.Name {
-    static let glitchedNotificationTapped = .glitchedNotificationTapped
+    static let glitchedNotificationTapped = Notification.Name("glitchedNotificationTapped")
 }
 
 final class NotificationGameManager: DeviceManager {
@@ -80,11 +80,15 @@ final class NotificationGameManager: DeviceManager {
                         case .authorized:
                             self.permissionStatus = .granted
                             print("NotificationGameManager: Permission granted")
+                        case .ephemeral:
+                            self.permissionStatus = .provisional
                         case .denied:
                             self.permissionStatus = .denied
                             print("NotificationGameManager: Permission denied - show guidance UI")
                             // Post event so level can show appropriate UI
-                            InputEventBus.shared.post(.notificationReceived(id: "__permission_denied"))
+                            DispatchQueue.main.async {
+                                InputEventBus.shared.post(.notificationReceived(id: "__permission_denied"))
+                            }
                         case .provisional:
                             self.permissionStatus = .provisional
                             print("NotificationGameManager: Provisional permission")
@@ -117,7 +121,9 @@ final class NotificationGameManager: DeviceManager {
                 print("NotificationGameManager: Error scheduling: \(error)")
             } else {
                 DispatchQueue.main.async {
-                    InputEventBus.shared.post(.notificationReceived(id: id))
+                    DispatchQueue.main.async {
+                        InputEventBus.shared.post(.notificationReceived(id: id))
+                    }
                 }
             }
         }
@@ -128,7 +134,9 @@ final class NotificationGameManager: DeviceManager {
         pendingNotifications.removeValue(forKey: id)
 
         DispatchQueue.main.async {
-            InputEventBus.shared.post(.notificationTapped(id: id, isCorrect: isCorrect))
+            DispatchQueue.main.async {
+                InputEventBus.shared.post(.notificationTapped(id: id, isCorrect: isCorrect))
+            }
         }
     }
 }

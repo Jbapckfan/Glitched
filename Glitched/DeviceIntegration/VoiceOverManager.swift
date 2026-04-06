@@ -42,7 +42,9 @@ final class VoiceOverManager: DeviceManager {
     private func postVoiceOverState() {
         let isEnabled = UIAccessibility.isVoiceOverRunning
         DispatchQueue.main.async {
-            InputEventBus.shared.post(.voiceOverStateChanged(isEnabled: isEnabled))
+            DispatchQueue.main.async {
+                InputEventBus.shared.post(.voiceOverStateChanged(isEnabled: isEnabled))
+            }
         }
     }
 

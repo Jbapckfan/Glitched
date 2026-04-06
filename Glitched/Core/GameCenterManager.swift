@@ -80,6 +80,7 @@ final class GameCenterManager {
         case .world3: reportAchievement(.completeWorld3)
         case .world4:
             reportAchievement(.completeWorld4)
+        case .world5:
             reportAchievement(.completeAllWorlds)
         }
     }
@@ -92,6 +93,7 @@ final class GameCenterManager {
         case .world2: reportAchievement(.speedrunWorld2)
         case .world3: reportAchievement(.speedrunWorld3)
         case .world4: reportAchievement(.speedrunWorld4)
+        case .world5: break
         }
     }
 
@@ -104,6 +106,7 @@ final class GameCenterManager {
         case .world3: reportAchievement(.noHintWorld3)
         case .world4:
             reportAchievement(.noHintWorld4)
+        case .world5:
             reportAchievement(.noHintAll)
         }
     }

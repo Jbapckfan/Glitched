@@ -28,7 +28,9 @@ final class LocaleManager: DeviceManager {
 
         // Post initial
         DispatchQueue.main.async {
-            InputEventBus.shared.post(.localeChanged(language: self.currentLanguageCode))
+            DispatchQueue.main.async {
+                InputEventBus.shared.post(.localeChanged(language: self.currentLanguageCode))
+            }
         }
 
         print("LocaleManager: Activated - Language: \(currentLanguageCode)")
@@ -46,7 +48,9 @@ final class LocaleManager: DeviceManager {
         if newLanguage != lastLanguage {
             lastLanguage = newLanguage
             DispatchQueue.main.async {
-                InputEventBus.shared.post(.localeChanged(language: newLanguage))
+                DispatchQueue.main.async {
+                    InputEventBus.shared.post(.localeChanged(language: newLanguage))
+                }
             }
         }
     }

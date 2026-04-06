@@ -36,8 +36,10 @@ final class VoiceCommandScene: BaseLevelScene, SKPhysicsContactDelegate {
         physicsWorld.gravity = CGVector(dx: 0, dy: -20)
         physicsWorld.contactDelegate = self
 
-        AccessibilityManager.shared.registerMechanics([.voiceCommand])
-        DeviceManagerCoordinator.shared.configure(for: [.voiceCommand])
+        configureMechanicsWithVoiceCommandPermissionExplanation(
+            [.voiceCommand],
+            message: "THIS LEVEL NEEDS SPEECH ACCESS. YOU'LL SPEAK COMMANDS TO CHANGE THE LEVEL."
+        )
 
         setupBackground()
         setupLevelTitle()
@@ -465,7 +467,9 @@ final class VoiceCommandScene: BaseLevelScene, SKPhysicsContactDelegate {
 
     override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent?) {
         guard let touch = touches.first else { return }
-        playerController.touchBegan(at: touch.location(in: self))
+        let location = touch.location(in: self)
+        if handlePermissionOverlayTouch(at: location) { return }
+        playerController.touchBegan(at: location)
     }
 
     override func touchesMoved(_ touches: Set<UITouch>, with event: UIEvent?) {

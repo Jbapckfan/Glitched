@@ -61,7 +61,9 @@ final class MotionManager: DeviceManager {
             let now = CACurrentMediaTime()
             if now - lastShakeTime > shakeCooldown {
                 lastShakeTime = now
-                InputEventBus.shared.post(.shakeDetected)
+                DispatchQueue.main.async {
+                    InputEventBus.shared.post(.shakeDetected)
+                }
             }
         }
 

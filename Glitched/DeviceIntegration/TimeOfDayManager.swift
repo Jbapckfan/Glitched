@@ -38,7 +38,9 @@ final class TimeOfDayManager: DeviceManager {
     private func postCurrentTime() {
         let hour = Calendar.current.component(.hour, from: Date())
         DispatchQueue.main.async {
-            InputEventBus.shared.post(.clockTimeUpdate(hour: hour))
+            DispatchQueue.main.async {
+                InputEventBus.shared.post(.clockTimeUpdate(hour: hour))
+            }
         }
     }
 

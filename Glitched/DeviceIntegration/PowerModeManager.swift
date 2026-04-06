@@ -41,7 +41,9 @@ final class PowerModeManager: DeviceManager {
         let isLowPower = ProcessInfo.processInfo.isLowPowerModeEnabled
 
         DispatchQueue.main.async {
-            InputEventBus.shared.post(.lowPowerModeChanged(isEnabled: isLowPower))
+            DispatchQueue.main.async {
+                InputEventBus.shared.post(.lowPowerModeChanged(isEnabled: isLowPower))
+            }
         }
     }
 }

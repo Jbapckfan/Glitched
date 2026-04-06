@@ -26,18 +26,24 @@ final class FlashlightManager: DeviceManager {
             guard let motion = motion, self?.isActive == true else { return }
             // pitch: 0 = flat, -π/2 = vertical (screen facing user)
             let pitch = motion.attitude.pitch
-            InputEventBus.shared.post(.flashlightAngleChanged(pitch: pitch))
+            DispatchQueue.main.async {
+                InputEventBus.shared.post(.flashlightAngleChanged(pitch: pitch))
+            }
         }
 
         // Poll torch state (no reliable KVO for torch)
         pollTimer = Timer.scheduledTimer(withTimeInterval: 0.25, repeats: true) { [weak self] _ in
             guard self?.isActive == true else { return }
             let isOn = self?.isTorchOn() ?? false
-            InputEventBus.shared.post(.flashlightChanged(isOn: isOn))
+            DispatchQueue.main.async {
+                InputEventBus.shared.post(.flashlightChanged(isOn: isOn))
+            }
         }
 
         // Post initial state
-        InputEventBus.shared.post(.flashlightChanged(isOn: isTorchOn()))
+        DispatchQueue.main.async {
+            InputEventBus.shared.post(.flashlightChanged(isOn: self.isTorchOn()))
+        }
 
         print("FlashlightManager: Activated")
     }

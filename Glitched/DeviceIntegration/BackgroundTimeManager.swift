@@ -45,7 +45,9 @@ final class BackgroundTimeManager: DeviceManager {
 
     private func handleEnterForeground() {
         guard let timestamp = backgroundTimestamp else {
-            InputEventBus.shared.post(.appForegrounded)
+            DispatchQueue.main.async {
+                InputEventBus.shared.post(.appForegrounded)
+            }
             return
         }
 

@@ -42,7 +42,9 @@ final class BatteryManager: DeviceManager {
         let isPluggedIn = (state == .charging || state == .full)
 
         DispatchQueue.main.async {
-            InputEventBus.shared.post(.deviceCharging(isPlugged: isPluggedIn))
+            DispatchQueue.main.async {
+                InputEventBus.shared.post(.deviceCharging(isPlugged: isPluggedIn))
+            }
         }
     }
 }

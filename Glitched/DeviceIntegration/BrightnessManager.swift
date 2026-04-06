@@ -21,7 +21,9 @@ final class BrightnessManager: DeviceManager {
         displayLink?.add(to: .main, forMode: .common)
 
         lastBrightness = UIScreen.main.brightness
-        InputEventBus.shared.post(.brightnessChanged(level: Float(lastBrightness)))
+        DispatchQueue.main.async {
+            InputEventBus.shared.post(.brightnessChanged(level: Float(self.lastBrightness)))
+        }
 
         print("BrightnessManager: Activated")
     }
@@ -40,7 +42,9 @@ final class BrightnessManager: DeviceManager {
         // Only post if brightness changed significantly
         if abs(brightness - lastBrightness) > 0.02 {
             lastBrightness = brightness
-            InputEventBus.shared.post(.brightnessChanged(level: Float(brightness)))
+            DispatchQueue.main.async {
+                InputEventBus.shared.post(.brightnessChanged(level: Float(brightness)))
+            }
         }
     }
 }

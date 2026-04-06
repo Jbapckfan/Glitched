@@ -2,6 +2,11 @@ import SpriteKit
 import Foundation
 
 final class BootSequenceScene: BaseLevelScene {
+    private enum TutorialStep {
+        case tapToJump
+        case dragToMove
+        case deviceReveal
+    }
 
     private var progressBarFill: SKShapeNode!
     private var progressHandle: SKShapeNode!
@@ -19,6 +24,9 @@ final class BootSequenceScene: BaseLevelScene {
     private var bootComplete = false
     private var digitalRain: SKNode?
     private var cursorNode: SKShapeNode?
+    private var tutorialOverlay: SKNode?
+    private var tutorialStep: TutorialStep?
+    private var tutorialDragOrigin: CGPoint?
 
     // MARK: - Helpers
 
@@ -367,18 +375,28 @@ final class BootSequenceScene: BaseLevelScene {
 
     override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent?) {
         guard let touch = touches.first else { return }
-        let location = touch.location(in: contentNode)
+        let location = touch.location(in: self)
+
+        if handleTutorialTouchBegan(at: location) {
+            return
+        }
+        let contentLocation = touch.location(in: contentNode)
 
         // Check if touch is near the handle (with some padding for easier touch)
         let handleFrame = progressHandle.frame.insetBy(dx: -20, dy: -20)
-        if handleFrame.contains(location) {
+        if handleFrame.contains(contentLocation) {
             isDraggingHandle = true
             progressHandle.run(.scale(to: 1.2, duration: 0.1))
         }
     }
 
     override func touchesMoved(_ touches: Set<UITouch>, with event: UIEvent?) {
-        guard isDraggingHandle, let touch = touches.first else { return }
+        guard let touch = touches.first else { return }
+        let sceneLocation = touch.location(in: self)
+        if handleTutorialTouchMoved(at: sceneLocation) {
+            return
+        }
+        guard isDraggingHandle else { return }
         let location = touch.location(in: contentNode)
 
         let minX = -barWidth/2 + 4
@@ -397,6 +415,9 @@ final class BootSequenceScene: BaseLevelScene {
     }
 
     override func touchesEnded(_ touches: Set<UITouch>, with event: UIEvent?) {
+        if tutorialStep != nil {
+            tutorialDragOrigin = nil
+        }
         if isDraggingHandle {
             progressHandle.run(.scale(to: 1.0, duration: 0.1))
         }
@@ -505,16 +526,157 @@ final class BootSequenceScene: BaseLevelScene {
 
         succeedLevel()
 
-        // Transition to Level 1 after delay (increased to account for fake crash)
+        // Transition to Level 1 or tutorial after the boot payoff.
         run(.sequence([
             .wait(forDuration: 3.5),
             .run { [weak self] in
-                self?.transitionToLevel1()
+                self?.beginOnboardingFlow()
             }
         ]))
     }
 
+    private func beginOnboardingFlow() {
+        let levelOne = LevelID(world: .world1, index: 1)
+        if ProgressManager.shared.load().completedLevels.contains(levelOne) {
+            transitionToLevel1()
+            return
+        }
+
+        presentTutorial(step: .tapToJump)
+    }
+
+    private func presentTutorial(step: TutorialStep) {
+        tutorialOverlay?.removeFromParent()
+        tutorialStep = step
+
+        let overlay = SKNode()
+        overlay.zPosition = 2500
+
+        let dimmer = SKShapeNode(rectOf: CGSize(width: size.width * 2.2, height: size.height * 2.2))
+        dimmer.fillColor = SKColor.black.withAlphaComponent(0.8)
+        dimmer.strokeColor = .clear
+        dimmer.position = CGPoint.zero
+        overlay.addChild(dimmer)
+
+        let panel = SKShapeNode(rectOf: CGSize(width: min(size.width - 48, 320), height: 180), cornerRadius: 14)
+        panel.fillColor = SKColor(white: 0.08, alpha: 0.96)
+        panel.strokeColor = .white
+        panel.lineWidth = 2
+        panel.position = CGPoint.zero
+        overlay.addChild(panel)
+
+        let title = SKLabelNode(fontNamed: "Menlo-Bold")
+        title.fontSize = 18
+        title.fontColor = .white
+        title.position = CGPoint(x: 0, y: 42)
+        overlay.addChild(title)
+
+        let body = SKLabelNode(fontNamed: "Menlo")
+        body.fontSize = 12
+        body.fontColor = .white.withAlphaComponent(0.75)
+        body.position = CGPoint(x: 0, y: 6)
+        overlay.addChild(body)
+
+        let footer = SKLabelNode(fontNamed: "Menlo-Bold")
+        footer.fontSize = 11
+        footer.fontColor = .cyan
+        footer.position = CGPoint(x: 0, y: -44)
+        footer.name = "tutorialFooter"
+        overlay.addChild(footer)
+
+        switch step {
+        case .tapToJump:
+            title.text = "TAP TO JUMP"
+            body.text = "Tap anywhere."
+            footer.text = "WAITING FOR INPUT..."
+        case .dragToMove:
+            title.text = "DRAG LEFT/RIGHT TO MOVE"
+            body.text = "Swipe across the screen."
+            footer.text = "SHOW ME A DRAG."
+        case .deviceReveal:
+            title.text = "EACH LEVEL USES YOUR DEVICE."
+            body.text = "PREPARE TO BE SURPRISED."
+            footer.text = "CONTINUE"
+
+            let button = SKShapeNode(rectOf: CGSize(width: 130, height: 38), cornerRadius: 10)
+            button.fillColor = .white
+            button.strokeColor = .clear
+            button.position = CGPoint(x: 0, y: -78)
+            button.name = "tutorialContinue"
+            overlay.addChild(button)
+
+            let buttonLabel = SKLabelNode(fontNamed: "Menlo-Bold")
+            buttonLabel.text = "CONTINUE"
+            buttonLabel.fontSize = 12
+            buttonLabel.fontColor = .black
+            buttonLabel.verticalAlignmentMode = .center
+            buttonLabel.position = CGPoint(x: 0, y: -78)
+            overlay.addChild(buttonLabel)
+        }
+
+        tutorialOverlay = overlay
+        addChild(overlay)
+    }
+
+    private func advanceTutorial(withFeedback feedback: String) {
+        guard let tutorialOverlay else { return }
+        if let footer = tutorialOverlay.childNode(withName: "tutorialFooter") as? SKLabelNode {
+            footer.text = feedback
+        }
+
+        AudioManager.shared.playBeep(frequency: 880, duration: 0.08, volume: 0.18)
+        HapticManager.shared.success()
+
+        let nextAction: () -> Void
+        switch tutorialStep {
+        case .tapToJump:
+            nextAction = { [weak self] in self?.presentTutorial(step: .dragToMove) }
+        case .dragToMove:
+            nextAction = { [weak self] in self?.presentTutorial(step: .deviceReveal) }
+        case .deviceReveal:
+            nextAction = { [weak self] in self?.transitionToLevel1() }
+        case .none:
+            return
+        }
+
+        run(.sequence([
+            .wait(forDuration: 0.6),
+            .run(nextAction)
+        ]))
+    }
+
+    private func handleTutorialTouchBegan(at location: CGPoint) -> Bool {
+        guard let tutorialStep else { return false }
+
+        switch tutorialStep {
+        case .tapToJump:
+            advanceTutorial(withFeedback: "JUMP REGISTERED")
+            return true
+        case .dragToMove:
+            tutorialDragOrigin = location
+            return true
+        case .deviceReveal:
+            let buttonFrame = CGRect(x: -65, y: -97, width: 130, height: 38)
+            if buttonFrame.contains(location) {
+                advanceTutorial(withFeedback: "CONTINUING...")
+            }
+            return true
+        }
+    }
+
+    private func handleTutorialTouchMoved(at location: CGPoint) -> Bool {
+        guard tutorialStep == .dragToMove, let origin = tutorialDragOrigin else { return false }
+        if abs(location.x - origin.x) > 40 {
+            advanceTutorial(withFeedback: "MOVEMENT DETECTED")
+            tutorialDragOrigin = nil
+        }
+        return true
+    }
+
     private func transitionToLevel1() {
+        tutorialOverlay?.removeFromParent()
+        tutorialOverlay = nil
+        tutorialStep = nil
         ProgressManager.shared.markCompleted(levelID)
         GameState.shared.setState(.transitioning)
 

@@ -23,7 +23,9 @@ final class DeviceNameManager: DeviceManager {
         let ownerName = extractOwnerName(from: deviceName)
 
         DispatchQueue.main.async {
-            InputEventBus.shared.post(.deviceNameRead(name: ownerName))
+            DispatchQueue.main.async {
+                InputEventBus.shared.post(.deviceNameRead(name: ownerName))
+            }
         }
 
         print("DeviceNameManager: Activated - Name: \(ownerName)")

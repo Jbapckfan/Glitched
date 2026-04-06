@@ -36,9 +36,10 @@ final class FaceIDScene: BaseLevelScene, SKPhysicsContactDelegate {
         physicsWorld.gravity = CGVector(dx: 0, dy: -20)
         physicsWorld.contactDelegate = self
 
-        // BUG FIX: Use real Face ID authentication instead of proximity sensor simulation
-        AccessibilityManager.shared.registerMechanics([.faceID])
-        DeviceManagerCoordinator.shared.configure(for: [.faceID])
+        configureMechanicsWithFaceIDPermissionExplanation(
+            [.faceID],
+            message: "THIS LEVEL USES FACE ID. YOU'LL AUTHENTICATE TO UNLOCK A VAULT."
+        )
 
         setupBackground()
         setupLevelTitle()
@@ -525,6 +526,7 @@ final class FaceIDScene: BaseLevelScene, SKPhysicsContactDelegate {
     override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent?) {
         guard let touch = touches.first else { return }
         let location = touch.location(in: self)
+        if handlePermissionOverlayTouch(at: location) { return }
 
         // Tap on vault to trigger Face ID (first door)
         if scanStep == 0 && vaultDoor.contains(location) {

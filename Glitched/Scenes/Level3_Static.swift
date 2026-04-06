@@ -47,8 +47,10 @@ final class StaticScene: BaseLevelScene, SKPhysicsContactDelegate {
         physicsWorld.gravity = CGVector(dx: 0, dy: -20)
         physicsWorld.contactDelegate = self
 
-        AccessibilityManager.shared.registerMechanics([.microphone])
-        DeviceManagerCoordinator.shared.configure(for: [.microphone])
+        configureMechanicsWithMicrophonePermissionExplanation(
+            [.microphone],
+            message: "THIS LEVEL NEEDS YOUR MICROPHONE. YOU'LL MAKE NOISE TO DISABLE STATIC BARRIERS."
+        )
 
         setupBackground()
         setupLevelTitle()
@@ -710,7 +712,9 @@ final class StaticScene: BaseLevelScene, SKPhysicsContactDelegate {
 
     override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent?) {
         guard let touch = touches.first else { return }
-        playerController.touchBegan(at: touch.location(in: self))
+        let location = touch.location(in: self)
+        if handlePermissionOverlayTouch(at: location) { return }
+        playerController.touchBegan(at: location)
     }
 
     override func touchesMoved(_ touches: Set<UITouch>, with event: UIEvent?) {

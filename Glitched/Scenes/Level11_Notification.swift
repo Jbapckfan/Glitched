@@ -47,8 +47,10 @@ final class NotificationScene: BaseLevelScene, SKPhysicsContactDelegate {
         physicsWorld.gravity = CGVector(dx: 0, dy: -20)
         physicsWorld.contactDelegate = self
 
-        AccessibilityManager.shared.registerMechanics([.notification])
-        DeviceManagerCoordinator.shared.configure(for: [.notification])
+        configureMechanicsWithNotificationPermissionExplanation(
+            [.notification],
+            message: "THIS LEVEL NEEDS NOTIFICATIONS. YOU'LL LEAVE THE APP, WAIT FOR A MESSAGE, THEN TAP THE CORRECT ALERT TO UNLOCK THE DOOR."
+        )
 
         setupBackground()
         setupLevelTitle()
@@ -592,6 +594,7 @@ final class NotificationScene: BaseLevelScene, SKPhysicsContactDelegate {
     override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent?) {
         guard let touch = touches.first else { return }
         let location = touch.location(in: self)
+        if handlePermissionOverlayTouch(at: location) { return }
 
         // Check if button tapped
         if notificationButton.contains(location) {

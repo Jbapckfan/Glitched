@@ -77,7 +77,9 @@ final class ShakeUndoManager: DeviceManager {
             let generator = UIImpactFeedbackGenerator(style: .heavy)
             generator.impactOccurred()
 
-            InputEventBus.shared.post(.shakeUndoTriggered)
+            DispatchQueue.main.async {
+                InputEventBus.shared.post(.shakeUndoTriggered)
+            }
         }
     }
 }
