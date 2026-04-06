@@ -17,6 +17,10 @@ class BaseLevelScene: SKScene {
     // Player tracking for effects
     weak var playerNode: SKNode?
 
+    // FIX #13: Dynamic difficulty hint timer
+    private var noProgressTimer: TimeInterval = 0
+    private var hintShown = false
+
     // MARK: - Lifecycle
 
     override func didMove(to view: SKView) {
@@ -207,6 +211,8 @@ class BaseLevelScene: SKScene {
     }
 
     /// Called automatically on level failure - override to customize
+    /// FIX #20: Enhanced death/respawn glitch effect with pixel fragmentation,
+    /// screen shake, static overlay, and pixel reassembly at spawn.
     func playDeathEffects() {
         // Haptic death buzz
         HapticManager.shared.death()
@@ -214,22 +220,18 @@ class BaseLevelScene: SKScene {
         // Sound
         AudioManager.shared.playDeath()
 
-        // Glitch effect
-        JuiceManager.shared.glitchEffect(duration: 0.3)
+        // FIX #20: Full glitch death sequence
+        JuiceManager.shared.playGlitchDeath(in: self, at: playerNode?.position ?? CGPoint(x: size.width / 2, y: size.height / 2))
 
-        // Screen shake
-        JuiceManager.shared.shake(intensity: .heavy, duration: 0.3)
-
-        // Red flash
-        JuiceManager.shared.flash(color: .red, duration: 0.15)
-
-        // Freeze frame
-        JuiceManager.shared.freezeFrame(duration: 0.1)
-
-        // Explosion at player position
+        // Explosion at player position with pixel fragmentation
         if let player = playerNode {
-            let explosion = ParticleFactory.shared.createGlitchDeath(at: player.position)
-            addChild(explosion)
+            // FIX #20: Pixel fragmentation burst
+            let pixelBurst = ParticleFactory.shared.createDeathExplosion(at: player.position, color: VisualConstants.Colors.accent)
+            addChild(pixelBurst)
+
+            // Also add glitch bars
+            let glitchDeath = ParticleFactory.shared.createGlitchDeath(at: player.position)
+            addChild(glitchDeath)
 
             // Hide player briefly
             player.alpha = 0
@@ -313,7 +315,60 @@ class BaseLevelScene: SKScene {
         let clampedDt = min(dt, 1.0 / 30.0)
 
         guard GameState.shared.levelState == .playing else { return }
+
+        // FIX #13: Track time without progress and show hint after 30 seconds
+        noProgressTimer += clampedDt
+        if noProgressTimer >= 30.0 && !hintShown {
+            hintShown = true
+            showDifficultyHint()
+        }
+
         updatePlaying(deltaTime: clampedDt)
+    }
+
+    /// FIX #13: Call this whenever the player makes meaningful progress
+    /// (e.g. reaches a checkpoint, activates a mechanic) to reset the hint timer.
+    func resetProgressTimer() {
+        noProgressTimer = 0
+        hintShown = false
+    }
+
+    /// FIX #13: Override in subclasses to provide level-specific hints.
+    /// Default implementation shows a generic hint about the level's mechanic.
+    func hintText() -> String? {
+        return nil
+    }
+
+    private func showDifficultyHint() {
+        let text = hintText() ?? "Try using your device's features..."
+
+        let container = SKNode()
+        container.zPosition = 8000
+        container.alpha = 0
+
+        let bg = SKShapeNode(rectOf: CGSize(width: 280, height: 40), cornerRadius: 8)
+        bg.fillColor = SKColor.black.withAlphaComponent(0.7)
+        bg.strokeColor = VisualConstants.Colors.accent.withAlphaComponent(0.5)
+        bg.lineWidth = 1
+        container.addChild(bg)
+
+        let label = SKLabelNode(text: text)
+        label.fontName = VisualConstants.Fonts.secondary
+        label.fontSize = 11
+        label.fontColor = VisualConstants.Colors.accent
+        label.verticalAlignmentMode = .center
+        container.addChild(label)
+
+        // Position at bottom of camera view
+        container.position = CGPoint(x: size.width / 2, y: 60)
+        gameCamera.addChild(container)
+
+        container.run(.sequence([
+            .fadeIn(withDuration: 0.5),
+            .wait(forDuration: 5.0),
+            .fadeOut(withDuration: 0.5),
+            .removeFromParent()
+        ]))
     }
 
     // MARK: - Helpers

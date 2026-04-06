@@ -267,7 +267,8 @@ final class LocaleScene: BaseLevelScene, SKPhysicsContactDelegate {
         panel.zPosition = 300
         addChild(panel)
 
-        let bg = SKShapeNode(rectOf: CGSize(width: 300, height: 80), cornerRadius: 8)
+        // FIX #16: Larger panel with revert instructions in English AND target locale
+        let bg = SKShapeNode(rectOf: CGSize(width: 320, height: 130), cornerRadius: 8)
         bg.fillColor = fillColor
         bg.strokeColor = strokeColor
         panel.addChild(bg)
@@ -276,17 +277,41 @@ final class LocaleScene: BaseLevelScene, SKPhysicsContactDelegate {
         text1.fontName = "Menlo-Bold"
         text1.fontSize = 11
         text1.fontColor = strokeColor
-        text1.position = CGPoint(x: 0, y: 10)
+        text1.position = CGPoint(x: 0, y: 35)
         panel.addChild(text1)
 
         let text2 = SKLabelNode(text: "CHANGE YOUR LANGUAGE TO READ")
         text2.fontName = "Menlo"
         text2.fontSize = 10
         text2.fontColor = strokeColor
-        text2.position = CGPoint(x: 0, y: -10)
+        text2.position = CGPoint(x: 0, y: 18)
         panel.addChild(text2)
 
-        panel.run(.sequence([.wait(forDuration: 6), .fadeOut(withDuration: 0.5), .removeFromParent()]))
+        // FIX #16: Revert instructions in English
+        let revertEN = SKLabelNode(text: "TO REVERT: Settings > General > Language")
+        revertEN.fontName = "Menlo"
+        revertEN.fontSize = 8
+        revertEN.fontColor = strokeColor.withAlphaComponent(0.7)
+        revertEN.position = CGPoint(x: 0, y: -2)
+        panel.addChild(revertEN)
+
+        // FIX #16: Revert instructions in Japanese (target locale)
+        let revertJA = SKLabelNode(text: "戻す: 設定 > 一般 > 言語と地域")
+        revertJA.fontName = "Menlo"
+        revertJA.fontSize = 8
+        revertJA.fontColor = strokeColor.withAlphaComponent(0.7)
+        revertJA.position = CGPoint(x: 0, y: -16)
+        panel.addChild(revertJA)
+
+        // FIX #16: Revert instructions in Spanish (alternate locale)
+        let revertES = SKLabelNode(text: "Revertir: Ajustes > General > Idioma")
+        revertES.fontName = "Menlo"
+        revertES.fontSize = 8
+        revertES.fontColor = strokeColor.withAlphaComponent(0.7)
+        revertES.position = CGPoint(x: 0, y: -30)
+        panel.addChild(revertES)
+
+        panel.run(.sequence([.wait(forDuration: 10), .fadeOut(withDuration: 0.5), .removeFromParent()]))
     }
 
     private func setupBit() {

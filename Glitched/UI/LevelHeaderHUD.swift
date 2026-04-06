@@ -1,5 +1,6 @@
 import SwiftUI
 
+// FIX #18: Safe-area awareness for Dynamic Island/notch
 struct LevelHeaderHUD: View {
     let levelID: LevelID
 
@@ -10,6 +11,7 @@ struct LevelHeaderHUD: View {
     var body: some View {
         if !hasDropped {
             GeometryReader { geometry in
+                let safeTop = geometry.safeAreaInsets.top
                 VStack(spacing: 8) {
                     // Main header - looks like part of the level
                     Text("LEVEL \(levelID.index)")
@@ -60,7 +62,8 @@ struct LevelHeaderHUD: View {
                 )
                 .scaleEffect(isDragging ? 1.05 : 1.0)
                 .offset(dragOffset)
-                .position(x: geometry.size.width / 2, y: 140)
+                // FIX #18: Position below safe area (Dynamic Island/notch)
+                .position(x: geometry.size.width / 2, y: max(140, safeTop + 80))
                 .gesture(
                     DragGesture()
                         .onChanged { value in
@@ -110,15 +113,20 @@ struct HUDLayer: View {
     let levelID: LevelID
 
     var body: some View {
-        ZStack {
-            // Show level-specific HUD elements
-            switch (levelID.world, levelID.index) {
-            case (.world1, 1):
-                LevelHeaderHUD(levelID: levelID)
-            default:
-                // Default HUD for other levels - minimal, non-intrusive
-                EmptyView()
+        // FIX #18: Ensure HUD respects safe area insets
+        GeometryReader { geometry in
+            ZStack {
+                // Show level-specific HUD elements
+                switch (levelID.world, levelID.index) {
+                case (.world1, 1):
+                    LevelHeaderHUD(levelID: levelID)
+                default:
+                    // Default HUD for other levels - minimal, non-intrusive
+                    EmptyView()
+                }
             }
+            // FIX #18: Pad for Dynamic Island/notch
+            .padding(.top, geometry.safeAreaInsets.top)
         }
     }
 }

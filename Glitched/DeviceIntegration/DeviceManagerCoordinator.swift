@@ -1,14 +1,25 @@
 import Foundation
 import UIKit
 
-final class DeviceManagerCoordinator {
+// FIX #1: Protocol so DeviceManagerCoordinator can be mocked in tests
+protocol DeviceManagerCoordinating: AnyObject {
+    func configure(for mechanics: Set<MechanicType>)
+    func deactivateAll()
+    func register(_ manager: DeviceManager)
+    func unregister(_ manager: DeviceManager)
+}
+
+final class DeviceManagerCoordinator: DeviceManagerCoordinating {
     static let shared = DeviceManagerCoordinator()
 
+    // FIX #9: Registry-based manager storage instead of hardcoded array.
+    // External code can call register()/unregister() to add/remove managers.
     private var managers: [DeviceManager] = []
     private var activeMechanics: Set<MechanicType> = []
 
     private init() {
-        managers = [
+        // FIX #9: Populate via register() calls so the pattern is consistent
+        let builtinManagers: [DeviceManager] = [
             // World 1: Hardware Awakening
             MicrophoneManager.shared,
             MotionManager.shared,
@@ -42,6 +53,7 @@ final class DeviceManagerCoordinator {
             VoiceOverManager.shared,
             AirDropManager.shared,
         ]
+        for m in builtinManagers { register(m) }
 
         // Observe app lifecycle
         NotificationCenter.default.addObserver(
@@ -57,6 +69,18 @@ final class DeviceManagerCoordinator {
             name: UIApplication.willEnterForegroundNotification,
             object: nil
         )
+    }
+
+    // FIX #9: Registry pattern - add a manager at runtime
+    func register(_ manager: DeviceManager) {
+        // Avoid duplicates (compare by identity)
+        guard !managers.contains(where: { $0 === manager }) else { return }
+        managers.append(manager)
+    }
+
+    // FIX #9: Registry pattern - remove a manager at runtime
+    func unregister(_ manager: DeviceManager) {
+        managers.removeAll { $0 === manager }
     }
 
     deinit {

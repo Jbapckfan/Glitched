@@ -31,17 +31,32 @@ final class NotificationDelegate: NSObject, UNUserNotificationCenterDelegate {
 @main
 struct GlitchedApp: App {
     @AppStorage("forceDarkMode") private var forceDarkMode = true
+    // FIX #12: Track whether the permissions preflight has been shown
+    @AppStorage("hasSeenPreflight") private var hasSeenPreflight = false
     private let notificationDelegate = NotificationDelegate()
 
     init() {
         UNUserNotificationCenter.current().delegate = notificationDelegate
+
+        // FIX #15: Authenticate with Game Center on launch
+        GameCenterManager.shared.authenticate()
+
+        // FIX #17: Start screen recording detection
+        _ = ScreenRecordingDetector.shared
     }
 
     var body: some Scene {
         WindowGroup {
-            GameRootView()
-                .preferredColorScheme(forceDarkMode ? .dark : nil)
-                .statusBarHidden(true)
+            if hasSeenPreflight {
+                GameRootView()
+                    .preferredColorScheme(forceDarkMode ? .dark : nil)
+                    .statusBarHidden(true)
+            } else {
+                // FIX #12: Show permissions overview on first launch
+                PermissionsPreflightView(hasSeenPreflight: $hasSeenPreflight)
+                    .preferredColorScheme(.dark)
+                    .statusBarHidden(true)
+            }
         }
     }
 }

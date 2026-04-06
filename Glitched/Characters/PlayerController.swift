@@ -55,6 +55,10 @@ final class PlayerController {
         let minX = halfWidth + boundaryPadding
         let maxX = (worldWidth ?? scene.size.width) - halfWidth - boundaryPadding
 
+        // FIX #10: Guard against invalid clamping when maxX < minX
+        // (can happen in very narrow scenes or with large boundary padding)
+        guard maxX >= minX else { return }
+
         if character.position.x < minX {
             character.position.x = minX
             character.physicsBody?.velocity.dx = 0
@@ -119,13 +123,32 @@ final class PlayerController {
     }
 
     private func updateTouchMoveDirection(from point: CGPoint) {
-        guard let character = character else { return }
+        guard let character = character, let scene = scene else { return }
 
-        // Calculate direction based on touch position relative to character
-        let characterScreenX = character.position.x
+        // FIX #3: Convert touch position to camera/view space when a camera is active.
+        // In scrolling levels the touch comes in world coordinates, but the character's
+        // visual position on screen is offset by the camera. We need to compare both
+        // in the same coordinate space.
+        let characterScreenX: CGFloat
+        if let camera = scene.camera {
+            // Character position relative to camera center gives screen-space X
+            let cameraOriginX = camera.position.x - scene.size.width / 2
+            characterScreenX = character.position.x - cameraOriginX
+        } else {
+            characterScreenX = character.position.x
+        }
+
+        // Touch point is already in scene coordinates; convert to screen-relative
+        let touchScreenX: CGFloat
+        if let camera = scene.camera {
+            let cameraOriginX = camera.position.x - scene.size.width / 2
+            touchScreenX = point.x - cameraOriginX
+        } else {
+            touchScreenX = point.x
+        }
 
         // If touch is to the left of character, move left; if right, move right
-        let touchDelta = point.x - characterScreenX
+        let touchDelta = touchScreenX - characterScreenX
 
         // Smaller dead zone for more responsive feel
         let deadZone: CGFloat = 20

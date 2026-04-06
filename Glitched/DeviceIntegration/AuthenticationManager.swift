@@ -46,11 +46,16 @@ final class AuthenticationManager: DeviceManager {
         DispatchQueue.main.async { [weak self] in
             guard let self = self else { return }
             guard !self.isAuthenticating else { return }
-            guard let context = self.context else { return }
+            guard self.isActive else { return }
 
             self.isAuthenticating = true
 
-            context.evaluatePolicy(.deviceOwnerAuthenticationWithBiometrics, localizedReason: reason) { [weak self] success, error in
+            // FIX #8: Create a fresh LAContext near evaluation time instead of
+            // reusing the stale one from activate(). A previously-evaluated context
+            // can be in an invalid state and silently fail on re-evaluation.
+            let freshContext = LAContext()
+
+            freshContext.evaluatePolicy(.deviceOwnerAuthenticationWithBiometrics, localizedReason: reason) { [weak self] success, error in
                 DispatchQueue.main.async {
                     self?.isAuthenticating = false
 

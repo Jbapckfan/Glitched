@@ -18,6 +18,7 @@ struct VisualConstants {
         static var accentUI: Color { Color(accent) }
         static var dangerUI: Color { Color(danger) }
         static var successUI: Color { Color(success) }
+        static var warningUI: Color { Color(warning) }
     }
 
     // MARK: - Typography

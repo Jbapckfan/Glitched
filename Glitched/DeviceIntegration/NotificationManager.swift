@@ -51,10 +51,50 @@ final class NotificationGameManager: DeviceManager {
         print("NotificationGameManager: Deactivated")
     }
 
+    // FIX #7: Structured notification permission status
+    enum NotificationPermissionStatus {
+        case granted
+        case denied
+        case provisional
+        case notDetermined
+        case unknown
+    }
+
+    /// Current permission status, updated after each request
+    private(set) var permissionStatus: NotificationPermissionStatus = .notDetermined
+
     private func requestNotificationPermission() {
-        UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound, .badge]) { granted, error in
-            if granted {
-                print("NotificationGameManager: Permission granted")
+        UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound, .badge]) { [weak self] granted, error in
+            DispatchQueue.main.async {
+                guard let self = self else { return }
+                if let error = error {
+                    print("NotificationGameManager: Permission error: \(error)")
+                    self.permissionStatus = .unknown
+                    return
+                }
+
+                // FIX #7: Check actual authorization status for full picture
+                UNUserNotificationCenter.current().getNotificationSettings { settings in
+                    DispatchQueue.main.async {
+                        switch settings.authorizationStatus {
+                        case .authorized:
+                            self.permissionStatus = .granted
+                            print("NotificationGameManager: Permission granted")
+                        case .denied:
+                            self.permissionStatus = .denied
+                            print("NotificationGameManager: Permission denied - show guidance UI")
+                            // Post event so level can show appropriate UI
+                            InputEventBus.shared.post(.notificationReceived(id: "__permission_denied"))
+                        case .provisional:
+                            self.permissionStatus = .provisional
+                            print("NotificationGameManager: Provisional permission")
+                        case .notDetermined:
+                            self.permissionStatus = .notDetermined
+                        @unknown default:
+                            self.permissionStatus = .unknown
+                        }
+                    }
+                }
             }
         }
     }

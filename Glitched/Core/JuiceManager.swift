@@ -209,6 +209,96 @@ final class JuiceManager {
         ]))
     }
 
+    // MARK: - Death/Respawn Glitch Effect (FIX #20)
+
+    /// Full glitch death sequence: screen shake, static overlay, chromatic aberration.
+    /// The pixel fragmentation is handled by ParticleFactory.createDeathExplosion().
+    /// Call this from BaseLevelScene.playDeathEffects().
+    func playGlitchDeath(in scene: SKScene, at position: CGPoint) {
+        // 1. Heavy screen shake
+        shake(intensity: .heavy, duration: 0.4)
+
+        // 2. Chromatic aberration / glitch bars
+        glitchEffect(duration: 0.3)
+
+        // 3. Red flash
+        flash(color: .red, duration: 0.15)
+
+        // 4. Brief static overlay
+        let staticOverlay = SKShapeNode(rectOf: CGSize(width: scene.size.width * 2, height: scene.size.height * 2))
+        staticOverlay.fillColor = .white
+        staticOverlay.strokeColor = .clear
+        staticOverlay.alpha = 0
+        staticOverlay.zPosition = 10001
+        staticOverlay.position = CGPoint(x: scene.size.width / 2, y: scene.size.height / 2)
+        scene.addChild(staticOverlay)
+
+        // Static noise lines
+        for _ in 0..<30 {
+            let line = SKShapeNode(rectOf: CGSize(
+                width: CGFloat.random(in: 20...scene.size.width),
+                height: CGFloat.random(in: 1...4)
+            ))
+            line.fillColor = UIColor.white.withAlphaComponent(CGFloat.random(in: 0.3...0.8))
+            line.strokeColor = .clear
+            line.position = CGPoint(
+                x: CGFloat.random(in: -scene.size.width/2...scene.size.width/2),
+                y: CGFloat.random(in: -scene.size.height/2...scene.size.height/2)
+            )
+            staticOverlay.addChild(line)
+        }
+
+        staticOverlay.run(.sequence([
+            .fadeAlpha(to: 0.6, duration: 0.05),
+            .wait(forDuration: 0.08),
+            .fadeAlpha(to: 0, duration: 0.15),
+            .removeFromParent()
+        ]))
+
+        // 5. Freeze frame for dramatic impact
+        freezeFrame(duration: 0.1)
+    }
+
+    /// Respawn reassembly effect: pixels converge to spawn point.
+    /// Called by BitCharacter.playBufferDeath() or manually by levels.
+    func playRespawnReassembly(in scene: SKScene, at spawnPoint: CGPoint) {
+        // Create converging pixel fragments
+        let fragmentCount = 15
+        for _ in 0..<fragmentCount {
+            let size = CGFloat.random(in: 3...8)
+            let fragment = SKShapeNode(rectOf: CGSize(width: size, height: size))
+            fragment.fillColor = VisualConstants.Colors.accent
+            fragment.strokeColor = .clear
+            fragment.zPosition = 5000
+
+            // Start from random positions around spawn
+            let angle = CGFloat.random(in: 0...(2 * .pi))
+            let distance = CGFloat.random(in: 60...120)
+            fragment.position = CGPoint(
+                x: spawnPoint.x + cos(angle) * distance,
+                y: spawnPoint.y + sin(angle) * distance
+            )
+            fragment.alpha = 0.8
+            scene.addChild(fragment)
+
+            // Converge to spawn point
+            let convergeDuration = Double.random(in: 0.15...0.35)
+            fragment.run(.sequence([
+                .group([
+                    .move(to: spawnPoint, duration: convergeDuration),
+                    .fadeOut(withDuration: convergeDuration),
+                    .scale(to: 0.2, duration: convergeDuration)
+                ]),
+                .removeFromParent()
+            ]))
+        }
+
+        // Small flash at spawn point when complete
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) { [weak self] in
+            self?.flash(color: .cyan, duration: 0.1)
+        }
+    }
+
     // MARK: - Level Transitions
 
     func createGlitchTransition(duration: TimeInterval = 0.5) -> SKTransition {

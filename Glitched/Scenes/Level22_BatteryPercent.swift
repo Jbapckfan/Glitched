@@ -314,6 +314,10 @@ final class BatteryPercentScene: BaseLevelScene, SKPhysicsContactDelegate {
 
         batteryLabel.text = "BATTERY: \(Int(pct))%"
 
+        // FIX #14: Visual brightness/atmosphere matches battery theme.
+        // Lower battery = dimmer scene + more glitch atmosphere.
+        updateBatteryVisuals(pct)
+
         // Update stepping stones visibility
         for (index, stone) in steppingStones.enumerated() {
             let threshold = Float((index + 1) * 10)
@@ -334,6 +338,40 @@ final class BatteryPercentScene: BaseLevelScene, SKPhysicsContactDelegate {
 
         // Show 4th wall text
         showFourthWall(percentage: pct)
+    }
+
+    // FIX #14: Adjust visual brightness and atmosphere based on battery level.
+    // At 100% the scene is bright and calm; at low battery it dims and glitches.
+    private func updateBatteryVisuals(_ percentage: Float) {
+        let normalizedPct = CGFloat(percentage / 100.0)
+
+        // Dim the scene as battery drops (range: 0.4 at 0% to 1.0 at 100%)
+        let dimFactor = 0.4 + normalizedPct * 0.6
+        let dimColor = SKColor(white: 0, alpha: 1.0 - dimFactor)
+
+        // Remove old dim overlay
+        gameCamera.childNode(withName: "batteryDimOverlay")?.removeFromParent()
+
+        let overlay = SKShapeNode(rectOf: CGSize(width: size.width * 2, height: size.height * 2))
+        overlay.fillColor = dimColor
+        overlay.strokeColor = .clear
+        overlay.zPosition = 8500
+        overlay.name = "batteryDimOverlay"
+        overlay.isUserInteractionEnabled = false
+        gameCamera.addChild(overlay)
+
+        // At low battery, switch to tense/glitch atmosphere
+        if percentage < 30 {
+            setupBackgroundAtmosphere(mood: .glitch)
+        } else if percentage < 60 {
+            setupBackgroundAtmosphere(mood: .tense)
+        } else {
+            setupBackgroundAtmosphere(mood: .calm)
+        }
+
+        // Slow down scene speed slightly at very low battery to simulate "power drain"
+        let speedFactor = max(0.7, CGFloat(percentage / 100.0))
+        self.speed = speedFactor
     }
 
     private func showFourthWall(percentage: Float) {
