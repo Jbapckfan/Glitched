@@ -16,6 +16,9 @@ final class PlayerController {
     // Boundary padding
     private let boundaryPadding: CGFloat = 20
 
+    // BUG FIX: Allow levels to specify world bounds larger than screen (e.g., Level 29)
+    var worldWidth: CGFloat?
+
     // Tap detection thresholds
     private let tapMaxDuration: TimeInterval = 0.3  // More forgiving tap window
     private let tapMaxDistance: CGFloat = 25  // More forgiving movement threshold
@@ -47,10 +50,10 @@ final class PlayerController {
         // Apply movement
         character.move(direction: moveDirection)
 
-        // Clamp position to screen bounds
+        // Clamp position to world bounds (defaults to screen if no world width set)
         let halfWidth = character.size.width / 2
         let minX = halfWidth + boundaryPadding
-        let maxX = scene.size.width - halfWidth - boundaryPadding
+        let maxX = (worldWidth ?? scene.size.width) - halfWidth - boundaryPadding
 
         if character.position.x < minX {
             character.position.x = minX

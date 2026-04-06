@@ -36,8 +36,9 @@ final class FaceIDScene: BaseLevelScene, SKPhysicsContactDelegate {
         physicsWorld.gravity = CGVector(dx: 0, dy: -20)
         physicsWorld.contactDelegate = self
 
-        AccessibilityManager.shared.registerMechanics([.proximity])
-        DeviceManagerCoordinator.shared.configure(for: [.proximity])
+        // BUG FIX: Use real Face ID authentication instead of proximity sensor simulation
+        AccessibilityManager.shared.registerMechanics([.faceID, .proximity])
+        DeviceManagerCoordinator.shared.configure(for: [.faceID, .proximity])
 
         setupBackground()
         setupLevelTitle()
@@ -311,11 +312,16 @@ final class FaceIDScene: BaseLevelScene, SKPhysicsContactDelegate {
             ]))
         }
 
-        // Simulate Face ID scan with a 2-second delay, then post successful result
-        run(.sequence([
-            .wait(forDuration: 2.0),
-            .run { InputEventBus.shared.post(.faceIDResult(recognized: true)) }
-        ]))
+        // BUG FIX: Use real Face ID authentication instead of simulating success
+        if AuthenticationManager.shared.isBiometricAvailable {
+            AuthenticationManager.shared.requestAuthentication(reason: "Glitched needs to verify your identity to unlock this level")
+        } else {
+            // Fallback for devices without biometrics or simulator: use proximity as before
+            run(.sequence([
+                .wait(forDuration: 2.0),
+                .run { InputEventBus.shared.post(.faceIDResult(recognized: true)) }
+            ]))
+        }
     }
 
     private func handleFaceIDResult(_ success: Bool) {

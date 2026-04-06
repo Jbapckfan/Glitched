@@ -288,6 +288,8 @@ final class TheLieScene: BaseLevelScene, SKPhysicsContactDelegate {
         addChild(bit)
         registerPlayer(bit)
         playerController = PlayerController(character: bit, scene: self)
+        // BUG FIX: Allow player to traverse the full 1200-point world width
+        playerController.worldWidth = levelWidth
         lastPlayerX = spawnPoint.x
     }
 

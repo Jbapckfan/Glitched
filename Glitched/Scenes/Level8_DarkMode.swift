@@ -42,6 +42,10 @@ final class DarkModeScene: BaseLevelScene, SKPhysicsContactDelegate {
     override func configureScene() {
         levelID = LevelID(world: .world1, index: 8)
 
+        // BUG FIX: Release the forced dark mode so the system appearance can change
+        // and traitCollectionDidChange will fire when the user toggles dark mode
+        UserDefaults.standard.set(false, forKey: "forceDarkMode")
+
         // Get current system appearance
         if let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene {
             isDarkMode = windowScene.traitCollection.userInterfaceStyle == .dark
@@ -1159,5 +1163,7 @@ final class DarkModeScene: BaseLevelScene, SKPhysicsContactDelegate {
     override func willMove(from view: SKView) {
         super.willMove(from: view)
         DeviceManagerCoordinator.shared.deactivateAll()
+        // Restore forced dark mode for all other levels
+        UserDefaults.standard.set(true, forKey: "forceDarkMode")
     }
 }
