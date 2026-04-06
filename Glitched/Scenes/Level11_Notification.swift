@@ -441,9 +441,9 @@ final class NotificationScene: BaseLevelScene, SKPhysicsContactDelegate {
     private func showPermissionDeniedText() {
         fourthWallLabel?.removeFromParent()
 
-        let label = SKLabelNode(text: "YOU WON'T LET ME TALK TO YOU? THIS IS A TRUST EXERCISE.")
+        let label = SKLabelNode(text: "NOTIFICATIONS BLOCKED — TAP THE MESSAGE TO PROCEED ANYWAY.")
         label.fontName = "Menlo-Bold"
-        label.fontSize = 11
+        label.fontSize = 10
         label.fontColor = strokeColor
         label.position = CGPoint(x: size.width / 2, y: size.height / 2 + 50)
         label.zPosition = 500
@@ -456,6 +456,57 @@ final class NotificationScene: BaseLevelScene, SKPhysicsContactDelegate {
             .wait(forDuration: 4.0),
             .fadeOut(withDuration: 0.5),
             .removeFromParent()
+        ]))
+
+        // Show a faux in-app notification the player can tap to progress
+        showFauxNotification()
+    }
+
+    private var fauxNotificationNode: SKNode?
+
+    private func showFauxNotification() {
+        fauxNotificationNode?.removeFromParent()
+
+        let notif = SKNode()
+        notif.position = CGPoint(x: size.width / 2, y: size.height - 180)
+        notif.zPosition = 600
+        notif.name = "fauxNotification"
+
+        let bg = SKShapeNode(rectOf: CGSize(width: 280, height: 60), cornerRadius: 12)
+        bg.fillColor = fillColor
+        bg.strokeColor = strokeColor
+        bg.lineWidth = lineWidth
+        bg.name = "fauxNotification"
+        notif.addChild(bg)
+
+        let title = SKLabelNode(text: "GLITCHED")
+        title.fontName = "Menlo-Bold"
+        title.fontSize = 12
+        title.fontColor = strokeColor
+        title.position = CGPoint(x: 0, y: 10)
+        title.name = "fauxNotification"
+        notif.addChild(title)
+
+        let messageIndex = min(notificationRequestCount - 1, fourthWallMessages.count - 1)
+        let body = SKLabelNode(text: fourthWallMessages[max(0, messageIndex)])
+        body.fontName = "Menlo"
+        body.fontSize = 9
+        body.fontColor = strokeColor
+        body.position = CGPoint(x: 0, y: -8)
+        body.name = "fauxNotification"
+        notif.addChild(body)
+
+        addChild(notif)
+        fauxNotificationNode = notif
+
+        // Slide in from top
+        notif.alpha = 0
+        notif.run(.sequence([
+            .fadeIn(withDuration: 0.3),
+            .repeatForever(.sequence([
+                .scale(to: 1.02, duration: 0.8),
+                .scale(to: 1.0, duration: 0.8)
+            ]))
         ]))
     }
 
@@ -545,6 +596,15 @@ final class NotificationScene: BaseLevelScene, SKPhysicsContactDelegate {
         // Check if button tapped
         if notificationButton.contains(location) {
             requestNotification()
+            return
+        }
+
+        // Check if faux notification tapped (fallback when permissions denied)
+        let tapped = nodes(at: location)
+        if tapped.contains(where: { $0.name == "fauxNotification" }) {
+            fauxNotificationNode?.run(.sequence([.fadeOut(withDuration: 0.2), .removeFromParent()]))
+            fauxNotificationNode = nil
+            unlockCurrentDoor()
             return
         }
 

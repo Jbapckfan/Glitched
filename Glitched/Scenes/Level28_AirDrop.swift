@@ -1,9 +1,10 @@
 import SpriteKit
 import UIKit
 
-/// Level 28: AirDrop
-/// Concept: A locked door displays a code. Player shares the code, then taps it back in via
-/// in-game keyboard to unlock the door.
+/// Level 28: Share to Unlock
+/// Concept: A locked door displays a code. Player shares the code via the system share sheet
+/// (any sharing method counts — not limited to AirDrop), then taps it back in via in-game
+/// keyboard to unlock the door. The mechanic is intentionally "sharing" not specifically AirDrop.
 final class AirDropScene: BaseLevelScene, SKPhysicsContactDelegate {
 
     private let fillColor = SKColor.white
@@ -301,6 +302,9 @@ final class AirDropScene: BaseLevelScene, SKPhysicsContactDelegate {
             popover.sourceRect = CGRect(x: self.size.width / 2, y: self.size.height / 2, width: 0, height: 0)
         }
 
+        // Any share completion counts — the mechanic is "sharing" not specifically AirDrop.
+        // This is intentional: the narrative framing is about transmission, and any share
+        // method satisfies the puzzle requirement.
         activityVC.completionWithItemsHandler = { [weak self] _, completed, _, _ in
             if completed {
                 self?.hasShared = true

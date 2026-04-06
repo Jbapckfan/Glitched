@@ -206,7 +206,7 @@ final class MetaFinaleScene: BaseLevelScene, SKPhysicsContactDelegate {
         title.zPosition = 100
         addChild(title)
 
-        let subtitle = SKLabelNode(text: "DELETE TO PROCEED")
+        let subtitle = SKLabelNode(text: "SYSTEM PURGE REQUIRED")
         subtitle.fontName = "Menlo-Bold"
         subtitle.fontSize = 12
         subtitle.fontColor = strokeColor
@@ -300,7 +300,7 @@ final class MetaFinaleScene: BaseLevelScene, SKPhysicsContactDelegate {
         corruptionWall.addChild(blocker)
 
         // Hint
-        hintLabel = SKLabelNode(text: "DELETE APP TO CLEAR CORRUPTION")
+        hintLabel = SKLabelNode(text: "INITIATE SYSTEM PURGE TO CLEAR CORRUPTION")
         hintLabel.fontName = "Menlo"
         hintLabel.fontSize = 9
         hintLabel.fontColor = strokeColor
@@ -310,7 +310,7 @@ final class MetaFinaleScene: BaseLevelScene, SKPhysicsContactDelegate {
         addChild(hintLabel)
 
         // Progress saved indicator
-        progressSavedLabel = SKLabelNode(text: "PROGRESS SAVED TO CLOUD")
+        progressSavedLabel = SKLabelNode(text: "TOUCH THE WALL TO BEGIN PURGE")
         progressSavedLabel.fontName = "Menlo"
         progressSavedLabel.fontSize = 10
         progressSavedLabel.fontColor = strokeColor
@@ -410,41 +410,87 @@ final class MetaFinaleScene: BaseLevelScene, SKPhysicsContactDelegate {
     }
 
     private func checkIfReinstalled() {
-        // Use Keychain for reinstall detection - Keychain persists across app deletions
-        let seenBefore = KeychainHelper.load(key: "level20_seen")
         let hasBeenCleared = KeychainHelper.load(key: "level20_cleared")
-
-        if seenBefore != nil && hasBeenCleared == nil {
-            // We saw level 20 before, but the app was deleted and reinstalled
-            // (UserDefaults would be gone, but Keychain persists)
-            // Check if UserDefaults flag is missing (indicates reinstall)
-            let udSeen = UserDefaults.standard.bool(forKey: "glitched_level20_seen")
-            if !udSeen {
-                // App was deleted and reinstalled!
-                clearCorruption()
-                return
-            }
-        }
 
         if hasBeenCleared != nil {
             // Already cleared corruption in a previous session
             clearCorruption()
-        } else {
-            // Mark that we've seen level 20 in both Keychain and UserDefaults
-            KeychainHelper.save(key: "level20_seen", value: "true")
-            UserDefaults.standard.set(true, forKey: "glitched_level20_seen")
-
-            // Save progress to iCloud
-            saveProgressToCloud()
         }
+        // Otherwise, the player must walk into the corruption wall to trigger the simulated purge
     }
 
-    private func saveProgressToCloud() {
-        // In a real implementation, this would sync to iCloud
-        // For now, we just show the indicator
-        progressSavedLabel.run(.sequence([
-            .scale(to: 1.1, duration: 0.2),
-            .scale(to: 1.0, duration: 0.2)
+    /// Simulated corruption/reset: the app pretends to glitch out, shows a fake crash
+    /// screen, then "reboots" into a clean state. No actual app deletion required.
+    private func beginSimulatedPurge() {
+        guard !isCleared else { return }
+
+        // Phase 1: Fake crash/glitch-out
+        let crashOverlay = SKShapeNode(rectOf: CGSize(width: size.width * 2, height: size.height * 2))
+        crashOverlay.fillColor = .black
+        crashOverlay.strokeColor = .clear
+        crashOverlay.position = CGPoint(x: size.width / 2, y: size.height / 2)
+        crashOverlay.zPosition = 900
+        crashOverlay.alpha = 0
+        crashOverlay.name = "crashOverlay"
+        addChild(crashOverlay)
+
+        // Intense glitch effects
+        JuiceManager.shared.shake(intensity: .earthquake, duration: 1.0)
+        JuiceManager.shared.glitchEffect(duration: 0.8)
+        AudioManager.shared.playGlitch()
+        HapticManager.shared.playPattern(.heartbeat)
+
+        // Fade to black (simulated crash)
+        crashOverlay.run(.sequence([
+            .fadeAlpha(to: 1.0, duration: 0.8),
+            .run { [weak self] in self?.showFakeCrashScreen() }
+        ]))
+    }
+
+    private func showFakeCrashScreen() {
+        // Fake crash/reboot text sequence
+        let crashTexts = [
+            "FATAL ERROR: CORRUPTION OVERFLOW",
+            "DUMPING MEMORY...",
+            "INITIATING SYSTEM PURGE...",
+            "CLEARING CORRUPTED SECTORS...",
+            "REBOOTING..."
+        ]
+
+        var delay: TimeInterval = 0.5
+        for (index, text) in crashTexts.enumerated() {
+            run(.sequence([
+                .wait(forDuration: delay),
+                .run { [weak self] in
+                    guard let self = self else { return }
+                    let label = SKLabelNode(fontNamed: "Menlo")
+                    label.text = text
+                    label.fontSize = 11
+                    label.fontColor = .green
+                    label.position = CGPoint(x: self.size.width / 2,
+                                             y: self.size.height / 2 + 60 - CGFloat(index) * 22)
+                    label.zPosition = 1000
+                    label.alpha = 0
+                    label.name = "crashText"
+                    self.addChild(label)
+                    label.run(.fadeIn(withDuration: 0.15))
+                    HapticManager.shared.rigid()
+                }
+            ]))
+            delay += 0.7
+        }
+
+        // After the fake reboot, clear corruption
+        run(.sequence([
+            .wait(forDuration: delay + 1.0),
+            .run { [weak self] in
+                guard let self = self else { return }
+                // Remove crash overlay and text
+                self.enumerateChildNodes(withName: "crashOverlay") { node, _ in node.removeFromParent() }
+                self.enumerateChildNodes(withName: "crashText") { node, _ in node.removeFromParent() }
+                JuiceManager.shared.flash(color: .white, duration: 0.5)
+                self.clearCorruption()
+            }
         ]))
     }
 
@@ -549,78 +595,7 @@ final class MetaFinaleScene: BaseLevelScene, SKPhysicsContactDelegate {
         KeychainHelper.save(key: "level20_cleared", value: "true")
     }
 
-    // MARK: - Fake Review Prompt (4th Wall)
-
-    private func showFakeReviewPrompt() {
-        guard !hasShownFakeReview else { return }
-        hasShownFakeReview = true
-
-        let panel = SKNode()
-        panel.position = CGPoint(x: size.width / 2, y: size.height / 2)
-        panel.zPosition = 600
-        panel.alpha = 0
-        addChild(panel)
-
-        // Fake iOS-style alert background
-        let bg = SKShapeNode(rectOf: CGSize(width: 280, height: 140), cornerRadius: 12)
-        bg.fillColor = fillColor
-        bg.strokeColor = strokeColor
-        bg.lineWidth = lineWidth * 1.5
-        panel.addChild(bg)
-
-        let titleLabel = SKLabelNode(text: "ENJOYING GLITCHED?")
-        titleLabel.fontName = "Menlo-Bold"
-        titleLabel.fontSize = 13
-        titleLabel.fontColor = strokeColor
-        titleLabel.position = CGPoint(x: 0, y: 40)
-        panel.addChild(titleLabel)
-
-        let bodyLabel = SKLabelNode(text: "RATE 5 STARS BEFORE")
-        bodyLabel.fontName = "Menlo"
-        bodyLabel.fontSize = 10
-        bodyLabel.fontColor = strokeColor
-        bodyLabel.position = CGPoint(x: 0, y: 15)
-        panel.addChild(bodyLabel)
-
-        let bodyLabel2 = SKLabelNode(text: "YOU DELETE ME.")
-        bodyLabel2.fontName = "Menlo"
-        bodyLabel2.fontSize = 10
-        bodyLabel2.fontColor = strokeColor
-        bodyLabel2.position = CGPoint(x: 0, y: 0)
-        panel.addChild(bodyLabel2)
-
-        // Fake star rating display
-        let stars = SKLabelNode(text: "* * * * *")
-        stars.fontName = "Menlo-Bold"
-        stars.fontSize = 18
-        stars.fontColor = strokeColor
-        stars.position = CGPoint(x: 0, y: -25)
-        panel.addChild(stars)
-
-        // Divider line
-        let divider = SKShapeNode(rectOf: CGSize(width: 260, height: 1))
-        divider.fillColor = strokeColor
-        divider.strokeColor = .clear
-        divider.alpha = 0.3
-        divider.position = CGPoint(x: 0, y: -45)
-        panel.addChild(divider)
-
-        // Fake dismiss button
-        let dismissLabel = SKLabelNode(text: "NOT NOW")
-        dismissLabel.fontName = "Menlo"
-        dismissLabel.fontSize = 10
-        dismissLabel.fontColor = strokeColor
-        dismissLabel.alpha = 0.6
-        dismissLabel.position = CGPoint(x: 0, y: -58)
-        panel.addChild(dismissLabel)
-
-        panel.run(.sequence([
-            .fadeIn(withDuration: 0.3),
-            .wait(forDuration: 4.0),
-            .fadeOut(withDuration: 0.5),
-            .removeFromParent()
-        ]))
-    }
+    // Fake review prompt removed — violates App Store guidelines
 
     override func handleGameInput(_ event: GameInputEvent) {
         switch event {
@@ -706,9 +681,10 @@ final class MetaFinaleScene: BaseLevelScene, SKPhysicsContactDelegate {
                 }
             }
 
-            // Show fake review prompt when player is near the corruption wall
-            if corruptionProximity > 0.6 && !hasShownFakeReview {
-                showFakeReviewPrompt()
+            // Trigger simulated purge when player touches the corruption wall
+            if corruptionProximity > 0.9 && !hasShownFakeReview {
+                hasShownFakeReview = true  // reuse flag to prevent re-trigger
+                beginSimulatedPurge()
             }
         }
 

@@ -42,22 +42,26 @@ final class AuthenticationManager: DeviceManager {
 
     /// Request authentication and report result
     func requestAuthentication(reason: String) {
-        guard !isAuthenticating else { return }
-        guard let context = context else { return }
+        // Ensure thread-safe access to isAuthenticating by checking and setting on main queue
+        DispatchQueue.main.async { [weak self] in
+            guard let self = self else { return }
+            guard !self.isAuthenticating else { return }
+            guard let context = self.context else { return }
 
-        isAuthenticating = true
+            self.isAuthenticating = true
 
-        context.evaluatePolicy(.deviceOwnerAuthenticationWithBiometrics, localizedReason: reason) { [weak self] success, error in
-            self?.isAuthenticating = false
+            context.evaluatePolicy(.deviceOwnerAuthenticationWithBiometrics, localizedReason: reason) { [weak self] success, error in
+                DispatchQueue.main.async {
+                    self?.isAuthenticating = false
 
-            DispatchQueue.main.async {
-                if success {
-                    let generator = UINotificationFeedbackGenerator()
-                    generator.notificationOccurred(.success)
-                    InputEventBus.shared.post(.faceIDResult(recognized: true))
-                } else {
-                    // Failed or cancelled
-                    InputEventBus.shared.post(.faceIDResult(recognized: false))
+                    if success {
+                        let generator = UINotificationFeedbackGenerator()
+                        generator.notificationOccurred(.success)
+                        InputEventBus.shared.post(.faceIDResult(recognized: true))
+                    } else {
+                        // Failed or cancelled
+                        InputEventBus.shared.post(.faceIDResult(recognized: false))
+                    }
                 }
             }
         }

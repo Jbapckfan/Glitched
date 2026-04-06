@@ -109,8 +109,10 @@ final class VoiceOverScene: BaseLevelScene, SKPhysicsContactDelegate {
         death.physicsBody?.categoryBitMask = PhysicsCategory.hazard
         addChild(death)
 
+        #if DEBUG
         // Test button for simulator
         createTestButton()
+        #endif
     }
 
     private func createPlatform(at position: CGPoint, size: CGSize) {
@@ -208,6 +210,7 @@ final class VoiceOverScene: BaseLevelScene, SKPhysicsContactDelegate {
         addChild(exit)
     }
 
+    #if DEBUG
     private func createTestButton() {
         let button = SKShapeNode(rectOf: CGSize(width: 110, height: 30), cornerRadius: 6)
         button.fillColor = strokeColor
@@ -227,6 +230,7 @@ final class VoiceOverScene: BaseLevelScene, SKPhysicsContactDelegate {
         label.name = "testVOButton"
         addChild(label)
     }
+    #endif
 
     private func showInstructionPanel() {
         let panel = SKNode()
@@ -389,6 +393,7 @@ final class VoiceOverScene: BaseLevelScene, SKPhysicsContactDelegate {
         guard let touch = touches.first else { return }
         let location = touch.location(in: self)
 
+        #if DEBUG
         // Test button
         let tapped = nodes(at: location)
         if tapped.contains(where: { $0.name == "testVOButton" }) {
@@ -396,6 +401,7 @@ final class VoiceOverScene: BaseLevelScene, SKPhysicsContactDelegate {
             InputEventBus.shared.post(.voiceOverStateChanged(isEnabled: newState))
             return
         }
+        #endif
 
         playerController.touchBegan(at: location)
     }

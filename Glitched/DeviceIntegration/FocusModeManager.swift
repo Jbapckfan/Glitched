@@ -53,6 +53,16 @@ final class FocusModeManager: DeviceManager {
             }
         }
     }
+
+    /// Manual toggle for when real Focus/DND detection is unavailable.
+    /// The level scene calls this from an in-game toggle button.
+    func manualToggleFocus() {
+        let newState = !(lastFocusState ?? false)
+        lastFocusState = newState
+        DispatchQueue.main.async {
+            InputEventBus.shared.post(.focusModeChanged(isEnabled: newState))
+        }
+    }
 }
 
 import UserNotifications

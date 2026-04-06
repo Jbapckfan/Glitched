@@ -212,6 +212,42 @@ final class FocusModeScene: BaseLevelScene, SKPhysicsContactDelegate {
         calmOverlay?.zPosition = 50
         calmOverlay?.position = CGPoint(x: size.width / 2, y: size.height / 2)
         addChild(calmOverlay!)
+
+        // Manual DND toggle button — fallback when real Focus detection is unreliable
+        createDNDToggleButton()
+    }
+
+    private var dndToggleButton: SKNode?
+
+    private func createDNDToggleButton() {
+        let button = SKNode()
+        button.position = CGPoint(x: 60, y: size.height - 50)
+        button.zPosition = 200
+        button.name = "dndToggle"
+
+        let bg = SKShapeNode(rectOf: CGSize(width: 100, height: 36), cornerRadius: 8)
+        bg.fillColor = fillColor
+        bg.strokeColor = strokeColor
+        bg.lineWidth = lineWidth
+        bg.name = "dndToggle"
+        button.addChild(bg)
+
+        let icon = createMoonIcon(size: 10)
+        icon.position = CGPoint(x: -30, y: 0)
+        icon.name = "dndToggle"
+        button.addChild(icon)
+
+        let label = SKLabelNode(text: "DND")
+        label.fontName = "Menlo-Bold"
+        label.fontSize = 11
+        label.fontColor = strokeColor
+        label.verticalAlignmentMode = .center
+        label.position = CGPoint(x: 10, y: 0)
+        label.name = "dndToggle"
+        button.addChild(label)
+
+        addChild(button)
+        dndToggleButton = button
     }
 
     private func createExitDoor(at position: CGPoint) {
@@ -365,7 +401,16 @@ final class FocusModeScene: BaseLevelScene, SKPhysicsContactDelegate {
 
     override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent?) {
         guard let touch = touches.first else { return }
-        playerController.touchBegan(at: touch.location(in: self))
+        let location = touch.location(in: self)
+
+        // Manual DND toggle tap
+        let tapped = nodes(at: location)
+        if tapped.contains(where: { $0.name == "dndToggle" }) {
+            FocusModeManager.shared.manualToggleFocus()
+            return
+        }
+
+        playerController.touchBegan(at: location)
     }
 
     override func touchesMoved(_ touches: Set<UITouch>, with event: UIEvent?) {

@@ -142,8 +142,10 @@ final class LocaleScene: BaseLevelScene, SKPhysicsContactDelegate {
         death.physicsBody?.categoryBitMask = PhysicsCategory.hazard
         addChild(death)
 
+        #if DEBUG
         // Test button for simulator
         createTestButton()
+        #endif
     }
 
     private func createPlatform(at position: CGPoint, size: CGSize) {
@@ -237,6 +239,7 @@ final class LocaleScene: BaseLevelScene, SKPhysicsContactDelegate {
         addChild(exit)
     }
 
+    #if DEBUG
     private func createTestButton() {
         let button = SKShapeNode(rectOf: CGSize(width: 100, height: 30), cornerRadius: 6)
         button.fillColor = strokeColor
@@ -256,6 +259,7 @@ final class LocaleScene: BaseLevelScene, SKPhysicsContactDelegate {
         label.name = "testLocaleButton"
         addChild(label)
     }
+    #endif
 
     private func showInstructionPanel() {
         let panel = SKNode()
@@ -414,6 +418,7 @@ final class LocaleScene: BaseLevelScene, SKPhysicsContactDelegate {
         guard let touch = touches.first else { return }
         let location = touch.location(in: self)
 
+        #if DEBUG
         // Test button check
         let tapped = nodes(at: location)
         if tapped.contains(where: { $0.name == "testLocaleButton" }) {
@@ -421,6 +426,7 @@ final class LocaleScene: BaseLevelScene, SKPhysicsContactDelegate {
             InputEventBus.shared.post(.localeChanged(language: testLang))
             return
         }
+        #endif
 
         playerController.touchBegan(at: location)
     }

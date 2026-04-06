@@ -385,16 +385,18 @@ final class AppSwitcherScene: BaseLevelScene, SKPhysicsContactDelegate {
 
     override func handleGameInput(_ event: GameInputEvent) {
         switch event {
+        case .appBackgrounded(_):
+            // Primary solve path: backgrounding the app (swipe up / home button)
+            enterPeekMode()
+        case .appForegrounded:
+            exitPeekMode()
         case .appSwitcherPeeked(let duration):
+            // Bonus path: if the system reports an app-switcher peek, treat it the same
             if duration > 0 {
                 enterPeekMode()
             } else {
                 exitPeekMode()
             }
-        case .appBackgrounded(_):
-            enterPeekMode()
-        case .appForegrounded:
-            exitPeekMode()
         default:
             break
         }

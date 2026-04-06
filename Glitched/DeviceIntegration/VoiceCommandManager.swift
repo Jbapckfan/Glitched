@@ -1,5 +1,6 @@
 import UIKit
 import Speech
+import AVFoundation
 import Combine
 
 /// Manages speech recognition for voice command gameplay
@@ -13,21 +14,42 @@ final class VoiceCommandManager: DeviceManager {
     private var recognitionRequest: SFSpeechAudioBufferRecognitionRequest?
     private var recognitionTask: SFSpeechRecognitionTask?
     private let speechRecognizer = SFSpeechRecognizer(locale: Locale(identifier: "en-US"))
+    /// When true, mic permission was denied and the level should show a text-input fallback
+    private(set) var micDenied = false
 
     private init() {}
 
     func activate() {
         guard !isActive else { return }
         isActive = true
+        micDenied = false
 
-        SFSpeechRecognizer.requestAuthorization { [weak self] status in
-            guard status == .authorized else { return }
-            DispatchQueue.main.async {
-                self?.startListening()
+        SFSpeechRecognizer.requestAuthorization { [weak self] speechStatus in
+            guard speechStatus == .authorized else {
+                self?.reportMicDenied()
+                return
+            }
+
+            // Request microphone permission separately — speech auth alone is not enough
+            AVAudioSession.sharedInstance().requestRecordPermission { [weak self] granted in
+                guard granted else {
+                    self?.reportMicDenied()
+                    return
+                }
+                DispatchQueue.main.async {
+                    self?.startListening()
+                }
             }
         }
 
         print("VoiceCommandManager: Activated")
+    }
+
+    private func reportMicDenied() {
+        micDenied = true
+        DispatchQueue.main.async {
+            InputEventBus.shared.post(.voiceCommandMicDenied)
+        }
     }
 
     func deactivate() {

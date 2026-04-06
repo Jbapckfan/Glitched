@@ -46,7 +46,24 @@ final class DarkModeScene: BaseLevelScene, SKPhysicsContactDelegate {
         // and traitCollectionDidChange will fire when the user toggles dark mode
         UserDefaults.standard.set(false, forKey: "forceDarkMode")
 
-        // Get current system appearance
+        // Delay sampling the initial appearance state to give SwiftUI environment
+        // time to propagate the forceDarkMode = false change above
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [weak self] in
+            guard let self = self else { return }
+            if let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene {
+                let currentDark = windowScene.traitCollection.userInterfaceStyle == .dark
+                if currentDark != self.isDarkMode {
+                    self.isDarkMode = currentDark
+                    self.updateColorScheme(animated: false)
+                    self.updateDoorState()
+                    self.updateDualPlatforms()
+                    self.updateHiddenDarkText()
+                    self.updateShadowEnemy()
+                }
+            }
+        }
+
+        // Get current system appearance (initial best-guess; corrected after delay above)
         if let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene {
             isDarkMode = windowScene.traitCollection.userInterfaceStyle == .dark
         }

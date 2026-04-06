@@ -9,7 +9,7 @@ final class NetworkManager: DeviceManager {
     let supportedMechanics: Set<MechanicType> = [.wifi, .airplaneMode]
 
     private var isActive = false
-    private let monitor = NWPathMonitor()
+    private var monitor: NWPathMonitor?
     private let queue = DispatchQueue(label: "com.glitched.networkmonitor")
     private var lastWifiState: Bool?
     private var lastAirplaneState: Bool?
@@ -20,10 +20,13 @@ final class NetworkManager: DeviceManager {
         guard !isActive else { return }
         isActive = true
 
-        monitor.pathUpdateHandler = { [weak self] path in
+        // Create a fresh monitor each time — NWPathMonitor cannot be restarted after cancel()
+        let newMonitor = NWPathMonitor()
+        monitor = newMonitor
+        newMonitor.pathUpdateHandler = { [weak self] path in
             self?.handlePathUpdate(path)
         }
-        monitor.start(queue: queue)
+        newMonitor.start(queue: queue)
 
         print("NetworkManager: Activated")
     }
@@ -31,7 +34,8 @@ final class NetworkManager: DeviceManager {
     func deactivate() {
         guard isActive else { return }
         isActive = false
-        monitor.cancel()
+        monitor?.cancel()
+        monitor = nil
         lastWifiState = nil
         lastAirplaneState = nil
         print("NetworkManager: Deactivated")
