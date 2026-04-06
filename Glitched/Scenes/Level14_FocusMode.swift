@@ -492,6 +492,10 @@ final class FocusModeScene: BaseLevelScene, SKPhysicsContactDelegate {
         view.presentScene(LevelFactory.makeScene(for: nextLevel, size: size), transition: SKTransition.fade(withDuration: 0.5))
     }
 
+    override func hintText() -> String? {
+        return "Enable Do Not Disturb or Focus Mode"
+    }
+
     override func willMove(from view: SKView) {
         super.willMove(from: view)
         DeviceManagerCoordinator.shared.deactivateAll()

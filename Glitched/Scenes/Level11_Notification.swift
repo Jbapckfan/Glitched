@@ -680,6 +680,10 @@ final class NotificationScene: BaseLevelScene, SKPhysicsContactDelegate {
         view.presentScene(nextScene, transition: SKTransition.fade(withDuration: 0.5))
     }
 
+    override func hintText() -> String? {
+        return "Watch for notifications and tap the right one"
+    }
+
     override func willMove(from view: SKView) {
         super.willMove(from: view)
         DeviceManagerCoordinator.shared.deactivateAll()

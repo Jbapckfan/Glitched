@@ -793,6 +793,10 @@ final class StaticScene: BaseLevelScene, SKPhysicsContactDelegate {
         view.presentScene(nextScene, transition: transition)
     }
 
+    override func hintText() -> String? {
+        return "Your voice affects the static — try being quiet"
+    }
+
     // MARK: - Cleanup
 
     override func willMove(from view: SKView) {

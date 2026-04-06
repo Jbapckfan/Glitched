@@ -721,6 +721,7 @@ final class WindBridgeScene: BaseLevelScene, SKPhysicsContactDelegate {
     // MARK: - Game Events
 
     private func handleDeath() {
+        guard GameState.shared.levelState == .playing else { return }
         playerController.cancel()
         bit.playBufferDeath(respawnAt: spawnPoint) { [weak self] in
             self?.bit.setGrounded(true)
@@ -754,6 +755,10 @@ final class WindBridgeScene: BaseLevelScene, SKPhysicsContactDelegate {
         let nextScene = LevelFactory.makeScene(for: nextLevel, size: size)
         let transition = SKTransition.fade(withDuration: 0.5)
         view.presentScene(nextScene, transition: transition)
+    }
+
+    override func hintText() -> String? {
+        return "Blow into the microphone to create wind"
     }
 
     override func willMove(from view: SKView) {

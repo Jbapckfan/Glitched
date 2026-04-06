@@ -483,7 +483,7 @@ final class BitCharacter: SKSpriteNode {
                 let offsetX = CGFloat.random(in: -4...4)
                 let offsetY = CGFloat.random(in: -2...2)
                 body.position = CGPoint(x: offsetX, y: offsetY)
-                head.position = CGPoint(x: 22 + offsetY, y: offsetX * 0.5)
+                head.position = CGPoint(x: 0 + offsetX, y: 22 + offsetY)
 
                 // Randomly hide/show parts for "corruption" effect
                 if Int.random(in: 0...3) == 0 {

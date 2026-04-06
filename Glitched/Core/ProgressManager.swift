@@ -25,20 +25,26 @@ final class ProgressManager {
 
     private let storageKey = "PlayerProgress_v1"
     private let defaults = UserDefaults.standard
+    private var cached: PlayerProgress?
 
     private init() {}
 
     func load() -> PlayerProgress {
+        if let cached = cached { return cached }
         guard let data = defaults.data(forKey: storageKey),
               let progress = try? JSONDecoder().decode(PlayerProgress.self, from: data) else {
-            return PlayerProgress()
+            let fresh = PlayerProgress()
+            cached = fresh
+            return fresh
         }
+        cached = progress
         return progress
     }
 
     func save(_ progress: PlayerProgress) {
         guard let data = try? JSONEncoder().encode(progress) else { return }
         defaults.set(data, forKey: storageKey)
+        cached = progress
     }
 
     func markCompleted(_ levelID: LevelID) {
@@ -58,8 +64,28 @@ final class ProgressManager {
     func isUnlocked(_ levelID: LevelID) -> Bool {
         let progress = load()
         if levelID == .boot { return true }
+        // Any level in a completed world is unlocked
         if levelID.world.rawValue < progress.highestWorld.rawValue { return true }
+        // In the current highest world, unlock up to next level
         if levelID.world == progress.highestWorld && levelID.index <= progress.highestLevelIndex + 1 { return true }
+        // Cross-world boundary: if the previous world is complete, unlock the first level of the next world
+        if let previousWorld = World(rawValue: levelID.world.rawValue - 1) {
+            let previousWorldComplete = progress.highestWorld.rawValue > previousWorld.rawValue ||
+                (progress.highestWorld == previousWorld && progress.completedLevels.contains(where: { $0.world == previousWorld }))
+            if previousWorldComplete && levelID.index == firstLevelIndex(for: levelID.world) {
+                return true
+            }
+        }
         return false
+    }
+
+    private func firstLevelIndex(for world: World) -> Int {
+        switch world {
+        case .world0: return 0
+        case .world1: return 1
+        case .world2: return 11
+        case .world3: return 21
+        case .world4: return 26
+        }
     }
 }

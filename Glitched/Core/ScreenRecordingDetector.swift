@@ -11,21 +11,35 @@ final class ScreenRecordingDetector: ObservableObject {
 
     private var cancellables = Set<AnyCancellable>()
 
+    /// Resolves screen capture state using the modern UIWindowScene API on iOS 16+,
+    /// falling back to the deprecated UIScreen.main for earlier versions.
+    private var isCapturedState: Bool {
+        if #available(iOS 16.0, *) {
+            let scenes = UIApplication.shared.connectedScenes
+            if let windowScene = scenes.first(where: { $0 is UIWindowScene }) as? UIWindowScene {
+                return windowScene.screen.isCaptured
+            }
+        }
+        return UIScreen.main.isCaptured
+    }
+
     private init() {
-        // Check initial state
+        // Check initial state (UIApplication.shared.connectedScenes may not be
+        // ready yet during init, so fall back to UIScreen.main here)
         isRecording = UIScreen.main.isCaptured
 
         // Observe changes via NotificationCenter
         NotificationCenter.default.publisher(for: UIScreen.capturedDidChangeNotification)
             .receive(on: DispatchQueue.main)
             .sink { [weak self] _ in
-                let captured = UIScreen.main.isCaptured
-                self?.isRecording = captured
+                guard let self else { return }
+                let captured = self.isCapturedState
+                self.isRecording = captured
 
                 if captured {
-                    self?.onRecordingStarted()
+                    self.onRecordingStarted()
                 } else {
-                    self?.onRecordingStopped()
+                    self.onRecordingStopped()
                 }
             }
             .store(in: &cancellables)

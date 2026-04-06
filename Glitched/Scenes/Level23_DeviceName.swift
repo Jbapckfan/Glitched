@@ -532,6 +532,10 @@ final class DeviceNameScene: BaseLevelScene, SKPhysicsContactDelegate {
         view.presentScene(LevelFactory.makeScene(for: nextLevel, size: size), transition: SKTransition.fade(withDuration: 0.5))
     }
 
+    override func hintText() -> String? {
+        return "Your device knows your name..."
+    }
+
     override func willMove(from view: SKView) {
         super.willMove(from: view)
         DeviceManagerCoordinator.shared.deactivateAll()

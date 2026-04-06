@@ -25,7 +25,8 @@ targets:
         DEVELOPMENT_TEAM: ""
         CODE_SIGN_STYLE: Automatic
         TARGETED_DEVICE_FAMILY: "1"
-        SWIFT_VERSION: "5.0"
+        SWIFT_VERSION: "5.9"
+        CODE_SIGN_ENTITLEMENTS: Glitched/Glitched.entitlements
         ENABLE_PREVIEWS: YES
     info:
       path: Glitched/Info.plist
@@ -43,3 +44,5 @@ targets:
         UIRequiresFullScreen: true
         NSMicrophoneUsageDescription: "Blow into the microphone to create wind in the game."
         NSSpeechRecognitionUsageDescription: "Speak words to solve puzzles."
+        NSMotionUsageDescription: "Shake your device to rewind time in the game."
+        NSFaceIDUsageDescription: "Authenticate to unlock the security vault puzzle."

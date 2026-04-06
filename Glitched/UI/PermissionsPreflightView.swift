@@ -15,7 +15,7 @@ struct PermissionsPreflightView: View {
         ("mic.fill", "Microphone", "Some puzzles use your voice or breath to move objects."),
         ("faceid", "Face ID", "One level requires biometric authentication to prove identity."),
         ("bell.fill", "Notifications", "A puzzle sends you real notifications to tap."),
-        ("camera.fill", "Camera (Screenshots)", "We detect screenshots as a game mechanic."),
+        ("eye.fill", "Screenshots", "We detect when you take screenshots as a game mechanic (no camera needed)."),
         ("location.fill", "Motion Sensors", "Shake and tilt your device to interact with levels."),
     ]
 

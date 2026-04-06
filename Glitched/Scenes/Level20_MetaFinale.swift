@@ -85,8 +85,8 @@ final class MetaFinaleScene: BaseLevelScene, SKPhysicsContactDelegate {
         physicsWorld.gravity = CGVector(dx: 0, dy: -20)
         physicsWorld.contactDelegate = self
 
-        AccessibilityManager.shared.registerMechanics([.appBackgrounding])
-        DeviceManagerCoordinator.shared.configure(for: [.appBackgrounding])
+        AccessibilityManager.shared.registerMechanics([.appDeletion])
+        DeviceManagerCoordinator.shared.configure(for: [.appDeletion])
 
         // Start with ominous intro
         runOminousIntro()
@@ -744,6 +744,10 @@ final class MetaFinaleScene: BaseLevelScene, SKPhysicsContactDelegate {
     override func onLevelSucceeded() {
         ProgressManager.shared.markCompleted(levelID)
         DeviceManagerCoordinator.shared.deactivateAll()
+    }
+
+    override func hintText() -> String? {
+        return "Some things must be destroyed to be rebuilt..."
     }
 
     override func willMove(from view: SKView) {

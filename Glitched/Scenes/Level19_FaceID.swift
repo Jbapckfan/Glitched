@@ -37,8 +37,8 @@ final class FaceIDScene: BaseLevelScene, SKPhysicsContactDelegate {
         physicsWorld.contactDelegate = self
 
         // BUG FIX: Use real Face ID authentication instead of proximity sensor simulation
-        AccessibilityManager.shared.registerMechanics([.faceID, .proximity])
-        DeviceManagerCoordinator.shared.configure(for: [.faceID, .proximity])
+        AccessibilityManager.shared.registerMechanics([.faceID])
+        DeviceManagerCoordinator.shared.configure(for: [.faceID])
 
         setupBackground()
         setupLevelTitle()
@@ -602,6 +602,10 @@ final class FaceIDScene: BaseLevelScene, SKPhysicsContactDelegate {
         GameState.shared.load(level: nextLevel)
         guard let view = self.view else { return }
         view.presentScene(LevelFactory.makeScene(for: nextLevel, size: size), transition: SKTransition.fade(withDuration: 0.5))
+    }
+
+    override func hintText() -> String? {
+        return "Use Face ID to authenticate"
     }
 
     override func willMove(from view: SKView) {

@@ -581,4 +581,8 @@ final class HeaderScene: BaseLevelScene, SKPhysicsContactDelegate {
         let transition = SKTransition.fade(withDuration: 0.5)
         view.presentScene(nextScene, transition: transition)
     }
+
+    override func hintText() -> String? {
+        return "Try dragging the level title downward..."
+    }
 }

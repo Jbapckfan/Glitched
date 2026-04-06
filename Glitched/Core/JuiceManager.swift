@@ -25,6 +25,8 @@ final class JuiceManager {
         guard let scene = currentScene, let camera = scene.camera, !isShaking else { return }
         isShaking = true
 
+        let startPosition = camera.position  // Capture current position, not original
+
         let shakeCount = Int(duration / 0.02)
         var actions: [SKAction] = []
 
@@ -37,12 +39,12 @@ final class JuiceManager {
             let offsetY = CGFloat.random(in: -magnitude...magnitude)
 
             actions.append(.move(to: CGPoint(
-                x: originalCameraPosition.x + offsetX,
-                y: originalCameraPosition.y + offsetY
+                x: startPosition.x + offsetX,
+                y: startPosition.y + offsetY
             ), duration: 0.02))
         }
 
-        actions.append(.move(to: originalCameraPosition, duration: 0.05))
+        actions.append(.move(to: startPosition, duration: 0.05))
         actions.append(.run { [weak self] in self?.isShaking = false })
 
         camera.run(.sequence(actions))
@@ -90,18 +92,25 @@ final class JuiceManager {
         scene.physicsWorld.speed = factor
         scene.speed = factor
 
-        DispatchQueue.main.asyncAfter(deadline: .now() + duration) { [weak scene] in
-            scene?.physicsWorld.speed = 1.0
-            scene?.speed = 1.0
-            then?()
-        }
+        let restore = SKAction.sequence([
+            SKAction.wait(forDuration: duration),
+            SKAction.run { [weak scene] in
+                scene?.physicsWorld.speed = 1.0
+                scene?.speed = 1.0
+                then?()
+            }
+        ])
+        scene.run(restore, withKey: "slowMotion")
     }
 
+    /// Note: freezeFrame must use DispatchQueue.main.asyncAfter because
+    /// SKActions don't run while the scene is paused.
     func freezeFrame(duration: TimeInterval = 0.1, then: (() -> Void)? = nil) {
         guard let scene = currentScene else { return }
 
         scene.isPaused = true
 
+        // Use a RunLoop timer since SKActions don't run when paused
         DispatchQueue.main.asyncAfter(deadline: .now() + duration) { [weak scene] in
             scene?.isPaused = false
             then?()
@@ -294,9 +303,12 @@ final class JuiceManager {
         }
 
         // Small flash at spawn point when complete
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) { [weak self] in
-            self?.flash(color: .cyan, duration: 0.1)
-        }
+        scene.run(SKAction.sequence([
+            SKAction.wait(forDuration: 0.35),
+            SKAction.run { [weak self] in
+                self?.flash(color: .cyan, duration: 0.1)
+            }
+        ]))
     }
 
     // MARK: - Level Transitions

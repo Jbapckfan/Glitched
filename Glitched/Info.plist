@@ -30,6 +30,8 @@
 	<dict/>
 	<key>UIRequiresFullScreen</key>
 	<true/>
+	<key>NSMotionUsageDescription</key>
+	<string>Shake your device to rewind time in the game.</string>
 	<key>UISupportedInterfaceOrientations</key>
 	<array>
 		<string>UIInterfaceOrientationPortrait</string>

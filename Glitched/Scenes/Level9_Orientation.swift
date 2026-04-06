@@ -899,6 +899,10 @@ final class OrientationScene: BaseLevelScene, SKPhysicsContactDelegate {
         view.presentScene(nextScene, transition: transition)
     }
 
+    override func hintText() -> String? {
+        return "Rotate your device to landscape"
+    }
+
     // MARK: - Cleanup
 
     override func willMove(from view: SKView) {

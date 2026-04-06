@@ -33,8 +33,8 @@ final class AppSwitcherScene: BaseLevelScene, SKPhysicsContactDelegate {
         physicsWorld.gravity = CGVector(dx: 0, dy: -20)
         physicsWorld.contactDelegate = self
 
-        AccessibilityManager.shared.registerMechanics([.appBackgrounding])
-        DeviceManagerCoordinator.shared.configure(for: [.appBackgrounding])
+        AccessibilityManager.shared.registerMechanics([.appSwitcher])
+        DeviceManagerCoordinator.shared.configure(for: [.appSwitcher])
 
         setupBackground()
         setupLevelTitle()
@@ -475,6 +475,10 @@ final class AppSwitcherScene: BaseLevelScene, SKPhysicsContactDelegate {
         GameState.shared.load(level: nextLevel)
         guard let view = self.view else { return }
         view.presentScene(LevelFactory.makeScene(for: nextLevel, size: size), transition: SKTransition.fade(withDuration: 0.5))
+    }
+
+    override func hintText() -> String? {
+        return "Swipe up slightly to peek at the App Switcher"
     }
 
     override func willMove(from view: SKView) {

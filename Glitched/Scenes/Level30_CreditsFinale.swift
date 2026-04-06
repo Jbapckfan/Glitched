@@ -594,6 +594,10 @@ final class CreditsFinaleScene: BaseLevelScene, SKPhysicsContactDelegate {
         DeviceManagerCoordinator.shared.deactivateAll()
     }
 
+    override func hintText() -> String? {
+        return "Walk across the credits — watch for bugs!"
+    }
+
     override func willMove(from view: SKView) {
         super.willMove(from: view)
         DeviceManagerCoordinator.shared.deactivateAll()

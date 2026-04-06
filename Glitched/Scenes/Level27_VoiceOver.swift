@@ -476,6 +476,10 @@ final class VoiceOverScene: BaseLevelScene, SKPhysicsContactDelegate {
         view.presentScene(LevelFactory.makeScene(for: nextLevel, size: size), transition: SKTransition.fade(withDuration: 0.5))
     }
 
+    override func hintText() -> String? {
+        return "Enable VoiceOver in Settings > Accessibility"
+    }
+
     override func willMove(from view: SKView) {
         super.willMove(from: view)
         DeviceManagerCoordinator.shared.deactivateAll()

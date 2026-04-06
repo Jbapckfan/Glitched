@@ -654,7 +654,9 @@ final class ChargingScene: BaseLevelScene, SKPhysicsContactDelegate {
         func pulse(count: Int) {
             guard count > 0, isPlugAnimating else { return }
             generator.impactOccurred()
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { [weak self] in
+                guard let self = self else { return }
+                _ = self  // prevent unused warning
                 pulse(count: count - 1)
             }
         }
@@ -832,6 +834,10 @@ final class ChargingScene: BaseLevelScene, SKPhysicsContactDelegate {
         }
 
         return SKAction.sequence(actions)
+    }
+
+    override func hintText() -> String? {
+        return "Connect your device to a charger"
     }
 
     // MARK: - Cleanup

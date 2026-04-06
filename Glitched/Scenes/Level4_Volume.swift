@@ -996,6 +996,10 @@ final class VolumeScene: BaseLevelScene, SKPhysicsContactDelegate {
         view.presentScene(nextScene, transition: transition)
     }
 
+    override func hintText() -> String? {
+        return "Use your device's volume buttons"
+    }
+
     // MARK: - Cleanup
 
     override func willMove(from view: SKView) {

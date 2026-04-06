@@ -19,6 +19,7 @@ enum UIState: Equatable {
     case dead
 }
 
+@MainActor
 final class GameState: ObservableObject {
     static let shared = GameState()
 

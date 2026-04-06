@@ -386,6 +386,10 @@ final class LowPowerScene: BaseLevelScene, SKPhysicsContactDelegate {
         view.presentScene(LevelFactory.makeScene(for: nextLevel, size: size), transition: SKTransition.fade(withDuration: 0.5))
     }
 
+    override func hintText() -> String? {
+        return "Turn on Low Power Mode in Settings"
+    }
+
     override func willMove(from view: SKView) {
         super.willMove(from: view)
         DeviceManagerCoordinator.shared.deactivateAll()

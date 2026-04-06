@@ -15,8 +15,8 @@ extension GameState: GameStateProviding {}
 struct GameRootView: View {
     // FIX #1: Accept injected dependencies via @EnvironmentObject.
     // Falls back to shared singletons when not injected (production path).
-    @StateObject private var gameState = GameState.shared
-    @StateObject private var accessibility = AccessibilityManager.shared
+    @ObservedObject private var gameState = GameState.shared
+    @ObservedObject private var accessibility = AccessibilityManager.shared
     @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
@@ -84,7 +84,7 @@ struct SpriteKitContainer: UIViewRepresentable {
         #endif
 
         // Use a default size initially; will be updated when view lays out
-        let initialSize = UIScreen.main.bounds.size
+        let initialSize = view.bounds.size.width > 0 ? view.bounds.size : CGSize(width: 393, height: 852)
         let scene = LevelFactory.makeScene(for: levelID, size: initialSize)
         view.presentScene(scene)
 
@@ -108,7 +108,7 @@ struct SpriteKitContainer: UIViewRepresentable {
 // FIX #4: Full accessibility fallbacks for ALL mechanics, not just mic and shake.
 // Each mechanic that requires hardware gets a corresponding on-screen button.
 struct AccessibilityOverlay: View {
-    @StateObject private var accessibility = AccessibilityManager.shared
+    @ObservedObject private var accessibility = AccessibilityManager.shared
 
     var body: some View {
         VStack {

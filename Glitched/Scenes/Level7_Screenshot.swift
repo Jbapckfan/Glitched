@@ -895,6 +895,10 @@ final class ScreenshotScene: BaseLevelScene, SKPhysicsContactDelegate {
         view.presentScene(nextScene, transition: transition)
     }
 
+    override func hintText() -> String? {
+        return "Take a screenshot to freeze the bridge"
+    }
+
     // MARK: - Cleanup
 
     override func willMove(from view: SKView) {

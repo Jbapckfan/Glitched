@@ -10,6 +10,9 @@ final class AudioManager {
     private var playerNodes: [String: AVAudioPlayerNode] = [:]
     private var mixerNode: AVAudioMixerNode?
 
+    private var playerPool: [AVAudioPlayerNode] = []
+    private let maxPoolSize = 8
+
     private var isMuted = false
     private var masterVolume: Float = 0.7
 
@@ -36,6 +39,31 @@ final class AudioManager {
             try audioEngine?.start()
         } catch {
             print("Audio engine error: \(error)")
+        }
+
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(handleAudioInterruption),
+            name: AVAudioSession.interruptionNotification,
+            object: AVAudioSession.sharedInstance()
+        )
+    }
+
+    @objc private func handleAudioInterruption(_ notification: Notification) {
+        guard let userInfo = notification.userInfo,
+              let typeValue = userInfo[AVAudioSessionInterruptionTypeKey] as? UInt,
+              let type = AVAudioSession.InterruptionType(rawValue: typeValue) else { return }
+
+        switch type {
+        case .began:
+            audioEngine?.pause()
+        case .ended:
+            let options = userInfo[AVAudioSessionInterruptionOptionKey] as? UInt ?? 0
+            if AVAudioSession.InterruptionOptions(rawValue: options).contains(.shouldResume) {
+                try? audioEngine?.start()
+            }
+        @unknown default:
+            break
         }
     }
 
@@ -83,12 +111,13 @@ final class AudioManager {
         buffer.frameLength = frameCount
         let channelData = buffer.floatChannelData?[0]
 
+        var phase: Float = 0
         for frame in 0..<Int(frameCount) {
             let progress = Float(frame) / Float(frameCount)
             let frequency: Float = 300 + progress * 400 // Rising pitch
-            let phase = Float(frame) / sampleRate
             let envelope = 1.0 - progress // Fade out
-            let sample = sin(2.0 * .pi * frequency * phase) * 0.25 * envelope * masterVolume
+            let sample = sin(phase) * 0.25 * envelope * masterVolume
+            phase += (2.0 * .pi * frequency / sampleRate)
             channelData?[frame] = sample
         }
 
@@ -140,15 +169,19 @@ final class AudioManager {
         buffer.frameLength = frameCount
         let channelData = buffer.floatChannelData?[0]
 
+        var phase: Float = 0
+        var harmonicPhase: Float = 0
         for frame in 0..<Int(frameCount) {
             let progress = Float(frame) / Float(frameCount)
             let frequency: Float = 400 * (1.0 - progress * 0.7) // Descending
-            let phase = Float(frame) / sampleRate
 
             // Add some harmonics and noise for "glitchy" feel
-            var sample = sin(2.0 * .pi * frequency * phase) * 0.3
-            sample += sin(2.0 * .pi * frequency * 1.5 * phase) * 0.15
+            var sample = sin(phase) * 0.3
+            sample += sin(harmonicPhase) * 0.15
             sample += Float.random(in: -0.1...0.1) * (1.0 - progress)
+
+            phase += (2.0 * .pi * frequency / sampleRate)
+            harmonicPhase += (2.0 * .pi * frequency * 1.5 / sampleRate)
 
             let envelope = min(1.0, (1.0 - progress) * 2.0)
             channelData?[frame] = sample * envelope * masterVolume
@@ -195,17 +228,21 @@ final class AudioManager {
         buffer.frameLength = frameCount
         let channelData = buffer.floatChannelData?[0]
 
+        var phase: Float = 0
+        var lfoPhaseAccum: Float = 0
         for frame in 0..<Int(frameCount) {
             let progress = Float(frame) / Float(frameCount)
-            let phase = Float(frame) / sampleRate
 
             // Two-tone alternating
             let freq1: Float = 200
             let freq2: Float = 150
-            let lfoPhase = sin(2.0 * .pi * 8.0 * phase)
-            let frequency = lfoPhase > 0 ? freq1 : freq2
+            let lfoValue = sin(lfoPhaseAccum)
+            lfoPhaseAccum += (2.0 * .pi * 8.0 / sampleRate)
+            let frequency = lfoValue > 0 ? freq1 : freq2
 
-            let sample = sin(2.0 * .pi * frequency * phase) * 0.3
+            let sample = sin(phase) * 0.3
+            phase += (2.0 * .pi * frequency / sampleRate)
+
             let envelope = sin(.pi * progress) // Fade in and out
             channelData?[frame] = sample * envelope * masterVolume
         }
@@ -229,14 +266,26 @@ final class AudioManager {
         buffer.frameLength = frameCount
         let channelData = buffer.floatChannelData?[0]
 
+        var phase: Float = 0
+        var currentFrequency: Float = Float.random(in: 200...2000)
+        var isSineBurst = Int.random(in: 0..<10) < 3
+        let burstLength = 64  // Hold each random frequency for ~64 samples
+
         for frame in 0..<Int(frameCount) {
+            // Pick a new frequency/mode every burstLength samples
+            if frame % burstLength == 0 {
+                currentFrequency = Float.random(in: 200...2000)
+                isSineBurst = Int.random(in: 0..<10) < 3
+                phase = 0  // Reset phase at burst boundary to avoid clicks
+            }
+
             // Digital noise with occasional sine bursts
             var sample: Float = 0
 
-            if Int.random(in: 0..<10) < 3 {
-                // Sine burst
-                let phase = Float(frame) / sampleRate
-                sample = sin(2.0 * .pi * Float.random(in: 200...2000) * phase) * 0.4
+            if isSineBurst {
+                // Sine burst - use accumulated phase for clean tone within burst
+                sample = sin(phase) * 0.4
+                phase += (2.0 * .pi * currentFrequency / sampleRate)
             } else {
                 // Noise
                 sample = Float.random(in: -0.3...0.3)
@@ -294,16 +343,24 @@ final class AudioManager {
     private func playBuffer(_ buffer: AVAudioPCMBuffer) {
         guard let engine = audioEngine else { return }
 
-        let playerNode = AVAudioPlayerNode()
-        engine.attach(playerNode)
-        engine.connect(playerNode, to: engine.mainMixerNode, format: buffer.format)
-
-        playerNode.scheduleBuffer(buffer, at: nil, options: .interrupts) {
-            DispatchQueue.main.async {
-                engine.detach(playerNode)
-            }
+        // Try to reuse an idle node from the pool
+        let playerNode: AVAudioPlayerNode
+        if let idleNode = playerPool.first(where: { !$0.isPlaying }) {
+            playerNode = idleNode
+        } else if playerPool.count < maxPoolSize {
+            // Create a new node and add it to the pool
+            let newNode = AVAudioPlayerNode()
+            engine.attach(newNode)
+            engine.connect(newNode, to: engine.mainMixerNode, format: buffer.format)
+            playerPool.append(newNode)
+            playerNode = newNode
+        } else {
+            // Pool is full and all playing -- steal the first node
+            playerNode = playerPool[0]
+            playerNode.stop()
         }
 
+        playerNode.scheduleBuffer(buffer, at: nil, options: .interrupts)
         playerNode.play()
     }
 

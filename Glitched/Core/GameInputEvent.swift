@@ -49,6 +49,7 @@ enum GameInputEvent {
     case deviceNameRead(name: String)
     case storageCacheCleared
     case voiceCommandRecognized(command: String)
+    case voiceCommandMicDenied
 
     // World 4: Reality Break inputs
     case localeChanged(language: String)

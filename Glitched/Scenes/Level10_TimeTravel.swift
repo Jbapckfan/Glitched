@@ -1081,13 +1081,17 @@ final class TimeTravelScene: BaseLevelScene, SKPhysicsContactDelegate {
         GameState.shared.setState(.transitioning)
 
         // World 1 complete - go to World 2
-        let nextLevel = LevelID(world: .world2, index: 1)
+        let nextLevel = LevelID(world: .world2, index: 11)
         GameState.shared.load(level: nextLevel)
 
         guard let view = self.view else { return }
         let nextScene = LevelFactory.makeScene(for: nextLevel, size: size)
         let transition = SKTransition.fade(withDuration: 0.5)
         view.presentScene(nextScene, transition: transition)
+    }
+
+    override func hintText() -> String? {
+        return "Leave the app for a while — time passes"
     }
 
     // MARK: - Cleanup

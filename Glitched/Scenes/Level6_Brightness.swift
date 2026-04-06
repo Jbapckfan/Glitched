@@ -1176,6 +1176,10 @@ final class BrightnessScene: BaseLevelScene, SKPhysicsContactDelegate {
         view.presentScene(nextScene, transition: transition)
     }
 
+    override func hintText() -> String? {
+        return "Adjust your screen brightness"
+    }
+
     // MARK: - Cleanup
 
     override func willMove(from view: SKView) {

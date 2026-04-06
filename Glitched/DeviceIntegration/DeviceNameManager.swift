@@ -15,7 +15,9 @@ final class DeviceNameManager: DeviceManager {
         guard !isActive else { return }
         isActive = true
 
-        // Read device name (e.g. "James's iPhone")
+        // Note: On iOS 16+, UIDevice.current.name returns the model name (e.g., "iPhone")
+        // rather than the user-assigned name, unless the app has Local Network permission.
+        // The level design should account for this by treating generic names as valid gameplay.
         let deviceName = UIDevice.current.name
         // Extract owner name from device name pattern "Name's iPhone/iPad"
         let ownerName = extractOwnerName(from: deviceName)
@@ -38,9 +40,11 @@ final class DeviceNameManager: DeviceManager {
         if let range = deviceName.range(of: "'s ", options: .caseInsensitive) {
             return String(deviceName[deviceName.startIndex..<range.lowerBound])
         }
-        // Fallback: "iPhone" or custom name
+        // Fallback: generic model name (common on iOS 16+ without Local Network permission)
+        // or any custom name that doesn't match the possessive pattern.
+        // Use the full device name as the displayed name rather than an empty string.
         if deviceName.lowercased().contains("iphone") || deviceName.lowercased().contains("ipad") {
-            return "PLAYER"
+            return deviceName
         }
         return deviceName
     }

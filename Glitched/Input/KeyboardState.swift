@@ -12,6 +12,8 @@ final class KeyboardState {
 
     private var previousJumpPressed = false
 
+    // Note: Observers are intentionally never removed — KeyboardState is a singleton
+    // that lives for the app's lifetime.
     private init() {
         setupKeyboardObservers()
     }
