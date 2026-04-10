@@ -368,11 +368,11 @@ final class WindBridgeScene: BaseLevelScene, SKPhysicsContactDelegate {
                 segment.alpha = index < visibleSegments ? 1.0 : 0.0
             }
 
-            // Create physics body for the visible portion
-            let physicsNode = SKNode()
-            physicsNode.position = CGPoint(x: -bridgeCurrentWidth / 2, y: -8)
+            // Create physics body for the visible portion.
+            // center.y = -8 aligns the physics top with the platform top (y=100)
+            // so the character walks smoothly from platform onto bridge.
             bridge.physicsBody = SKPhysicsBody(rectangleOf: CGSize(width: bridgeCurrentWidth, height: 16),
-                                                center: CGPoint(x: -bridgeCurrentWidth / 2, y: 0))
+                                                center: CGPoint(x: -bridgeCurrentWidth / 2, y: -8))
             bridge.physicsBody?.isDynamic = false
             bridge.physicsBody?.categoryBitMask = PhysicsCategory.ground
         } else {
@@ -665,16 +665,17 @@ final class WindBridgeScene: BaseLevelScene, SKPhysicsContactDelegate {
         let diff = bridgeTargetWidth - bridgeCurrentWidth
         bridgeCurrentWidth += diff * CGFloat(deltaTime) * lerpSpeed
 
-        // Bridge retracts VERY slowly when no sound - this is an early level
+        // Bridge retracts VERY slowly when no sound - this is an early level.
+        // Give the player plenty of time to cross after blowing.
         if lastMicLevel < 0.1 {
-            bridgeCurrentWidth = max(0, bridgeCurrentWidth - CGFloat(deltaTime) * 15)  // Very slow decay
+            bridgeCurrentWidth = max(0, bridgeCurrentWidth - CGFloat(deltaTime) * 5)
         }
 
         bridgeCurrentWidth = max(0, min(bridgeCurrentWidth, bridgeFullWidth))
         updateBridgePhysics()
 
         // Very slow decay of target so bridge stays extended much longer
-        bridgeTargetWidth *= 0.98
+        bridgeTargetWidth *= 0.995
     }
 
     // MARK: - Touch Handling
