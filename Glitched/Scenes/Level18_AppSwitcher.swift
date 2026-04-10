@@ -30,7 +30,7 @@ final class AppSwitcherScene: BaseLevelScene, SKPhysicsContactDelegate {
         levelID = LevelID(world: .world2, index: 18)
         backgroundColor = fillColor
 
-        physicsWorld.gravity = CGVector(dx: 0, dy: -20)
+        physicsWorld.gravity = CGVector(dx: 0, dy: -14)
         physicsWorld.contactDelegate = self
 
         AccessibilityManager.shared.registerMechanics([.appSwitcher])
@@ -467,14 +467,6 @@ final class AppSwitcherScene: BaseLevelScene, SKPhysicsContactDelegate {
     override func onLevelSucceeded() {
         ProgressManager.shared.markCompleted(levelID)
         DeviceManagerCoordinator.shared.deactivateAll()
-    }
-
-    private func transitionToNextLevel() {
-        GameState.shared.setState(.transitioning)
-        let nextLevel = LevelID(world: .world2, index: 19)
-        GameState.shared.load(level: nextLevel)
-        guard let view = self.view else { return }
-        view.presentScene(LevelFactory.makeScene(for: nextLevel, size: size), transition: SKTransition.fade(withDuration: 0.5))
     }
 
     override func hintText() -> String? {

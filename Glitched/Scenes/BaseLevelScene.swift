@@ -32,13 +32,28 @@ class BaseLevelScene: SKScene {
     override func didMove(to view: SKView) {
         super.didMove(to: view)
 
+        // Always set up camera and events immediately so subclass
+        // overrides of didMove can reference gameCamera safely.
+        if gameCamera == nil {
+            backgroundColor = .white
+            setupCamera()
+            setupVisualEffects()
+            subscribeToEvents()
+            JuiceManager.shared.setScene(self)
+        }
+
+        // With .resizeFill on a zero-bounds view, size may be zero here.
+        // Defer level-specific configuration until we have valid dimensions.
+        performConfigurationIfReady()
+    }
+
+    /// Run the level-specific setup once we have a valid size.
+    /// Called from didMove or didChangeSize, whichever provides valid bounds first.
+    private func performConfigurationIfReady() {
         guard !hasConfigured else { return }
+        guard size.width > 1, size.height > 1 else { return }
         hasConfigured = true
 
-        backgroundColor = VisualConstants.Colors.background
-        setupCamera()
-        setupVisualEffects()
-        subscribeToEvents()
         configureScene()
         if atmosphereNode == nil {
             setupBackgroundAtmosphereForCurrentWorld()
@@ -48,9 +63,6 @@ class BaseLevelScene: SKScene {
         } else {
             AudioManager.shared.playAmbientBed(for: levelID.world)
         }
-
-        // Register with juice manager
-        JuiceManager.shared.setScene(self)
 
         GameState.shared.setState(.intro)
         runIntroSequence()
@@ -66,7 +78,8 @@ class BaseLevelScene: SKScene {
     }
 
     private func setupVisualEffects() {
-        addScanlines()
+        // scanline shader can sometimes cause issues during scene initialization
+        // addScanlines()
     }
 
     private func addScanlines() {
@@ -151,6 +164,8 @@ class BaseLevelScene: SKScene {
 
     override func didChangeSize(_ oldSize: CGSize) {
         super.didChangeSize(oldSize)
+        // If didMove was skipped due to zero-bounds view, configure now
+        performConfigurationIfReady()
         // Update camera to new center when scene size changes
         gameCamera?.position = CGPoint(x: size.width / 2, y: size.height / 2)
     }
@@ -205,6 +220,20 @@ class BaseLevelScene: SKScene {
         // Epic victory effects
         playVictoryEffects()
         onLevelSucceeded()
+    }
+
+    /// Default transition to the next level in the campaign.
+    /// Updates GameState, triggering the SwiftUI container to present the new scene.
+    func transitionToNextLevel() {
+        guard GameState.shared.levelState != .transitioning else { return }
+        GameState.shared.setState(.transitioning)
+
+        if let nextLevel = levelID.next {
+            GameState.shared.load(level: nextLevel)
+        } else {
+            // End of campaign - go back to map or show credits
+            GameState.shared.showWorldMap()
+        }
     }
 
     func failLevel() {
@@ -500,8 +529,8 @@ class BaseLevelScene: SKScene {
     func configureMechanicsWithMicrophonePermissionExplanation(_ mechanics: Set<MechanicType>, message: String) {
         configureMechanics(
             mechanics,
-            explanationKey: "permissionExplained.microphone",
-            explanationText: message
+            explanationKey: "perm.env",
+            explanationText: "LEVEL REQUIRES ENVIRONMENTAL ACCESS"
         ) { completion in
             completion(AVAudioSession.sharedInstance().recordPermission != .granted)
         }
@@ -510,8 +539,8 @@ class BaseLevelScene: SKScene {
     func configureMechanicsWithNotificationPermissionExplanation(_ mechanics: Set<MechanicType>, message: String) {
         configureMechanics(
             mechanics,
-            explanationKey: "permissionExplained.notifications",
-            explanationText: message
+            explanationKey: "perm.intake",
+            explanationText: "LEVEL REQUIRES EXTERNAL SIGNAL INTAKE"
         ) { completion in
             UNUserNotificationCenter.current().getNotificationSettings { settings in
                 completion(settings.authorizationStatus != .authorized && settings.authorizationStatus != .provisional)
@@ -522,8 +551,8 @@ class BaseLevelScene: SKScene {
     func configureMechanicsWithFaceIDPermissionExplanation(_ mechanics: Set<MechanicType>, message: String) {
         configureMechanics(
             mechanics,
-            explanationKey: "permissionExplained.faceid",
-            explanationText: message
+            explanationKey: "perm.id",
+            explanationText: "LEVEL REQUIRES OPERATOR IDENTITY VERIFICATION"
         ) { completion in
             completion(true)
         }
@@ -532,8 +561,8 @@ class BaseLevelScene: SKScene {
     func configureMechanicsWithVoiceCommandPermissionExplanation(_ mechanics: Set<MechanicType>, message: String) {
         configureMechanics(
             mechanics,
-            explanationKey: "permissionExplained.voicecommand",
-            explanationText: message
+            explanationKey: "perm.speech",
+            explanationText: "LEVEL REQUIRES VERBAL COMMAND PROCESSING"
         ) { completion in
             let speechStatus = SFSpeechRecognizer.authorizationStatus()
             let micStatus = AVAudioSession.sharedInstance().recordPermission

@@ -26,7 +26,7 @@ final class AirplaneModeScene: BaseLevelScene, SKPhysicsContactDelegate {
         levelID = LevelID(world: .world2, index: 17)
         backgroundColor = fillColor
 
-        physicsWorld.gravity = CGVector(dx: 0, dy: -20)
+        physicsWorld.gravity = CGVector(dx: 0, dy: -14)
         physicsWorld.contactDelegate = self
 
         AccessibilityManager.shared.registerMechanics([.airplaneMode])
@@ -375,6 +375,7 @@ final class AirplaneModeScene: BaseLevelScene, SKPhysicsContactDelegate {
         if isAirplaneMode {
             turbulenceTime += deltaTime
             for (index, platform) in flyingPlatforms.enumerated() {
+                guard index < flyingPositions.count else { break }
                 let freq = 3.0 + Double(index) * 0.7
                 let ampX: CGFloat = 1.5
                 let ampY: CGFloat = 2.0
@@ -419,14 +420,6 @@ final class AirplaneModeScene: BaseLevelScene, SKPhysicsContactDelegate {
     override func onLevelSucceeded() {
         ProgressManager.shared.markCompleted(levelID)
         DeviceManagerCoordinator.shared.deactivateAll()
-    }
-
-    private func transitionToNextLevel() {
-        GameState.shared.setState(.transitioning)
-        let nextLevel = LevelID(world: .world2, index: 18)
-        GameState.shared.load(level: nextLevel)
-        guard let view = self.view else { return }
-        view.presentScene(LevelFactory.makeScene(for: nextLevel, size: size), transition: SKTransition.fade(withDuration: 0.5))
     }
 
     override func hintText() -> String? {

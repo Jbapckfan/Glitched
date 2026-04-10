@@ -28,7 +28,7 @@ final class ClipboardScene: BaseLevelScene, SKPhysicsContactDelegate {
         levelID = LevelID(world: .world2, index: 12)
         backgroundColor = fillColor
 
-        physicsWorld.gravity = CGVector(dx: 0, dy: -20)
+        physicsWorld.gravity = CGVector(dx: 0, dy: -14)
         physicsWorld.contactDelegate = self
 
         AccessibilityManager.shared.registerMechanics([.clipboard])
@@ -212,7 +212,7 @@ final class ClipboardScene: BaseLevelScene, SKPhysicsContactDelegate {
         bg.lineWidth = lineWidth
         panel.addChild(bg)
 
-        let text = SKLabelNode(text: "COPY PASSWORD & RETURN")
+        let text = SKLabelNode(text: "EXTRACT & RETURN")
         text.fontName = "Menlo-Bold"
         text.fontSize = 12
         text.fontColor = strokeColor
@@ -273,7 +273,7 @@ final class ClipboardScene: BaseLevelScene, SKPhysicsContactDelegate {
     }
 
     private func showClipboardConsumedText() {
-        let label = SKLabelNode(text: "PASSWORD CONSUMED. YOUR CLIPBOARD IS MINE.")
+        let label = SKLabelNode(text: "BUFFER CONSUMED. DATA IS MINE.")
         label.fontName = "Menlo-Bold"
         label.fontSize = 10
         label.fontColor = strokeColor
@@ -359,16 +359,8 @@ final class ClipboardScene: BaseLevelScene, SKPhysicsContactDelegate {
         DeviceManagerCoordinator.shared.deactivateAll()
     }
 
-    private func transitionToNextLevel() {
-        GameState.shared.setState(.transitioning)
-        let nextLevel = LevelID(world: .world2, index: 13)
-        GameState.shared.load(level: nextLevel)
-        guard let view = self.view else { return }
-        view.presentScene(LevelFactory.makeScene(for: nextLevel, size: size), transition: SKTransition.fade(withDuration: 0.5))
-    }
-
     override func hintText() -> String? {
-        return "Copy the password and paste it back"
+        return "Extract external data"
     }
 
     override func willMove(from view: SKView) {

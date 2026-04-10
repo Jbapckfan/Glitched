@@ -40,8 +40,8 @@ final class BootSequenceScene: BaseLevelScene {
 
     override func didMove(to view: SKView) {
         super.didMove(to: view)
-        // Override camera to origin for this menu scene (not a platformer)
-        gameCamera.position = CGPoint.zero
+        // Keep camera centered for this scene
+        gameCamera.position = CGPoint(x: size.width / 2, y: size.height / 2)
     }
 
     // MARK: - Configuration
@@ -62,9 +62,8 @@ final class BootSequenceScene: BaseLevelScene {
 
     private func setupBootSequence() {
         bootTextContainer = SKNode()
-        // Position at top-left using fixed safe coordinates (camera will be at origin)
-        // These values work well for most screen sizes
-        bootTextContainer.position = CGPoint(x: -160, y: 350)
+        // Position at top-left relative to scene center
+        bootTextContainer.position = CGPoint(x: 40, y: size.height - 100)
         addChild(bootTextContainer)
 
         // Add digital rain in background
@@ -173,7 +172,8 @@ final class BootSequenceScene: BaseLevelScene {
             }
         ]))
 
-        // Position content node at origin (camera shows origin at screen center)
+        // Move camera to origin so content is centered on screen
+        gameCamera.position = CGPoint.zero
         contentNode.position = CGPoint.zero
 
         // Setup and reveal main content
@@ -682,10 +682,5 @@ final class BootSequenceScene: BaseLevelScene {
 
         let nextLevel = LevelID(world: .world1, index: 1)
         GameState.shared.load(level: nextLevel)
-
-        guard let view = self.view else { return }
-        let nextScene = LevelFactory.makeScene(for: nextLevel, size: size)
-        let transition = SKTransition.fade(withDuration: 0.5)
-        view.presentScene(nextScene, transition: transition)
     }
 }

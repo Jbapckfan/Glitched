@@ -3,8 +3,8 @@ import SpriteKit
 final class WindBridgeScene: BaseLevelScene, SKPhysicsContactDelegate {
 
     // MARK: - Line Art Style
-    private let fillColor = SKColor.white
-    private let strokeColor = SKColor.black
+    private let fillColor = VisualConstants.Colors.foreground
+    private let strokeColor = VisualConstants.Colors.background
     private let lineWidth: CGFloat = 2.5
 
     private var bit: BitCharacter!
@@ -31,8 +31,12 @@ final class WindBridgeScene: BaseLevelScene, SKPhysicsContactDelegate {
         levelID = LevelID(world: .world1, index: 2)
         backgroundColor = fillColor
 
-        physicsWorld.gravity = CGVector(dx: 0, dy: -20)
+        physicsWorld.gravity = CGVector(dx: 0, dy: -14)
         physicsWorld.contactDelegate = self
+
+#if targetEnvironment(simulator)
+        AccessibilityManager.shared.forceHardwareFallback(for: .microphone)
+#endif
 
         setupBackground()
         setupPlatforms()
@@ -46,7 +50,7 @@ final class WindBridgeScene: BaseLevelScene, SKPhysicsContactDelegate {
 
         configureMechanicsWithMicrophonePermissionExplanation(
             [.microphone],
-            message: "THIS LEVEL NEEDS YOUR MICROPHONE. YOU'LL BLOW INTO IT TO CREATE WIND."
+            message: "LEVEL REQUIRES ENVIRONMENTAL ACCESS"
         )
     }
 
@@ -57,9 +61,9 @@ final class WindBridgeScene: BaseLevelScene, SKPhysicsContactDelegate {
         drawVent(at: CGPoint(x: 60, y: size.height - 100), size: 60)
         drawVent(at: CGPoint(x: size.width - 60, y: size.height - 100), size: 60)
 
-        // Hanging microphones
-        drawHangingMicrophone(at: CGPoint(x: size.width / 2 - 80, y: size.height - 40))
-        drawHangingMicrophone(at: CGPoint(x: size.width / 2 + 80, y: size.height - 60))
+        // Hanging sensors
+        drawHangingVibrationPickup(at: CGPoint(x: size.width / 2 - 80, y: size.height - 40))
+        drawHangingVibrationPickup(at: CGPoint(x: size.width / 2 + 80, y: size.height - 60))
 
         // Wind turbines in background
         drawWindTurbine(at: CGPoint(x: 100, y: groundHeight + 200))
@@ -105,7 +109,7 @@ final class WindBridgeScene: BaseLevelScene, SKPhysicsContactDelegate {
         }
     }
 
-    private func drawHangingMicrophone(at position: CGPoint) {
+    private func drawHangingVibrationPickup(at position: CGPoint) {
         // Cable
         let cable = SKShapeNode()
         let cablePath = CGMutablePath()
@@ -117,16 +121,16 @@ final class WindBridgeScene: BaseLevelScene, SKPhysicsContactDelegate {
         cable.zPosition = -5
         addChild(cable)
 
-        // Microphone body
-        let mic = SKShapeNode(circleOfRadius: 12)
-        mic.fillColor = fillColor
-        mic.strokeColor = strokeColor
-        mic.lineWidth = lineWidth
-        mic.position = position
-        mic.zPosition = -4
-        addChild(mic)
+        // Pickup body
+        let pickup = SKShapeNode(circleOfRadius: 12)
+        pickup.fillColor = fillColor
+        pickup.strokeColor = strokeColor
+        pickup.lineWidth = lineWidth
+        pickup.position = position
+        pickup.zPosition = -4
+        addChild(pickup)
 
-        // Mic grille lines
+        // Grille lines
         for i in -2...2 {
             let line = SKShapeNode()
             let linePath = CGMutablePath()
@@ -258,7 +262,7 @@ final class WindBridgeScene: BaseLevelScene, SKPhysicsContactDelegate {
         container.addChild(depthLine)
 
         // Surface detail lines
-        let lineCount = Int(width / 30)
+        let lineCount = max(0, Int(width / 30))
         for i in 0..<lineCount {
             let x = -width / 2 + CGFloat(i + 1) * width / CGFloat(lineCount + 1)
             let detail = SKShapeNode()
@@ -750,20 +754,8 @@ final class WindBridgeScene: BaseLevelScene, SKPhysicsContactDelegate {
         DeviceManagerCoordinator.shared.deactivateAll()
     }
 
-    private func transitionToNextLevel() {
-        GameState.shared.setState(.transitioning)
-
-        let nextLevel = LevelID(world: .world1, index: 3)
-        GameState.shared.load(level: nextLevel)
-
-        guard let view = self.view else { return }
-        let nextScene = LevelFactory.makeScene(for: nextLevel, size: size)
-        let transition = SKTransition.fade(withDuration: 0.5)
-        view.presentScene(nextScene, transition: transition)
-    }
-
     override func hintText() -> String? {
-        return "Blow into the microphone to create wind"
+        return "???"
     }
 
     override func willMove(from view: SKView) {

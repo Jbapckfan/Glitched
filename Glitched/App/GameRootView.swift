@@ -27,15 +27,16 @@ struct GameRootView: View {
                 .frame(width: 0, height: 0)
                 .opacity(0)
 
-            // SpriteKit game
+            // SpriteKit game with HUD layered via .overlay to guarantee
+            // it renders above the Metal-backed SKView
             SpriteKitContainer(levelID: gameState.currentLevelID, uiState: gameState.uiState)
                 .ignoresSafeArea()
-
-            // HUD layer
-            HUDLayer(levelID: gameState.currentLevelID)
+                .overlay {
+                    HUDLayer(levelID: gameState.currentLevelID)
+                }
 
             // Accessibility fallback buttons
-            if accessibility.hardwareFreeMode {
+            if accessibility.showsFallbackOverlay {
                 AccessibilityOverlay()
             }
 
@@ -79,15 +80,19 @@ struct SpriteKitContainer: UIViewRepresentable {
 
     func makeUIView(context: Context) -> SKView {
         let view = SKView()
+        view.backgroundColor = .white
         view.ignoresSiblingOrder = true
+        view.isMultipleTouchEnabled = true
         #if DEBUG
         view.showsFPS = true
         view.showsNodeCount = true
         #endif
 
-        // Use a default size initially; will be updated when view lays out
-        let initialSize = view.bounds.size.width > 0 ? view.bounds.size : CGSize(width: 393, height: 852)
-        let scene = LevelFactory.makeScene(for: levelID, size: initialSize)
+        // The view starts with zero bounds. Set an initial frame so that
+        // .resizeFill gives the scene valid dimensions during presentScene.
+        // SwiftUI will resize the view to its final frame during layout.
+        view.frame = UIScreen.main.bounds
+        let scene = LevelFactory.makeScene(for: levelID, size: view.bounds.size)
         view.presentScene(scene)
 
         return view
@@ -97,12 +102,17 @@ struct SpriteKitContainer: UIViewRepresentable {
         uiView.scene?.isPaused = uiState == .paused
 
         // Handle level changes
-        if let currentScene = uiView.scene as? BaseLevelScene,
-           currentScene.levelID != levelID {
+        let currentLevelID = (uiView.scene as? BaseLevelScene)?.levelID
+        if currentLevelID != levelID {
             JuiceManager.shared.playSceneTransitionGlitch()
-            
-            let newScene = LevelFactory.makeScene(for: levelID, size: uiView.bounds.size)
-            uiView.presentScene(newScene, transition: .crossFade(withDuration: 0.4))
+
+            let nextSize = uiView.bounds.size.width > 0 ? uiView.bounds.size : UIScreen.main.bounds.size
+            let newScene = LevelFactory.makeScene(for: levelID, size: nextSize)
+            if uiView.scene != nil {
+                uiView.presentScene(newScene, transition: .crossFade(withDuration: 0.4))
+            } else {
+                uiView.presentScene(newScene)
+            }
         }
     }
 }
@@ -121,6 +131,14 @@ struct AccessibilityOverlay: View {
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 14) {
                     // World 1 mechanics
+                    accessibilityButton(for: .dragHUD, icon: "arrow.down.square", color: .cyan) {
+                        InputEventBus.shared.post(
+                            .hudDragCompleted(
+                                elementID: "levelHeader",
+                                screenPosition: CGPoint(x: 210, y: 240)
+                            )
+                        )
+                    }
                     accessibilityButton(for: .microphone, icon: "wind", color: .blue) {
                         InputEventBus.shared.post(.micLevelChanged(power: 0.8))
                     }
@@ -165,8 +183,8 @@ struct AccessibilityOverlay: View {
                     accessibilityButton(for: .shakeUndo, icon: "arrow.uturn.backward", color: .orange) {
                         InputEventBus.shared.post(.shakeUndoTriggered)
                     }
-                    accessibilityButton(for: .faceID, icon: "faceid", color: .green) {
-                        InputEventBus.shared.post(.faceIDResult(recognized: true))
+                    accessibilityButton(for: .proximity, icon: "hand.raised.slash.fill", color: .gray) {
+                        InputEventBus.shared.post(.proximityFlipped(isCovered: true))
                     }
                     accessibilityButton(for: .airplaneMode, icon: "airplane", color: .cyan) {
                         InputEventBus.shared.post(.airplaneModeChanged(isEnabled: true))

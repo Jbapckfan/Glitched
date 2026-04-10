@@ -38,7 +38,7 @@ final class OrientationScene: BaseLevelScene, SKPhysicsContactDelegate {
         levelID = LevelID(world: .world1, index: 9)
         backgroundColor = fillColor
 
-        physicsWorld.gravity = CGVector(dx: 0, dy: -20)
+        physicsWorld.gravity = CGVector(dx: 0, dy: -14)
         physicsWorld.contactDelegate = self
 
         AccessibilityManager.shared.registerMechanics([.orientation])
@@ -885,18 +885,6 @@ final class OrientationScene: BaseLevelScene, SKPhysicsContactDelegate {
     override func onLevelSucceeded() {
         ProgressManager.shared.markCompleted(levelID)
         DeviceManagerCoordinator.shared.deactivateAll()
-    }
-
-    private func transitionToNextLevel() {
-        GameState.shared.setState(.transitioning)
-
-        let nextLevel = LevelID(world: .world1, index: 10)
-        GameState.shared.load(level: nextLevel)
-
-        guard let view = self.view else { return }
-        let nextScene = LevelFactory.makeScene(for: nextLevel, size: size)
-        let transition = SKTransition.fade(withDuration: 0.5)
-        view.presentScene(nextScene, transition: transition)
     }
 
     override func hintText() -> String? {

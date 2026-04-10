@@ -82,7 +82,7 @@ final class MetaFinaleScene: BaseLevelScene, SKPhysicsContactDelegate {
         levelID = LevelID(world: .world2, index: 20)
         backgroundColor = .black // Start dark for dramatic reveal
 
-        physicsWorld.gravity = CGVector(dx: 0, dy: -20)
+        physicsWorld.gravity = CGVector(dx: 0, dy: -14)
         physicsWorld.contactDelegate = self
 
         AccessibilityManager.shared.registerMechanics([.appDeletion])
@@ -731,14 +731,6 @@ final class MetaFinaleScene: BaseLevelScene, SKPhysicsContactDelegate {
             .fadeOut(withDuration: 0.5),
             .run { [weak self] in self?.transitionToNextLevel() }
         ]))
-    }
-
-    private func transitionToNextLevel() {
-        GameState.shared.setState(.transitioning)
-        let nextLevel = LevelID(world: .world3, index: 21)
-        GameState.shared.load(level: nextLevel)
-        guard let view = self.view else { return }
-        view.presentScene(LevelFactory.makeScene(for: nextLevel, size: size), transition: SKTransition.fade(withDuration: 0.5))
     }
 
     override func onLevelSucceeded() {

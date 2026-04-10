@@ -45,7 +45,7 @@ final class TimeTravelScene: BaseLevelScene, SKPhysicsContactDelegate {
         levelID = LevelID(world: .world1, index: 10)
         backgroundColor = fillColor
 
-        physicsWorld.gravity = CGVector(dx: 0, dy: -20)
+        physicsWorld.gravity = CGVector(dx: 0, dy: -14)
         physicsWorld.contactDelegate = self
 
         AccessibilityManager.shared.registerMechanics([.appBackgrounding])
@@ -1075,19 +1075,6 @@ final class TimeTravelScene: BaseLevelScene, SKPhysicsContactDelegate {
     override func onLevelSucceeded() {
         ProgressManager.shared.markCompleted(levelID)
         DeviceManagerCoordinator.shared.deactivateAll()
-    }
-
-    private func transitionToNextLevel() {
-        GameState.shared.setState(.transitioning)
-
-        // World 1 complete - go to World 2
-        let nextLevel = LevelID(world: .world2, index: 11)
-        GameState.shared.load(level: nextLevel)
-
-        guard let view = self.view else { return }
-        let nextScene = LevelFactory.makeScene(for: nextLevel, size: size)
-        let transition = SKTransition.fade(withDuration: 0.5)
-        view.presentScene(nextScene, transition: transition)
     }
 
     override func hintText() -> String? {

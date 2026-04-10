@@ -37,7 +37,7 @@ final class LocaleScene: BaseLevelScene, SKPhysicsContactDelegate {
         levelID = LevelID(world: .world4, index: 26)
         backgroundColor = fillColor
 
-        physicsWorld.gravity = CGVector(dx: 0, dy: -20)
+        physicsWorld.gravity = CGVector(dx: 0, dy: -14)
         physicsWorld.contactDelegate = self
 
         AccessibilityManager.shared.registerMechanics([.locale])
@@ -509,14 +509,6 @@ final class LocaleScene: BaseLevelScene, SKPhysicsContactDelegate {
     override func onLevelSucceeded() {
         ProgressManager.shared.markCompleted(levelID)
         DeviceManagerCoordinator.shared.deactivateAll()
-    }
-
-    private func transitionToNextLevel() {
-        GameState.shared.setState(.transitioning)
-        let nextLevel = LevelID(world: .world4, index: 27)
-        GameState.shared.load(level: nextLevel)
-        guard let view = self.view else { return }
-        view.presentScene(LevelFactory.makeScene(for: nextLevel, size: size), transition: SKTransition.fade(withDuration: 0.5))
     }
 
     override func hintText() -> String? {

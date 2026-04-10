@@ -31,23 +31,6 @@ struct LevelHeaderHUD: View {
                                 .opacity(0.5)
                                 .blur(radius: 4)
                         )
-
-                    // Progress dots
-                    HStack(spacing: 6) {
-                        ForEach(0..<5) { i in
-                            Circle()
-                                .fill(i < levelID.index % 5 ? VisualConstants.Colors.accentUI : Color.gray.opacity(0.3))
-                                .frame(width: 8, height: 8)
-                        }
-                    }
-                    .padding(.top, 4)
-
-                    // Down arrow hint
-                    Image(systemName: "arrow.down")
-                        .font(.system(size: 24, weight: .bold))
-                        .foregroundColor(.black)
-                        .offset(y: isDragging ? 0 : -5)
-                        .animation(.easeInOut(duration: 0.5).repeatForever(autoreverses: true), value: isDragging)
                 }
                 .padding(.horizontal, 24)
                 .padding(.vertical, 16)
@@ -113,20 +96,16 @@ struct HUDLayer: View {
     let levelID: LevelID
 
     var body: some View {
-        // FIX #18: Ensure HUD respects safe area insets
-        GeometryReader { geometry in
-            ZStack {
-                // Show level-specific HUD elements
-                switch (levelID.world, levelID.index) {
-                case (.world1, 1):
-                    LevelHeaderHUD(levelID: levelID)
-                default:
-                    // Default HUD for other levels - minimal, non-intrusive
-                    EmptyView()
-                }
+        ZStack {
+            switch (levelID.world, levelID.index) {
+            case (.world1, 1):
+                // LevelHeaderHUD handles its own safe-area positioning
+                LevelHeaderHUD(levelID: levelID)
+            default:
+                EmptyView()
             }
-            // FIX #18: Pad for Dynamic Island/notch
-            .padding(.top, geometry.safeAreaInsets.top)
         }
+        // Allow touches to pass through to the SpriteKit view below
+        .allowsHitTesting(levelID == LevelID(world: .world1, index: 1))
     }
 }

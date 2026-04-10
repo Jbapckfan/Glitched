@@ -33,12 +33,12 @@ final class FaceIDScene: BaseLevelScene, SKPhysicsContactDelegate {
         levelID = LevelID(world: .world2, index: 19)
         backgroundColor = fillColor
 
-        physicsWorld.gravity = CGVector(dx: 0, dy: -20)
+        physicsWorld.gravity = CGVector(dx: 0, dy: -14)
         physicsWorld.contactDelegate = self
 
         configureMechanicsWithFaceIDPermissionExplanation(
-            [.faceID],
-            message: "THIS LEVEL USES FACE ID. YOU'LL AUTHENTICATE TO UNLOCK A VAULT."
+            [.faceID, .proximity],
+            message: "IDENTITY VERIFICATION REQUIRED"
         )
 
         setupBackground()
@@ -209,7 +209,7 @@ final class FaceIDScene: BaseLevelScene, SKPhysicsContactDelegate {
         }
 
         // Status label
-        statusLabel = SKLabelNode(text: "SCAN FACE")
+        statusLabel = SKLabelNode(text: "SCAN IDENTITY")
         statusLabel.fontName = "Menlo-Bold"
         statusLabel.fontSize = 10
         statusLabel.fontColor = strokeColor
@@ -272,7 +272,7 @@ final class FaceIDScene: BaseLevelScene, SKPhysicsContactDelegate {
         bg.strokeColor = strokeColor
         panel.addChild(bg)
 
-        let text1 = SKLabelNode(text: "VAULT REQUIRES FACE ID")
+        let text1 = SKLabelNode(text: "VAULT REQUIRES IDENTITY")
         text1.fontName = "Menlo-Bold"
         text1.fontSize = 12
         text1.fontColor = strokeColor
@@ -313,15 +313,17 @@ final class FaceIDScene: BaseLevelScene, SKPhysicsContactDelegate {
             ]))
         }
 
-        // BUG FIX: Use real Face ID authentication instead of simulating success
         if AuthenticationManager.shared.isBiometricAvailable {
             AuthenticationManager.shared.requestAuthentication(reason: "Glitched needs to verify your identity to unlock this level")
         } else {
-            // Fallback for devices without biometrics or simulator: use proximity as before
-            run(.sequence([
-                .wait(forDuration: 2.0),
-                .run { InputEventBus.shared.post(.faceIDResult(recognized: true)) }
-            ]))
+            // On simulator/no-biometrics, we wait for proximity sensor instead of auto-completing
+            statusLabel.text = "COVER SENSOR"
+            
+            // Visual hint for proximity
+            faceFrame.run(.repeatForever(.sequence([
+                .fadeAlpha(to: 0.3, duration: 0.5),
+                .fadeAlpha(to: 1.0, duration: 0.5)
+            ])), withKey: "proximity_hint")
         }
     }
 
@@ -388,7 +390,7 @@ final class FaceIDScene: BaseLevelScene, SKPhysicsContactDelegate {
         run(.sequence([
             .wait(forDuration: 2),
             .run { [weak self] in
-                self?.statusLabel.text = "SCAN FACE"
+                self?.statusLabel.text = "SCAN IDENTITY"
                 self?.startIdleScan()
             }
         ]))
@@ -516,7 +518,17 @@ final class FaceIDScene: BaseLevelScene, SKPhysicsContactDelegate {
             handleFaceIDResult(recognized)
         case .proximityFlipped(let isCovered):
             if isCovered && scanStep < 3 {
-                triggerFaceIDPrompt()
+                if !AuthenticationManager.shared.isBiometricAvailable {
+                    // Stop hint
+                    faceFrame.removeAction(forKey: "proximity_hint")
+                    faceFrame.alpha = 1.0
+                    
+                    // Trigger success for the proximity interaction
+                    handleFaceIDResult(true)
+                } else {
+                    // Even if biometrics are available, covering the sensor can trigger the prompt
+                    triggerFaceIDPrompt()
+                }
             }
         default:
             break
@@ -598,16 +610,8 @@ final class FaceIDScene: BaseLevelScene, SKPhysicsContactDelegate {
         DeviceManagerCoordinator.shared.deactivateAll()
     }
 
-    private func transitionToNextLevel() {
-        GameState.shared.setState(.transitioning)
-        let nextLevel = LevelID(world: .world2, index: 20)
-        GameState.shared.load(level: nextLevel)
-        guard let view = self.view else { return }
-        view.presentScene(LevelFactory.makeScene(for: nextLevel, size: size), transition: SKTransition.fade(withDuration: 0.5))
-    }
-
     override func hintText() -> String? {
-        return "Use Face ID to authenticate"
+        return "Authenticate identity"
     }
 
     override func willMove(from view: SKView) {

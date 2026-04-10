@@ -33,7 +33,7 @@ final class VoiceCommandScene: BaseLevelScene, SKPhysicsContactDelegate {
         levelID = LevelID(world: .world3, index: 21)
         backgroundColor = fillColor
 
-        physicsWorld.gravity = CGVector(dx: 0, dy: -20)
+        physicsWorld.gravity = CGVector(dx: 0, dy: -14)
         physicsWorld.contactDelegate = self
 
         configureMechanicsWithVoiceCommandPermissionExplanation(
@@ -397,7 +397,7 @@ final class VoiceCommandScene: BaseLevelScene, SKPhysicsContactDelegate {
         run(.sequence([
             .wait(forDuration: 2.0),
             .run { [weak self] in
-                self?.physicsWorld.gravity = CGVector(dx: 0, dy: -20)
+                self?.physicsWorld.gravity = CGVector(dx: 0, dy: -14)
                 self?.flyActive = false
             }
         ]))
@@ -529,14 +529,6 @@ final class VoiceCommandScene: BaseLevelScene, SKPhysicsContactDelegate {
     override func onLevelSucceeded() {
         ProgressManager.shared.markCompleted(levelID)
         DeviceManagerCoordinator.shared.deactivateAll()
-    }
-
-    private func transitionToNextLevel() {
-        GameState.shared.setState(.transitioning)
-        let nextLevel = LevelID(world: .world3, index: 22)
-        GameState.shared.load(level: nextLevel)
-        guard let view = self.view else { return }
-        view.presentScene(LevelFactory.makeScene(for: nextLevel, size: size), transition: SKTransition.fade(withDuration: 0.5))
     }
 
     override func hintText() -> String? {

@@ -27,7 +27,7 @@ If you're stuck on any level for 30+ seconds, a hint will appear at the bottom o
 ### Level 1 — Header
 **Mechanic:** HUD drag
 **Objective:** Cross a spike pit to reach the exit door.
-**How to solve:** The level header bar at the top of the screen (the "LEVEL 1" HUD element) is draggable. Drag it down and drop it over the spike pit in the middle of the level. It transforms into a physical bridge spanning the gap. Walk across and enter the exit door on the right.
+**How to solve:** The dark "LEVEL 1" banner at the top of the screen is a real, draggable UI element -- not just decoration. Press and drag it downward toward the spike pit in the middle of the level. Drop it anywhere over the pit (below the top third of the screen) and it transforms into a physical bridge spanning the gap. Walk across and enter the exit door on the right.
 **Easter egg:** After you drop the header, glitch text appears where it used to be: "HEY, I NEEDED THAT."
 
 ---
@@ -212,11 +212,11 @@ Toggle Low Power Mode on and off as needed for each section.
 **Objective:** Speak specific commands to manipulate the game world.
 **How to solve:** Three obstacles require three different voice commands:
 1. **"BRIDGE"** -- Say "bridge" to extend a bridge across the first gap
-2. **"OPEN"** -- Say "open" to unlock a door blocking the middle section
-3. **"FLY"** -- Say "fly" to give your character a brief upward impulse, reaching a high platform
+2. **"OPEN"** (or "UNLOCK") -- Say "open" or "unlock" to open a door blocking the middle section
+3. **"FLY"** (or "JUMP") -- Say "fly" or "jump" to give your character a brief upward impulse, reaching a high platform
 
 Hint labels near each puzzle show which command to say. Speak clearly into your phone's microphone.
-**Tips:** The mic indicator pulses when it detects your voice. Each command only needs to be spoken once. The "FLY" command gives a brief upward boost -- time it while near the high platform.
+**Tips:** The mic indicator pulses when it detects your voice. Each command only needs to be spoken once. The "FLY" command gives a brief upward boost -- time it while near the high platform. If speech recognition permission is denied, an accessibility fallback button appears at the bottom of the screen.
 **Easter egg:** Fourth-wall commentary appears after your first spoken command.
 
 ---
@@ -307,3 +307,32 @@ Follow the unscrambled directions to reach the exit.
 **How to solve:** The final level has a dark background (inverted colors). Developer credit lines serve as physical platforms arranged in a vertical zigzag pattern. Climb upward from "GLITCHED - THE FINAL LEVEL" through credits including "CREATED BY: A GLITCHED PRODUCTION," "QA TESTING: YOUR PATIENCE," "BUGS FOUND: TOO MANY," and more. Avoid bug enemies (literal insects) scattered on platforms -- they're the game's last hazards. Reach the top platform "THANK YOU FOR PLAYING" and enter the final exit door.
 **Tips:** The credits zigzag left and right as you climb. Bug enemies patrol individual platforms. The world scrolls vertically as you ascend. Stars twinkle in the dark background.
 **Easter egg:** Midway through the credits: "YOU'RE STANDING ON THE PEOPLE WHO MADE ME." followed by "SAY THANK YOU." The credit for "BUGS REMAINING" is "THIS ONE" -- the bug enemies are literally the remaining bugs.
+
+---
+
+## World 5: System Override
+
+### Level 31 — Flashlight
+**Mechanic:** Device flashlight + phone tilt
+**Objective:** Navigate a dark cave by turning on the flashlight and aiming the light cone correctly.
+**How to solve:** This level is mostly hidden until your real flashlight is on. Once it is enabled, the visible cone changes based on how you hold the phone. Hold the phone more upright to throw light farther ahead and scout the path; hold it flatter to illuminate the ground near your feet so you can step over traps and narrow platforms safely. Alternate between looking ahead and looking down as you move through the cave.
+**Tips:** If you get stuck, stop moving and aim the phone upward first to reveal the next safe route. Then tilt back down before walking. This stage mixes ceiling hazards and hidden pits, so the best angle depends on the section.
+**Easter egg:** Creatures in the cave react to the beam and scatter when illuminated.
+
+---
+
+### Level 32 — Multi-Touch
+**Mechanic:** Multiple simultaneous finger presses
+**Objective:** Open gates by holding glowing pressure nodes at the same time.
+**How to solve:** Each section contains circular pressure plates linked to a gate by circuit lines. One finger can still handle movement, but the other plates must be held simultaneously with extra fingers. The early gate requires two touches, the next requires three, and the later section escalates again before the exit appears.
+**Tips:** Plant your non-movement fingers on the active nodes first, then inch Bit forward with the remaining finger. The level is built around true simultaneous contact, not rapid tapping.
+**Easter egg:** The game comments on how many fingers you’re using as the puzzle scales up.
+
+---
+
+### Level 33 — App Review
+**Mechanic:** App Store review prompt / meta finale
+**Objective:** Clear the last gates, endure the joke, and unlock the final exit.
+**How to solve:** Move right and trigger the first gate, then the second. Each one opens after a terminal-style comedy beat. Once both are cleared, the final door area activates and the game begins demanding an App Store review. You can tap the review prompt to leave a review, but you don’t have to -- the padlock automatically shatters after 10 seconds regardless. When the padlock is removed, enter the final exit.
+**Tips:** The first half is straightforward platforming; the real puzzle is realizing the review prompt is part of the finale’s joke rather than a real hard paywall. If you leave a review: "WOW. VOLUNTARY VALIDATION." If you wait it out: "FINE. YOU WIN. NO REVIEW NEEDED."
+**Easter egg:** The entire level is a fourth-wall bit about manipulative review prompts, fake friction, and the game asking for one last favor.

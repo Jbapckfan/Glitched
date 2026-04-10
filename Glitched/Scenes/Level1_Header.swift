@@ -13,25 +13,32 @@ final class HeaderScene: BaseLevelScene, SKPhysicsContactDelegate {
     private let platformHeight: CGFloat = 40
 
     // Line art style
-    private let fillColor = SKColor.white
-    private let strokeColor = SKColor.black
+    private let fillColor = VisualConstants.Colors.foreground
+    private let strokeColor = VisualConstants.Colors.background
     private let lineWidth: CGFloat = 2.5
 
     // MARK: - Configuration
 
     override func configureScene() {
         levelID = LevelID(world: .world1, index: 1)
-        backgroundColor = SKColor.white
+        backgroundColor = VisualConstants.Colors.foreground
 
-        physicsWorld.gravity = CGVector(dx: 0, dy: -20)
+        physicsWorld.gravity = CGVector(dx: 0, dy: -14)
         physicsWorld.contactDelegate = self
+
+        // Register the dragHUD mechanic
+        AccessibilityManager.shared.registerMechanics([.dragHUD])
+#if targetEnvironment(simulator)
+        AccessibilityManager.shared.forceHardwareFallback(for: .dragHUD)
+#endif
+        DeviceManagerCoordinator.shared.configure(for: [.dragHUD])
 
         setupBackground()
         setupPlatforms()
         setupSpikes()
         setupBit()
         setupExit()
-        // Note: Level title is the draggable HUD element - don't create a static one
+        // Note: Level title is the draggable HUD element provided by SwiftUI
     }
 
     private func setupBackground() {
@@ -200,7 +207,7 @@ final class HeaderScene: BaseLevelScene, SKPhysicsContactDelegate {
         container.addChild(front)
 
         // Horizontal detail lines
-        let lineCount = Int(width / 30)
+        let lineCount = max(0, Int(width / 30))
         for i in 0...lineCount {
             let xPos = -width/2 + CGFloat(i) * 30
             let line = SKShapeNode()
@@ -330,58 +337,6 @@ final class HeaderScene: BaseLevelScene, SKPhysicsContactDelegate {
         doorFrame.addChild(glow)
     }
 
-    private func setupLevelTitle() {
-        // "LEVEL 1" text in glitchy style
-        let titleLabel = SKLabelNode(fontNamed: "Helvetica-Bold")
-        titleLabel.text = "LEVEL 1"
-        titleLabel.fontSize = 48
-        titleLabel.fontColor = strokeColor
-        titleLabel.position = CGPoint(x: size.width / 2 + 50, y: size.height - 120)
-        titleLabel.zPosition = 10
-
-        // Add italic effect by skewing
-        let skewTransform = CGAffineTransform(a: 1, b: 0, c: -0.2, d: 1, tx: 0, ty: 0)
-        titleLabel.xScale = 1.0
-
-        addChild(titleLabel)
-
-        // Glitch underline
-        let underline = SKShapeNode(rectOf: CGSize(width: 160, height: 4))
-        underline.fillColor = strokeColor
-        underline.strokeColor = .clear
-        underline.position = CGPoint(x: size.width / 2 + 50, y: size.height - 140)
-        underline.zPosition = 10
-        addChild(underline)
-
-        // Drag arrow hint
-        let arrow = createDownArrow()
-        arrow.position = CGPoint(x: size.width / 2 + 50, y: size.height - 180)
-        arrow.zPosition = 10
-        addChild(arrow)
-
-        // Animate arrow
-        let bounce = SKAction.sequence([
-            .moveBy(x: 0, y: -10, duration: 0.5),
-            .moveBy(x: 0, y: 10, duration: 0.5)
-        ])
-        arrow.run(.repeatForever(bounce))
-    }
-
-    private func createDownArrow() -> SKShapeNode {
-        let path = CGMutablePath()
-        path.move(to: CGPoint(x: 0, y: 15))
-        path.addLine(to: CGPoint(x: 0, y: -10))
-        path.move(to: CGPoint(x: -10, y: 0))
-        path.addLine(to: CGPoint(x: 0, y: -15))
-        path.addLine(to: CGPoint(x: 10, y: 0))
-
-        let arrow = SKShapeNode(path: path)
-        arrow.strokeColor = strokeColor
-        arrow.lineWidth = 3
-        arrow.lineCap = .round
-        return arrow
-    }
-
     // MARK: - Event Handling
 
     override func handleGameInput(_ event: GameInputEvent) {
@@ -428,7 +383,7 @@ final class HeaderScene: BaseLevelScene, SKPhysicsContactDelegate {
 
         // Bridge detail lines
         let lineSpacing: CGFloat = 20
-        let lineCount = Int(bridgeWidth / lineSpacing)
+        let lineCount = max(0, Int(bridgeWidth / lineSpacing))
         for i in 0...lineCount {
             let xPos = -bridgeWidth/2 + CGFloat(i) * lineSpacing
             let detailLine = SKShapeNode()
@@ -565,24 +520,12 @@ final class HeaderScene: BaseLevelScene, SKPhysicsContactDelegate {
             }
         ]))
     }
+override func onLevelSucceeded() {
+    ProgressManager.shared.markCompleted(levelID)
+    DeviceManagerCoordinator.shared.deactivateAll()
+}
 
-    override func onLevelSucceeded() {
-        ProgressManager.shared.markCompleted(levelID)
-    }
-
-    private func transitionToNextLevel() {
-        GameState.shared.setState(.transitioning)
-
-        let nextLevel = LevelID(world: .world1, index: 2)
-        GameState.shared.load(level: nextLevel)
-
-        guard let view = self.view else { return }
-        let nextScene = LevelFactory.makeScene(for: nextLevel, size: size)
-        let transition = SKTransition.fade(withDuration: 0.5)
-        view.presentScene(nextScene, transition: transition)
-    }
-
-    override func hintText() -> String? {
-        return "Try dragging the level title downward..."
-    }
+override func hintText() -> String? {
+    return nil
+}
 }

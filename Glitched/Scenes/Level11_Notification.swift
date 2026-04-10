@@ -44,7 +44,7 @@ final class NotificationScene: BaseLevelScene, SKPhysicsContactDelegate {
         levelID = LevelID(world: .world2, index: 11)
         backgroundColor = fillColor
 
-        physicsWorld.gravity = CGVector(dx: 0, dy: -20)
+        physicsWorld.gravity = CGVector(dx: 0, dy: -14)
         physicsWorld.contactDelegate = self
 
         configureMechanicsWithNotificationPermissionExplanation(
@@ -672,15 +672,6 @@ final class NotificationScene: BaseLevelScene, SKPhysicsContactDelegate {
     override func onLevelSucceeded() {
         ProgressManager.shared.markCompleted(levelID)
         DeviceManagerCoordinator.shared.deactivateAll()
-    }
-
-    private func transitionToNextLevel() {
-        GameState.shared.setState(.transitioning)
-        let nextLevel = LevelID(world: .world2, index: 12)
-        GameState.shared.load(level: nextLevel)
-        guard let view = self.view else { return }
-        let nextScene = LevelFactory.makeScene(for: nextLevel, size: size)
-        view.presentScene(nextScene, transition: SKTransition.fade(withDuration: 0.5))
     }
 
     override func hintText() -> String? {

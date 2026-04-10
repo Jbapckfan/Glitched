@@ -51,7 +51,7 @@ final class AppReviewScene: BaseLevelScene, SKPhysicsContactDelegate {
         levelID = LevelID(world: .world5, index: 33)
         backgroundColor = fillColor
 
-        physicsWorld.gravity = CGVector(dx: 0, dy: -20)
+        physicsWorld.gravity = CGVector(dx: 0, dy: -14)
         physicsWorld.contactDelegate = self
 
         AccessibilityManager.shared.registerMechanics([.appReview])
@@ -1154,9 +1154,6 @@ final class AppReviewScene: BaseLevelScene, SKPhysicsContactDelegate {
         GameState.shared.setState(.transitioning)
         let bootLevel = LevelID.boot
         GameState.shared.load(level: bootLevel)
-        guard let view = self.view else { return }
-        view.presentScene(LevelFactory.makeScene(for: bootLevel, size: size),
-                          transition: SKTransition.fade(with: .black, duration: 1.5))
     }
 
     // MARK: - Input

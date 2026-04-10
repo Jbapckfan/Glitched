@@ -6,22 +6,26 @@ final class PlayerController {
     private weak var scene: SKScene?
 
     private var moveDirection: CGFloat = 0
-    private var touchMoveDirection: CGFloat = 0  // From touch input
-    private var touchStartLocation: CGPoint = .zero
-    private var touchStartTime: TimeInterval = 0
-    private var isTouching = false
-    private var lastTouchLocation: CGPoint = .zero
-    private var hasMoved = false  // Track if significant movement occurred
+    private var touchMoveDirection: CGFloat = 0
+    private var lastMoveLocation: CGPoint = .zero
+
+    // Multi-touch: track finger count so hold-to-move persists
+    // while a second finger taps to jump
+    private var activeTouchCount = 0
+
+    // Coyote time: brief grace period after walking off a ledge
+    private var coyoteTimer: TimeInterval = 0
+    private let coyoteWindow: TimeInterval = 0.1
+
+    // Jump buffer: queue a jump pressed just before landing
+    private var jumpBufferTimer: TimeInterval = 0
+    private let jumpBufferWindow: TimeInterval = 0.12
 
     // Boundary padding
     private let boundaryPadding: CGFloat = 20
 
-    // BUG FIX: Allow levels to specify world bounds larger than screen (e.g., Level 29)
+    // BUG FIX: Allow levels to specify world bounds larger than screen
     var worldWidth: CGFloat?
-
-    // Tap detection thresholds
-    private let tapMaxDuration: TimeInterval = 0.3  // More forgiving tap window
-    private let tapMaxDistance: CGFloat = 25  // More forgiving movement threshold
 
     init(character: BitCharacter, scene: SKScene) {
         self.character = character
@@ -44,19 +48,34 @@ final class PlayerController {
 
         // Handle keyboard jump (edge-triggered)
         if KeyboardState.shared.jumpJustPressed {
-            character.jump()
+            attemptJump()
         }
 
         // Apply movement
         character.move(direction: moveDirection)
 
-        // Clamp position to world bounds (defaults to screen if no world width set)
+        // Coyote timer: reset while grounded, count down while airborne
+        if character.isGrounded {
+            coyoteTimer = coyoteWindow
+        } else {
+            coyoteTimer = max(0, coyoteTimer - (1.0 / 60.0))
+        }
+
+        // Jump buffer: if queued and we just landed, fire the jump
+        if jumpBufferTimer > 0 {
+            jumpBufferTimer = max(0, jumpBufferTimer - (1.0 / 60.0))
+            if character.isGrounded {
+                character.jump()
+                jumpBufferTimer = 0
+                coyoteTimer = 0
+            }
+        }
+
+        // Clamp position to world bounds
         let halfWidth = character.size.width / 2
         let minX = halfWidth + boundaryPadding
         let maxX = (worldWidth ?? scene.size.width) - halfWidth - boundaryPadding
 
-        // FIX #10: Guard against invalid clamping when maxX < minX
-        // (can happen in very narrow scenes or with large boundary padding)
         guard maxX >= minX else { return }
 
         if character.position.x < minX {
@@ -68,77 +87,72 @@ final class PlayerController {
         }
     }
 
-    func touchBegan(at point: CGPoint) {
-        isTouching = true
-        touchStartLocation = point
-        touchStartTime = CACurrentMediaTime()
-        lastTouchLocation = point
-        hasMoved = false
+    // MARK: - Jump with Coyote Time + Buffer
 
-        // Start moving immediately for responsive feel
-        updateTouchMoveDirection(from: point)
+    private func attemptJump() {
+        guard let character = character else { return }
+
+        if character.isGrounded || coyoteTimer > 0 {
+            character.jump()
+            coyoteTimer = 0
+            jumpBufferTimer = 0
+        } else {
+            // Not grounded — buffer for when we land
+            jumpBufferTimer = jumpBufferWindow
+        }
+    }
+
+    // MARK: - Touch Handling (multi-touch aware)
+
+    func touchBegan(at point: CGPoint) {
+        activeTouchCount += 1
+
+        if activeTouchCount == 1 {
+            // First finger: start movement
+            lastMoveLocation = point
+            updateTouchMoveDirection(from: point)
+        } else {
+            // Second+ finger while holding: jump
+            attemptJump()
+        }
     }
 
     func touchMoved(at point: CGPoint) {
-        guard isTouching else { return }
-        lastTouchLocation = point
-
-        // Check if we've moved enough to consider this a drag (not a tap)
-        let distance = hypot(point.x - touchStartLocation.x, point.y - touchStartLocation.y)
-        if distance > tapMaxDistance {
-            hasMoved = true
-        }
-
+        // Only update movement direction (ignore jump-finger drags
+        // since they're usually stationary taps)
+        lastMoveLocation = point
         updateTouchMoveDirection(from: point)
     }
 
     func touchEnded(at point: CGPoint) {
-        let touchDuration = CACurrentMediaTime() - touchStartTime
-        let touchDistance = hypot(point.x - touchStartLocation.x, point.y - touchStartLocation.y)
+        activeTouchCount = max(0, activeTouchCount - 1)
 
-        // Detect tap: short duration AND minimal movement
-        let isTap = touchDuration < tapMaxDuration && touchDistance < tapMaxDistance
-
-        if isTap {
-            // Tap detected - jump!
-            character?.jump()
+        if activeTouchCount == 0 {
+            // All fingers lifted — stop movement
+            touchMoveDirection = 0
         }
-
-        // Also still support swipe up for jump (backwards compatibility)
-        let verticalSwipe = point.y - touchStartLocation.y
-        if verticalSwipe > 40 && !isTap {
-            character?.jump()
-        }
-
-        // Stop touch movement
-        touchMoveDirection = 0
-        isTouching = false
-        hasMoved = false
+        // If only the jump finger lifted, movement continues
     }
 
     func cancel() {
         touchMoveDirection = 0
-        isTouching = false
-        hasMoved = false
+        activeTouchCount = 0
+        jumpBufferTimer = 0
     }
+
+    // MARK: - Direction Calculation
 
     private func updateTouchMoveDirection(from point: CGPoint) {
         guard let character = character, let scene = scene else { return }
 
-        // FIX #3: Convert touch position to camera/view space when a camera is active.
-        // In scrolling levels the touch comes in world coordinates, but the character's
-        // visual position on screen is offset by the camera. We need to compare both
-        // in the same coordinate space.
         let characterScreenX: CGFloat
         if let camera = scene.camera {
-            // Character position relative to camera center gives screen-space X
             let cameraOriginX = camera.position.x - scene.size.width / 2
             characterScreenX = character.position.x - cameraOriginX
         } else {
             characterScreenX = character.position.x
         }
 
-        // Touch point is already in scene coordinates; convert to screen-relative
         let touchScreenX: CGFloat
         if let camera = scene.camera {
             let cameraOriginX = camera.position.x - scene.size.width / 2
@@ -147,10 +161,7 @@ final class PlayerController {
             touchScreenX = point.x
         }
 
-        // If touch is to the left of character, move left; if right, move right
         let touchDelta = touchScreenX - characterScreenX
-
-        // Smaller dead zone for more responsive feel
         let deadZone: CGFloat = 20
 
         if touchDelta < -deadZone {

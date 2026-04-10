@@ -13,8 +13,8 @@ final class LowPowerScene: BaseLevelScene, SKPhysicsContactDelegate {
     private var playerController: PlayerController!
     private var spawnPoint: CGPoint = .zero
 
-    private let normalGravity: CGFloat = -20
-    private let lowPowerGravity: CGFloat = -6  // Lunar gravity
+    private let normalGravity: CGFloat = -14
+    private let lowPowerGravity: CGFloat = -5  // Lunar gravity
     private var isLowPower = false
     private var batteryIndicator: SKNode!
     private var batteryBars: [SKShapeNode] = []
@@ -46,8 +46,8 @@ final class LowPowerScene: BaseLevelScene, SKPhysicsContactDelegate {
             let particle = SKShapeNode(circleOfRadius: 2)
             particle.fillColor = strokeColor
             particle.alpha = 0.15
-            particle.position = CGPoint(x: CGFloat.random(in: 0...size.width),
-                                        y: CGFloat.random(in: 100...size.height - 100))
+            particle.position = CGPoint(x: CGFloat.random(in: 0...max(1, size.width)),
+                                        y: CGFloat.random(in: 100...max(101, size.height - 100)))
             particle.zPosition = -5
             particle.name = "dust"
 
@@ -376,14 +376,6 @@ final class LowPowerScene: BaseLevelScene, SKPhysicsContactDelegate {
     override func onLevelSucceeded() {
         ProgressManager.shared.markCompleted(levelID)
         DeviceManagerCoordinator.shared.deactivateAll()
-    }
-
-    private func transitionToNextLevel() {
-        GameState.shared.setState(.transitioning)
-        let nextLevel = LevelID(world: .world2, index: 16)
-        GameState.shared.load(level: nextLevel)
-        guard let view = self.view else { return }
-        view.presentScene(LevelFactory.makeScene(for: nextLevel, size: size), transition: SKTransition.fade(withDuration: 0.5))
     }
 
     override func hintText() -> String? {

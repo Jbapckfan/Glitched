@@ -22,7 +22,7 @@ final class BitCharacter: SKSpriteNode {
     private var trailNode: SKNode?
 
     private let moveSpeed: CGFloat = 220
-    private let jumpImpulse: CGFloat = 520
+    private let jumpImpulse: CGFloat = 420
 
     // Colors - Clean black and white line art style
     private let fillColor = VisualConstants.Colors.foreground
@@ -755,11 +755,11 @@ final class BitCharacter: SKSpriteNode {
 
         let deathEffect = SKAction.sequence([
             SKAction.group([
-                SKAction.fadeAlpha(to: 0.0, duration: 0.1),
-                SKAction.scale(to: 2.0, duration: 0.1),
+                SKAction.fadeAlpha(to: 0.0, duration: 0.08),
+                SKAction.scale(to: 1.5, duration: 0.08),
                 SKAction.run { [weak self] in self?.playIntenseGlitch(color: .white) }
             ]),
-            SKAction.wait(forDuration: 0.8),
+            SKAction.wait(forDuration: 0.2),
             SKAction.run { [weak self] in
                 guard let self = self else { return }
                 self.position = point
@@ -768,8 +768,8 @@ final class BitCharacter: SKSpriteNode {
             },
             // Respawn "reassembly"
             SKAction.group([
-                SKAction.fadeAlpha(to: 1.0, duration: 0.3),
-                SKAction.scale(to: 1.0, duration: 0.3),
+                SKAction.fadeAlpha(to: 1.0, duration: 0.15),
+                SKAction.scale(to: 1.0, duration: 0.15),
                 SKAction.run { [weak self] in
                     self?.playMediumGlitch(color: VisualConstants.Colors.accent)
                 }
