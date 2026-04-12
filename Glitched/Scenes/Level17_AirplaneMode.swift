@@ -3,6 +3,8 @@ import UIKit
 
 /// Level 17: Airplane Mode
 /// Concept: Toggle Airplane Mode to make platforms "fly up" or "land". Physics puzzle.
+/// When ON, signal interference blocks oscillate in the high route — player must toggle
+/// between modes to navigate safe windows.
 final class AirplaneModeScene: BaseLevelScene, SKPhysicsContactDelegate {
 
     private let fillColor = SKColor.white
@@ -17,10 +19,14 @@ final class AirplaneModeScene: BaseLevelScene, SKPhysicsContactDelegate {
     private var landedPositions: [CGPoint] = []
     private var flyingPositions: [CGPoint] = []
     private var isAirplaneMode = false
+    private var isAscending = false          // True while staggered rise is in progress
     private var airplaneIcon: SKNode!
     private var hasShownFourthWall = false
     private var turbulenceTime: TimeInterval = 0
     private let platformDelayOffsets: [TimeInterval] = [0.0, 0.3, 0.6]
+
+    // Signal interference hazard — visible only when Airplane Mode is ON
+    private var interferenceBlocks: [SKNode] = []
 
     override func configureScene() {
         levelID = LevelID(world: .world2, index: 17)
@@ -36,6 +42,7 @@ final class AirplaneModeScene: BaseLevelScene, SKPhysicsContactDelegate {
         setupLevelTitle()
         buildLevel()
         createAirplaneIndicator()
+        createInterferenceHazards()
         showInstructionPanel()
         setupBit()
     }
@@ -44,8 +51,10 @@ final class AirplaneModeScene: BaseLevelScene, SKPhysicsContactDelegate {
         // Cloud shapes
         for i in 0..<4 {
             let cloud = createCloud()
-            cloud.position = CGPoint(x: CGFloat(i + 1) * size.width / 5,
-                                     y: size.height - 100 - CGFloat(i % 2) * 50)
+            let xFrac = CGFloat(i + 1) / 5.0
+            let yOffset: CGFloat = (i % 2 == 0) ? 0 : 0.06
+            cloud.position = CGPoint(x: size.width * xFrac,
+                                     y: size.height * (0.88 - yOffset))
             cloud.alpha = 0.15
             cloud.zPosition = -10
             addChild(cloud)
@@ -83,41 +92,50 @@ final class AirplaneModeScene: BaseLevelScene, SKPhysicsContactDelegate {
         title.fontName = "Helvetica-Bold"
         title.fontSize = 28
         title.fontColor = strokeColor
-        title.position = CGPoint(x: 80, y: size.height - 60)
+        title.position = CGPoint(x: size.width * 0.1, y: size.height - 60)
         title.horizontalAlignmentMode = .left
         title.zPosition = 100
         addChild(title)
     }
 
     private func buildLevel() {
-        let groundY: CGFloat = 160
+        let groundY = size.height * 0.22
 
-        // Start platform (solid)
-        createPlatform(at: CGPoint(x: 80, y: groundY), size: CGSize(width: 100, height: 30), isFlying: false)
+        // Start platform (solid) — left 12%
+        createPlatform(
+            at: CGPoint(x: size.width * 0.12, y: groundY),
+            size: CGSize(width: size.width * 0.15, height: 30),
+            isFlying: false
+        )
 
-        // Flying platforms - store both landed and flying positions
-        let flyingData: [(landed: CGPoint, flying: CGPoint, size: CGSize)] = [
-            (landed: CGPoint(x: 220, y: groundY - 20),
-             flying: CGPoint(x: 220, y: groundY + 100),
-             size: CGSize(width: 70, height: 25)),
-            (landed: CGPoint(x: 380, y: groundY - 20),
-             flying: CGPoint(x: 380, y: groundY + 180),
-             size: CGSize(width: 70, height: 25)),
-            (landed: CGPoint(x: 520, y: groundY - 20),
-             flying: CGPoint(x: 520, y: groundY + 80),
-             size: CGSize(width: 70, height: 25))
+        // Flying platforms — proportional x, landed below ground, flying above
+        let flyingData: [(landedX: CGFloat, flyingX: CGFloat, landedY: CGFloat, flyingY: CGFloat, widthFrac: CGFloat)] = [
+            (0.30, 0.30, groundY - 20, groundY + 100, 0.10),
+            (0.52, 0.52, groundY - 20, groundY + 180, 0.10),
+            (0.72, 0.72, groundY - 20, groundY + 80,  0.10)
         ]
 
         for data in flyingData {
-            landedPositions.append(data.landed)
-            flyingPositions.append(data.flying)
-            let platform = createPlatform(at: data.landed, size: data.size, isFlying: true)
+            let landed = CGPoint(x: size.width * data.landedX, y: data.landedY)
+            let flying = CGPoint(x: size.width * data.flyingX, y: data.flyingY)
+            landedPositions.append(landed)
+            flyingPositions.append(flying)
+            let platform = createPlatform(
+                at: landed,
+                size: CGSize(width: size.width * data.widthFrac, height: 25),
+                isFlying: true
+            )
             flyingPlatforms.append(platform)
         }
 
-        // Exit platform (solid, but high up)
-        createPlatform(at: CGPoint(x: size.width - 80, y: groundY + 200), size: CGSize(width: 100, height: 30), isFlying: false)
-        createExitDoor(at: CGPoint(x: size.width - 60, y: groundY + 250))
+        // Exit platform (solid, high up) — right 12%
+        let exitY = groundY + 200
+        createPlatform(
+            at: CGPoint(x: size.width * 0.88, y: exitY),
+            size: CGSize(width: size.width * 0.15, height: 30),
+            isFlying: false
+        )
+        createExitDoor(at: CGPoint(x: size.width * 0.88 + 20, y: exitY + 50))
 
         // Death zone
         let death = SKNode()
@@ -129,11 +147,11 @@ final class AirplaneModeScene: BaseLevelScene, SKPhysicsContactDelegate {
     }
 
     @discardableResult
-    private func createPlatform(at position: CGPoint, size: CGSize, isFlying: Bool) -> SKNode {
+    private func createPlatform(at position: CGPoint, size platformSize: CGSize, isFlying: Bool) -> SKNode {
         let platform = SKNode()
         platform.position = position
 
-        let surface = SKShapeNode(rectOf: size)
+        let surface = SKShapeNode(rectOf: platformSize)
         surface.fillColor = fillColor
         surface.strokeColor = strokeColor
         surface.lineWidth = lineWidth
@@ -142,12 +160,12 @@ final class AirplaneModeScene: BaseLevelScene, SKPhysicsContactDelegate {
         if isFlying {
             // Add small airplane icon
             let icon = createSmallPlane()
-            icon.position = CGPoint(x: 0, y: size.height / 2 + 10)
+            icon.position = CGPoint(x: 0, y: platformSize.height / 2 + 10)
             icon.setScale(0.4)
             platform.addChild(icon)
         }
 
-        platform.physicsBody = SKPhysicsBody(rectangleOf: size)
+        platform.physicsBody = SKPhysicsBody(rectangleOf: platformSize)
         platform.physicsBody?.isDynamic = false
         platform.physicsBody?.categoryBitMask = PhysicsCategory.ground
 
@@ -189,7 +207,7 @@ final class AirplaneModeScene: BaseLevelScene, SKPhysicsContactDelegate {
 
     private func createAirplaneIndicator() {
         airplaneIcon = SKNode()
-        airplaneIcon.position = CGPoint(x: size.width - 60, y: size.height - 50)
+        airplaneIcon.position = CGPoint(x: size.width * 0.9, y: size.height - 50)
         airplaneIcon.zPosition = 200
         addChild(airplaneIcon)
 
@@ -214,6 +232,79 @@ final class AirplaneModeScene: BaseLevelScene, SKPhysicsContactDelegate {
         label.position = CGPoint(x: 0, y: -25)
         label.name = "status"
         airplaneIcon.addChild(label)
+    }
+
+    // MARK: - Signal Interference Hazards
+
+    /// Static blocks that oscillate in the high route when Airplane Mode is ON.
+    /// Forces the player to toggle between modes to navigate safe windows.
+    private func createInterferenceHazards() {
+        let groundY = size.height * 0.22
+
+        // Place interference blocks between flying platform positions in the high route
+        let interferenceData: [(xFrac: CGFloat, baseY: CGFloat, amplitude: CGFloat, period: TimeInterval)] = [
+            (0.41, groundY + 140, 40, 1.4),   // between platform 1 and 2
+            (0.62, groundY + 130, 35, 1.1)    // between platform 2 and 3
+        ]
+
+        for data in interferenceData {
+            let block = SKNode()
+            block.position = CGPoint(x: size.width * data.xFrac, y: data.baseY)
+            block.name = "interference"
+
+            // Visual: static/glitch rectangle
+            let shape = SKShapeNode(rectOf: CGSize(width: 30, height: 30))
+            shape.fillColor = strokeColor.withAlphaComponent(0.6)
+            shape.strokeColor = strokeColor
+            shape.lineWidth = lineWidth
+            block.addChild(shape)
+
+            // Static noise lines inside
+            for i in 0..<3 {
+                let noiseLine = SKShapeNode()
+                let noisePath = CGMutablePath()
+                noisePath.move(to: CGPoint(x: -12, y: CGFloat(i) * 8 - 8))
+                noisePath.addLine(to: CGPoint(x: -4, y: CGFloat(i) * 8 - 5))
+                noisePath.addLine(to: CGPoint(x: 4, y: CGFloat(i) * 8 - 11))
+                noisePath.addLine(to: CGPoint(x: 12, y: CGFloat(i) * 8 - 8))
+                noiseLine.path = noisePath
+                noiseLine.strokeColor = fillColor
+                noiseLine.lineWidth = 1
+                block.addChild(noiseLine)
+            }
+
+            // Physics
+            block.physicsBody = SKPhysicsBody(rectangleOf: CGSize(width: 30, height: 30))
+            block.physicsBody?.isDynamic = false
+            block.physicsBody?.categoryBitMask = PhysicsCategory.hazard
+
+            // Oscillation action
+            block.run(.repeatForever(.sequence([
+                .moveBy(x: 0, y: data.amplitude, duration: data.period / 2),
+                .moveBy(x: 0, y: -data.amplitude, duration: data.period / 2)
+            ])), withKey: "interference_move")
+
+            // Start hidden — only visible when Airplane Mode is ON
+            block.alpha = 0
+            block.physicsBody?.categoryBitMask = 0
+
+            addChild(block)
+            interferenceBlocks.append(block)
+        }
+    }
+
+    private func showInterference() {
+        for block in interferenceBlocks {
+            block.run(.fadeAlpha(to: 1, duration: 0.3), withKey: "interference_fade")
+            block.physicsBody?.categoryBitMask = PhysicsCategory.hazard
+        }
+    }
+
+    private func hideInterference() {
+        for block in interferenceBlocks {
+            block.run(.fadeAlpha(to: 0, duration: 0.3), withKey: "interference_fade")
+            block.physicsBody?.categoryBitMask = 0
+        }
     }
 
     private func createExitDoor(at position: CGPoint) {
@@ -263,7 +354,7 @@ final class AirplaneModeScene: BaseLevelScene, SKPhysicsContactDelegate {
     }
 
     private func setupBit() {
-        spawnPoint = CGPoint(x: 80, y: 200)
+        spawnPoint = CGPoint(x: size.width * 0.12, y: size.height * 0.22 + 40)
         bit = BitCharacter.make()
         bit.position = spawnPoint
         addChild(bit)
@@ -274,14 +365,49 @@ final class AirplaneModeScene: BaseLevelScene, SKPhysicsContactDelegate {
     private func updateAirplaneState(_ enabled: Bool) {
         isAirplaneMode = enabled
 
+        // Cancel any in-progress platform animations to prevent action stacking
+        for platform in flyingPlatforms {
+            platform.removeAction(forKey: "platform_move")
+        }
+
+        // Track ascending state — turbulence deferred until all platforms land
+        if enabled {
+            isAscending = true
+        }
+
         // Animate platforms with staggered timing offsets
+        var longestDelay: TimeInterval = 0
+        let moveDuration: TimeInterval = 0.5
+
         for (index, platform) in flyingPlatforms.enumerated() {
             let targetPos = enabled ? flyingPositions[index] : landedPositions[index]
             let delay = index < platformDelayOffsets.count ? platformDelayOffsets[index] : 0
+            if delay + moveDuration > longestDelay {
+                longestDelay = delay + moveDuration
+            }
+
             platform.run(.sequence([
                 .wait(forDuration: delay),
-                .move(to: targetPos, duration: 0.5)
-            ]))
+                .move(to: targetPos, duration: moveDuration)
+            ]), withKey: "platform_move")
+        }
+
+        // Clear ascending flag after all platforms have finished their staggered rise
+        if enabled {
+            run(.sequence([
+                .wait(forDuration: longestDelay),
+                .run { [weak self] in self?.isAscending = false }
+            ]), withKey: "ascend_complete")
+        } else {
+            removeAction(forKey: "ascend_complete")
+            isAscending = false
+        }
+
+        // Toggle signal interference hazards
+        if enabled {
+            showInterference()
+        } else {
+            hideInterference()
         }
 
         // Update icon
@@ -371,8 +497,10 @@ final class AirplaneModeScene: BaseLevelScene, SKPhysicsContactDelegate {
     override func updatePlaying(deltaTime: TimeInterval) {
         playerController.update()
 
-        // Turbulence: when Airplane Mode is ON, flying platforms wobble slightly
-        if isAirplaneMode {
+        // Turbulence: when Airplane Mode is ON and platforms have finished ascending,
+        // flying platforms wobble slightly. Skipped during staggered rise to avoid
+        // force-setting positions that override the ascent animation.
+        if isAirplaneMode && !isAscending {
             turbulenceTime += deltaTime
             for (index, platform) in flyingPlatforms.enumerated() {
                 guard index < flyingPositions.count else { break }

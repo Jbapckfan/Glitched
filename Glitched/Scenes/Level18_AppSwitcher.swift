@@ -2,7 +2,7 @@ import SpriteKit
 import UIKit
 
 /// Level 18: App Switcher Peek
-/// Concept: Swipe up to peek at app switcher - the level "freezes" giving you time to plan.
+/// Concept: Leave the app briefly and return — the level "freezes" giving you time to plan.
 /// Time moves only when fully in the app.
 final class AppSwitcherScene: BaseLevelScene, SKPhysicsContactDelegate {
 
@@ -15,7 +15,9 @@ final class AppSwitcherScene: BaseLevelScene, SKPhysicsContactDelegate {
     private var spawnPoint: CGPoint = .zero
 
     private var movingHazards: [SKNode] = []
-    private var hazardDirections: [CGVector] = []  // Store movement directions for trajectory lines
+    private var hazardStartPositions: [CGPoint] = []     // Starting position of each hazard
+    private var hazardRanges: [CGFloat] = []             // Movement range for each hazard
+    private var hazardDirections: [CGVector] = []        // Direction vectors for trajectory lines
     private var isPeeking = false
     private var peekOverlay: SKShapeNode!
     private var peekTimer: SKLabelNode!
@@ -54,8 +56,10 @@ final class AppSwitcherScene: BaseLevelScene, SKPhysicsContactDelegate {
                 icon.strokeColor = strokeColor
                 icon.lineWidth = lineWidth * 0.3
                 icon.alpha = 0.15
-                icon.position = CGPoint(x: CGFloat(col) * 80 + 100,
-                                        y: size.height - CGFloat(row) * 60 - 100)
+                icon.position = CGPoint(
+                    x: size.width * (CGFloat(col) + 1) / 5.0,
+                    y: size.height - CGFloat(row) * size.height * 0.08 - size.height * 0.13
+                )
                 icon.zPosition = -10
                 addChild(icon)
             }
@@ -67,26 +71,41 @@ final class AppSwitcherScene: BaseLevelScene, SKPhysicsContactDelegate {
         title.fontName = "Helvetica-Bold"
         title.fontSize = 28
         title.fontColor = strokeColor
-        title.position = CGPoint(x: 80, y: size.height - 60)
+        title.position = CGPoint(x: size.width * 0.1, y: size.height - 60)
         title.horizontalAlignmentMode = .left
         title.zPosition = 100
         addChild(title)
     }
 
     private func buildLevel() {
-        let groundY: CGFloat = 160
+        let groundY = size.height * 0.22
 
         // Start
-        createPlatform(at: CGPoint(x: 80, y: groundY), size: CGSize(width: 100, height: 30))
+        createPlatform(
+            at: CGPoint(x: size.width * 0.12, y: groundY),
+            size: CGSize(width: size.width * 0.15, height: 30)
+        )
 
         // Stepping stones through hazard gauntlet
-        createPlatform(at: CGPoint(x: 200, y: groundY + 30), size: CGSize(width: 60, height: 20))
-        createPlatform(at: CGPoint(x: 320, y: groundY + 60), size: CGSize(width: 60, height: 20))
-        createPlatform(at: CGPoint(x: 440, y: groundY + 30), size: CGSize(width: 60, height: 20))
+        createPlatform(
+            at: CGPoint(x: size.width * 0.30, y: groundY + 30),
+            size: CGSize(width: size.width * 0.09, height: 20)
+        )
+        createPlatform(
+            at: CGPoint(x: size.width * 0.48, y: groundY + 60),
+            size: CGSize(width: size.width * 0.09, height: 20)
+        )
+        createPlatform(
+            at: CGPoint(x: size.width * 0.66, y: groundY + 30),
+            size: CGSize(width: size.width * 0.09, height: 20)
+        )
 
         // Exit
-        createPlatform(at: CGPoint(x: size.width - 80, y: groundY), size: CGSize(width: 100, height: 30))
-        createExitDoor(at: CGPoint(x: size.width - 60, y: groundY + 50))
+        createPlatform(
+            at: CGPoint(x: size.width * 0.88, y: groundY),
+            size: CGSize(width: size.width * 0.15, height: 30)
+        )
+        createExitDoor(at: CGPoint(x: size.width * 0.88 + 20, y: groundY + 50))
 
         // Death zone
         let death = SKNode()
@@ -115,28 +134,36 @@ final class AppSwitcherScene: BaseLevelScene, SKPhysicsContactDelegate {
     }
 
     private func createHazards() {
+        let groundY = size.height * 0.22
+
         // Multiple fast-moving spikes that are hard to time without peeking
-        let hazardData: [(pos: CGPoint, range: CGFloat, speed: TimeInterval)] = [
-            (CGPoint(x: 150, y: 280), 80, 0.8),
-            (CGPoint(x: 260, y: 240), 100, 0.6),
-            (CGPoint(x: 380, y: 300), 90, 0.7),
-            (CGPoint(x: 500, y: 250), 70, 0.5)
+        // Positions are proportional to scene size
+        let hazardData: [(xFrac: CGFloat, yOffset: CGFloat, rangeFrac: CGFloat, speed: TimeInterval)] = [
+            (0.22, 120, 0.12, 0.8),
+            (0.38, 80,  0.15, 0.6),
+            (0.56, 140, 0.13, 0.7),
+            (0.74, 90,  0.10, 0.5)
         ]
 
         for (index, data) in hazardData.enumerated() {
+            let startPos = CGPoint(x: size.width * data.xFrac, y: groundY + data.yOffset)
+            let range = size.width * data.rangeFrac
+
             let hazard = createSpike()
-            hazard.position = data.pos
+            hazard.position = startPos
             hazard.name = "hazard_\(index)"
             addChild(hazard)
             movingHazards.append(hazard)
 
-            // Store the direction vector for trajectory prediction
-            hazardDirections.append(CGVector(dx: data.range, dy: 0))
+            // Store start position and range for accurate trajectory preview
+            hazardStartPositions.append(startPos)
+            hazardRanges.append(range)
+            hazardDirections.append(CGVector(dx: range, dy: 0))
 
             // Fast oscillation
             hazard.run(.repeatForever(.sequence([
-                .moveBy(x: data.range, y: 0, duration: data.speed),
-                .moveBy(x: -data.range, y: 0, duration: data.speed)
+                .moveBy(x: range, y: 0, duration: data.speed),
+                .moveBy(x: -range, y: 0, duration: data.speed)
             ])), withKey: "movement")
         }
     }
@@ -212,14 +239,16 @@ final class AppSwitcherScene: BaseLevelScene, SKPhysicsContactDelegate {
         bg.strokeColor = strokeColor
         panel.addChild(bg)
 
-        let text1 = SKLabelNode(text: "SWIPE UP TO FREEZE TIME")
+        // Honest instruction — true app-switcher peek detection is unreliable,
+        // so we trigger on any brief leave/return cycle.
+        let text1 = SKLabelNode(text: "LEAVE BRIEFLY AND RETURN")
         text1.fontName = "Menlo-Bold"
         text1.fontSize = 11
         text1.fontColor = strokeColor
         text1.position = CGPoint(x: 0, y: 10)
         panel.addChild(text1)
 
-        let text2 = SKLabelNode(text: "PLAN YOUR MOVES CAREFULLY")
+        let text2 = SKLabelNode(text: "TO FREEZE TIME AND PLAN MOVES")
         text2.fontName = "Menlo"
         text2.fontSize = 10
         text2.fontColor = strokeColor
@@ -230,7 +259,7 @@ final class AppSwitcherScene: BaseLevelScene, SKPhysicsContactDelegate {
     }
 
     private func setupBit() {
-        spawnPoint = CGPoint(x: 80, y: 200)
+        spawnPoint = CGPoint(x: size.width * 0.12, y: size.height * 0.22 + 40)
         bit = BitCharacter.make()
         bit.position = spawnPoint
         addChild(bit)
@@ -239,14 +268,17 @@ final class AppSwitcherScene: BaseLevelScene, SKPhysicsContactDelegate {
     }
 
     private var currentMaxPeekTime: TimeInterval {
-        return max(1.5, basePeekTime - (Double(peekCount) * 0.75))
+        // Use current peekCount (starts at 0, incremented AFTER duration is calculated)
+        return max(1.0, basePeekTime - (Double(peekCount) * 0.75))
     }
 
     private func enterPeekMode() {
         guard !isPeeking else { return }
         isPeeking = true
-        peekCount += 1
+
+        // Calculate duration FIRST, then increment counter so first peek is a full 5.0s
         peekTimeRemaining = currentMaxPeekTime
+        peekCount += 1
 
         // Pause hazards
         for hazard in movingHazards {
@@ -279,29 +311,29 @@ final class AppSwitcherScene: BaseLevelScene, SKPhysicsContactDelegate {
         // Remove any old trajectory lines
         removeTrajectoryLines()
 
-        for (index, hazard) in movingHazards.enumerated() {
-            guard index < hazardDirections.count else { continue }
-            let dir = hazardDirections[index]
+        for (index, _) in movingHazards.enumerated() {
+            guard index < hazardStartPositions.count, index < hazardRanges.count else { continue }
 
-            // Draw dotted line extending in movement direction (both ways)
+            let startPos = hazardStartPositions[index]
+            let range = hazardRanges[index]
+
+            // Draw dotted line showing the TRUE movement path:
+            // from startPosition to startPosition + range
             let line = SKShapeNode()
             let path = CGMutablePath()
-            let lineLength: CGFloat = 120
 
-            // Line extends in positive and negative direction from current position
-            let startX = hazard.position.x - (dir.dx > 0 ? lineLength / 2 : -lineLength / 2)
-            let endX = hazard.position.x + (dir.dx > 0 ? lineLength / 2 : -lineLength / 2)
+            let lineStartX = startPos.x
+            let lineEndX = startPos.x + range
 
-            // Create dotted pattern
+            // Create dotted pattern along the actual hazard travel path
             let dashLength: CGFloat = 6
             let gapLength: CGFloat = 4
-            var currentX = min(startX, endX)
-            let maxX = max(startX, endX)
+            var currentX = lineStartX
 
-            while currentX < maxX {
-                let segEnd = min(currentX + dashLength, maxX)
-                path.move(to: CGPoint(x: currentX, y: hazard.position.y))
-                path.addLine(to: CGPoint(x: segEnd, y: hazard.position.y))
+            while currentX < lineEndX {
+                let segEnd = min(currentX + dashLength, lineEndX)
+                path.move(to: CGPoint(x: currentX, y: startPos.y))
+                path.addLine(to: CGPoint(x: segEnd, y: startPos.y))
                 currentX = segEnd + gapLength
             }
 
@@ -391,7 +423,10 @@ final class AppSwitcherScene: BaseLevelScene, SKPhysicsContactDelegate {
         case .appForegrounded:
             exitPeekMode()
         case .appSwitcherPeeked(let duration):
-            // Bonus path: if the system reports an app-switcher peek, treat it the same
+            // Bonus path: if the system reports an app-switcher peek, accept it too.
+            // True peek detection is unreliable across iOS versions, so .appBackgrounded
+            // remains the primary trigger. This handles the case where the system does
+            // manage to detect a quick peek without a full background cycle.
             if duration > 0 {
                 enterPeekMode()
             } else {
@@ -470,7 +505,7 @@ final class AppSwitcherScene: BaseLevelScene, SKPhysicsContactDelegate {
     }
 
     override func hintText() -> String? {
-        return "Swipe up slightly to peek at the App Switcher"
+        return "Leave the app briefly and return to freeze time"
     }
 
     override func willMove(from view: SKView) {
