@@ -16,9 +16,11 @@ final class FocusModeScene: BaseLevelScene, SKPhysicsContactDelegate {
     private var hazards: [SKNode] = []
     private var moonIcon: SKNode!
     private var isFocusEnabled = false
+    private var hasActivatedFocus = false
     private var exitDoorLocked = true
     private var exitBlocker: SKNode?
     private var calmOverlay: SKShapeNode?
+    private var calmVignetteEffect: SKEffectNode?
     private var focusTextLabel: SKLabelNode?
     private var orbitalAngles: [Int: CGFloat] = [:]  // hazard index -> current angle
     private var orbitalCenters: [Int: CGPoint] = [:]   // hazard index -> orbit center
@@ -204,26 +206,68 @@ final class FocusModeScene: BaseLevelScene, SKPhysicsContactDelegate {
         moonIcon.zPosition = 200
         addChild(moonIcon)
 
-        // Pre-create calming overlay (hidden)
+        // Pre-create calming overlay (hidden) — subtle blue tint
         calmOverlay = SKShapeNode(rectOf: CGSize(width: size.width * 2, height: size.height * 2))
-        calmOverlay?.fillColor = SKColor.white
+        calmOverlay?.fillColor = VisualConstants.Colors.accent.withAlphaComponent(0.08)
         calmOverlay?.strokeColor = .clear
         calmOverlay?.alpha = 0
         calmOverlay?.zPosition = 50
         calmOverlay?.position = CGPoint(x: size.width / 2, y: size.height / 2)
         addChild(calmOverlay!)
 
-        // Manual DND toggle button — fallback when real Focus detection is unreliable
-        createDNDToggleButton()
+        // Vignette overlay — darkens edges for calm effect
+        let vignetteNode = SKEffectNode()
+        vignetteNode.zPosition = 51
+        vignetteNode.alpha = 0
+        vignetteNode.position = CGPoint(x: size.width / 2, y: size.height / 2)
+        for i in 0..<6 {
+            let fraction = CGFloat(i) / 5.0
+            let inset = fraction * 80
+            let rect = SKShapeNode(rectOf: CGSize(
+                width: size.width - inset,
+                height: size.height - inset
+            ))
+            rect.fillColor = .clear
+            rect.strokeColor = SKColor.black.withAlphaComponent(fraction * 0.12)
+            rect.lineWidth = 40
+            vignetteNode.addChild(rect)
+        }
+        addChild(vignetteNode)
+        calmVignetteEffect = vignetteNode
+
+        // Manual DND toggle button — delayed fallback when real Focus detection is unreliable
+        scheduleDNDToggleButton()
     }
 
     private var dndToggleButton: SKNode?
 
+    private func scheduleDNDToggleButton() {
+        // Wait 15 seconds before showing the fallback button.
+        // If Focus has already been activated by then, skip showing it entirely.
+        run(.sequence([
+            .wait(forDuration: 15.0),
+            .run { [weak self] in
+                guard let self = self, !self.hasActivatedFocus else { return }
+                self.createDNDToggleButton()
+            }
+        ]))
+    }
+
     private func createDNDToggleButton() {
         let button = SKNode()
-        button.position = CGPoint(x: 60, y: size.height - 50)
+        button.position = CGPoint(x: size.width / 2, y: size.height - 50)
         button.zPosition = 200
         button.name = "dndToggle"
+        button.alpha = 0
+
+        // Hint label above button
+        let hint = SKLabelNode(text: "CAN'T ACCESS FOCUS MODE? USE THIS INSTEAD.")
+        hint.fontName = "Menlo"
+        hint.fontSize = 9
+        hint.fontColor = strokeColor
+        hint.position = CGPoint(x: 0, y: 28)
+        hint.name = "dndToggle"
+        button.addChild(hint)
 
         let bg = SKShapeNode(rectOf: CGSize(width: 100, height: 36), cornerRadius: 8)
         bg.fillColor = fillColor
@@ -248,6 +292,9 @@ final class FocusModeScene: BaseLevelScene, SKPhysicsContactDelegate {
 
         addChild(button)
         dndToggleButton = button
+
+        // Fade in gently
+        button.run(.fadeIn(withDuration: 0.6))
     }
 
     private func createExitDoor(at position: CGPoint) {
@@ -289,7 +336,7 @@ final class FocusModeScene: BaseLevelScene, SKPhysicsContactDelegate {
         panel.zPosition = 300
         addChild(panel)
 
-        let bg = SKShapeNode(rectOf: CGSize(width: 280, height: 80), cornerRadius: 8)
+        let bg = SKShapeNode(rectOf: CGSize(width: 280, height: 60), cornerRadius: 8)
         bg.fillColor = fillColor
         bg.strokeColor = strokeColor
         panel.addChild(bg)
@@ -298,15 +345,7 @@ final class FocusModeScene: BaseLevelScene, SKPhysicsContactDelegate {
         text1.fontName = "Menlo-Bold"
         text1.fontSize = 11
         text1.fontColor = strokeColor
-        text1.position = CGPoint(x: 0, y: 10)
         panel.addChild(text1)
-
-        let text2 = SKLabelNode(text: "BUT DOOR REQUIRES FOCUS OFF")
-        text2.fontName = "Menlo"
-        text2.fontSize = 10
-        text2.fontColor = strokeColor
-        text2.position = CGPoint(x: 0, y: -10)
-        panel.addChild(text2)
 
         panel.run(.sequence([.wait(forDuration: 6), .fadeOut(withDuration: 0.5), .removeFromParent()]))
     }
@@ -323,6 +362,11 @@ final class FocusModeScene: BaseLevelScene, SKPhysicsContactDelegate {
     private func updateFocusState(_ enabled: Bool) {
         isFocusEnabled = enabled
 
+        // Track if Focus has ever been activated — this is the win condition
+        if enabled && !hasActivatedFocus {
+            hasActivatedFocus = true
+        }
+
         // Freeze/unfreeze hazards
         for hazard in hazards {
             if enabled {
@@ -337,11 +381,8 @@ final class FocusModeScene: BaseLevelScene, SKPhysicsContactDelegate {
         // Update moon icon
         moonIcon.alpha = enabled ? 1.0 : 0.3
 
-        // Exit door - only passable when Focus is OFF
-        if enabled {
-            exitDoorLocked = true
-            exitBlocker?.physicsBody?.categoryBitMask = PhysicsCategory.ground
-        } else {
+        // Exit door — once Focus has been activated, exit stays unlocked permanently
+        if hasActivatedFocus {
             exitDoorLocked = false
             exitBlocker?.physicsBody?.categoryBitMask = 0
         }
@@ -351,15 +392,17 @@ final class FocusModeScene: BaseLevelScene, SKPhysicsContactDelegate {
             showFocusText("DO NOT DISTURB? I AM THE DISTURBANCE.")
         }
 
-        // Calming visual effect: white overlay + slow particles
+        // Calming visual effect: blue tint overlay + vignette + slow particles
         if enabled {
-            calmOverlay?.run(.fadeAlpha(to: 0.15, duration: 0.5))
+            calmOverlay?.run(.fadeAlpha(to: 1.0, duration: 0.5))
+            calmVignetteEffect?.run(.fadeAlpha(to: 1.0, duration: 0.6))
             // Slow down background moon decorations
             enumerateChildNodes(withName: "moon_decoration") { node, _ in
                 node.speed = 0.3
             }
         } else {
             calmOverlay?.run(.fadeAlpha(to: 0, duration: 0.3))
+            calmVignetteEffect?.run(.fadeAlpha(to: 0, duration: 0.3))
             enumerateChildNodes(withName: "moon_decoration") { node, _ in
                 node.speed = 1.0
             }

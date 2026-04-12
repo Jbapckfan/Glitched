@@ -241,6 +241,8 @@ final class WiFiScene: BaseLevelScene, SKPhysicsContactDelegate {
         if downloadProgress >= 1.0 && !downloadCompleted {
             downloadCompleted = true
             downloadLabel.text = "DOWNLOAD COMPLETE"
+            // Unlock the exit door
+            exitBlocker?.physicsBody?.categoryBitMask = 0
             triggerConfettiBurst()
         }
     }
@@ -298,13 +300,26 @@ final class WiFiScene: BaseLevelScene, SKPhysicsContactDelegate {
         ]))
     }
 
+    private var exitBlocker: SKNode?
+
     private func createExitDoor(at position: CGPoint) {
+        let door = SKNode()
+        door.position = position
+
         let frame = SKShapeNode(rectOf: CGSize(width: 40, height: 60))
         frame.fillColor = fillColor
         frame.strokeColor = strokeColor
         frame.lineWidth = lineWidth
-        frame.position = position
-        addChild(frame)
+        door.addChild(frame)
+
+        // Blocker keeps exit impassable until download completes
+        exitBlocker = SKNode()
+        exitBlocker?.physicsBody = SKPhysicsBody(rectangleOf: CGSize(width: 40, height: 60))
+        exitBlocker?.physicsBody?.isDynamic = false
+        exitBlocker?.physicsBody?.categoryBitMask = PhysicsCategory.ground
+        door.addChild(exitBlocker!)
+
+        addChild(door)
 
         let exit = SKSpriteNode(color: .clear, size: CGSize(width: 40, height: 60))
         exit.position = position
@@ -318,7 +333,7 @@ final class WiFiScene: BaseLevelScene, SKPhysicsContactDelegate {
 
     private func showInstructionPanel() {
         let panel = SKNode()
-        panel.position = CGPoint(x: size.width / 2, y: size.height - 100)
+        panel.position = CGPoint(x: size.width / 2, y: size.height - 160)
         panel.zPosition = 300
         addChild(panel)
 
@@ -333,7 +348,7 @@ final class WiFiScene: BaseLevelScene, SKPhysicsContactDelegate {
         text.fontColor = strokeColor
         panel.addChild(text)
 
-        panel.run(.sequence([.wait(forDuration: 5), .fadeOut(withDuration: 0.5), .removeFromParent()]))
+        panel.run(.sequence([.wait(forDuration: 3.5), .fadeOut(withDuration: 0.5), .removeFromParent()]))
     }
 
     private func setupBit() {
@@ -353,9 +368,33 @@ final class WiFiScene: BaseLevelScene, SKPhysicsContactDelegate {
             if enabled {
                 platform.alpha = 1.0
                 platform.physicsBody?.categoryBitMask = PhysicsCategory.ground
+                // Restore solid outline
+                if let surface = platform.childNode(withName: "surface") as? SKShapeNode {
+                    surface.lineWidth = lineWidth
+                }
+                // Remove ghost outline if present
+                platform.childNode(withName: "ghost_outline")?.removeFromParent()
             } else {
-                platform.alpha = 0.3
+                platform.alpha = 0.15
                 platform.physicsBody?.categoryBitMask = 0
+                // Add dashed ghost outline for clarity
+                if platform.childNode(withName: "ghost_outline") == nil,
+                   let surface = platform.childNode(withName: "surface") as? SKShapeNode {
+                    let ghost = SKShapeNode()
+                    ghost.path = surface.path
+                    ghost.fillColor = .clear
+                    ghost.strokeColor = strokeColor
+                    ghost.lineWidth = lineWidth * 0.8
+                    ghost.alpha = 1.0  // full alpha on the outline; parent handles fade
+                    ghost.name = "ghost_outline"
+                    // Dashed line pattern
+                    let pattern: [NSNumber] = [6, 4]
+                    ghost.lineCap = .round
+                    if let dashedPath = surface.path?.copy(dashingWithPhase: 0, lengths: pattern.map { CGFloat(truncating: $0) }) {
+                        ghost.path = dashedPath
+                    }
+                    platform.addChild(ghost)
+                }
             }
         }
 
@@ -422,7 +461,7 @@ final class WiFiScene: BaseLevelScene, SKPhysicsContactDelegate {
             if isWifiEnabled {
                 downloadProgress = min(1.0, downloadProgress + CGFloat(deltaTime) * 0.08)
             } else {
-                downloadProgress = max(0.0, downloadProgress - CGFloat(deltaTime) * 0.12)
+                downloadProgress = max(0.0, downloadProgress - CGFloat(deltaTime) * 0.06)
             }
             updateDownloadBar()
         }
@@ -434,7 +473,7 @@ final class WiFiScene: BaseLevelScene, SKPhysicsContactDelegate {
         if collision == PhysicsCategory.player | PhysicsCategory.hazard {
             handleDeath()
         } else if collision == PhysicsCategory.player | PhysicsCategory.exit {
-            handleExit()
+            if downloadCompleted { handleExit() }
         } else if collision == PhysicsCategory.player | PhysicsCategory.ground {
             bit.setGrounded(true)
         }
