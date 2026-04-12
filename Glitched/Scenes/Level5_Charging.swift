@@ -30,10 +30,14 @@ final class ChargingScene: BaseLevelScene, SKPhysicsContactDelegate {
     private let plugSinkRate: CGFloat = 15.0  // Points per second when unplugged
     private let plugRiseRate: CGFloat = 30.0  // Points per second when plugged back in
 
+    // Live-charging plug ascent state
+    private var plugTargetY: CGFloat = 0
+    private var plugIsRising = false
+
     // 4th-wall commentary
     private var chargingCommentaryLabel: SKLabelNode?
-    private var hasShownPluggedText = false
-    private var hasShownUnpluggedText = false
+    private var hasShownChargingCommentary = false
+    private var hasShownUnplugCommentary = false
 
     // MARK: - Configuration
 
@@ -56,10 +60,9 @@ final class ChargingScene: BaseLevelScene, SKPhysicsContactDelegate {
         createGiantPlug()
         setupBit()
 
+        // If already charging on scene load, don't auto-trigger — force intentional action
         if UIDevice.current.batteryState == .charging || UIDevice.current.batteryState == .full {
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
-                self?.triggerPlugAnimation()
-            }
+            showChargingCommentary("YOU'RE ALREADY PLUGGED IN. UNPLUG AND REPLUG TO TRIGGER THE MECHANISM.")
         }
     }
 
@@ -197,17 +200,8 @@ final class ChargingScene: BaseLevelScene, SKPhysicsContactDelegate {
         let centerX = size.width / 2
         let groundY: CGFloat = 180
 
-        // Starting platform
-        let startPlatform = createPlatform(
-            width: shaftWidth - 40,
-            height: 20,
-            position: CGPoint(x: centerX, y: groundY)
-        )
-        startPlatform.name = "ground"
-        addChild(startPlatform)
-
-        // Floor (will be destroyed by plug)
-        floor = createFloor(at: CGPoint(x: centerX, y: groundY - 30))
+        // Destructible floor segments ARE the starting platform — no separate solid platform
+        floor = createFloor(at: CGPoint(x: centerX, y: groundY))
         addChild(floor)
 
         // Shaft walls
@@ -272,21 +266,45 @@ final class ChargingScene: BaseLevelScene, SKPhysicsContactDelegate {
     }
 
     private func createFloor(at position: CGPoint) -> SKNode {
+        let segmentCount = 8
+        let segmentWidth = shaftWidth / CGFloat(segmentCount)
+        let segmentHeight: CGFloat = 20
+
         let container = SKNode()
         container.position = position
         container.name = "destructible_floor"
 
-        // Hatching pattern to show breakable floor
-        for i in 0..<8 {
+        // Each segment is a physics-backed platform piece that gets removed on break
+        for i in 0..<segmentCount {
+            let segment = SKNode()
+            let xOffset = -shaftWidth / 2 + segmentWidth * (CGFloat(i) + 0.5)
+            segment.position = CGPoint(x: xOffset, y: 0)
+            segment.name = "floor_segment_\(i)"
+
+            // Visual: hatched rectangle
+            let rect = SKShapeNode(rectOf: CGSize(width: segmentWidth - 2, height: segmentHeight))
+            rect.fillColor = fillColor
+            rect.strokeColor = strokeColor.withAlphaComponent(0.4)
+            rect.lineWidth = lineWidth * 0.5
+            segment.addChild(rect)
+
+            // Hatch line decoration
             let line = SKShapeNode()
             let linePath = CGMutablePath()
-            let startX = -shaftWidth / 2 + CGFloat(i) * shaftWidth / 8
-            linePath.move(to: CGPoint(x: startX, y: -15))
-            linePath.addLine(to: CGPoint(x: startX + 30, y: 15))
+            linePath.move(to: CGPoint(x: -segmentWidth / 2 + 2, y: -segmentHeight / 2))
+            linePath.addLine(to: CGPoint(x: segmentWidth / 2 - 2, y: segmentHeight / 2))
             line.path = linePath
             line.strokeColor = strokeColor.withAlphaComponent(0.3)
             line.lineWidth = 1.5
-            container.addChild(line)
+            segment.addChild(line)
+
+            // Physics body per segment — solid floor the player stands on
+            segment.physicsBody = SKPhysicsBody(rectangleOf: CGSize(width: segmentWidth - 2, height: segmentHeight))
+            segment.physicsBody?.isDynamic = false
+            segment.physicsBody?.categoryBitMask = PhysicsCategory.ground
+            segment.physicsBody?.friction = 0.2
+
+            container.addChild(segment)
         }
 
         return container
@@ -532,7 +550,7 @@ final class ChargingScene: BaseLevelScene, SKPhysicsContactDelegate {
     // MARK: - Plug Animation
 
     private func triggerPlugAnimation() {
-        guard !isPlugAnimating && !hasPlugArrived else { return }
+        guard !isPlugAnimating && !hasPlugArrived && !plugIsRising else { return }
         isPlugAnimating = true
 
         let warning = createShakeAction(duration: 0.5, amplitudeX: 3, amplitudeY: 3)
@@ -561,27 +579,25 @@ final class ChargingScene: BaseLevelScene, SKPhysicsContactDelegate {
 
         breakFloor()
 
+        // Initial burst through the floor — short scripted pop
         let burstUp = SKAction.moveTo(y: 180, duration: 0.4)
         burstUp.timingMode = .easeOut
-
-        let pause = SKAction.wait(forDuration: 0.3)
-
-        let riseToTop = SKAction.moveTo(y: size.height - 200, duration: 2.0)
-        riseToTop.timingMode = .easeInEaseOut
 
         setPlugCollisionEnabled(true)
         setBatteryCharging()
 
-        giantPlug.run(SKAction.sequence([burstUp, pause, riseToTop])) { [weak self] in
+        giantPlug.run(burstUp) { [weak self] in
             guard let self = self else { return }
-            self.hasPlugArrived = true
             self.isPlugAnimating = false
-            self.plugPlatformBaseY = self.giantPlug.position.y
+            // Plug is now live — further ascent driven by updatePlaying
+            self.plugIsRising = true
+            self.plugTargetY = self.size.height - 200
             self.plugPlatformCurrentY = self.giantPlug.position.y
+            self.plugPlatformBaseY = self.plugTargetY
             self.isCurrentlyCharging = (UIDevice.current.batteryState == .charging || UIDevice.current.batteryState == .full)
         }
 
-        let riseShake = createShakeAction(duration: 2.5, amplitudeX: 2, amplitudeY: 2)
+        let riseShake = createShakeAction(duration: 1.0, amplitudeX: 2, amplitudeY: 2)
         self.run(riseShake)
 
         startRiseHaptics()
@@ -617,17 +633,25 @@ final class ChargingScene: BaseLevelScene, SKPhysicsContactDelegate {
     }
 
     private func breakFloor() {
+        // Collect segment world positions before removing
+        var segmentPositions: [CGPoint] = []
+        for i in 0..<8 {
+            if let segment = floor.childNode(withName: "floor_segment_\(i)") {
+                let worldPos = floor.convert(segment.position, to: self)
+                segmentPositions.append(worldPos)
+            }
+        }
+
+        // Remove the entire floor container (all segments + their physics bodies)
         floor.removeFromParent()
 
-        for _ in 0..<6 {
+        // Spawn flying debris pieces at each former segment position
+        for pos in segmentPositions {
             let piece = SKShapeNode(rectOf: CGSize(width: 30, height: 15))
             piece.fillColor = fillColor
             piece.strokeColor = strokeColor
             piece.lineWidth = lineWidth * 0.5
-            piece.position = CGPoint(
-                x: size.width / 2 + CGFloat.random(in: -80...80),
-                y: 150
-            )
+            piece.position = pos
             piece.physicsBody = SKPhysicsBody(rectangleOf: CGSize(width: 30, height: 15))
             piece.physicsBody?.isDynamic = true
             piece.physicsBody?.categoryBitMask = 0
@@ -672,9 +696,15 @@ final class ChargingScene: BaseLevelScene, SKPhysicsContactDelegate {
             isCurrentlyCharging = isPluggedIn
             if isPluggedIn {
                 triggerPlugAnimation()
-                showChargingCommentary("FEEDING ME ELECTRICITY? HOW... NURTURING.")
-            } else if hasPlugArrived {
-                showChargingCommentary("COLD. SO COLD.")
+                if !hasShownChargingCommentary {
+                    hasShownChargingCommentary = true
+                    showChargingCommentary("FEEDING ME ELECTRICITY? HOW... NURTURING.")
+                }
+            } else if hasPlugArrived || plugIsRising {
+                if !hasShownUnplugCommentary {
+                    hasShownUnplugCommentary = true
+                    showChargingCommentary("COLD. SO COLD.")
+                }
             }
         default:
             break
@@ -713,17 +743,41 @@ final class ChargingScene: BaseLevelScene, SKPhysicsContactDelegate {
     override func updatePlaying(deltaTime: TimeInterval) {
         playerController.update()
 
-        // Plug platform sinking/rising logic
+        // Phase 1: plug is rising from initial burst — only while charging
+        if plugIsRising && !hasPlugArrived {
+            if isCurrentlyCharging {
+                // Rise toward target while charger is connected
+                plugPlatformCurrentY = min(
+                    plugPlatformCurrentY + plugRiseRate * CGFloat(deltaTime),
+                    plugTargetY
+                )
+                giantPlug.position.y = plugPlatformCurrentY
+
+                if plugPlatformCurrentY >= plugTargetY {
+                    // Reached the top — ascent complete
+                    hasPlugArrived = true
+                    plugPlatformBaseY = plugTargetY
+                }
+            } else {
+                // Unplugged mid-ascent — sink back down
+                plugPlatformCurrentY -= plugSinkRate * CGFloat(deltaTime)
+                giantPlug.position.y = plugPlatformCurrentY
+            }
+            return
+        }
+
+        // Phase 2: plug has arrived — sink/rise based on charge state
         guard hasPlugArrived else { return }
 
         if isCurrentlyCharging {
-            // Rise back toward base position when plugged in
             if plugPlatformCurrentY < plugPlatformBaseY {
-                plugPlatformCurrentY = min(plugPlatformCurrentY + plugRiseRate * CGFloat(deltaTime), plugPlatformBaseY)
+                plugPlatformCurrentY = min(
+                    plugPlatformCurrentY + plugRiseRate * CGFloat(deltaTime),
+                    plugPlatformBaseY
+                )
                 giantPlug.position.y = plugPlatformCurrentY
             }
         } else {
-            // Sink slowly when unplugged
             plugPlatformCurrentY -= plugSinkRate * CGFloat(deltaTime)
             giantPlug.position.y = plugPlatformCurrentY
         }

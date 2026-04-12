@@ -18,7 +18,8 @@ final class BrightnessScene: BaseLevelScene, SKPhysicsContactDelegate {
 
     private let invisibleThreshold: CGFloat = 0.2
     private let ghostlyThreshold: CGFloat = 0.5
-    private let solidThreshold: CGFloat = 0.8
+    private let visibleThreshold: CGFloat = 0.75  // Visible but not yet solid
+    private let solidThreshold: CGFloat = 0.75     // Physics enabled at 75%
 
     // NEW: Too bright burns mechanic
     private let burnThreshold: CGFloat = 0.95
@@ -40,6 +41,7 @@ final class BrightnessScene: BaseLevelScene, SKPhysicsContactDelegate {
     private var brightnessBar: SKNode?
     private var brightnessIndicator: SKShapeNode?
     private var instructionPanel: SKNode?
+    private var hasStoodOnPlatform = false  // Tutorial dismissal gate
 
     // MARK: - Configuration
 
@@ -65,6 +67,7 @@ final class BrightnessScene: BaseLevelScene, SKPhysicsContactDelegate {
         updatePlatformVisibility()
         updateBurnZones()
         createMaxBrightnessSun()
+        updateMaxBrightnessSun()  // Ensure sun hazard matches initial brightness
         updateBrightnessCommentary()
     }
 
@@ -72,10 +75,11 @@ final class BrightnessScene: BaseLevelScene, SKPhysicsContactDelegate {
 
     private func createBurnZones() {
         // Create sun-focused danger zones that activate at max brightness
+        // Proportional positions based on screen size
         let burnPositions: [CGPoint] = [
-            CGPoint(x: 280, y: 280),
-            CGPoint(x: 420, y: 320),
-            CGPoint(x: 540, y: 280)
+            CGPoint(x: size.width * 0.40, y: size.height * 0.35),
+            CGPoint(x: size.width * 0.60, y: size.height * 0.40),
+            CGPoint(x: size.width * 0.78, y: size.height * 0.35)
         ]
 
         for (index, pos) in burnPositions.enumerated() {
@@ -123,7 +127,7 @@ final class BrightnessScene: BaseLevelScene, SKPhysicsContactDelegate {
         screenFlash = SKShapeNode(rectOf: size)
         screenFlash?.fillColor = .white
         screenFlash?.strokeColor = .clear
-        screenFlash?.position = CGPoint(x: size.width / 2, y: size.height / 2)
+        screenFlash?.position = CGPoint(x: size.width * 0.50, y: size.height * 0.50)
         screenFlash?.zPosition = 500
         screenFlash?.alpha = 0
         addChild(screenFlash!)
@@ -133,7 +137,7 @@ final class BrightnessScene: BaseLevelScene, SKPhysicsContactDelegate {
         burnWarning?.fontName = "Menlo-Bold"
         burnWarning?.fontSize = 18
         burnWarning?.fontColor = strokeColor
-        burnWarning?.position = CGPoint(x: size.width / 2, y: size.height - 150)
+        burnWarning?.position = CGPoint(x: size.width * 0.50, y: size.height * 0.82)
         burnWarning?.zPosition = 300
         burnWarning?.alpha = 0
         addChild(burnWarning!)
@@ -222,7 +226,7 @@ final class BrightnessScene: BaseLevelScene, SKPhysicsContactDelegate {
         label.fontName = "Menlo-Bold"
         label.fontSize = 14
         label.fontColor = strokeColor
-        label.position = CGPoint(x: size.width / 2, y: size.height / 2 + 80)
+        label.position = CGPoint(x: size.width * 0.50, y: size.height * 0.60)
         label.zPosition = 400
         label.alpha = 0
         label.name = "commentary_text"
@@ -240,7 +244,7 @@ final class BrightnessScene: BaseLevelScene, SKPhysicsContactDelegate {
 
     private func createMaxBrightnessSun() {
         maxBrightnessSun = SKNode()
-        maxBrightnessSun?.position = CGPoint(x: size.width / 2, y: size.height - 60)
+        maxBrightnessSun?.position = CGPoint(x: size.width * 0.50, y: size.height * 0.93)
         maxBrightnessSun?.zPosition = 35
         maxBrightnessSun?.alpha = 0
         addChild(maxBrightnessSun!)
@@ -350,13 +354,13 @@ final class BrightnessScene: BaseLevelScene, SKPhysicsContactDelegate {
         // Sun rays emanating from top
         drawSunRays()
 
-        // Window frames
-        drawWindowFrame(at: CGPoint(x: 80, y: size.height - 200))
-        drawWindowFrame(at: CGPoint(x: size.width - 80, y: size.height - 180))
+        // Window frames — proportional
+        drawWindowFrame(at: CGPoint(x: size.width * 0.12, y: size.height * 0.75))
+        drawWindowFrame(at: CGPoint(x: size.width * 0.88, y: size.height * 0.77))
 
-        // Light fixtures hanging from ceiling
-        drawLightFixture(at: CGPoint(x: size.width * 0.3, y: size.height - 50))
-        drawLightFixture(at: CGPoint(x: size.width * 0.7, y: size.height - 50))
+        // Light fixtures hanging from ceiling — proportional
+        drawLightFixture(at: CGPoint(x: size.width * 0.30, y: size.height * 0.94))
+        drawLightFixture(at: CGPoint(x: size.width * 0.70, y: size.height * 0.94))
 
         // Ceiling beams
         drawCeilingBeams()
@@ -366,7 +370,7 @@ final class BrightnessScene: BaseLevelScene, SKPhysicsContactDelegate {
     }
 
     private func drawSunRays() {
-        let sunCenter = CGPoint(x: size.width - 100, y: size.height - 80)
+        let sunCenter = CGPoint(x: size.width * 0.85, y: size.height * 0.90)
 
         // Sun circle
         let sun = SKShapeNode(circleOfRadius: 25)
@@ -515,9 +519,9 @@ final class BrightnessScene: BaseLevelScene, SKPhysicsContactDelegate {
     }
 
     private func drawCeilingBeams() {
-        let beamY = size.height - 20
+        let beamY = size.height * 0.97
 
-        for x in stride(from: CGFloat(0), through: size.width, by: 100) {
+        for x in stride(from: CGFloat(0), through: size.width, by: size.width * 0.15) {
             let beam = SKShapeNode(rectOf: CGSize(width: 15, height: 40))
             beam.fillColor = fillColor
             beam.strokeColor = strokeColor
@@ -529,9 +533,9 @@ final class BrightnessScene: BaseLevelScene, SKPhysicsContactDelegate {
     }
 
     private func drawFloorGrid() {
-        // Perspective floor lines
+        // Perspective floor lines — proportional
         let vanishY = size.height * 0.4
-        let floorY: CGFloat = 100
+        let floorY = size.height * 0.12
 
         for i in 0..<8 {
             let startX = CGFloat(i) * (size.width / 7)
@@ -553,7 +557,7 @@ final class BrightnessScene: BaseLevelScene, SKPhysicsContactDelegate {
         title.fontName = "Helvetica-Bold"
         title.fontSize = 28
         title.fontColor = strokeColor
-        title.position = CGPoint(x: 80, y: size.height - 60)
+        title.position = CGPoint(x: size.width * 0.12, y: size.height * 0.93)
         title.horizontalAlignmentMode = .left
         title.zPosition = 100
         addChild(title)
@@ -573,23 +577,25 @@ final class BrightnessScene: BaseLevelScene, SKPhysicsContactDelegate {
     // MARK: - Level Building
 
     private func buildLevel() {
-        let groundY: CGFloat = 160
+        let groundY = size.height * 0.20
 
-        // Starting platform (always visible)
+        // Starting platform (always visible) — proportional positioning
         let startPlatform = createPlatform(
-            at: CGPoint(x: 100, y: groundY),
-            size: CGSize(width: 140, height: 40),
+            at: CGPoint(x: size.width * 0.15, y: groundY),
+            size: CGSize(width: size.width * 0.20, height: 40),
             isUV: false
         )
         startPlatform.name = "start_platform"
 
-        // UV-reactive staircase platforms
+        // UV-reactive staircase platforms — proportional x positions within screen width
+        let stepHeight = size.height * 0.10
+        let platformW = size.width * 0.14
         let platformData: [(CGPoint, CGSize)] = [
-            (CGPoint(x: 220, y: groundY + 50), CGSize(width: 90, height: 25)),
-            (CGPoint(x: 340, y: groundY + 110), CGSize(width: 90, height: 25)),
-            (CGPoint(x: 460, y: groundY + 170), CGSize(width: 90, height: 25)),
-            (CGPoint(x: 580, y: groundY + 230), CGSize(width: 90, height: 25)),
-            (CGPoint(x: 680, y: groundY + 290), CGSize(width: 120, height: 35)),
+            (CGPoint(x: size.width * 0.30, y: groundY + stepHeight * 1), CGSize(width: platformW, height: 25)),
+            (CGPoint(x: size.width * 0.45, y: groundY + stepHeight * 2), CGSize(width: platformW, height: 25)),
+            (CGPoint(x: size.width * 0.58, y: groundY + stepHeight * 3), CGSize(width: platformW, height: 25)),
+            (CGPoint(x: size.width * 0.72, y: groundY + stepHeight * 4), CGSize(width: platformW, height: 25)),
+            (CGPoint(x: size.width * 0.85, y: groundY + stepHeight * 5), CGSize(width: size.width * 0.18, height: 35)),
         ]
 
         for (position, pSize) in platformData {
@@ -597,8 +603,8 @@ final class BrightnessScene: BaseLevelScene, SKPhysicsContactDelegate {
             uvPlatforms.append(platform)
         }
 
-        // Exit door on final platform
-        createExitDoor(at: CGPoint(x: 660, y: groundY + 330))
+        // Exit door on final platform — proportional
+        createExitDoor(at: CGPoint(x: size.width * 0.83, y: groundY + stepHeight * 5 + 40))
 
         // Death zone
         let deathZone = SKNode()
@@ -706,10 +712,10 @@ final class BrightnessScene: BaseLevelScene, SKPhysicsContactDelegate {
         depthLine.alpha = 0
         container.addChild(depthLine)
 
-        // Glow effect outline (shows when platform becomes solid)
+        // Glow effect outline (shows when platform becomes solid) — cyan so it's visible on white
         let glowOutline = SKShapeNode(rectOf: CGSize(width: platformSize.width + 6, height: platformSize.height + 6), cornerRadius: 2)
         glowOutline.fillColor = .clear
-        glowOutline.strokeColor = SKColor.white
+        glowOutline.strokeColor = VisualConstants.Colors.accent
         glowOutline.lineWidth = 3.0
         glowOutline.name = "glow_outline"
         glowOutline.zPosition = 3
@@ -827,9 +833,9 @@ final class BrightnessScene: BaseLevelScene, SKPhysicsContactDelegate {
     // MARK: - Brightness UI
 
     private func createBrightnessUI() {
-        // Sun icon with brightness bar
+        // Sun icon with brightness bar — proportional to screen edge
         let uiContainer = SKNode()
-        uiContainer.position = CGPoint(x: size.width - 60, y: size.height / 2)
+        uiContainer.position = CGPoint(x: size.width * 0.92, y: size.height * 0.50)
         uiContainer.zPosition = 200
         addChild(uiContainer)
 
@@ -909,12 +915,12 @@ final class BrightnessScene: BaseLevelScene, SKPhysicsContactDelegate {
 
     private func showInstructionPanel() {
         instructionPanel = SKNode()
-        instructionPanel?.position = CGPoint(x: 140, y: size.height - 150)
+        instructionPanel?.position = CGPoint(x: size.width * 0.25, y: size.height - 150)
         instructionPanel?.zPosition = 200
         addChild(instructionPanel!)
 
-        // Panel background
-        let panelBG = SKShapeNode(rectOf: CGSize(width: 160, height: 100), cornerRadius: 8)
+        // Panel background — taller to fit two-line instructions
+        let panelBG = SKShapeNode(rectOf: CGSize(width: 200, height: 130), cornerRadius: 8)
         panelBG.fillColor = fillColor
         panelBG.strokeColor = strokeColor
         panelBG.lineWidth = lineWidth
@@ -925,7 +931,7 @@ final class BrightnessScene: BaseLevelScene, SKPhysicsContactDelegate {
         phone.fillColor = fillColor
         phone.strokeColor = strokeColor
         phone.lineWidth = lineWidth * 0.8
-        phone.position = CGPoint(x: -40, y: 5)
+        phone.position = CGPoint(x: -60, y: 10)
         instructionPanel?.addChild(phone)
 
         // Sun symbol
@@ -933,7 +939,7 @@ final class BrightnessScene: BaseLevelScene, SKPhysicsContactDelegate {
         miniSun.fillColor = .clear
         miniSun.strokeColor = strokeColor
         miniSun.lineWidth = lineWidth * 0.5
-        miniSun.position = CGPoint(x: -40, y: 5)
+        miniSun.position = CGPoint(x: -60, y: 10)
         instructionPanel?.addChild(miniSun)
 
         // Arrow pointing up
@@ -947,7 +953,7 @@ final class BrightnessScene: BaseLevelScene, SKPhysicsContactDelegate {
         upArrow.path = arrowPath
         upArrow.strokeColor = strokeColor
         upArrow.lineWidth = lineWidth
-        upArrow.position = CGPoint(x: 20, y: 5)
+        upArrow.position = CGPoint(x: 20, y: 10)
         instructionPanel?.addChild(upArrow)
 
         // Bounce animation
@@ -956,13 +962,38 @@ final class BrightnessScene: BaseLevelScene, SKPhysicsContactDelegate {
             .moveBy(x: 0, y: -5, duration: 0.3)
         ])))
 
-        // Text
-        let label = SKLabelNode(text: "BRIGHTNESS")
-        label.fontName = "Menlo-Bold"
-        label.fontSize = 14
-        label.fontColor = strokeColor
-        label.position = CGPoint(x: 0, y: -35)
-        instructionPanel?.addChild(label)
+        // Line 1: raise brightness
+        let label1 = SKLabelNode(text: "RAISE BRIGHTNESS")
+        label1.fontName = "Menlo-Bold"
+        label1.fontSize = 13
+        label1.fontColor = strokeColor
+        label1.position = CGPoint(x: 0, y: -30)
+        instructionPanel?.addChild(label1)
+
+        // Line 2: warning about too bright
+        let label2 = SKLabelNode(text: "BUT NOT ALL THE WAY")
+        label2.fontName = "Menlo"
+        label2.fontSize = 11
+        label2.fontColor = strokeColor.withAlphaComponent(0.7)
+        label2.position = CGPoint(x: 0, y: -48)
+        instructionPanel?.addChild(label2)
+
+        let label3 = SKLabelNode(text: "TOO BRIGHT IS DANGEROUS")
+        label3.fontName = "Menlo"
+        label3.fontSize = 11
+        label3.fontColor = strokeColor.withAlphaComponent(0.7)
+        label3.position = CGPoint(x: 0, y: -62)
+        instructionPanel?.addChild(label3)
+    }
+
+    /// Dismiss panel only after player has stood on a UV platform
+    private func tryDismissInstructionPanel() {
+        guard instructionPanel != nil, hasStoodOnPlatform else { return }
+        instructionPanel?.run(.sequence([
+            .fadeOut(withDuration: 0.3),
+            .removeFromParent()
+        ]))
+        instructionPanel = nil
     }
 
     // MARK: - Platform Visibility
@@ -981,21 +1012,20 @@ final class BrightnessScene: BaseLevelScene, SKPhysicsContactDelegate {
               let depthLine = platform.childNode(withName: "depth_line") as? SKShapeNode else { return }
 
         if currentBrightness < invisibleThreshold {
-            // Barely visible hint
+            // State 1: Invisible — barely a hint
             surface.alpha = 0
             dashedOutline.alpha = 0.15
             uvSymbol.alpha = 0.1
             depthLine.alpha = 0
             platform.physicsBody?.categoryBitMask = 0
 
-            // Reset glow
             if let glow = platform.childNode(withName: "glow_outline") as? SKShapeNode {
                 glow.removeAction(forKey: "pulse")
                 glow.alpha = 0
             }
 
         } else if currentBrightness < ghostlyThreshold {
-            // Ghostly outline
+            // State 2: Ghost outline — faint dashes, no physics
             let progress = (currentBrightness - invisibleThreshold) / (ghostlyThreshold - invisibleThreshold)
             surface.alpha = 0
             dashedOutline.alpha = 0.15 + progress * 0.35
@@ -1003,35 +1033,35 @@ final class BrightnessScene: BaseLevelScene, SKPhysicsContactDelegate {
             depthLine.alpha = 0
             platform.physicsBody?.categoryBitMask = 0
 
-            // Reset glow
             if let glow = platform.childNode(withName: "glow_outline") as? SKShapeNode {
                 glow.removeAction(forKey: "pulse")
                 glow.alpha = 0
             }
 
         } else if currentBrightness < solidThreshold {
-            // Becoming solid
+            // State 3: Visible but NOT solid — player can see it but falls through
             let progress = (currentBrightness - ghostlyThreshold) / (solidThreshold - ghostlyThreshold)
-            surface.alpha = progress * 0.8
-            dashedOutline.alpha = 0.5 + progress * 0.5
-            uvSymbol.alpha = 0.3 + progress * 0.4
-            depthLine.alpha = progress * 0.5
-            platform.physicsBody?.categoryBitMask = PhysicsCategory.ground
+            surface.alpha = progress * 0.5
+            dashedOutline.alpha = 0.5 + progress * 0.3
+            uvSymbol.alpha = 0.3 + progress * 0.3
+            depthLine.alpha = progress * 0.3
+            platform.physicsBody?.categoryBitMask = 0  // NOT solid yet
 
-            // Glow effect starts appearing
+            // Faint ghost glow to hint "almost there"
             if let glow = platform.childNode(withName: "glow_outline") as? SKShapeNode {
-                glow.alpha = progress * 0.4
+                glow.removeAction(forKey: "pulse")
+                glow.alpha = progress * 0.15
             }
 
         } else {
-            // Fully visible and solid
+            // State 4: Fully solid — physics ON at 75%+
             surface.alpha = 1.0
             dashedOutline.alpha = 1.0
             uvSymbol.alpha = 0.8
             depthLine.alpha = 1.0
             platform.physicsBody?.categoryBitMask = PhysicsCategory.ground
 
-            // Full glow with subtle pulse animation
+            // Cyan glow pulse when solid
             if let glow = platform.childNode(withName: "glow_outline") as? SKShapeNode {
                 if glow.action(forKey: "pulse") == nil {
                     glow.alpha = 0.5
@@ -1048,7 +1078,7 @@ final class BrightnessScene: BaseLevelScene, SKPhysicsContactDelegate {
     // MARK: - Bit Setup
 
     private func setupBit() {
-        spawnPoint = CGPoint(x: 90, y: 200)
+        spawnPoint = CGPoint(x: size.width * 0.15, y: size.height * 0.20 + 40)
 
         bit = BitCharacter.make()
         bit.position = spawnPoint
@@ -1069,21 +1099,11 @@ final class BrightnessScene: BaseLevelScene, SKPhysicsContactDelegate {
     override func handleGameInput(_ event: GameInputEvent) {
         switch event {
         case .brightnessChanged(let level):
-            let oldBrightness = currentBrightness
             currentBrightness = CGFloat(level)
             updatePlatformVisibility()
             updateBurnZones()
             updateMaxBrightnessSun()
             updateBrightnessCommentary()
-
-            // Hide instruction panel when brightness raised
-            if level > 0.6 && oldBrightness <= 0.6 {
-                instructionPanel?.run(.sequence([
-                    .fadeOut(withDuration: 0.3),
-                    .removeFromParent()
-                ]))
-                instructionPanel = nil
-            }
         default:
             break
         }
@@ -1121,6 +1141,16 @@ final class BrightnessScene: BaseLevelScene, SKPhysicsContactDelegate {
             handleExit()
         } else if collision == PhysicsCategory.player | PhysicsCategory.ground {
             bit.setGrounded(true)
+
+            // Check if player landed on a UV platform — dismiss tutorial
+            if !hasStoodOnPlatform {
+                let otherNode = contact.bodyA.categoryBitMask == PhysicsCategory.player
+                    ? contact.bodyB.node : contact.bodyA.node
+                if otherNode?.name == "uv_platform" || otherNode?.parent?.name == "uv_platform" {
+                    hasStoodOnPlatform = true
+                    tryDismissInstructionPanel()
+                }
+            }
         }
     }
 
