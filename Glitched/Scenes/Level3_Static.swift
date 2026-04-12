@@ -24,6 +24,7 @@ final class StaticScene: BaseLevelScene, SKPhysicsContactDelegate {
 
     // Static/noise state
     private var currentNoiseLevel: Float = 0.0
+    private var noiseSamples: [Float] = []  // Rolling average buffer
     private var staticOverlay: SKNode!
     private var staticLines: [SKShapeNode] = []
 
@@ -355,18 +356,49 @@ final class StaticScene: BaseLevelScene, SKPhysicsContactDelegate {
             createLaser(from: positions.start, to: positions.end, index: index)
         }
 
-        // Mark the 4th laser as inverse with a different visual style (dashed)
-        // and set its initial state to OFF (since we start in silence and it's powered by noise)
+        // Mark the 4th laser as INVERSE with visually distinct style:
+        // - Cyan/accent color instead of normal stroke color
+        // - "SILENCE" label near the beam
+        // - Slower, steadier pulse (not the chaotic normal flicker)
         if inverseLaserIndex < laserBeams.count {
             let inverseBeam = laserBeams[inverseLaserIndex]
-            inverseBeam.path = inverseBeam.path?.copy(dashingWithPhase: 0, lengths: [4, 8])
+            inverseBeam.strokeColor = VisualConstants.Colors.accent
+
+            // Remove the normal chaotic flicker, replace with a slower steady pulse
+            inverseBeam.removeAllActions()
+            let steadyPulse = SKAction.sequence([
+                SKAction.fadeAlpha(to: 0.5, duration: 0.6),
+                SKAction.fadeAlpha(to: 1.0, duration: 0.6)
+            ])
+            inverseBeam.run(SKAction.repeatForever(steadyPulse), withKey: "inverse_pulse")
+
+            // Add "SILENCE" label near the inverse laser
+            let silenceLabel = SKLabelNode(fontNamed: "Menlo-Bold")
+            silenceLabel.text = "SILENCE"
+            silenceLabel.fontSize = 9
+            silenceLabel.fontColor = VisualConstants.Colors.accent
+            silenceLabel.position = CGPoint(
+                x: inverseBeam.frame.midX + 25,
+                y: inverseBeam.frame.midY
+            )
+            silenceLabel.zPosition = 16
+            silenceLabel.name = "silence_label"
+            addChild(silenceLabel)
+
+            // Pulse the label in sync
+            silenceLabel.run(SKAction.repeatForever(SKAction.sequence([
+                SKAction.fadeAlpha(to: 0.4, duration: 0.6),
+                SKAction.fadeAlpha(to: 1.0, duration: 0.6)
+            ])))
+
+            // Update the emitter warning light to cyan
+            if let light = laserEmitters[inverseLaserIndex].childNode(withName: "warning_light") as? SKShapeNode {
+                light.fillColor = VisualConstants.Colors.accent.withAlphaComponent(0.2)
+            }
 
             // Inverse laser starts OFF in silence
             inverseBeam.alpha = 0.15
             laserHitZones[inverseLaserIndex].physicsBody?.categoryBitMask = 0
-            if let light = laserEmitters[inverseLaserIndex].childNode(withName: "warning_light") as? SKShapeNode {
-                light.fillColor = strokeColor.withAlphaComponent(0.2)
-            }
         }
     }
 
@@ -419,12 +451,12 @@ final class StaticScene: BaseLevelScene, SKPhysicsContactDelegate {
         addChild(hitZone)
         laserHitZones.append(hitZone)
 
-        // Flicker animation
+        // Flicker animation (keyed so it can be removed on state change)
         let flicker = SKAction.sequence([
             SKAction.fadeAlpha(to: 0.6, duration: 0.05),
             SKAction.fadeAlpha(to: 1.0, duration: 0.05)
         ])
-        beam.run(SKAction.repeatForever(flicker))
+        beam.run(SKAction.repeatForever(flicker), withKey: "laser_flicker")
     }
 
     private func updateLaserState() {
@@ -440,7 +472,9 @@ final class StaticScene: BaseLevelScene, SKPhysicsContactDelegate {
                 let laserShouldBeOff = isInverse ? !shouldBlock : shouldBlock
 
                 if laserShouldBeOff {
-                    // Laser is off/blocked
+                    // Laser is off/blocked — remove existing flicker first to prevent stacking
+                    beam.removeAction(forKey: "laser_flicker")
+                    beam.removeAction(forKey: "inverse_pulse")
                     beam.alpha = 0.15
                     beam.run(.repeatForever(.sequence([
                         .fadeAlpha(to: 0.1, duration: 0.02),
@@ -449,16 +483,33 @@ final class StaticScene: BaseLevelScene, SKPhysicsContactDelegate {
                     laserHitZones[index].physicsBody?.categoryBitMask = 0
 
                     if let light = laserEmitters[index].childNode(withName: "warning_light") as? SKShapeNode {
-                        light.fillColor = strokeColor.withAlphaComponent(0.2)
+                        light.fillColor = isInverse
+                            ? VisualConstants.Colors.accent.withAlphaComponent(0.2)
+                            : strokeColor.withAlphaComponent(0.2)
                     }
                 } else {
-                    // Laser is on/deadly
+                    // Laser is on/deadly — remove blocked flicker first
                     beam.removeAction(forKey: "blocked_flicker")
                     beam.alpha = 1.0
                     laserHitZones[index].physicsBody?.categoryBitMask = PhysicsCategory.hazard
 
+                    // Restore the appropriate flicker style
+                    if isInverse {
+                        beam.run(.repeatForever(.sequence([
+                            .fadeAlpha(to: 0.5, duration: 0.6),
+                            .fadeAlpha(to: 1.0, duration: 0.6)
+                        ])), withKey: "inverse_pulse")
+                    } else {
+                        beam.run(.repeatForever(.sequence([
+                            .fadeAlpha(to: 0.6, duration: 0.05),
+                            .fadeAlpha(to: 1.0, duration: 0.05)
+                        ])), withKey: "laser_flicker")
+                    }
+
                     if let light = laserEmitters[index].childNode(withName: "warning_light") as? SKShapeNode {
-                        light.fillColor = strokeColor
+                        light.fillColor = isInverse
+                            ? VisualConstants.Colors.accent
+                            : strokeColor
                     }
                 }
             }
@@ -691,11 +742,17 @@ final class StaticScene: BaseLevelScene, SKPhysicsContactDelegate {
     override func handleGameInput(_ event: GameInputEvent) {
         switch event {
         case .micLevelChanged(let power):
-            currentNoiseLevel = power
+            // Rolling average of last 4 samples to prevent chattering at threshold
+            noiseSamples.append(power)
+            if noiseSamples.count > 4 {
+                noiseSamples.removeFirst()
+            }
+            let smoothed = noiseSamples.reduce(0, +) / Float(noiseSamples.count)
+            currentNoiseLevel = smoothed
             updateLaserState()
 
             // Hide instruction after first noise
-            if power > noiseThresholdToBlock, let panel = instructionPanel {
+            if smoothed > noiseThresholdToBlock, let panel = instructionPanel {
                 panel.removeAllActions()
                 panel.run(.sequence([
                     .fadeOut(withDuration: 0.3),
@@ -786,7 +843,7 @@ final class StaticScene: BaseLevelScene, SKPhysicsContactDelegate {
     }
 
     override func hintText() -> String? {
-        return "???"
+        return "Sound blocks the beams... but watch the last one carefully."
     }
 
     // MARK: - Cleanup

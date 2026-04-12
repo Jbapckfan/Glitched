@@ -60,6 +60,7 @@ final class VolumeScene: BaseLevelScene, SKPhysicsContactDelegate {
     // Safe zone shrinking
     private var levelElapsedTime: TimeInterval = 0
     private var safeZoneShrinkFactor: Float = 1.0
+    private var rangeLabel: SKLabelNode!
 
     // NEW: Water system - volume controls water level
     private var waterNode: SKShapeNode!
@@ -88,6 +89,9 @@ final class VolumeScene: BaseLevelScene, SKPhysicsContactDelegate {
         createVolumeIndicator()
         setupVolumeObserver()
         setupBit()
+
+        // Initialize water level to current system volume so it starts correctly
+        updateWaterLevel()
     }
 
     // MARK: - Water System
@@ -139,21 +143,16 @@ final class VolumeScene: BaseLevelScene, SKPhysicsContactDelegate {
             bubbles.append(bubble)
         }
 
-        // Warning label
-        let warningLabel = SKLabelNode(text: "???")
+        // Warning label — dynamically updated based on game state
+        let warningLabel = SKLabelNode(text: "")
         warningLabel.fontName = "Menlo-Bold"
         warningLabel.fontSize = 10
         warningLabel.fontColor = strokeColor
         warningLabel.position = CGPoint(x: size.width / 2, y: 100)
         warningLabel.zPosition = 200
-        warningLabel.alpha = 0.7
+        warningLabel.alpha = 0
         warningLabel.name = "flood_warning"
         addChild(warningLabel)
-
-        warningLabel.run(.sequence([
-            .wait(forDuration: 3),
-            .fadeOut(withDuration: 0.5)
-        ]))
     }
 
     private func updateWaterLevel() {
@@ -181,6 +180,19 @@ final class VolumeScene: BaseLevelScene, SKPhysicsContactDelegate {
         // Animate water level
         waterNode.run(.moveTo(y: targetWaterY, duration: 0.3))
 
+        // Update contextual warning label
+        if let warningLabel = childNode(withName: "flood_warning") as? SKLabelNode {
+            if currentVolume > 0.7 {
+                warningLabel.text = "VOLUME TOO HIGH \u{2014} FLOODING"
+                warningLabel.alpha = 0.9
+            } else if creatureState == .stirring || creatureState == .awake {
+                warningLabel.text = "CREATURE STIRRING"
+                warningLabel.alpha = 0.7
+            } else {
+                warningLabel.alpha = 0
+            }
+        }
+
         // Update bubbles visibility based on water level
         for bubble in bubbles {
             if currentVolume > 0.5 {
@@ -199,6 +211,19 @@ final class VolumeScene: BaseLevelScene, SKPhysicsContactDelegate {
             } else {
                 bubble.removeAllActions()
                 bubble.alpha = 0
+            }
+        }
+
+        // Activate/deactivate the volume bridge
+        if let bridge = childNode(withName: "volume_bridge") {
+            if currentVolume > 0.5 {
+                bridge.alpha = 1.0
+                bridge.physicsBody?.categoryBitMask = PhysicsCategory.ground
+                childNode(withName: "bridge_hint")?.alpha = 0
+            } else {
+                bridge.alpha = 0.15
+                bridge.physicsBody?.categoryBitMask = 0
+                childNode(withName: "bridge_hint")?.alpha = 0.4
             }
         }
 
@@ -378,6 +403,49 @@ final class VolumeScene: BaseLevelScene, SKPhysicsContactDelegate {
         )
         ground.name = "ground"
         addChild(ground)
+
+        // Elevated platforms above flood line — players must use these when water rises
+        let elevatedPlatform1 = createPlatform(
+            width: 90, height: 20,
+            position: CGPoint(x: 160, y: groundY + 80)
+        )
+        elevatedPlatform1.name = "elevated_1"
+        addChild(elevatedPlatform1)
+
+        let elevatedPlatform2 = createPlatform(
+            width: 80, height: 20,
+            position: CGPoint(x: size.width / 2 + 80, y: groundY + 100)
+        )
+        elevatedPlatform2.name = "elevated_2"
+        addChild(elevatedPlatform2)
+
+        let elevatedPlatform3 = createPlatform(
+            width: 70, height: 20,
+            position: CGPoint(x: size.width - 160, y: groundY + 70)
+        )
+        elevatedPlatform3.name = "elevated_3"
+        addChild(elevatedPlatform3)
+
+        // Volume-activated bridge: hidden until volume > 0.5, bridges gap to exit
+        // Player must briefly raise volume to reveal the bridge, then lower before wolf wakes
+        let bridge = createPlatform(
+            width: 100, height: 15,
+            position: CGPoint(x: size.width - 110, y: groundY + 40)
+        )
+        bridge.name = "volume_bridge"
+        bridge.alpha = 0.15
+        bridge.physicsBody?.categoryBitMask = 0  // Not solid until activated
+        addChild(bridge)
+
+        // Bridge label hint
+        let bridgeHint = SKLabelNode(fontNamed: "Menlo")
+        bridgeHint.text = "~ raise volume ~"
+        bridgeHint.fontSize = 8
+        bridgeHint.fontColor = strokeColor.withAlphaComponent(0.4)
+        bridgeHint.position = CGPoint(x: size.width - 110, y: groundY + 55)
+        bridgeHint.zPosition = 12
+        bridgeHint.name = "bridge_hint"
+        addChild(bridgeHint)
 
         // Exit door
         createExitDoor(at: CGPoint(x: size.width - 60, y: groundY + 30))
@@ -579,6 +647,13 @@ final class VolumeScene: BaseLevelScene, SKPhysicsContactDelegate {
         creatureEyes.position = CGPoint(x: 0, y: 30)
         creature.addChild(creatureEyes)
 
+        // Wolf physics body — blocks the player from walking through
+        creature.physicsBody = SKPhysicsBody(circleOfRadius: 80)
+        creature.physicsBody?.isDynamic = false
+        creature.physicsBody?.categoryBitMask = PhysicsCategory.enemy
+        creature.physicsBody?.contactTestBitMask = PhysicsCategory.player
+        creature.physicsBody?.collisionBitMask = PhysicsCategory.player
+
         // Sleep indicator (Z's)
         sleepIndicator = SKNode()
         sleepIndicator.position = CGPoint(x: 140, y: 100)
@@ -633,6 +708,21 @@ final class VolumeScene: BaseLevelScene, SKPhysicsContactDelegate {
             SKAction.scale(to: 0.95, duration: 1.0)
         ])
         detectionZone.run(SKAction.repeatForever(pulse))
+
+        // Range indicator label near the creature showing detection sensitivity
+        rangeLabel = SKLabelNode(fontNamed: "Menlo")
+        rangeLabel.fontSize = 9
+        rangeLabel.fontColor = strokeColor.withAlphaComponent(0.5)
+        rangeLabel.position = CGPoint(x: creature.position.x, y: creature.position.y - 50)
+        rangeLabel.zPosition = 11
+        rangeLabel.text = "SENSITIVITY: 100%"
+        addChild(rangeLabel)
+
+        // Pulsing ring to visualize the detection range shrinking
+        rangeLabel.run(SKAction.repeatForever(SKAction.sequence([
+            SKAction.fadeAlpha(to: 0.3, duration: 1.0),
+            SKAction.fadeAlpha(to: 0.7, duration: 1.0)
+        ])))
     }
 
     // MARK: - Volume Indicator
@@ -826,6 +916,17 @@ final class VolumeScene: BaseLevelScene, SKPhysicsContactDelegate {
             safeZoneShrinkFactor = newShrinkFactor
             // Re-evaluate creature state with the new tighter thresholds
             updateCreatureState()
+
+            // Visualize the shrinking safe zone — update label and pulse the detection ring
+            let sensitivityPct = Int((1.0 - safeZoneShrinkFactor) / 0.6 * 100)
+            rangeLabel.text = "SENSITIVITY: \(100 + sensitivityPct)%"
+            rangeLabel.fontColor = safeZoneShrinkFactor < 0.7
+                ? strokeColor.withAlphaComponent(0.8)
+                : strokeColor.withAlphaComponent(0.5)
+
+            // Grow the detection zone ring to visualize increasing danger
+            let visualScale = CGFloat(1.0 / safeZoneShrinkFactor)
+            detectionZone.run(SKAction.scale(to: visualScale, duration: 0.5))
         }
 
         if creatureState == .returningToSleep {
@@ -859,7 +960,7 @@ final class VolumeScene: BaseLevelScene, SKPhysicsContactDelegate {
 
         let distance = hypot(bit.position.x - creature.position.x,
                             bit.position.y - creature.position.y)
-        playerInZone = distance < 200
+        playerInZone = distance < 180  // Match the visible detection zone radius
 
         if playerInZone && creatureState == .awake {
             handleDeath()
@@ -937,6 +1038,15 @@ final class VolumeScene: BaseLevelScene, SKPhysicsContactDelegate {
 
         if collision == PhysicsCategory.player | PhysicsCategory.hazard {
             handleDeath()
+        } else if collision == PhysicsCategory.player | PhysicsCategory.enemy {
+            // Touching the wolf — if awake, instant death
+            if creatureState == .awake {
+                handleDeath()
+            } else {
+                // Bumping the wolf stirs it
+                creatureState = .stirring
+                animateCreatureState()
+            }
         } else if collision == PhysicsCategory.player | PhysicsCategory.exit {
             handleExit()
         } else if collision == PhysicsCategory.player | PhysicsCategory.ground {

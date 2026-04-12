@@ -73,8 +73,8 @@ final class BitCharacter: SKSpriteNode {
         physicsBody?.friction = 0.2
         physicsBody?.linearDamping = 0.1  // Less damping for snappier movement
         physicsBody?.categoryBitMask = PhysicsCategory.player
-        physicsBody?.contactTestBitMask = PhysicsCategory.hazard | PhysicsCategory.exit | PhysicsCategory.ground
-        physicsBody?.collisionBitMask = PhysicsCategory.ground
+        physicsBody?.contactTestBitMask = PhysicsCategory.hazard | PhysicsCategory.exit | PhysicsCategory.ground | PhysicsCategory.enemy
+        physicsBody?.collisionBitMask = PhysicsCategory.ground | PhysicsCategory.enemy
     }
 
     private func createAstronautVisual() {
@@ -796,4 +796,5 @@ struct PhysicsCategory {
     static let hazard: UInt32 = 1 << 2
     static let exit: UInt32 = 1 << 3
     static let interactable: UInt32 = 1 << 4
+    static let enemy: UInt32 = 1 << 5
 }
