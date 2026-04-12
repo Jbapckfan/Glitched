@@ -37,6 +37,9 @@ final class VoiceOverScene: BaseLevelScene, SKPhysicsContactDelegate {
         buildLevel()
         showInstructionPanel()
         setupBit()
+
+        // Check initial VoiceOver state on load
+        onVoiceOverChanged(isEnabled: UIAccessibility.isVoiceOverRunning)
     }
 
     private func setupBackground() {
@@ -63,26 +66,26 @@ final class VoiceOverScene: BaseLevelScene, SKPhysicsContactDelegate {
         title.fontName = "Helvetica-Bold"
         title.fontSize = 28
         title.fontColor = strokeColor
-        title.position = CGPoint(x: 80, y: size.height - 60)
+        title.position = CGPoint(x: size.width * 0.1, y: size.height - 60)
         title.horizontalAlignmentMode = .left
         title.zPosition = 100
         addChild(title)
     }
 
     private func buildLevel() {
-        let groundY: CGFloat = 160
+        let groundY: CGFloat = size.height * 0.35
 
         // Start platform (left side)
-        createPlatform(at: CGPoint(x: 80, y: groundY), size: CGSize(width: 120, height: 30))
+        createPlatform(at: CGPoint(x: size.width * 0.1, y: groundY), size: CGSize(width: size.width * 0.15, height: 30))
 
         // Exit platform (right side) - visible gap between
-        createPlatform(at: CGPoint(x: size.width - 80, y: groundY), size: CGSize(width: 120, height: 30))
+        createPlatform(at: CGPoint(x: size.width * 0.9, y: groundY), size: CGSize(width: size.width * 0.15, height: 30))
 
         // Invisible bridge platforms spanning the gap
         // These always have physics bodies (always solid), just invisible
         let bridgeCount = 5
-        let gapStart: CGFloat = 160
-        let gapEnd: CGFloat = size.width - 160
+        let gapStart: CGFloat = size.width * 0.2
+        let gapEnd: CGFloat = size.width * 0.8
         let spacing = (gapEnd - gapStart) / CGFloat(bridgeCount + 1)
 
         for i in 0..<bridgeCount {
@@ -99,7 +102,7 @@ final class VoiceOverScene: BaseLevelScene, SKPhysicsContactDelegate {
         }
 
         // Exit door
-        createExitDoor(at: CGPoint(x: size.width - 60, y: groundY + 50))
+        createExitDoor(at: CGPoint(x: size.width * 0.9, y: groundY + 50))
 
         // Death zone
         let death = SKNode()
@@ -261,7 +264,8 @@ final class VoiceOverScene: BaseLevelScene, SKPhysicsContactDelegate {
     }
 
     private func setupBit() {
-        spawnPoint = CGPoint(x: 80, y: 200)
+        let groundY: CGFloat = size.height * 0.35
+        spawnPoint = CGPoint(x: size.width * 0.1, y: groundY + 40)
         bit = BitCharacter.make()
         bit.position = spawnPoint
         addChild(bit)
@@ -311,28 +315,35 @@ final class VoiceOverScene: BaseLevelScene, SKPhysicsContactDelegate {
         guard !hasFallbackShown else { return }
         hasFallbackShown = true
 
-        // After 3 deaths, show faint dotted outlines
-        for platform in invisiblePlatforms {
+        // After 3 deaths, add accessibility labels to invisible platforms
+        // so VoiceOver can announce them — keeps the puzzle spirit while
+        // providing a hint through the intended mechanic.
+        for (i, platform) in invisiblePlatforms.enumerated() {
+            // Add subtle visual hint
             if let surface = platform.children.first(where: { $0.name?.starts(with: "surface_") == true }) as? SKShapeNode {
                 surface.strokeColor = strokeColor
                 surface.alpha = 0.15
                 surface.lineWidth = 1
-
-                // Create dashed appearance with line segments
-                let dashOverlay = SKShapeNode(rectOf: CGSize(width: 74, height: 29))
-                dashOverlay.strokeColor = strokeColor
-                dashOverlay.fillColor = .clear
-                dashOverlay.lineWidth = 1
-                dashOverlay.alpha = 0.2
-                dashOverlay.glowWidth = 0.5
-                platform.addChild(dashOverlay)
-
-                // Pulse subtly
-                dashOverlay.run(.repeatForever(.sequence([
-                    .fadeAlpha(to: 0.3, duration: 1.2),
-                    .fadeAlpha(to: 0.1, duration: 1.2)
-                ])))
             }
+
+            // Add accessibility label so VoiceOver users can discover them
+            platform.isAccessibilityElement = true
+            platform.accessibilityLabel = "HIDDEN PLATFORM \(i + 1) — STEP HERE"
+            platform.accessibilityTraits = .staticText
+
+            // Subtle pulsing outline
+            let dashOverlay = SKShapeNode(rectOf: CGSize(width: 74, height: 29))
+            dashOverlay.strokeColor = strokeColor
+            dashOverlay.fillColor = .clear
+            dashOverlay.lineWidth = 1
+            dashOverlay.alpha = 0.2
+            dashOverlay.glowWidth = 0.5
+            platform.addChild(dashOverlay)
+
+            dashOverlay.run(.repeatForever(.sequence([
+                .fadeAlpha(to: 0.3, duration: 1.2),
+                .fadeAlpha(to: 0.1, duration: 1.2)
+            ])))
         }
 
         // Hint message

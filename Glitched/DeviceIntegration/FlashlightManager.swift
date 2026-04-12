@@ -32,7 +32,7 @@ final class FlashlightManager: DeviceManager {
         }
 
         // Poll torch state (no reliable KVO for torch)
-        pollTimer = Timer.scheduledTimer(withTimeInterval: 0.25, repeats: true) { [weak self] _ in
+        pollTimer = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { [weak self] _ in
             guard self?.isActive == true else { return }
             let isOn = self?.isTorchOn() ?? false
             DispatchQueue.main.async {

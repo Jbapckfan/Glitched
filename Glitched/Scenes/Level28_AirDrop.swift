@@ -5,7 +5,7 @@ import UIKit
 /// Concept: A locked door displays a code. Player shares the code via the system share sheet
 /// (any sharing method counts — not limited to AirDrop), then taps it back in via in-game
 /// keyboard to unlock the door. The mechanic is intentionally "sharing" not specifically AirDrop.
-final class AirDropScene: BaseLevelScene, SKPhysicsContactDelegate {
+final class ShareScene: BaseLevelScene, SKPhysicsContactDelegate {
 
     private let fillColor = SKColor.white
     private let strokeColor = SKColor.black
@@ -21,6 +21,7 @@ final class AirDropScene: BaseLevelScene, SKPhysicsContactDelegate {
     private var enteredCode: String = ""
     private var doorUnlocked = false
     private var hasShared = false
+    private var codeHidden = false
 
     // UI nodes
     private var codeDisplayLabel: SKLabelNode!
@@ -82,29 +83,29 @@ final class AirDropScene: BaseLevelScene, SKPhysicsContactDelegate {
         title.fontName = "Helvetica-Bold"
         title.fontSize = 28
         title.fontColor = strokeColor
-        title.position = CGPoint(x: 80, y: size.height - 60)
+        title.position = CGPoint(x: size.width * 0.1, y: size.height - 60)
         title.horizontalAlignmentMode = .left
         title.zPosition = 100
         addChild(title)
     }
 
     private func buildLevel() {
-        let groundY: CGFloat = 160
+        let groundY: CGFloat = size.height * 0.35
 
         // Start platform
-        createPlatform(at: CGPoint(x: 80, y: groundY), size: CGSize(width: 120, height: 30))
+        createPlatform(at: CGPoint(x: size.width * 0.1, y: groundY), size: CGSize(width: size.width * 0.15, height: 30))
 
         // Middle platform with terminal
-        createPlatform(at: CGPoint(x: size.width / 2, y: groundY), size: CGSize(width: 180, height: 30))
+        createPlatform(at: CGPoint(x: size.width / 2, y: groundY), size: CGSize(width: size.width * 0.25, height: 30))
 
         // Door platform
-        createPlatform(at: CGPoint(x: size.width - 80, y: groundY), size: CGSize(width: 120, height: 30))
+        createPlatform(at: CGPoint(x: size.width * 0.9, y: groundY), size: CGSize(width: size.width * 0.15, height: 30))
 
         // Terminal screen with code
         createTerminalScreen(at: CGPoint(x: size.width / 2, y: groundY + 90))
 
         // Locked door
-        createLockedDoor(at: CGPoint(x: size.width - 60, y: groundY + 50))
+        createLockedDoor(at: CGPoint(x: size.width * 0.9, y: groundY + 50))
 
         // Death zone
         let death = SKNode()
@@ -277,7 +278,8 @@ final class AirDropScene: BaseLevelScene, SKPhysicsContactDelegate {
     }
 
     private func setupBit() {
-        spawnPoint = CGPoint(x: 80, y: 200)
+        let groundY: CGFloat = size.height * 0.35
+        spawnPoint = CGPoint(x: size.width * 0.1, y: groundY + 40)
         bit = BitCharacter.make()
         bit.position = spawnPoint
         addChild(bit)
@@ -308,11 +310,26 @@ final class AirDropScene: BaseLevelScene, SKPhysicsContactDelegate {
         activityVC.completionWithItemsHandler = { [weak self] _, completed, _, _ in
             if completed {
                 self?.hasShared = true
+                self?.hideTransmissionCode()
                 self?.showKeyboard()
             }
         }
 
         viewController.present(activityVC, animated: true)
+    }
+
+    private func hideTransmissionCode() {
+        guard !codeHidden else { return }
+        codeHidden = true
+
+        // Hide the code from the terminal — player must type it from memory
+        codeDisplayLabel?.run(.sequence([
+            .fadeOut(withDuration: 0.3),
+            .run { [weak self] in
+                self?.codeDisplayLabel?.text = "??????"
+                self?.codeDisplayLabel?.run(.fadeIn(withDuration: 0.2))
+            }
+        ]))
     }
 
     private func showKeyboard() {
@@ -517,14 +534,9 @@ final class AirDropScene: BaseLevelScene, SKPhysicsContactDelegate {
     // MARK: - Input
 
     override func handleGameInput(_ event: GameInputEvent) {
-        switch event {
-        case .airdropReceived(let code):
-            if code == doorCode {
-                unlockDoor()
-            }
-        default:
-            break
-        }
+        // No instant-unlock bypass — the player must always type the code
+        // to open the door, even if they share it back to themselves.
+        _ = event
     }
 
     override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent?) {

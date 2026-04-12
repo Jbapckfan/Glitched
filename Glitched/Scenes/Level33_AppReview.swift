@@ -86,7 +86,7 @@ final class AppReviewScene: BaseLevelScene, SKPhysicsContactDelegate {
         title.fontName = "Helvetica-Bold"
         title.fontSize = 28
         title.fontColor = strokeColor
-        title.position = CGPoint(x: 80, y: size.height - 60)
+        title.position = CGPoint(x: size.width * 0.1, y: size.height - 60)
         title.horizontalAlignmentMode = .left
         title.zPosition = 100
         addChild(title)
@@ -95,7 +95,7 @@ final class AppReviewScene: BaseLevelScene, SKPhysicsContactDelegate {
         subtitle.fontName = "Menlo-Bold"
         subtitle.fontSize = 12
         subtitle.fontColor = strokeColor
-        subtitle.position = CGPoint(x: 80, y: size.height - 85)
+        subtitle.position = CGPoint(x: size.width * 0.1, y: size.height - 85)
         subtitle.horizontalAlignmentMode = .left
         subtitle.zPosition = 100
         addChild(subtitle)
@@ -104,16 +104,16 @@ final class AppReviewScene: BaseLevelScene, SKPhysicsContactDelegate {
     // MARK: - Level Construction
 
     private func buildLevel() {
-        let groundY: CGFloat = 120
+        let groundY: CGFloat = size.height * 0.25
 
         // Full-width ground platform for that "deceptively simple" look
         createPlatform(at: CGPoint(x: size.width / 2, y: groundY),
                        size: CGSize(width: size.width - 40, height: 25))
 
         // Small elevated platform near start with a sign
-        createPlatform(at: CGPoint(x: 60, y: groundY + 60),
+        createPlatform(at: CGPoint(x: size.width * 0.08, y: groundY + 60),
                        size: CGSize(width: 80, height: 20))
-        createSign(at: CGPoint(x: 60, y: groundY + 95), text: "LOOKS EASY, RIGHT?")
+        createSign(at: CGPoint(x: size.width * 0.08, y: groundY + 95), text: "LOOKS EASY, RIGHT?")
 
         // Gate 1 at 1/3 across
         let gate1X = size.width * 0.33
@@ -129,7 +129,7 @@ final class AppReviewScene: BaseLevelScene, SKPhysicsContactDelegate {
         createGateTrigger(name: "gate2Trigger", at: CGPoint(x: gate2X - 40, y: groundY + 50))
 
         // Exit door at far right
-        let exitX = size.width - 60
+        let exitX = size.width * 0.92
         createExitDoor(at: CGPoint(x: exitX, y: groundY + 50))
 
         // Death zone below
@@ -370,7 +370,8 @@ final class AppReviewScene: BaseLevelScene, SKPhysicsContactDelegate {
     // MARK: - Player Setup
 
     private func setupBit() {
-        spawnPoint = CGPoint(x: 50, y: 180)
+        let groundY: CGFloat = size.height * 0.25
+        spawnPoint = CGPoint(x: size.width * 0.06, y: groundY + 60)
         bit = BitCharacter.make()
         bit.position = spawnPoint
         addChild(bit)
@@ -660,7 +661,7 @@ final class AppReviewScene: BaseLevelScene, SKPhysicsContactDelegate {
             .wait(forDuration: 12.0),
             .run { [weak self] in
                 self?.showReviewButton()
-                self?.appendLargeTerminalLine("PURELY OPTIONAL. TEN SECONDS OF DRAMA REMAIN.", to: self?.finalTerminal)
+                self?.appendLargeTerminalLine("PURELY OPTIONAL. TWENTY-FIVE SECONDS OF DRAMA REMAIN.", to: self?.finalTerminal)
             }
         ]))
     }
@@ -812,7 +813,7 @@ final class AppReviewScene: BaseLevelScene, SKPhysicsContactDelegate {
         HapticManager.shared.rigid()
 
         run(.sequence([
-            .wait(forDuration: 10.0),
+            .wait(forDuration: 25.0),
             .run { [weak self] in
                 self?.unlockWithoutReview()
             }
@@ -1248,9 +1249,11 @@ final class AppReviewScene: BaseLevelScene, SKPhysicsContactDelegate {
 
     private func handleDeath() {
         guard GameState.shared.levelState == .playing else { return }
+        failLevel()
         playerController?.cancel()
         bit.playBufferDeath(respawnAt: spawnPoint) { [weak self] in
             self?.bit.setGrounded(true)
+            GameState.shared.setState(.playing)
         }
     }
 

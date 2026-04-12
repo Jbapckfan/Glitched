@@ -71,7 +71,7 @@ enum LevelFactory {
         case (.world4, 27):
             scene = VoiceOverScene(size: size)
         case (.world4, 28):
-            scene = AirDropScene(size: size)
+            scene = ShareScene(size: size)
         case (.world4, 29):
             scene = TheLieScene(size: size)
         case (.world4, 30):

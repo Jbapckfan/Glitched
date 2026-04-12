@@ -207,7 +207,7 @@ final class FlashlightScene: BaseLevelScene, SKPhysicsContactDelegate {
     // MARK: - Level Building
 
     private func buildLevel() {
-        let groundY: CGFloat = 160
+        let groundY: CGFloat = size.height * 0.35
 
         // === SECTION 1: Start alcove (x: 0 - 400) ===
         buildStartSection(groundY: groundY)

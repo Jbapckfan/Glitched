@@ -41,9 +41,7 @@ final class TheLieScene: BaseLevelScene, SKPhysicsContactDelegate {
         physicsWorld.gravity = CGVector(dx: 0, dy: -14)
         physicsWorld.contactDelegate = self
 
-        // Uses appBackgrounding as placeholder mechanic (level has no real device mechanic)
-        AccessibilityManager.shared.registerMechanics([.appBackgrounding])
-        DeviceManagerCoordinator.shared.configure(for: [.appBackgrounding])
+        // This level has no device mechanic — the lie IS the mechanic
 
         setupBackground()
         setupLevelTitle()
@@ -72,7 +70,7 @@ final class TheLieScene: BaseLevelScene, SKPhysicsContactDelegate {
         title.fontName = "Helvetica-Bold"
         title.fontSize = 28
         title.fontColor = strokeColor
-        title.position = CGPoint(x: 80, y: size.height - 60)
+        title.position = CGPoint(x: size.width * 0.1, y: size.height - 60)
         title.horizontalAlignmentMode = .left
         title.zPosition = 100
         addChild(title)
@@ -83,14 +81,14 @@ final class TheLieScene: BaseLevelScene, SKPhysicsContactDelegate {
         subtitle.fontSize = 10
         subtitle.fontColor = strokeColor
         subtitle.alpha = 0.6
-        subtitle.position = CGPoint(x: 80, y: size.height - 82)
+        subtitle.position = CGPoint(x: size.width * 0.1, y: size.height - 82)
         subtitle.horizontalAlignmentMode = .left
         subtitle.zPosition = 100
         addChild(subtitle)
     }
 
     private func buildLevel() {
-        let groundY: CGFloat = 160
+        let groundY: CGFloat = size.height * 0.35
 
         // Start platform
         let startPlat = createPlatformNode(at: CGPoint(x: 80, y: groundY), size: CGSize(width: 120, height: 30))
@@ -282,13 +280,13 @@ final class TheLieScene: BaseLevelScene, SKPhysicsContactDelegate {
     }
 
     private func setupBit() {
-        spawnPoint = CGPoint(x: 80, y: 200)
+        let groundY: CGFloat = size.height * 0.35
+        spawnPoint = CGPoint(x: 80, y: groundY + 40)
         bit = BitCharacter.make()
         bit.position = spawnPoint
         addChild(bit)
         registerPlayer(bit)
         playerController = PlayerController(character: bit, scene: self)
-        // BUG FIX: Allow player to traverse the full 1200-point world width
         playerController.worldWidth = levelWidth
         lastPlayerX = spawnPoint.x
     }
@@ -386,15 +384,25 @@ final class TheLieScene: BaseLevelScene, SKPhysicsContactDelegate {
             ]))
         }
 
-        // Show player analysis
+        // Hard camera pan back to spawn (animated 1.5s) so the player
+        // sees the real exit appear behind them.
+        if let camera = gameCamera {
+            let spawnCameraX = max(size.width / 2, min(spawnPoint.x, levelWidth - size.width / 2))
+            camera.run(.sequence([
+                .wait(forDuration: 0.5),
+                .moveTo(x: spawnCameraX, duration: 1.5)
+            ]))
+        }
+
+        // Show player analysis after camera pan finishes
         run(.sequence([
-            .wait(forDuration: 1.0),
+            .wait(forDuration: 2.5),
             .run { [weak self] in self?.showPlayerAnalysis() },
             .wait(forDuration: 4.0),
             .run { [weak self] in self?.showFourthWallMessage() }
         ]))
 
-        // Pan camera hint - subtle arrow pointing left
+        // Arrow hint (appears after camera pan)
         let arrow = SKLabelNode(text: "<< GO BACK")
         arrow.fontName = "Menlo-Bold"
         arrow.fontSize = 14
@@ -404,6 +412,7 @@ final class TheLieScene: BaseLevelScene, SKPhysicsContactDelegate {
         arrow.zPosition = 500
         gameCamera?.addChild(arrow)
         arrow.run(.sequence([
+            .wait(forDuration: 2.0),
             .fadeIn(withDuration: 0.5),
             .repeatForever(.sequence([
                 .moveBy(x: -10, y: 0, duration: 0.5),
@@ -549,10 +558,7 @@ final class TheLieScene: BaseLevelScene, SKPhysicsContactDelegate {
         }
         lastPlayerX = bit.position.x
 
-        // Check if player reached fake exit area
-        if !hasReachedFakeExit && bit.position.x > 1100 {
-            triggerFakeExitReveal()
-        }
+        // Reveal is triggered only by fake-exit physics contact, not by position
     }
 
     // MARK: - Physics
@@ -595,7 +601,6 @@ final class TheLieScene: BaseLevelScene, SKPhysicsContactDelegate {
 
     override func onLevelSucceeded() {
         ProgressManager.shared.markCompleted(levelID)
-        DeviceManagerCoordinator.shared.deactivateAll()
     }
 
     override func hintText() -> String? {
@@ -604,6 +609,5 @@ final class TheLieScene: BaseLevelScene, SKPhysicsContactDelegate {
 
     override func willMove(from view: SKView) {
         super.willMove(from: view)
-        DeviceManagerCoordinator.shared.deactivateAll()
     }
 }

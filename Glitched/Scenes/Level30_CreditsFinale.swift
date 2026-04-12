@@ -33,7 +33,7 @@ final class CreditsFinaleScene: BaseLevelScene, SKPhysicsContactDelegate {
 
     // Bug enemies
     private var bugs: [SKNode] = []
-    private let bugCount = 6
+    private let bugCount = 3
 
     // Victory state
     private var hasFinished = false
@@ -91,7 +91,7 @@ final class CreditsFinaleScene: BaseLevelScene, SKPhysicsContactDelegate {
         title.fontName = "Helvetica-Bold"
         title.fontSize = 28
         title.fontColor = fillColor
-        title.position = CGPoint(x: 80, y: size.height - 60)
+        title.position = CGPoint(x: size.width * 0.1, y: size.height - 60)
         title.horizontalAlignmentMode = .left
         title.zPosition = 100
         addChild(title)
@@ -169,32 +169,43 @@ final class CreditsFinaleScene: BaseLevelScene, SKPhysicsContactDelegate {
         let platform = SKNode()
         platform.position = position
 
-        // Platform surface
-        let surface = SKShapeNode(rectOf: CGSize(width: width, height: 25))
-        surface.fillColor = fillColor
-        surface.strokeColor = fillColor
-        surface.lineWidth = lineWidth
-        platform.addChild(surface)
+        // The credit text IS the platform — the text label defines the walkable surface.
+        // We measure the text bounds and use those as the physics body shape.
+        let nameLabel = SKLabelNode(text: name)
+        nameLabel.fontName = "Menlo-Bold"
+        nameLabel.fontSize = 14
+        nameLabel.fontColor = fillColor
+        nameLabel.verticalAlignmentMode = .center
+        nameLabel.zPosition = 2
+        platform.addChild(nameLabel)
 
-        // Role label (above platform)
+        // Calculate the text bounds for the physics body
+        let textWidth = max(nameLabel.frame.width + 20, width * 0.6)
+        let textHeight: CGFloat = 22
+
+        // Thin underline beneath the text to suggest "platform-ness"
+        let underline = SKShapeNode()
+        let underlinePath = CGMutablePath()
+        underlinePath.move(to: CGPoint(x: -textWidth / 2, y: -textHeight / 2))
+        underlinePath.addLine(to: CGPoint(x: textWidth / 2, y: -textHeight / 2))
+        underline.path = underlinePath
+        underline.strokeColor = fillColor
+        underline.lineWidth = 1.5
+        underline.alpha = 0.4
+        underline.zPosition = 1
+        platform.addChild(underline)
+
+        // Role label (above the text platform)
         let roleLabel = SKLabelNode(text: role)
         roleLabel.fontName = "Menlo"
         roleLabel.fontSize = 8
         roleLabel.fontColor = fillColor
         roleLabel.alpha = 0.5
-        roleLabel.position = CGPoint(x: 0, y: 28)
+        roleLabel.position = CGPoint(x: 0, y: textHeight / 2 + 12)
         platform.addChild(roleLabel)
 
-        // Name label (on platform)
-        let nameLabel = SKLabelNode(text: name)
-        nameLabel.fontName = "Menlo-Bold"
-        nameLabel.fontSize = 10
-        nameLabel.fontColor = strokeColor
-        nameLabel.position = CGPoint(x: 0, y: -2)
-        nameLabel.zPosition = 2
-        platform.addChild(nameLabel)
-
-        platform.physicsBody = SKPhysicsBody(rectangleOf: CGSize(width: width, height: 25))
+        // Physics body matches the text bounds
+        platform.physicsBody = SKPhysicsBody(rectangleOf: CGSize(width: textWidth, height: textHeight))
         platform.physicsBody?.isDynamic = false
         platform.physicsBody?.categoryBitMask = PhysicsCategory.ground
 
@@ -341,7 +352,7 @@ final class CreditsFinaleScene: BaseLevelScene, SKPhysicsContactDelegate {
     }
 
     private func setupBit() {
-        spawnPoint = CGPoint(x: size.width / 2, y: 140)
+        spawnPoint = CGPoint(x: size.width / 2, y: size.height * 0.3)
         bit = BitCharacter.make()
         bit.position = spawnPoint
         // Bit is in worldContainer so it moves with the platforms
@@ -358,7 +369,7 @@ final class CreditsFinaleScene: BaseLevelScene, SKPhysicsContactDelegate {
         // Follow player vertically
         let targetY = max(size.height / 2, bit.position.y + 50)
         let currentY = camera.position.y
-        let newY = currentY + (targetY - currentY) * 0.08
+        let newY = currentY + (targetY - currentY) * 0.15
         camera.position.y = newY
 
         // Update death zone to follow camera

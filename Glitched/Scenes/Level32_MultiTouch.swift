@@ -57,17 +57,22 @@ final class MultiTouchScene: BaseLevelScene, SKPhysicsContactDelegate {
     // MARK: - Instruction Panel
     private var instructionLabel: SKLabelNode?
 
-    // MARK: - Ground Y
-    private let groundY: CGFloat = 120
+    // MARK: - Ground Y (set during configureScene based on screen size)
+    private var groundY: CGFloat = 120
 
     // MARK: - Configuration
 
     override func configureScene() {
         levelID = LevelID(world: .world5, index: 32)
         backgroundColor = fillColor
+        groundY = size.height * 0.25
 
         physicsWorld.gravity = CGVector(dx: 0, dy: -14)
         physicsWorld.contactDelegate = self
+
+        // CRITICAL: SpriteKit views have multi-touch DISABLED by default.
+        // Enable it here in configureScene so it's set before any touches arrive.
+        view?.isMultipleTouchEnabled = true
 
         AccessibilityManager.shared.registerMechanics([.multiTouchPressure])
         DeviceManagerCoordinator.shared.configure(for: [.multiTouchPressure])
@@ -77,12 +82,6 @@ final class MultiTouchScene: BaseLevelScene, SKPhysicsContactDelegate {
         buildLevel()
         setupBit()
         setupInstructionPanel()
-    }
-
-    override func didMove(to view: SKView) {
-        super.didMove(to: view)
-        // CRITICAL: SpriteKit views have multi-touch DISABLED by default
-        view.isMultipleTouchEnabled = true
     }
 
     // MARK: - Background (Circuit Board Theme)
@@ -166,7 +165,7 @@ final class MultiTouchScene: BaseLevelScene, SKPhysicsContactDelegate {
         title.fontName = "Helvetica-Bold"
         title.fontSize = 28
         title.fontColor = strokeColor
-        title.position = CGPoint(x: 80, y: size.height - 50)
+        title.position = CGPoint(x: size.width * 0.1, y: size.height - 50)
         title.horizontalAlignmentMode = .left
         title.zPosition = 100
         addChild(title)
@@ -175,7 +174,7 @@ final class MultiTouchScene: BaseLevelScene, SKPhysicsContactDelegate {
         subtitle.fontName = VisualConstants.Fonts.secondary
         subtitle.fontSize = 11
         subtitle.fontColor = strokeColor.withAlphaComponent(0.5)
-        subtitle.position = CGPoint(x: 80, y: size.height - 68)
+        subtitle.position = CGPoint(x: size.width * 0.1, y: size.height - 68)
         subtitle.horizontalAlignmentMode = .left
         subtitle.zPosition = 100
         addChild(subtitle)
@@ -843,6 +842,7 @@ final class MultiTouchScene: BaseLevelScene, SKPhysicsContactDelegate {
 
     private func handleDeath() {
         guard GameState.shared.levelState == .playing else { return }
+        failLevel()
         playerController.cancel()
         movementTouch = nil
         // Deactivate all plates
@@ -854,6 +854,7 @@ final class MultiTouchScene: BaseLevelScene, SKPhysicsContactDelegate {
 
         bit.playBufferDeath(respawnAt: spawnPoint) { [weak self] in
             self?.bit.setGrounded(true)
+            GameState.shared.setState(.playing)
         }
     }
 
