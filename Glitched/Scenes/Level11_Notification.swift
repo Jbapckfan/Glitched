@@ -5,6 +5,7 @@ import UserNotifications
 /// Level 11: Notifications
 /// Concept: Locked doors that require tapping the correct push notification to unlock.
 /// Player must leave the app, wait for notification, tap it to send approval back.
+/// Decoy notifications create a choice mechanic — tap the wrong one and you die.
 final class NotificationScene: BaseLevelScene, SKPhysicsContactDelegate {
 
     // MARK: - Line Art Style
@@ -23,16 +24,32 @@ final class NotificationScene: BaseLevelScene, SKPhysicsContactDelegate {
     private var currentDoorIndex = 0
     private var pendingNotificationId: String?
     private var notificationRequestCount = 0
+    private var stallTimer: Timer?
+    private static let stallTimeout: TimeInterval = 10.0
 
-    // 4th-wall notification messages (sequential)
+    // Decoy notification IDs tracked for cleanup
+    private var pendingDecoyIds: [String] = []
+
+    // 4th-wall notification messages (sequential) — the CORRECT ones
     private let fourthWallMessages = [
         "BIT IS WAITING FOR YOU IN LEVEL 11",
         "SERIOUSLY, THE DOOR IS RIGHT THERE",
         "FINE. I'LL OPEN IT MYSELF."
     ]
 
+    // Decoy notification bodies — tapping any of these kills the player
+    private let decoyMessages = [
+        "FORMAT DISK? TAP TO CONFIRM",
+        "FREE BITCOIN — CLAIM NOW",
+        "YOUR DEVICE HAS A VIRUS — TAP TO FIX",
+        "CONGRATULATIONS! YOU WON $1,000,000",
+        "SYSTEM UPDATE REQUIRED — TAP IMMEDIATELY",
+        "DELETE ALL DATA? TAP TO PROCEED"
+    ]
+
     // UI
     private var notificationButton: SKNode!
+    private var retryButton: SKNode?
     private var instructionPanel: SKNode?
     private var bellIcon: SKNode!
     private var waitingIndicator: SKNode?
@@ -391,6 +408,11 @@ final class NotificationScene: BaseLevelScene, SKPhysicsContactDelegate {
         guard currentDoorIndex < doors.count else { return }
         guard pendingNotificationId == nil else { return }
 
+        // Cancel any prior stall timer / retry button
+        cancelStallTimer()
+        retryButton?.removeFromParent()
+        retryButton = nil
+
         let id = "door_unlock_\(currentDoorIndex)_\(Date().timeIntervalSince1970)"
         pendingNotificationId = id
 
@@ -400,23 +422,19 @@ final class NotificationScene: BaseLevelScene, SKPhysicsContactDelegate {
         notificationRequestCount += 1
 
         // If this is the 3rd+ request, auto-unlock (the game gives up)
-        if messageIndex == fourthWallMessages.count - 1 {
-            NotificationGameManager.shared.scheduleNotification(
-                id: id,
-                title: "GLITCHED",
-                body: notificationBody,
-                delay: 2.0,
-                isCorrect: true
-            )
-        } else {
-            NotificationGameManager.shared.scheduleNotification(
-                id: id,
-                title: "GLITCHED",
-                body: notificationBody,
-                delay: 3.0,
-                isCorrect: true
-            )
-        }
+        let correctDelay: TimeInterval = (messageIndex == fourthWallMessages.count - 1) ? 2.0 : 3.0
+
+        // Schedule the CORRECT notification
+        NotificationGameManager.shared.scheduleNotification(
+            id: id,
+            title: "GLITCHED",
+            body: notificationBody,
+            delay: correctDelay,
+            isCorrect: true
+        )
+
+        // Schedule 2-3 DECOY notifications around the same time
+        scheduleDecoyNotifications(aroundDelay: correctDelay)
 
         // Check notification permission status and show denial text
         UNUserNotificationCenter.current().getNotificationSettings { [weak self] settings in
@@ -428,6 +446,7 @@ final class NotificationScene: BaseLevelScene, SKPhysicsContactDelegate {
         }
 
         showWaitingIndicator()
+        startStallTimer()
 
         // Animate bell
         bellIcon.run(.sequence([
@@ -440,10 +459,105 @@ final class NotificationScene: BaseLevelScene, SKPhysicsContactDelegate {
         generator.impactOccurred()
     }
 
+    // MARK: - Decoy Notifications
+
+    private func scheduleDecoyNotifications(aroundDelay baseDelay: TimeInterval) {
+        // Clean up any prior decoys
+        if !pendingDecoyIds.isEmpty {
+            UNUserNotificationCenter.current().removePendingNotificationRequests(withIdentifiers: pendingDecoyIds)
+            pendingDecoyIds.removeAll()
+        }
+
+        let decoyCount = Int.random(in: 2...3)
+        let shuffled = decoyMessages.shuffled()
+
+        for i in 0..<decoyCount {
+            let decoyId = "decoy_\(currentDoorIndex)_\(i)_\(Date().timeIntervalSince1970)"
+            let offset = Double.random(in: -1.0...1.5)
+            let delay = max(1.0, baseDelay + offset) // never fire before 1s
+
+            NotificationGameManager.shared.scheduleNotification(
+                id: decoyId,
+                title: "GLITCHED",
+                body: shuffled[i],
+                delay: delay,
+                isCorrect: false
+            )
+            pendingDecoyIds.append(decoyId)
+        }
+    }
+
+    // MARK: - Stall Recovery
+
+    private func startStallTimer() {
+        cancelStallTimer()
+        stallTimer = Timer.scheduledTimer(withTimeInterval: Self.stallTimeout, repeats: false) { [weak self] _ in
+            DispatchQueue.main.async {
+                self?.handleStall()
+            }
+        }
+    }
+
+    private func cancelStallTimer() {
+        stallTimer?.invalidate()
+        stallTimer = nil
+    }
+
+    private func handleStall() {
+        // Clear the stalled pending ID so the player can try again
+        if let stalledId = pendingNotificationId {
+            UNUserNotificationCenter.current().removePendingNotificationRequests(withIdentifiers: [stalledId])
+        }
+        // Also clean up decoys
+        if !pendingDecoyIds.isEmpty {
+            UNUserNotificationCenter.current().removePendingNotificationRequests(withIdentifiers: pendingDecoyIds)
+            pendingDecoyIds.removeAll()
+        }
+        pendingNotificationId = nil
+
+        waitingIndicator?.removeFromParent()
+        waitingIndicator = nil
+
+        showRetryButton()
+    }
+
+    private func showRetryButton() {
+        retryButton?.removeFromParent()
+
+        let btn = SKNode()
+        btn.position = CGPoint(x: size.width / 2, y: size.height - 160)
+        btn.zPosition = 250
+        btn.name = "retryButton"
+        addChild(btn)
+
+        let bg = SKShapeNode(rectOf: CGSize(width: 200, height: 44), cornerRadius: 8)
+        bg.fillColor = fillColor
+        bg.strokeColor = strokeColor
+        bg.lineWidth = lineWidth
+        bg.name = "retryButton"
+        btn.addChild(bg)
+
+        let label = SKLabelNode(text: "NO RESPONSE — RETRY")
+        label.fontName = "Menlo-Bold"
+        label.fontSize = 11
+        label.fontColor = strokeColor
+        label.verticalAlignmentMode = .center
+        label.name = "retryButton"
+        btn.addChild(label)
+
+        // Pulse to draw attention
+        btn.run(.repeatForever(.sequence([
+            .scale(to: 1.04, duration: 0.6),
+            .scale(to: 1.0, duration: 0.6)
+        ])))
+
+        retryButton = btn
+    }
+
     private func showPermissionDeniedText() {
         fourthWallLabel?.removeFromParent()
 
-        let label = SKLabelNode(text: "NOTIFICATIONS BLOCKED — TAP THE MESSAGE TO PROCEED ANYWAY.")
+        let label = SKLabelNode(text: "NOTIFICATIONS BLOCKED — TAP THE CORRECT MESSAGE BELOW.")
         label.fontName = "Menlo-Bold"
         label.fontSize = 10
         label.fontColor = strokeColor
@@ -460,56 +574,78 @@ final class NotificationScene: BaseLevelScene, SKPhysicsContactDelegate {
             .removeFromParent()
         ]))
 
-        // Show a faux in-app notification the player can tap to progress
-        showFauxNotification()
+        // Show faux notifications with decoys so denied path still has a choice mechanic
+        showFauxNotifications()
     }
 
-    private var fauxNotificationNode: SKNode?
+    private var fauxNotificationNodes: [SKNode] = []
 
-    private func showFauxNotification() {
-        fauxNotificationNode?.removeFromParent()
+    private func showFauxNotifications() {
+        // Remove any existing faux notifications
+        for node in fauxNotificationNodes { node.removeFromParent() }
+        fauxNotificationNodes.removeAll()
 
-        let notif = SKNode()
-        notif.position = CGPoint(x: size.width / 2, y: size.height - 180)
-        notif.zPosition = 600
-        notif.name = "fauxNotification"
-
-        let bg = SKShapeNode(rectOf: CGSize(width: 280, height: 60), cornerRadius: 12)
-        bg.fillColor = fillColor
-        bg.strokeColor = strokeColor
-        bg.lineWidth = lineWidth
-        bg.name = "fauxNotification"
-        notif.addChild(bg)
-
-        let title = SKLabelNode(text: "GLITCHED")
-        title.fontName = "Menlo-Bold"
-        title.fontSize = 12
-        title.fontColor = strokeColor
-        title.position = CGPoint(x: 0, y: 10)
-        title.name = "fauxNotification"
-        notif.addChild(title)
-
+        // Build notification data: 1 correct + 2 decoys
         let messageIndex = min(notificationRequestCount - 1, fourthWallMessages.count - 1)
-        let body = SKLabelNode(text: fourthWallMessages[max(0, messageIndex)])
-        body.fontName = "Menlo"
-        body.fontSize = 9
-        body.fontColor = strokeColor
-        body.position = CGPoint(x: 0, y: -8)
-        body.name = "fauxNotification"
-        notif.addChild(body)
+        let correctBody = fourthWallMessages[max(0, messageIndex)]
 
-        addChild(notif)
-        fauxNotificationNode = notif
+        struct FauxData {
+            let body: String
+            let isCorrect: Bool
+        }
 
-        // Slide in from top
-        notif.alpha = 0
-        notif.run(.sequence([
-            .fadeIn(withDuration: 0.3),
-            .repeatForever(.sequence([
-                .scale(to: 1.02, duration: 0.8),
-                .scale(to: 1.0, duration: 0.8)
+        let decoyPick = decoyMessages.shuffled().prefix(2)
+        var items: [FauxData] = [FauxData(body: correctBody, isCorrect: true)]
+        for d in decoyPick { items.append(FauxData(body: d, isCorrect: false)) }
+        items.shuffle()
+
+        let startY = size.height - 170
+        let spacing: CGFloat = 70
+
+        for (i, item) in items.enumerated() {
+            let notif = SKNode()
+            let yPos = startY - CGFloat(i) * spacing
+            notif.position = CGPoint(x: size.width / 2, y: yPos)
+            notif.zPosition = 600
+            notif.name = item.isCorrect ? "fauxCorrect" : "fauxDecoy"
+
+            let bg = SKShapeNode(rectOf: CGSize(width: 280, height: 55), cornerRadius: 12)
+            bg.fillColor = fillColor
+            bg.strokeColor = strokeColor
+            bg.lineWidth = lineWidth
+            bg.name = notif.name
+            notif.addChild(bg)
+
+            let title = SKLabelNode(text: "GLITCHED")
+            title.fontName = "Menlo-Bold"
+            title.fontSize = 12
+            title.fontColor = strokeColor
+            title.position = CGPoint(x: 0, y: 10)
+            title.name = notif.name
+            notif.addChild(title)
+
+            let body = SKLabelNode(text: item.body)
+            body.fontName = "Menlo"
+            body.fontSize = 9
+            body.fontColor = strokeColor
+            body.position = CGPoint(x: 0, y: -8)
+            body.name = notif.name
+            notif.addChild(body)
+
+            // Stagger entrance
+            notif.alpha = 0
+            notif.run(.sequence([
+                .wait(forDuration: Double(i) * 0.4),
+                .fadeIn(withDuration: 0.3),
+                .repeatForever(.sequence([
+                    .scale(to: 1.02, duration: 0.8),
+                    .scale(to: 1.0, duration: 0.8)
+                ]))
             ]))
-        ]))
+
+            addChild(notif)
+            fauxNotificationNodes.append(notif)
+        }
     }
 
     private func showWaitingIndicator() {
@@ -583,11 +719,26 @@ final class NotificationScene: BaseLevelScene, SKPhysicsContactDelegate {
     override func handleGameInput(_ event: GameInputEvent) {
         switch event {
         case .notificationTapped(let id, let isCorrect):
-            if id == pendingNotificationId && isCorrect {
+            if isCorrect && id == pendingNotificationId {
+                cancelStallTimer()
+                cleanupDecoys()
                 unlockCurrentDoor()
+            } else if !isCorrect {
+                // Tapped a decoy — death
+                cancelStallTimer()
+                cleanupDecoys()
+                pendingNotificationId = nil
+                handleDeath()
             }
         default:
             break
+        }
+    }
+
+    private func cleanupDecoys() {
+        if !pendingDecoyIds.isEmpty {
+            UNUserNotificationCenter.current().removePendingNotificationRequests(withIdentifiers: pendingDecoyIds)
+            pendingDecoyIds.removeAll()
         }
     }
 
@@ -602,12 +753,33 @@ final class NotificationScene: BaseLevelScene, SKPhysicsContactDelegate {
             return
         }
 
-        // Check if faux notification tapped (fallback when permissions denied)
+        // Check if retry button tapped
         let tapped = nodes(at: location)
-        if tapped.contains(where: { $0.name == "fauxNotification" }) {
-            fauxNotificationNode?.run(.sequence([.fadeOut(withDuration: 0.2), .removeFromParent()]))
-            fauxNotificationNode = nil
+        if tapped.contains(where: { $0.name == "retryButton" }) {
+            retryButton?.removeFromParent()
+            retryButton = nil
+            requestNotification()
+            return
+        }
+
+        // Check faux notification taps (denied-permission fallback)
+        if tapped.contains(where: { $0.name == "fauxCorrect" }) {
+            // Correct faux notification — unlock
+            for node in fauxNotificationNodes {
+                node.run(.sequence([.fadeOut(withDuration: 0.2), .removeFromParent()]))
+            }
+            fauxNotificationNodes.removeAll()
             unlockCurrentDoor()
+            return
+        }
+        if tapped.contains(where: { $0.name == "fauxDecoy" }) {
+            // Wrong faux notification — death
+            for node in fauxNotificationNodes {
+                node.run(.sequence([.fadeOut(withDuration: 0.2), .removeFromParent()]))
+            }
+            fauxNotificationNodes.removeAll()
+            pendingNotificationId = nil
+            handleDeath()
             return
         }
 
@@ -680,6 +852,8 @@ final class NotificationScene: BaseLevelScene, SKPhysicsContactDelegate {
 
     override func willMove(from view: SKView) {
         super.willMove(from: view)
+        cancelStallTimer()
+        cleanupDecoys()
         DeviceManagerCoordinator.shared.deactivateAll()
     }
 }
