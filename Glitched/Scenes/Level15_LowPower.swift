@@ -13,8 +13,8 @@ final class LowPowerScene: BaseLevelScene, SKPhysicsContactDelegate {
     private var playerController: PlayerController!
     private var spawnPoint: CGPoint = .zero
 
-    private let normalGravity: CGFloat = -14
-    private let lowPowerGravity: CGFloat = -5  // Lunar gravity
+    private let normalGravity: CGFloat = -20
+    private let lowPowerGravity: CGFloat = -6  // Lunar gravity
     private var isLowPower = false
     private var batteryIndicator: SKNode!
     private var batteryBars: [SKShapeNode] = []
@@ -66,47 +66,59 @@ final class LowPowerScene: BaseLevelScene, SKPhysicsContactDelegate {
         title.fontName = "Helvetica-Bold"
         title.fontSize = 28
         title.fontColor = strokeColor
-        title.position = CGPoint(x: 80, y: size.height - 60)
+        title.position = CGPoint(x: size.width * 0.10, y: size.height - 60)
         title.horizontalAlignmentMode = .left
         title.zPosition = 100
         addChild(title)
     }
 
     private func buildLevel() {
-        let groundY: CGFloat = 160
+        let groundY: CGFloat = size.height * 0.22
 
         // === SECTION 1: Start area (normal gravity) ===
         // Start platform
-        createPlatform(at: CGPoint(x: 80, y: groundY), size: CGSize(width: 120, height: 30))
+        createPlatform(at: CGPoint(x: size.width * 0.10, y: groundY),
+                        size: CGSize(width: size.width * 0.16, height: 30))
 
         // Step-up platform (reachable with normal jump)
-        createPlatform(at: CGPoint(x: 200, y: groundY + 40), size: CGSize(width: 70, height: 25))
+        createPlatform(at: CGPoint(x: size.width * 0.25, y: groundY + 40),
+                        size: CGSize(width: size.width * 0.10, height: 25))
 
         // === SECTION 2: Narrow drop (REQUIRES NORMAL GRAVITY to fall through) ===
         // Ledge before the drop
-        createPlatform(at: CGPoint(x: 290, y: groundY + 80), size: CGSize(width: 60, height: 20))
+        createPlatform(at: CGPoint(x: size.width * 0.37, y: groundY + 80),
+                        size: CGSize(width: size.width * 0.08, height: 20))
 
-        // Narrow gap walls - two platforms with a tight gap between them
-        // Player must drop through this narrow gap -- low gravity makes you float too much
-        createPlatform(at: CGPoint(x: 260, y: groundY + 20), size: CGSize(width: 40, height: 15))
-        createPlatform(at: CGPoint(x: 320, y: groundY + 20), size: CGSize(width: 40, height: 15))
+        // Narrow gap walls - two platforms with a gap wide enough for Bit (22pt body + margin)
+        // Gap center at x = 0.37 * width, each platform offset to leave ~34pt gap
+        let gapCenterX = size.width * 0.37
+        let gapHalfWidth: CGFloat = 17  // 34pt total gap (Bit's body is 22pt)
+        let wallWidth: CGFloat = size.width * 0.06
+        createPlatform(at: CGPoint(x: gapCenterX - gapHalfWidth - wallWidth / 2, y: groundY + 20),
+                        size: CGSize(width: wallWidth, height: 15))
+        createPlatform(at: CGPoint(x: gapCenterX + gapHalfWidth + wallWidth / 2, y: groundY + 20),
+                        size: CGSize(width: wallWidth, height: 15))
 
         // Catch platform at bottom of drop
-        createPlatform(at: CGPoint(x: 290, y: groundY - 30), size: CGSize(width: 80, height: 20))
+        createPlatform(at: CGPoint(x: size.width * 0.37, y: groundY - 30),
+                        size: CGSize(width: size.width * 0.11, height: 20))
 
         // === SECTION 3: Wide chasm (REQUIRES LOW GRAVITY to float across) ===
         // The chasm is too wide for a normal jump but floatable in low gravity
         // Landing platform on far side
-        createPlatform(at: CGPoint(x: 490, y: groundY - 10), size: CGSize(width: 70, height: 20))
+        createPlatform(at: CGPoint(x: size.width * 0.62, y: groundY - 10),
+                        size: CGSize(width: size.width * 0.10, height: 20))
 
         // === SECTION 4: Final drop (REQUIRES NORMAL GRAVITY to drop down) ===
         // Platform below that needs normal gravity to reach
-        createPlatform(at: CGPoint(x: 560, y: groundY - 80), size: CGSize(width: 80, height: 25))
+        createPlatform(at: CGPoint(x: size.width * 0.73, y: groundY - 80),
+                        size: CGSize(width: size.width * 0.11, height: 25))
 
         // Exit platform
-        createPlatform(at: CGPoint(x: size.width - 80, y: groundY - 80), size: CGSize(width: 100, height: 30))
+        createPlatform(at: CGPoint(x: size.width * 0.88, y: groundY - 80),
+                        size: CGSize(width: size.width * 0.13, height: 30))
 
-        createExitDoor(at: CGPoint(x: size.width - 60, y: groundY - 80 + 50))
+        createExitDoor(at: CGPoint(x: size.width * 0.90, y: groundY - 80 + 50))
 
         // Death zone
         let death = SKNode()
@@ -213,7 +225,7 @@ final class LowPowerScene: BaseLevelScene, SKPhysicsContactDelegate {
     }
 
     private func setupBit() {
-        spawnPoint = CGPoint(x: 80, y: 200)
+        spawnPoint = CGPoint(x: size.width * 0.10, y: size.height * 0.22 + 40)
         bit = BitCharacter.make()
         bit.position = spawnPoint
         addChild(bit)
@@ -227,10 +239,12 @@ final class LowPowerScene: BaseLevelScene, SKPhysicsContactDelegate {
         // Update gravity
         physicsWorld.gravity = CGVector(dx: 0, dy: lowPower ? lowPowerGravity : normalGravity)
 
-        // Update battery indicator (amber in low power)
+        // Update battery indicator with amber color in low power
+        let amberColor = VisualConstants.Colors.warning
         for (index, bar) in batteryBars.enumerated() {
             if lowPower {
-                bar.fillColor = index == 0 ? strokeColor : strokeColor.withAlphaComponent(0.2)
+                // Only first bar lit, in amber; rest dimmed amber
+                bar.fillColor = index == 0 ? amberColor : amberColor.withAlphaComponent(0.2)
             } else {
                 bar.fillColor = strokeColor
             }

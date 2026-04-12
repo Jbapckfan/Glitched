@@ -13,10 +13,19 @@ final class ShakeUndoScene: BaseLevelScene, SKPhysicsContactDelegate {
     private var playerController: PlayerController!
     private var spawnPoint: CGPoint = .zero
 
-    // Time rewind system - now stores platform position too
-    private var positionHistory: [(position: CGPoint, platformPos: CGPoint, time: TimeInterval)] = []
+    // Time rewind system - stores full state for true rewind
+    private struct HistoryEntry {
+        let position: CGPoint
+        let velocity: CGVector
+        let isGrounded: Bool
+        let platformPhase: CGFloat
+        let droppingPlatformPhase: CGFloat
+        let time: TimeInterval
+    }
+
+    private var stateHistory: [HistoryEntry] = []
     private let historyDuration: TimeInterval = 3.0
-    private let maxHistoryCount = 90  // 3 seconds at 30fps
+    private let maxHistoryCount = 180  // 3 seconds at 60fps
     private var gameTime: TimeInterval = 0
 
     private var undoIcon: SKNode!
@@ -24,9 +33,18 @@ final class ShakeUndoScene: BaseLevelScene, SKPhysicsContactDelegate {
     private var undoLabel: SKLabelNode!
     private var hasUsedUndo = false
 
-    // Moving platform
+    // Moving platform (section 1)
     private var movingPlatform: SKNode!
     private var platformPhase: CGFloat = 0
+
+    // Dropping platform (section 2 - second mandatory undo beat)
+    private var droppingPlatform: SKNode!
+    private var droppingPlatformPhase: CGFloat = 0
+    private var droppingPlatformOriginalY: CGFloat = 0
+    private var isPlayerOnDroppingPlatform = false
+    private var droppingTimer: TimeInterval = 0
+    private let dropDelay: TimeInterval = 0.8  // Starts dropping after 0.8s of standing
+    private var isDroppingPlatformFalling = false
 
     override func configureScene() {
         levelID = LevelID(world: .world2, index: 16)
@@ -93,28 +111,67 @@ final class ShakeUndoScene: BaseLevelScene, SKPhysicsContactDelegate {
         title.fontName = "Helvetica-Bold"
         title.fontSize = 28
         title.fontColor = strokeColor
-        title.position = CGPoint(x: 80, y: size.height - 60)
+        title.position = CGPoint(x: size.width * 0.10, y: size.height - 60)
         title.horizontalAlignmentMode = .left
         title.zPosition = 100
         addChild(title)
     }
 
     private func buildLevel() {
-        let groundY: CGFloat = 160
+        let groundY: CGFloat = size.height * 0.22
 
-        // Start
-        createPlatform(at: CGPoint(x: 80, y: groundY), size: CGSize(width: 100, height: 30))
+        // === SECTION 1: Start + moving platform challenge (first undo beat) ===
+        // Start platform
+        createPlatform(at: CGPoint(x: size.width * 0.10, y: groundY),
+                        size: CGSize(width: size.width * 0.13, height: 30))
 
-        // Gap with moving platform
-        movingPlatform = createPlatform(at: CGPoint(x: 280, y: groundY + 80), size: CGSize(width: 60, height: 20))
+        // Moving platform - oscillates vertically, player must time jump or undo a mistimed attempt
+        movingPlatform = createPlatform(at: CGPoint(x: size.width * 0.30, y: groundY + 80),
+                                         size: CGSize(width: size.width * 0.08, height: 20))
         movingPlatform.name = "moving"
 
-        // Tricky jump
-        createPlatform(at: CGPoint(x: 450, y: groundY + 40), size: CGSize(width: 80, height: 25))
+        // Landing after moving platform
+        createPlatform(at: CGPoint(x: size.width * 0.48, y: groundY + 40),
+                        size: CGSize(width: size.width * 0.10, height: 25))
 
-        // Exit
-        createPlatform(at: CGPoint(x: size.width - 80, y: groundY), size: CGSize(width: 100, height: 30))
-        createExitDoor(at: CGPoint(x: size.width - 60, y: groundY + 50))
+        // === SECTION 2: Dropping platform challenge (second undo beat) ===
+        // The player must land on this platform, but it drops after ~0.8s of contact.
+        // The only way to survive is to shake-undo back to the previous safe platform
+        // and then quickly jump across to the far side before it drops again.
+        let dropPlatY = groundY + 40
+        droppingPlatformOriginalY = dropPlatY
+        droppingPlatform = createPlatform(at: CGPoint(x: size.width * 0.62, y: dropPlatY),
+                                           size: CGSize(width: size.width * 0.09, height: 20))
+        droppingPlatform.name = "dropping"
+
+        // Warning cracks drawn on the dropping platform surface
+        if let surface = droppingPlatform.children.first as? SKShapeNode {
+            let crack1 = SKShapeNode()
+            let crackPath1 = CGMutablePath()
+            crackPath1.move(to: CGPoint(x: -12, y: 5))
+            crackPath1.addLine(to: CGPoint(x: 0, y: -3))
+            crackPath1.addLine(to: CGPoint(x: 8, y: 6))
+            crack1.path = crackPath1
+            crack1.strokeColor = strokeColor
+            crack1.lineWidth = lineWidth * 0.4
+            crack1.alpha = 0.5
+            surface.addChild(crack1)
+
+            let crack2 = SKShapeNode()
+            let crackPath2 = CGMutablePath()
+            crackPath2.move(to: CGPoint(x: 5, y: -4))
+            crackPath2.addLine(to: CGPoint(x: 14, y: 3))
+            crack2.path = crackPath2
+            crack2.strokeColor = strokeColor
+            crack2.lineWidth = lineWidth * 0.4
+            crack2.alpha = 0.5
+            surface.addChild(crack2)
+        }
+
+        // Exit platform (past the dropping platform)
+        createPlatform(at: CGPoint(x: size.width * 0.82, y: groundY),
+                        size: CGSize(width: size.width * 0.13, height: 30))
+        createExitDoor(at: CGPoint(x: size.width * 0.84, y: groundY + 50))
 
         // Death zone
         let death = SKNode()
@@ -225,7 +282,7 @@ final class ShakeUndoScene: BaseLevelScene, SKPhysicsContactDelegate {
     }
 
     private func setupBit() {
-        spawnPoint = CGPoint(x: 80, y: 200)
+        spawnPoint = CGPoint(x: size.width * 0.10, y: size.height * 0.22 + 40)
         bit = BitCharacter.make()
         bit.position = spawnPoint
         addChild(bit)
@@ -233,12 +290,22 @@ final class ShakeUndoScene: BaseLevelScene, SKPhysicsContactDelegate {
         playerController = PlayerController(character: bit, scene: self)
     }
 
-    private func recordPosition() {
-        positionHistory.append((position: bit.position, platformPos: movingPlatform.position, time: gameTime))
+    private func recordState() {
+        let velocity = bit.physicsBody?.velocity ?? .zero
+        let grounded = bit.isGrounded
+        let entry = HistoryEntry(
+            position: bit.position,
+            velocity: velocity,
+            isGrounded: grounded,
+            platformPhase: platformPhase,
+            droppingPlatformPhase: droppingPlatformPhase,
+            time: gameTime
+        )
+        stateHistory.append(entry)
 
         // Trim old history
-        while positionHistory.count > maxHistoryCount {
-            positionHistory.removeFirst()
+        while stateHistory.count > maxHistoryCount {
+            stateHistory.removeFirst()
         }
     }
 
@@ -246,12 +313,12 @@ final class ShakeUndoScene: BaseLevelScene, SKPhysicsContactDelegate {
 
     private func createGhostTrail() {
         // Sample 6 evenly-spaced positions from the history buffer for ghost images
-        guard positionHistory.count > 6 else { return }
-        let step = max(1, positionHistory.count / 6)
+        guard stateHistory.count > 6 else { return }
+        let step = max(1, stateHistory.count / 6)
 
-        for i in stride(from: 0, to: min(positionHistory.count, step * 6), by: step) {
-            let entry = positionHistory[i]
-            let ghostAlpha = CGFloat(i) / CGFloat(positionHistory.count) * 0.5
+        for i in stride(from: 0, to: min(stateHistory.count, step * 6), by: step) {
+            let entry = stateHistory[i]
+            let ghostAlpha = CGFloat(i) / CGFloat(stateHistory.count) * 0.5
 
             // Create a ghost copy of the character shape
             let ghost = SKShapeNode(rectOf: CGSize(width: 20, height: 28), cornerRadius: 4)
@@ -318,7 +385,7 @@ final class ShakeUndoScene: BaseLevelScene, SKPhysicsContactDelegate {
     }
 
     private func performUndo() {
-        guard undoCount > 0, positionHistory.count > 10 else {
+        guard undoCount > 0, stateHistory.count > 10 else {
             // Feedback when undo fails
             JuiceManager.shared.shake(intensity: .light, duration: 0.2)
             JuiceManager.shared.popText("NO UNDOS LEFT", at: CGPoint(x: size.width / 2, y: size.height / 2), color: strokeColor, fontSize: 18)
@@ -335,29 +402,48 @@ final class ShakeUndoScene: BaseLevelScene, SKPhysicsContactDelegate {
             showFourthWallText()
         }
 
-        // Find position from ~3 seconds ago
+        // Find full state from ~3 seconds ago
         let targetTime = gameTime - historyDuration
-        var targetPosition = spawnPoint
-        var targetPlatformPos = movingPlatform.position
+        var targetEntry: HistoryEntry?
 
-        for entry in positionHistory.reversed() {
+        for entry in stateHistory.reversed() {
             if entry.time <= targetTime {
-                targetPosition = entry.position
-                targetPlatformPos = entry.platformPos
+                targetEntry = entry
                 break
             }
         }
 
+        // Fall back to oldest entry if nothing is old enough
+        let restoreEntry = targetEntry ?? stateHistory.first!
+
         // Ghost trail effect before teleporting
         createGhostTrail()
 
-        // Rewind the moving platform position too
-        movingPlatform.run(.move(to: targetPlatformPos, duration: 0.2))
+        // Restore moving platform phase so it resumes from the rewound state
+        platformPhase = restoreEntry.platformPhase
+
+        // Restore dropping platform state
+        droppingPlatformPhase = restoreEntry.droppingPlatformPhase
+        isDroppingPlatformFalling = false
+        droppingTimer = 0
+        isPlayerOnDroppingPlatform = false
+        droppingPlatform.removeAllActions()
+        droppingPlatform.position.y = droppingPlatformOriginalY
+        droppingPlatform.physicsBody?.isDynamic = false
+        droppingPlatform.alpha = 1.0
+
+        // Rewind the moving platform position to match restored phase
+        let baseY: CGFloat = size.height * 0.22 + 80
+        movingPlatform.position.y = baseY + sin(platformPhase * 2) * 40
+
+        // Rewind Bit: position, velocity, grounded state
+        bit.physicsBody?.velocity = restoreEntry.velocity
+        bit.setGrounded(restoreEntry.isGrounded)
 
         // Rewind effect
         bit.run(.sequence([
             .fadeAlpha(to: 0.3, duration: 0.1),
-            .move(to: targetPosition, duration: 0.2),
+            .move(to: restoreEntry.position, duration: 0.2),
             .fadeAlpha(to: 1.0, duration: 0.1)
         ]))
 
@@ -371,13 +457,82 @@ final class ShakeUndoScene: BaseLevelScene, SKPhysicsContactDelegate {
         flash.run(.sequence([.fadeOut(withDuration: 0.3), .removeFromParent()]))
 
         // Clear recent history
-        positionHistory.removeAll()
+        stateHistory.removeAll()
 
         let generator = UIImpactFeedbackGenerator(style: .heavy)
         generator.impactOccurred()
 
         // Animate undo icon with smooth continuous rotation
         undoIcon.run(.rotate(byAngle: -.pi * 2, duration: 0.3))
+    }
+
+    // MARK: - Dropping Platform Logic
+
+    private func updateDroppingPlatform(deltaTime: TimeInterval) {
+        guard !isDroppingPlatformFalling else { return }
+
+        // Check if player is standing on the dropping platform
+        let playerX = bit.position.x
+        let playerY = bit.position.y
+        let platX = droppingPlatform.position.x
+        let platY = droppingPlatform.position.y
+        let platHalfW = size.width * 0.09 / 2
+        let onPlatform = abs(playerX - platX) < platHalfW + 10 &&
+                          playerY > platY && playerY < platY + 50 &&
+                          bit.isGrounded
+
+        if onPlatform {
+            if !isPlayerOnDroppingPlatform {
+                isPlayerOnDroppingPlatform = true
+                droppingTimer = 0
+            }
+            droppingTimer += deltaTime
+
+            // Visual warning: shake increasingly as timer builds
+            let shakeIntensity = CGFloat(droppingTimer / dropDelay) * 2
+            let offsetX = CGFloat.random(in: -shakeIntensity...shakeIntensity)
+            let offsetY = CGFloat.random(in: -shakeIntensity...shakeIntensity)
+            if let surface = droppingPlatform.children.first as? SKShapeNode {
+                surface.position = CGPoint(x: offsetX, y: offsetY)
+            }
+
+            // Drop after delay
+            if droppingTimer >= dropDelay {
+                isDroppingPlatformFalling = true
+                droppingPlatform.physicsBody?.isDynamic = true
+                droppingPlatform.physicsBody?.affectedByGravity = true
+                droppingPlatform.physicsBody?.categoryBitMask = 0  // Stop being ground
+                droppingPlatform.run(.sequence([
+                    .fadeAlpha(to: 0.3, duration: 0.5),
+                    .run { [weak self] in
+                        self?.resetDroppingPlatform()
+                    }
+                ]))
+            }
+        } else {
+            isPlayerOnDroppingPlatform = false
+            droppingTimer = max(0, droppingTimer - deltaTime * 2)  // Slowly reset if player leaves
+            // Reset visual shake
+            if let surface = droppingPlatform.children.first as? SKShapeNode {
+                surface.position = .zero
+            }
+        }
+    }
+
+    private func resetDroppingPlatform() {
+        // Reset the dropping platform after it falls (so it can be attempted again after undo)
+        isDroppingPlatformFalling = false
+        droppingTimer = 0
+        isPlayerOnDroppingPlatform = false
+        droppingPlatform.physicsBody?.isDynamic = false
+        droppingPlatform.physicsBody?.affectedByGravity = false
+        droppingPlatform.physicsBody?.velocity = .zero
+        droppingPlatform.physicsBody?.categoryBitMask = PhysicsCategory.ground
+        droppingPlatform.position.y = droppingPlatformOriginalY
+        droppingPlatform.alpha = 1.0
+        if let surface = droppingPlatform.children.first as? SKShapeNode {
+            surface.position = .zero
+        }
     }
 
     override func handleGameInput(_ event: GameInputEvent) {
@@ -411,12 +566,15 @@ final class ShakeUndoScene: BaseLevelScene, SKPhysicsContactDelegate {
     override func updatePlaying(deltaTime: TimeInterval) {
         playerController.update()
         gameTime += deltaTime
-        recordPosition()
+        recordState()
 
-        // Move platform
+        // Move platform (section 1)
         platformPhase += CGFloat(deltaTime)
-        let baseY: CGFloat = 240
+        let baseY: CGFloat = size.height * 0.22 + 80
         movingPlatform.position.y = baseY + sin(platformPhase * 2) * 40
+
+        // Dropping platform logic (section 2)
+        updateDroppingPlatform(deltaTime: deltaTime)
     }
 
     func didBegin(_ contact: SKPhysicsContact) {
@@ -443,7 +601,8 @@ final class ShakeUndoScene: BaseLevelScene, SKPhysicsContactDelegate {
         playerController.cancel()
         bit.playBufferDeath(respawnAt: spawnPoint) { [weak self] in
             self?.bit.setGrounded(true)
-            self?.positionHistory.removeAll()
+            self?.stateHistory.removeAll()
+            self?.resetDroppingPlatform()
         }
     }
 
