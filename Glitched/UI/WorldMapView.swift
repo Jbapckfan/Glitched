@@ -1,3 +1,4 @@
+import StoreKit
 import SwiftUI
 
 struct WorldMapView: View {
@@ -8,6 +9,8 @@ struct WorldMapView: View {
     @State private var showingSettings = false
     @State private var pulseCurrentLevel = false
     @State private var isPurchasing = false
+    @State private var isRestoring = false
+    @State private var restoreMessage: String?
 
     private let background = Color(red: 13 / 255, green: 13 / 255, blue: 13 / 255)
 
@@ -110,7 +113,9 @@ struct WorldMapView: View {
     }
 
     private var lockedWorldBanner: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        let fullGameProduct = store.product(for: StoreManager.fullGameProductID)
+
+        return VStack(alignment: .leading, spacing: 12) {
             glitchTitle("WORLD 1 IS FREE. THE REST IS SEALED.")
                 .font(.custom(VisualConstants.Fonts.main, size: 13))
 
@@ -120,7 +125,7 @@ struct WorldMapView: View {
                         ProgressView()
                             .tint(.black)
                     }
-                    Text("UNLOCK ALL WORLDS")
+                    Text(unlockButtonLabel(for: fullGameProduct))
                         .font(.custom(VisualConstants.Fonts.main, size: 13))
                         .tracking(1.5)
                 }
@@ -132,7 +137,26 @@ struct WorldMapView: View {
                         .fill(Color.cyan)
                 )
             }
-            .disabled(isPurchasing)
+            .disabled(isPurchasing || fullGameProduct == nil)
+
+            Button(action: restorePurchasesOnPaywall) {
+                HStack(spacing: 8) {
+                    if isRestoring {
+                        ProgressView()
+                            .tint(.white)
+                    }
+                    Text(isRestoring ? "RESTORING..." : "RESTORE PURCHASES")
+                        .font(.custom(VisualConstants.Fonts.secondary, size: 11))
+                }
+                .foregroundStyle(.white.opacity(0.7))
+            }
+            .disabled(isRestoring)
+
+            if let message = restoreMessage {
+                Text(message)
+                    .font(.custom(VisualConstants.Fonts.secondary, size: 10))
+                    .foregroundStyle(message.contains("RESTORED") ? Color.cyan : .white.opacity(0.5))
+            }
         }
         .padding(16)
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -320,6 +344,11 @@ struct WorldMapView: View {
         GameState.shared.load(level: fallback)
     }
 
+    private func unlockButtonLabel(for product: Product?) -> String {
+        guard let product = product else { return "Loading..." }
+        return "UNLOCK ALL WORLDS — \(product.displayPrice)"
+    }
+
     private func unlockAllWorlds() {
         isPurchasing = true
 
@@ -330,6 +359,21 @@ struct WorldMapView: View {
             }
             guard let product = store.product(for: StoreManager.fullGameProductID) else { return }
             _ = try? await store.purchase(product)
+        }
+    }
+
+    private func restorePurchasesOnPaywall() {
+        isRestoring = true
+        restoreMessage = nil
+
+        Task {
+            await store.restorePurchases()
+            isRestoring = false
+            if store.isUnlocked(StoreManager.fullGameProductID) {
+                restoreMessage = "PURCHASES RESTORED SUCCESSFULLY"
+            } else {
+                restoreMessage = "NO PREVIOUS PURCHASES FOUND"
+            }
         }
     }
 

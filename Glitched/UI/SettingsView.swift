@@ -7,6 +7,7 @@ struct SettingsView: View {
 
     @State private var settings = ProgressManager.shared.load().settings
     @State private var restoringPurchases = false
+    @State private var showingPrivacyPolicy = false
 
     private let background = Color(red: 13 / 255, green: 13 / 255, blue: 13 / 255)
 
@@ -38,6 +39,22 @@ struct SettingsView: View {
                             statusRow("FULL GAME", unlocked: store.isUnlocked(StoreManager.fullGameProductID))
                             statusRow("DEV COMMENTARY", unlocked: store.isUnlocked(StoreManager.devCommentaryProductID))
                         }
+
+                        section("LEGAL") {
+                            Button {
+                                showingPrivacyPolicy = true
+                            } label: {
+                                HStack {
+                                    Text("PRIVACY POLICY")
+                                        .font(.custom(VisualConstants.Fonts.secondary, size: 13))
+                                        .foregroundStyle(.white)
+                                    Spacer()
+                                    Image(systemName: "chevron.right")
+                                        .font(.system(size: 12, weight: .semibold))
+                                        .foregroundStyle(Color.cyan)
+                                }
+                            }
+                        }
                     }
                     .padding(20)
                 }
@@ -50,6 +67,9 @@ struct SettingsView: View {
                         .foregroundStyle(Color.cyan)
                         .font(.custom(VisualConstants.Fonts.main, size: 12))
                 }
+            }
+            .sheet(isPresented: $showingPrivacyPolicy) {
+                PrivacyPolicyView()
             }
             .task {
                 await store.loadProducts()

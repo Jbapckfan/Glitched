@@ -30,6 +30,8 @@
 	<dict/>
 	<key>UIRequiresFullScreen</key>
 	<true/>
+	<key>NSCameraUsageDescription</key>
+	<string>The flashlight level uses your device's torch to illuminate the game world.</string>
 	<key>NSMotionUsageDescription</key>
 	<string>Shake your device to rewind time in the game.</string>
 	<key>UISupportedInterfaceOrientations</key>

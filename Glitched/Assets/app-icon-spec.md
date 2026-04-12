@@ -1,0 +1,1 @@
+A minimalist white 'G' on a near-black (#0D0D0D) background, with a single cyan (#00FFFF) pixel glitch artifact cutting through the letter. Clean, geometric, slightly unsettling. The G should use the same line-art weight as the in-game character.

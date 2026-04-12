@@ -657,11 +657,13 @@ final class AppReviewScene: BaseLevelScene, SKPhysicsContactDelegate {
         }
 
         // Show the review button after the monologue
+        // Apple Guideline 3.2.2 — the door unlocks on a 25s timer regardless
+        // of whether the player taps the review button.
         run(.sequence([
             .wait(forDuration: 12.0),
             .run { [weak self] in
                 self?.showReviewButton()
-                self?.appendLargeTerminalLine("PURELY OPTIONAL. TWENTY-FIVE SECONDS OF DRAMA REMAIN.", to: self?.finalTerminal)
+                self?.appendLargeTerminalLine("PURELY OPTIONAL. THE DOOR OPENS REGARDLESS.", to: self?.finalTerminal)
             }
         ]))
     }
@@ -738,6 +740,7 @@ final class AppReviewScene: BaseLevelScene, SKPhysicsContactDelegate {
     }
 
     // MARK: - Review Button
+    // Apple Guideline 3.2.2 — review prompts must never gate functionality
 
     private func showReviewButton() {
         reviewButton = SKNode()
@@ -747,7 +750,7 @@ final class AppReviewScene: BaseLevelScene, SKPhysicsContactDelegate {
         reviewButton.name = "reviewButton"
 
         // Button background - glowing rectangle
-        let buttonBG = SKShapeNode(rectOf: CGSize(width: 160, height: 44), cornerRadius: 10)
+        let buttonBG = SKShapeNode(rectOf: CGSize(width: 220, height: 44), cornerRadius: 10)
         buttonBG.fillColor = strokeColor
         buttonBG.strokeColor = fillColor
         buttonBG.lineWidth = 2
@@ -755,10 +758,10 @@ final class AppReviewScene: BaseLevelScene, SKPhysicsContactDelegate {
         buttonBG.name = "reviewButtonBG"
         reviewButton.addChild(buttonBG)
 
-        // Star + REVIEW + Star text
-        let buttonText = SKLabelNode(text: "REVIEW")
+        // Clearly marked as optional — Apple Guideline 3.2.2
+        let buttonText = SKLabelNode(text: "LEAVE A REVIEW (OPTIONAL)")
         buttonText.fontName = "Menlo-Bold"
-        buttonText.fontSize = 16
+        buttonText.fontSize = 11
         buttonText.fontColor = fillColor
         buttonText.verticalAlignmentMode = .center
         reviewButton.addChild(buttonText)
@@ -769,7 +772,7 @@ final class AppReviewScene: BaseLevelScene, SKPhysicsContactDelegate {
         leftStar.fontSize = 14
         leftStar.fontColor = SKColor(red: 1, green: 0.85, blue: 0, alpha: 1) // Gold
         leftStar.verticalAlignmentMode = .center
-        leftStar.position = CGPoint(x: -55, y: 0)
+        leftStar.position = CGPoint(x: -85, y: 0)
         reviewButton.addChild(leftStar)
 
         let rightStar = SKLabelNode(text: "\u{2605}")
@@ -777,7 +780,7 @@ final class AppReviewScene: BaseLevelScene, SKPhysicsContactDelegate {
         rightStar.fontSize = 14
         rightStar.fontColor = SKColor(red: 1, green: 0.85, blue: 0, alpha: 1)
         rightStar.verticalAlignmentMode = .center
-        rightStar.position = CGPoint(x: 55, y: 0)
+        rightStar.position = CGPoint(x: 85, y: 0)
         reviewButton.addChild(rightStar)
 
         addChild(reviewButton)
@@ -801,7 +804,7 @@ final class AppReviewScene: BaseLevelScene, SKPhysicsContactDelegate {
         // Also add a physics trigger so walking into it works
         let buttonTrigger = SKNode()
         buttonTrigger.position = reviewButton.position
-        buttonTrigger.physicsBody = SKPhysicsBody(rectangleOf: CGSize(width: 160, height: 44))
+        buttonTrigger.physicsBody = SKPhysicsBody(rectangleOf: CGSize(width: 220, height: 44))
         buttonTrigger.physicsBody?.isDynamic = false
         buttonTrigger.physicsBody?.categoryBitMask = PhysicsCategory.interactable
         buttonTrigger.physicsBody?.contactTestBitMask = PhysicsCategory.player
@@ -1171,9 +1174,9 @@ final class AppReviewScene: BaseLevelScene, SKPhysicsContactDelegate {
         if let reviewBtn = reviewButton,
            reviewBtn.parent != nil {
             let buttonBounds = CGRect(
-                x: reviewBtn.position.x - 80,
+                x: reviewBtn.position.x - 110,
                 y: reviewBtn.position.y - 22,
-                width: 160,
+                width: 220,
                 height: 44
             )
             if buttonBounds.contains(location) {

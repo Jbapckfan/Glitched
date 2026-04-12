@@ -30,9 +30,10 @@ final class StoreManager: ObservableObject {
 
     func loadProducts() async {
         do {
+            // Deferred to post-launch update.
+            // Self.devCommentaryProductID
             let loaded = try await Product.products(for: [
-                Self.fullGameProductID,
-                Self.devCommentaryProductID
+                Self.fullGameProductID
             ])
             products = loaded.sorted { $0.id < $1.id }
             await refreshEntitlements()
