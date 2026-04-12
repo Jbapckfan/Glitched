@@ -5,6 +5,9 @@ import UIKit
 /// Concept: Battery percentage determines how many platforms exist.
 /// At 100% all platforms visible. The trick: the real exit is BELOW platform 5,
 /// reachable only when battery < 60% (platforms 6+ vanish).
+/// A "Battery Leech" zone lets the player hack the game's internal battery perception
+/// downward by standing on it, providing an in-game way to manipulate the mechanic.
+/// The SIM DRAIN button is only available in debug/simulator builds.
 final class BatteryPercentScene: BaseLevelScene, SKPhysicsContactDelegate {
 
     private let fillColor = SKColor.white
@@ -25,9 +28,20 @@ final class BatteryPercentScene: BaseLevelScene, SKPhysicsContactDelegate {
     private var hiddenExitNode: SKNode?
     private var fakeExitNode: SKNode?
 
-    // Fallback for simulator
+    // Battery dim overlay — created once, alpha/color updated in place
+    private var batteryDimOverlay: SKShapeNode?
+
+    // Battery Leech zone
+    private var leechZone: SKNode?
+    private var leechGlow: SKShapeNode?
+    private var isOnLeech = false
+
+    // Simulated battery override (leech or debug drain)
     private var simulatedBattery: Float? = nil
+
+    #if DEBUG
     private var drainButton: SKNode?
+    #endif
 
     override func configureScene() {
         levelID = LevelID(world: .world3, index: 22)
@@ -43,21 +57,25 @@ final class BatteryPercentScene: BaseLevelScene, SKPhysicsContactDelegate {
         setupLevelTitle()
         buildLevel()
         createBatteryDisplay()
+        #if DEBUG
         createDrainButton()
+        #endif
+        createBatteryDimOverlay()
         showInstructionPanel()
         setupBit()
 
-        // Apply initial battery state so stones have correct visibility
-        updateBatteryState(currentBattery)
+        // Read real battery immediately instead of assuming 100%
+        readInitialBattery()
     }
 
     // MARK: - Setup
 
     private func setupBackground() {
-        // Battery outline decoration
-        for i in 0..<4 {
+        let iconCount = 4
+        for i in 0..<iconCount {
             let batteryIcon = createBatteryIcon(size: 20)
-            batteryIcon.position = CGPoint(x: CGFloat(i) * 150 + 100, y: size.height - 80)
+            let iconX = size.width * (CGFloat(i) + 0.5) / CGFloat(iconCount)
+            batteryIcon.position = CGPoint(x: iconX, y: size.height * 0.9)
             batteryIcon.alpha = 0.1
             batteryIcon.zPosition = -10
             addChild(batteryIcon)
@@ -87,21 +105,23 @@ final class BatteryPercentScene: BaseLevelScene, SKPhysicsContactDelegate {
         title.fontName = "Helvetica-Bold"
         title.fontSize = 28
         title.fontColor = strokeColor
-        title.position = CGPoint(x: 80, y: size.height - 60)
+        title.position = CGPoint(x: size.width * 0.1, y: size.height - 60)
         title.horizontalAlignmentMode = .left
         title.zPosition = 100
         addChild(title)
     }
 
     private func buildLevel() {
-        let groundY: CGFloat = 160
+        let groundY: CGFloat = size.height * 0.25
+        let w = size.width
 
         // Start platform
-        createPlatform(at: CGPoint(x: 60, y: groundY), size: CGSize(width: 100, height: 30))
+        createPlatform(at: CGPoint(x: w * 0.08, y: groundY), size: CGSize(width: w * 0.13, height: 30))
 
         // 10 stepping stones across the chasm
-        let startX: CGFloat = 140
-        let spacing: CGFloat = max(20, (size.width - 200) / 10)
+        let startX: CGFloat = w * 0.18
+        let stoneSpan: CGFloat = w * 0.7
+        let spacing: CGFloat = stoneSpan / 10
         for i in 0..<10 {
             let x = startX + CGFloat(i) * spacing + spacing / 2
             let stone = createSteppingStone(
@@ -112,7 +132,7 @@ final class BatteryPercentScene: BaseLevelScene, SKPhysicsContactDelegate {
         }
 
         // Fake exit at the end (platforms 7-10 lead here - dead end)
-        let fakeExitPos = CGPoint(x: size.width - 50, y: groundY + 30)
+        let fakeExitPos = CGPoint(x: w * 0.93, y: groundY + 30)
         createFakeExit(at: fakeExitPos)
 
         // Hidden REAL exit below platform 5 - only reachable when platforms 6+ vanish
@@ -121,12 +141,16 @@ final class BatteryPercentScene: BaseLevelScene, SKPhysicsContactDelegate {
         createHiddenExit(at: hiddenExitPos)
 
         // Small landing platform near hidden exit
-        createPlatform(at: CGPoint(x: platform5X, y: groundY - 100), size: CGSize(width: 80, height: 20))
+        createPlatform(at: CGPoint(x: platform5X, y: groundY - 100), size: CGSize(width: w * 0.1, height: 20))
+
+        // Battery Leech zone — glowing area on platform 3 that drains internal battery
+        let platform3X = startX + 2 * spacing + spacing / 2
+        createBatteryLeechZone(at: CGPoint(x: platform3X, y: groundY + 30 + 15))
 
         // Death zone
         let death = SKNode()
-        death.position = CGPoint(x: size.width / 2, y: -50)
-        death.physicsBody = SKPhysicsBody(rectangleOf: CGSize(width: size.width * 2, height: 100))
+        death.position = CGPoint(x: w / 2, y: -50)
+        death.physicsBody = SKPhysicsBody(rectangleOf: CGSize(width: w * 2, height: 100))
         death.physicsBody?.isDynamic = false
         death.physicsBody?.categoryBitMask = PhysicsCategory.hazard
         addChild(death)
@@ -203,6 +227,7 @@ final class BatteryPercentScene: BaseLevelScene, SKPhysicsContactDelegate {
         trigger.physicsBody = SKPhysicsBody(rectangleOf: trigger.size)
         trigger.physicsBody?.isDynamic = false
         trigger.physicsBody?.categoryBitMask = PhysicsCategory.interactable
+        trigger.physicsBody?.contactTestBitMask = PhysicsCategory.player
         trigger.name = "fake_exit_trigger"
         addChild(trigger)
     }
@@ -236,8 +261,57 @@ final class BatteryPercentScene: BaseLevelScene, SKPhysicsContactDelegate {
         addChild(exit)
     }
 
+    /// Battery Leech: a glowing zone that, while Bit stands on it, drains
+    /// the game's internal battery perception by 1% per second.
+    private func createBatteryLeechZone(at position: CGPoint) {
+        let zone = SKNode()
+        zone.position = position
+        zone.name = "battery_leech"
+        zone.zPosition = 50
+
+        let zoneSize = CGSize(width: 40, height: 40)
+
+        // Outer glow ring
+        let glow = SKShapeNode(circleOfRadius: 22)
+        glow.fillColor = SKColor(red: 0.1, green: 0.9, blue: 0.3, alpha: 0.15)
+        glow.strokeColor = SKColor(red: 0.1, green: 0.9, blue: 0.3, alpha: 0.5)
+        glow.lineWidth = 1.5
+        glow.glowWidth = 4
+        zone.addChild(glow)
+        leechGlow = glow
+
+        // Pulsing animation
+        glow.run(.repeatForever(.sequence([
+            .fadeAlpha(to: 0.5, duration: 0.8),
+            .fadeAlpha(to: 1.0, duration: 0.8)
+        ])))
+
+        // Icon: downward lightning bolt
+        let bolt = SKLabelNode(text: "\u{26A1}")
+        bolt.fontSize = 16
+        bolt.verticalAlignmentMode = .center
+        bolt.horizontalAlignmentMode = .center
+        zone.addChild(bolt)
+
+        // Label
+        let label = SKLabelNode(text: "LEECH")
+        label.fontName = "Menlo"
+        label.fontSize = 7
+        label.fontColor = SKColor(red: 0.1, green: 0.8, blue: 0.3, alpha: 0.7)
+        label.position = CGPoint(x: 0, y: -18)
+        zone.addChild(label)
+
+        // Invisible trigger area (no physics body — overlap checked in update)
+        let marker = SKSpriteNode(color: .clear, size: zoneSize)
+        marker.name = "leech_area"
+        zone.addChild(marker)
+
+        leechZone = zone
+        addChild(zone)
+    }
+
     private func createBatteryDisplay() {
-        batteryLabel = SKLabelNode(text: "BATTERY: 100%")
+        batteryLabel = SKLabelNode(text: "BATTERY: ---%")
         batteryLabel.fontName = "Menlo-Bold"
         batteryLabel.fontSize = 14
         batteryLabel.fontColor = strokeColor
@@ -246,9 +320,10 @@ final class BatteryPercentScene: BaseLevelScene, SKPhysicsContactDelegate {
         addChild(batteryLabel)
     }
 
+    #if DEBUG
     private func createDrainButton() {
         let button = SKNode()
-        button.position = CGPoint(x: size.width - 60, y: 50)
+        button.position = CGPoint(x: size.width * 0.88, y: size.height * 0.08)
         button.zPosition = 200
         button.name = "drain_button"
 
@@ -268,10 +343,23 @@ final class BatteryPercentScene: BaseLevelScene, SKPhysicsContactDelegate {
         drainButton = button
         addChild(button)
     }
+    #endif
+
+    /// Create the dim overlay once; we update its alpha/color rather than recreating.
+    private func createBatteryDimOverlay() {
+        let overlay = SKShapeNode(rectOf: CGSize(width: size.width * 2, height: size.height * 2))
+        overlay.fillColor = SKColor(white: 0, alpha: 0)
+        overlay.strokeColor = .clear
+        overlay.zPosition = 8500
+        overlay.name = "batteryDimOverlay"
+        overlay.isUserInteractionEnabled = false
+        gameCamera.addChild(overlay)
+        batteryDimOverlay = overlay
+    }
 
     private func showInstructionPanel() {
         let panel = SKNode()
-        panel.position = CGPoint(x: size.width / 2, y: size.height - 120)
+        panel.position = CGPoint(x: size.width / 2, y: size.height * 0.82)
         panel.zPosition = 300
         addChild(panel)
 
@@ -298,12 +386,21 @@ final class BatteryPercentScene: BaseLevelScene, SKPhysicsContactDelegate {
     }
 
     private func setupBit() {
-        spawnPoint = CGPoint(x: 60, y: 200)
+        spawnPoint = CGPoint(x: size.width * 0.08, y: size.height * 0.35)
         bit = BitCharacter.make()
         bit.position = spawnPoint
         addChild(bit)
         registerPlayer(bit)
         playerController = PlayerController(character: bit, scene: self)
+    }
+
+    /// Read the real battery level at init instead of defaulting to 100%.
+    private func readInitialBattery() {
+        UIDevice.current.isBatteryMonitoringEnabled = true
+        let level = UIDevice.current.batteryLevel
+        // batteryLevel returns -1 on simulator or if monitoring not ready yet
+        let initialPct: Float = level >= 0 ? level * 100 : 75
+        updateBatteryState(initialPct)
     }
 
     // MARK: - Battery Logic
@@ -314,8 +411,7 @@ final class BatteryPercentScene: BaseLevelScene, SKPhysicsContactDelegate {
 
         batteryLabel.text = "BATTERY: \(Int(pct))%"
 
-        // FIX #14: Visual brightness/atmosphere matches battery theme.
-        // Lower battery = dimmer scene + more glitch atmosphere.
+        // Update dim overlay alpha/color in place (no recreation)
         updateBatteryVisuals(pct)
 
         // Update stepping stones visibility
@@ -340,25 +436,17 @@ final class BatteryPercentScene: BaseLevelScene, SKPhysicsContactDelegate {
         showFourthWall(percentage: pct)
     }
 
-    // FIX #14: Adjust visual brightness and atmosphere based on battery level.
-    // At 100% the scene is bright and calm; at low battery it dims and glitches.
+    /// Adjust visual brightness based on battery level.
+    /// Updates the existing overlay in place rather than removing/recreating.
     private func updateBatteryVisuals(_ percentage: Float) {
         let normalizedPct = CGFloat(percentage / 100.0)
 
         // Dim the scene as battery drops (range: 0.4 at 0% to 1.0 at 100%)
         let dimFactor = 0.4 + normalizedPct * 0.6
-        let dimColor = SKColor(white: 0, alpha: 1.0 - dimFactor)
+        let targetAlpha = 1.0 - dimFactor
 
-        // Remove old dim overlay
-        gameCamera.childNode(withName: "batteryDimOverlay")?.removeFromParent()
-
-        let overlay = SKShapeNode(rectOf: CGSize(width: size.width * 2, height: size.height * 2))
-        overlay.fillColor = dimColor
-        overlay.strokeColor = .clear
-        overlay.zPosition = 8500
-        overlay.name = "batteryDimOverlay"
-        overlay.isUserInteractionEnabled = false
-        gameCamera.addChild(overlay)
+        // Update existing overlay instead of recreating
+        batteryDimOverlay?.run(.fadeAlpha(to: targetAlpha, duration: 0.3))
 
         // At low battery, switch to tense/glitch atmosphere
         if percentage < 30 {
@@ -381,7 +469,7 @@ final class BatteryPercentScene: BaseLevelScene, SKPhysicsContactDelegate {
         label.fontName = "Menlo"
         label.fontSize = 8
         label.fontColor = strokeColor.withAlphaComponent(0.5)
-        label.position = CGPoint(x: size.width / 2, y: 30)
+        label.position = CGPoint(x: size.width / 2, y: size.height * 0.05)
         label.zPosition = 150
         addChild(label)
         fourthWallLabel = label
@@ -392,6 +480,17 @@ final class BatteryPercentScene: BaseLevelScene, SKPhysicsContactDelegate {
             simulatedBattery = currentBattery
         }
         simulatedBattery = max(0, (simulatedBattery ?? 100) - 10)
+        updateBatteryState(simulatedBattery!)
+    }
+
+    /// Called each frame while Bit stands on the Battery Leech zone.
+    /// Drains the game's internal battery perception by 1% per second.
+    private func applyLeechDrain(deltaTime: TimeInterval) {
+        if simulatedBattery == nil {
+            simulatedBattery = currentBattery
+        }
+        let drain = Float(deltaTime) * 1.0 // 1% per second
+        simulatedBattery = max(0, (simulatedBattery ?? currentBattery) - drain)
         updateBatteryState(simulatedBattery!)
     }
 
@@ -426,11 +525,13 @@ final class BatteryPercentScene: BaseLevelScene, SKPhysicsContactDelegate {
         guard let touch = touches.first else { return }
         let location = touch.location(in: self)
 
+        #if DEBUG
         // Check drain button
         if let button = drainButton, button.contains(location) {
             simulateBatteryDrain()
             return
         }
+        #endif
 
         playerController.touchBegan(at: location)
     }
@@ -453,6 +554,46 @@ final class BatteryPercentScene: BaseLevelScene, SKPhysicsContactDelegate {
 
     override func updatePlaying(deltaTime: TimeInterval) {
         playerController.update()
+
+        // Battery Leech zone: check overlap with Bit each frame
+        if let zone = leechZone {
+            let dx = bit.position.x - zone.position.x
+            let dy = bit.position.y - zone.position.y
+            let distance = sqrt(dx * dx + dy * dy)
+            let wasOnLeech = isOnLeech
+            isOnLeech = distance < 24
+
+            if isOnLeech {
+                applyLeechDrain(deltaTime: deltaTime)
+                // Intensify glow while draining
+                if !wasOnLeech {
+                    leechGlow?.run(.group([
+                        .scale(to: 1.3, duration: 0.2),
+                        SKAction.run { [weak self] in
+                            self?.leechGlow?.glowWidth = 8
+                        }
+                    ]))
+                }
+            } else if wasOnLeech {
+                // Player stepped off — restore glow
+                leechGlow?.run(.scale(to: 1.0, duration: 0.2))
+                leechGlow?.glowWidth = 4
+            }
+        }
+
+        // Fake exit proximity check (since interactable contact isn't in player's mask)
+        if let fakeExit = fakeExitNode {
+            let dx = bit.position.x - fakeExit.position.x
+            let dy = bit.position.y - fakeExit.position.y
+            let dist = sqrt(dx * dx + dy * dy)
+            if dist < 30 {
+                if fakeExit.userData?["taunted"] == nil {
+                    fakeExit.userData = fakeExit.userData ?? NSMutableDictionary()
+                    fakeExit.userData?["taunted"] = true
+                    showFakeExitTaunt()
+                }
+            }
+        }
     }
 
     // MARK: - Physics Contact

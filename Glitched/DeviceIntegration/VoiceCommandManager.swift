@@ -82,6 +82,11 @@ final class VoiceCommandManager: DeviceManager {
             let text = result.bestTranscription.formattedString.uppercased()
             let words = text.split(separator: " ").map(String.init)
 
+            // Post partial text for visual speech feedback
+            DispatchQueue.main.async {
+                InputEventBus.shared.post(.voiceCommandPartialText(text: text))
+            }
+
             // Check for recognized commands
             let commands = ["OPEN", "FLY", "JUMP", "HELP", "STOP", "GO", "BRIDGE", "UNLOCK"]
             for command in commands {

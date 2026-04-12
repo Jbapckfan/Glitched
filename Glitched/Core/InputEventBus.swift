@@ -84,6 +84,7 @@ extension GameInputEvent {
         case .storageCacheCleared: return "storageCacheCleared"
         case .voiceCommandRecognized: return "voiceCommandRecognized"
         case .voiceCommandMicDenied: return "voiceCommandMicDenied"
+        case .voiceCommandPartialText: return "voiceCommandPartialText"
         case .localeChanged: return "localeChanged"
         case .voiceOverStateChanged: return "voiceOverStateChanged"
         case .airdropReceived: return "airdropReceived"

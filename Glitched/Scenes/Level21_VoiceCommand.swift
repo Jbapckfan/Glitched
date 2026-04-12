@@ -4,6 +4,7 @@ import UIKit
 /// Level 21: Voice Command
 /// Concept: Player speaks commands that affect the game world.
 /// Say "BRIDGE" to extend a bridge, "OPEN" to open doors, "FLY" for brief upward impulse.
+/// If mic permission is denied, an on-screen command console provides tap-based fallback.
 final class VoiceCommandScene: BaseLevelScene, SKPhysicsContactDelegate {
 
     private let fillColor = SKColor.white
@@ -26,6 +27,15 @@ final class VoiceCommandScene: BaseLevelScene, SKPhysicsContactDelegate {
     private var micIcon: SKNode!
     private var micPulse: SKShapeNode?
 
+    // Visual speech feedback label (shows partial recognition above Bit)
+    private var speechFeedbackLabel: SKLabelNode?
+
+    // Denied-mic fallback console
+    private var commandConsole: SKNode?
+    private var consoleBridgeButton: SKNode?
+    private var consoleOpenButton: SKNode?
+    private var consoleFlyButton: SKNode?
+
     // 4th wall
     private var hasSpokenFirst = false
 
@@ -45,6 +55,7 @@ final class VoiceCommandScene: BaseLevelScene, SKPhysicsContactDelegate {
         setupLevelTitle()
         buildLevel()
         createMicIndicator()
+        createSpeechFeedbackLabel()
         showInstructionPanel()
         setupBit()
     }
@@ -53,9 +64,11 @@ final class VoiceCommandScene: BaseLevelScene, SKPhysicsContactDelegate {
 
     private func setupBackground() {
         // Soundwave pattern decoration
-        for i in 0..<8 {
+        let waveCount = 8
+        for i in 0..<waveCount {
+            let waveX = size.width * (CGFloat(i) + 0.5) / CGFloat(waveCount)
             let wave = createSoundwave(width: 30, height: CGFloat.random(in: 8...25))
-            wave.position = CGPoint(x: CGFloat(i) * 80 + 40, y: size.height - 80)
+            wave.position = CGPoint(x: waveX, y: size.height * 0.9)
             wave.alpha = 0.1
             wave.zPosition = -10
             addChild(wave)
@@ -83,47 +96,48 @@ final class VoiceCommandScene: BaseLevelScene, SKPhysicsContactDelegate {
         title.fontName = "Helvetica-Bold"
         title.fontSize = 28
         title.fontColor = strokeColor
-        title.position = CGPoint(x: 80, y: size.height - 60)
+        title.position = CGPoint(x: size.width * 0.1, y: size.height - 60)
         title.horizontalAlignmentMode = .left
         title.zPosition = 100
         addChild(title)
     }
 
     private func buildLevel() {
-        let groundY: CGFloat = 160
+        let groundY: CGFloat = size.height * 0.25
+        let w = size.width
 
         // Start platform
-        createPlatform(at: CGPoint(x: 80, y: groundY), size: CGSize(width: 140, height: 30))
+        createPlatform(at: CGPoint(x: w * 0.1, y: groundY), size: CGSize(width: w * 0.18, height: 30))
 
         // Gap - needs bridge (say "BRIDGE")
-        createBridge(at: CGPoint(x: 220, y: groundY), width: 120)
+        createBridge(at: CGPoint(x: w * 0.28, y: groundY), width: w * 0.15)
 
         // Middle platform with locked door
-        createPlatform(at: CGPoint(x: 340, y: groundY), size: CGSize(width: 100, height: 30))
-        createLockedDoor(at: CGPoint(x: 390, y: groundY + 45))
+        createPlatform(at: CGPoint(x: w * 0.43, y: groundY), size: CGSize(width: w * 0.13, height: 30))
+        createLockedDoor(at: CGPoint(x: w * 0.49, y: groundY + 45))
 
         // Platform after door
-        createPlatform(at: CGPoint(x: 460, y: groundY), size: CGSize(width: 80, height: 30))
+        createPlatform(at: CGPoint(x: w * 0.58, y: groundY), size: CGSize(width: w * 0.1, height: 30))
 
         // High platform (say "FLY" to reach)
-        createPlatform(at: CGPoint(x: 540, y: groundY + 100), size: CGSize(width: 100, height: 25))
+        createPlatform(at: CGPoint(x: w * 0.68, y: groundY + 100), size: CGSize(width: w * 0.13, height: 25))
 
         // Exit platform
-        createPlatform(at: CGPoint(x: size.width - 80, y: groundY + 100), size: CGSize(width: 100, height: 25))
-        createExitDoor(at: CGPoint(x: size.width - 60, y: groundY + 155))
+        createPlatform(at: CGPoint(x: w * 0.88, y: groundY + 100), size: CGSize(width: w * 0.13, height: 25))
+        createExitDoor(at: CGPoint(x: w * 0.9, y: groundY + 155))
 
         // Death zone
         let death = SKNode()
-        death.position = CGPoint(x: size.width / 2, y: -50)
-        death.physicsBody = SKPhysicsBody(rectangleOf: CGSize(width: size.width * 2, height: 100))
+        death.position = CGPoint(x: w / 2, y: -50)
+        death.physicsBody = SKPhysicsBody(rectangleOf: CGSize(width: w * 2, height: 100))
         death.physicsBody?.isDynamic = false
         death.physicsBody?.categoryBitMask = PhysicsCategory.hazard
         addChild(death)
 
         // Command hint labels near puzzles
-        createHintLabel("SAY \"BRIDGE\"", at: CGPoint(x: 220, y: groundY + 40))
-        createHintLabel("SAY \"OPEN\"", at: CGPoint(x: 390, y: groundY + 90))
-        createHintLabel("SAY \"FLY\"", at: CGPoint(x: 500, y: groundY + 60))
+        createHintLabel("SAY \"BRIDGE\"", at: CGPoint(x: w * 0.28, y: groundY + 40))
+        createHintLabel("SAY \"OPEN\"", at: CGPoint(x: w * 0.49, y: groundY + 90))
+        createHintLabel("SAY \"FLY\"", at: CGPoint(x: w * 0.63, y: groundY + 60))
     }
 
     private func createPlatform(at position: CGPoint, size: CGSize) {
@@ -243,7 +257,7 @@ final class VoiceCommandScene: BaseLevelScene, SKPhysicsContactDelegate {
 
     private func createMicIndicator() {
         let container = SKNode()
-        container.position = CGPoint(x: size.width - 50, y: size.height - 50)
+        container.position = CGPoint(x: size.width * 0.92, y: size.height * 0.92)
         container.zPosition = 200
 
         // Mic body
@@ -291,9 +305,23 @@ final class VoiceCommandScene: BaseLevelScene, SKPhysicsContactDelegate {
         ])))
     }
 
+    /// Label that floats above Bit showing real-time partial speech recognition text
+    private func createSpeechFeedbackLabel() {
+        let label = SKLabelNode(text: "")
+        label.fontName = "Menlo-Bold"
+        label.fontSize = 11
+        label.fontColor = strokeColor
+        label.horizontalAlignmentMode = .center
+        label.verticalAlignmentMode = .bottom
+        label.zPosition = 500
+        label.alpha = 0
+        addChild(label)
+        speechFeedbackLabel = label
+    }
+
     private func showInstructionPanel() {
         let panel = SKNode()
-        panel.position = CGPoint(x: size.width / 2, y: size.height - 120)
+        panel.position = CGPoint(x: size.width / 2, y: size.height * 0.82)
         panel.zPosition = 300
         addChild(panel)
 
@@ -319,8 +347,69 @@ final class VoiceCommandScene: BaseLevelScene, SKPhysicsContactDelegate {
         panel.run(.sequence([.wait(forDuration: 5), .fadeOut(withDuration: 0.5), .removeFromParent()]))
     }
 
+    /// On-screen command console shown when mic/speech permission is denied.
+    /// Three buttons let the player trigger the same commands via tap.
+    private func showDeniedMicConsole() {
+        guard commandConsole == nil else { return }
+
+        // Hide mic indicator — it's irrelevant without permission
+        micIcon?.alpha = 0.2
+        micPulse?.removeAllActions()
+
+        let console = SKNode()
+        console.position = CGPoint(x: size.width / 2, y: size.height * 0.08)
+        console.zPosition = 400
+        addChild(console)
+        commandConsole = console
+
+        // Background bar
+        let bg = SKShapeNode(rectOf: CGSize(width: 260, height: 44), cornerRadius: 6)
+        bg.fillColor = fillColor
+        bg.strokeColor = strokeColor
+        bg.lineWidth = lineWidth
+        console.addChild(bg)
+
+        // Three buttons
+        let commands: [(String, CGFloat)] = [("BRIDGE", -90), ("OPEN", 0), ("FLY", 90)]
+        for (label, xOffset) in commands {
+            let button = SKNode()
+            button.position = CGPoint(x: xOffset, y: 0)
+            button.name = "console_\(label)"
+
+            let btnBg = SKShapeNode(rectOf: CGSize(width: 74, height: 32), cornerRadius: 4)
+            btnBg.fillColor = strokeColor
+            btnBg.strokeColor = strokeColor
+            btnBg.lineWidth = 1
+            button.addChild(btnBg)
+
+            let btnLabel = SKLabelNode(text: label)
+            btnLabel.fontName = "Menlo-Bold"
+            btnLabel.fontSize = 11
+            btnLabel.fontColor = fillColor
+            btnLabel.verticalAlignmentMode = .center
+            button.addChild(btnLabel)
+
+            console.addChild(button)
+
+            switch label {
+            case "BRIDGE": consoleBridgeButton = button
+            case "OPEN": consoleOpenButton = button
+            case "FLY": consoleFlyButton = button
+            default: break
+            }
+        }
+
+        // Instruction text above console
+        let hint = SKLabelNode(text: "MIC DENIED — USE BUTTONS INSTEAD")
+        hint.fontName = "Menlo"
+        hint.fontSize = 9
+        hint.fontColor = strokeColor.withAlphaComponent(0.6)
+        hint.position = CGPoint(x: 0, y: 28)
+        console.addChild(hint)
+    }
+
     private func setupBit() {
-        spawnPoint = CGPoint(x: 80, y: 200)
+        spawnPoint = CGPoint(x: size.width * 0.1, y: size.height * 0.35)
         bit = BitCharacter.make()
         bit.position = spawnPoint
         addChild(bit)
@@ -334,38 +423,20 @@ final class VoiceCommandScene: BaseLevelScene, SKPhysicsContactDelegate {
         guard !bridgeExtended, let bridge = bridgeNode else { return }
         bridgeExtended = true
 
+        let bridgeWidth = size.width * 0.15
+
         // Add physics to bridge
-        bridge.physicsBody = SKPhysicsBody(rectangleOf: CGSize(width: 120, height: 12))
+        bridge.physicsBody = SKPhysicsBody(rectangleOf: CGSize(width: bridgeWidth, height: 12))
         bridge.physicsBody?.isDynamic = false
         bridge.physicsBody?.categoryBitMask = PhysicsCategory.ground
 
-        // Visual feedback
+        // Visual feedback — bridge stays extended permanently
         if let shape = bridge.children.first as? SKShapeNode {
             shape.run(.fadeAlpha(to: 1.0, duration: 0.3))
         }
 
-        // Retract after 5 seconds
-        bridgeNode?.removeAction(forKey: "bridgeRetract")
-        bridgeNode?.run(.sequence([
-            .wait(forDuration: 5.0),
-            .run { [weak self] in self?.retractBridge() }
-        ]), withKey: "bridgeRetract")
-
         let generator = UIImpactFeedbackGenerator(style: .medium)
         generator.impactOccurred()
-    }
-
-    private func retractBridge() {
-        guard bridgeExtended, let bridge = bridgeNode else { return }
-        bridgeExtended = false
-
-        bridge.physicsBody = nil
-
-        if let shape = bridge.children.first as? SKShapeNode {
-            shape.run(.fadeAlpha(to: 0.3, duration: 0.5))
-        }
-
-        bridgeNode?.removeAction(forKey: "bridgeRetract")
     }
 
     private func openDoor() {
@@ -406,6 +477,21 @@ final class VoiceCommandScene: BaseLevelScene, SKPhysicsContactDelegate {
         generator.impactOccurred()
     }
 
+    /// Update the floating speech feedback label with partial recognition text
+    private func updateSpeechFeedback(_ text: String) {
+        guard let label = speechFeedbackLabel else { return }
+        label.text = text
+        // Position above Bit
+        label.position = CGPoint(x: bit.position.x, y: bit.position.y + 40)
+        label.removeAllActions()
+        label.alpha = 1.0
+        // Fade out after a pause if no new text arrives
+        label.run(.sequence([
+            .wait(forDuration: 1.5),
+            .fadeOut(withDuration: 0.4)
+        ]), withKey: "speechFade")
+    }
+
     private func showFourthWallResponse() {
         guard !hasSpokenFirst else { return }
         hasSpokenFirst = true
@@ -414,7 +500,7 @@ final class VoiceCommandScene: BaseLevelScene, SKPhysicsContactDelegate {
         label.fontName = "Menlo-Bold"
         label.fontSize = 10
         label.fontColor = strokeColor
-        label.position = CGPoint(x: size.width / 2, y: size.height - 160)
+        label.position = CGPoint(x: size.width / 2, y: size.height * 0.75)
         label.zPosition = 300
         addChild(label)
 
@@ -422,7 +508,7 @@ final class VoiceCommandScene: BaseLevelScene, SKPhysicsContactDelegate {
         label2.fontName = "Menlo"
         label2.fontSize = 10
         label2.fontColor = strokeColor
-        label2.position = CGPoint(x: size.width / 2, y: size.height - 175)
+        label2.position = CGPoint(x: size.width / 2, y: size.height * 0.75 - 15)
         label2.zPosition = 300
         label2.alpha = 0
         addChild(label2)
@@ -458,6 +544,13 @@ final class VoiceCommandScene: BaseLevelScene, SKPhysicsContactDelegate {
             default:
                 break
             }
+
+        case .voiceCommandPartialText(let text):
+            updateSpeechFeedback(text)
+
+        case .voiceCommandMicDenied:
+            showDeniedMicConsole()
+
         default:
             break
         }
@@ -469,6 +562,27 @@ final class VoiceCommandScene: BaseLevelScene, SKPhysicsContactDelegate {
         guard let touch = touches.first else { return }
         let location = touch.location(in: self)
         if handlePermissionOverlayTouch(at: location) { return }
+
+        // Check console button taps (denied-mic fallback)
+        if let console = commandConsole {
+            let consoleLocation = touch.location(in: console)
+            if let bridgeBtn = consoleBridgeButton, bridgeBtn.contains(consoleLocation) {
+                extendBridge()
+                flashConsoleButton(bridgeBtn)
+                return
+            }
+            if let openBtn = consoleOpenButton, openBtn.contains(consoleLocation) {
+                openDoor()
+                flashConsoleButton(openBtn)
+                return
+            }
+            if let flyBtn = consoleFlyButton, flyBtn.contains(consoleLocation) {
+                activateFly()
+                flashConsoleButton(flyBtn)
+                return
+            }
+        }
+
         playerController.touchBegan(at: location)
     }
 
@@ -486,10 +600,26 @@ final class VoiceCommandScene: BaseLevelScene, SKPhysicsContactDelegate {
         playerController.cancel()
     }
 
+    /// Brief invert flash on a console button to confirm tap
+    private func flashConsoleButton(_ button: SKNode) {
+        guard let bg = button.children.first as? SKShapeNode else { return }
+        let original = bg.fillColor
+        bg.fillColor = fillColor
+        bg.run(.sequence([
+            .wait(forDuration: 0.12),
+            .run { bg.fillColor = original }
+        ]))
+    }
+
     // MARK: - Update
 
     override func updatePlaying(deltaTime: TimeInterval) {
         playerController.update()
+
+        // Keep speech feedback label tracking Bit's position
+        if let label = speechFeedbackLabel, label.alpha > 0 {
+            label.position = CGPoint(x: bit.position.x, y: bit.position.y + 40)
+        }
     }
 
     // MARK: - Physics Contact
