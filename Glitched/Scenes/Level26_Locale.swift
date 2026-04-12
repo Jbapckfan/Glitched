@@ -4,6 +4,9 @@ import UIKit
 /// Level 26: Language / Locale
 /// Concept: All in-game text is scrambled unicode. Change device language to unscramble.
 /// Platform layout rearranges on language change.
+/// Detects specific locales for themed platforms (Japanese: torii gates,
+/// Spanish: mission arches, French: Eiffel brackets). Default non-English: standard unscrambled.
+/// If locale is already non-English on scene load, starts unscrambled.
 final class LocaleScene: BaseLevelScene, SKPhysicsContactDelegate {
 
     private let fillColor = SKColor.white
@@ -24,6 +27,11 @@ final class LocaleScene: BaseLevelScene, SKPhysicsContactDelegate {
     private var wrongPlatformOrigins: [CGPoint] = []
     private var hiddenPlatformOrigins: [CGPoint] = []
     private var isUnscrambled = false
+
+    // Locale theme
+    private enum LocaleTheme { case standard, japanese, spanish, french }
+    private var currentTheme: LocaleTheme = .standard
+    private var themedDecorations: [SKNode] = []
 
     // Hint texts when unscrambled
     private let hintTexts = [
@@ -48,9 +56,21 @@ final class LocaleScene: BaseLevelScene, SKPhysicsContactDelegate {
         buildLevel()
         showInstructionPanel()
         setupBit()
+
+        // Check current locale on scene load - if already non-English, start unscrambled
+        checkInitialLocale()
+    }
+
+    /// If the device locale is already non-English, immediately unscramble.
+    private func checkInitialLocale() {
+        let lang = Locale.current.language.languageCode?.identifier ?? "en"
+        if lang.lowercased() != "en" {
+            onLocaleChanged(language: lang)
+        }
     }
 
     private func setupBackground() {
+        let w = size.width
         // Scattered unicode background decoration
         let chars = "あいうえお漢字语言ñéü"
         let charArray = Array(chars)
@@ -61,7 +81,7 @@ final class LocaleScene: BaseLevelScene, SKPhysicsContactDelegate {
             label.fontColor = strokeColor
             label.alpha = 0.08
             label.position = CGPoint(
-                x: CGFloat(i) * 50 + 40,
+                x: w * CGFloat(i) / 10 + w * 0.05,
                 y: size.height - CGFloat.random(in: 80...200)
             )
             label.zPosition = -10
@@ -74,28 +94,29 @@ final class LocaleScene: BaseLevelScene, SKPhysicsContactDelegate {
         title.fontName = "Helvetica-Bold"
         title.fontSize = 28
         title.fontColor = strokeColor
-        title.position = CGPoint(x: 80, y: size.height - 60)
+        title.position = CGPoint(x: size.width * 0.1, y: size.height - 60)
         title.horizontalAlignmentMode = .left
         title.zPosition = 100
         addChild(title)
     }
 
     private func buildLevel() {
-        let groundY: CGFloat = 160
+        let groundY: CGFloat = size.height * 0.25
+        let w = size.width
 
         // Start platform
-        createPlatform(at: CGPoint(x: 80, y: groundY), size: CGSize(width: 120, height: 30))
+        createPlatform(at: CGPoint(x: w * 0.1, y: groundY), size: CGSize(width: w * 0.15, height: 30))
 
         // Zigzag wrong-position platforms (visible when scrambled, disappear on unscramble)
         let wrongPositions: [CGPoint] = [
-            CGPoint(x: 220, y: groundY + 30),
-            CGPoint(x: 360, y: groundY + 80),
-            CGPoint(x: 220, y: groundY + 140),
-            CGPoint(x: 400, y: groundY + 180)
+            CGPoint(x: w * 0.28, y: groundY + 30),
+            CGPoint(x: w * 0.46, y: groundY + 80),
+            CGPoint(x: w * 0.28, y: groundY + 140),
+            CGPoint(x: w * 0.52, y: groundY + 180)
         ]
 
         for pos in wrongPositions {
-            let p = createPlatformNode(at: pos, size: CGSize(width: 90, height: 25))
+            let p = createPlatformNode(at: pos, size: CGSize(width: w * 0.12, height: 25))
             wrongPlatforms.append(p)
             wrongPlatformOrigins.append(pos)
             addChild(p)
@@ -103,14 +124,14 @@ final class LocaleScene: BaseLevelScene, SKPhysicsContactDelegate {
 
         // Correct route hidden platforms (appear on unscramble)
         let correctPositions: [CGPoint] = [
-            CGPoint(x: 230, y: groundY + 50),
-            CGPoint(x: 370, y: groundY + 100),
-            CGPoint(x: 250, y: groundY + 160),
-            CGPoint(x: 430, y: groundY + 210)
+            CGPoint(x: w * 0.30, y: groundY + 50),
+            CGPoint(x: w * 0.48, y: groundY + 100),
+            CGPoint(x: w * 0.32, y: groundY + 160),
+            CGPoint(x: w * 0.56, y: groundY + 210)
         ]
 
         for pos in correctPositions {
-            let p = createPlatformNode(at: pos, size: CGSize(width: 90, height: 25))
+            let p = createPlatformNode(at: pos, size: CGSize(width: w * 0.12, height: 25))
             p.alpha = 0
             p.physicsBody?.categoryBitMask = PhysicsCategory.none
             hiddenPlatforms.append(p)
@@ -120,10 +141,10 @@ final class LocaleScene: BaseLevelScene, SKPhysicsContactDelegate {
 
         // Sign posts with scrambled text
         let signPositions: [CGPoint] = [
-            CGPoint(x: 80, y: groundY + 60),
-            CGPoint(x: 230, y: groundY + 110),
-            CGPoint(x: 370, y: groundY + 160),
-            CGPoint(x: 250, y: groundY + 220)
+            CGPoint(x: w * 0.10, y: groundY + 60),
+            CGPoint(x: w * 0.30, y: groundY + 110),
+            CGPoint(x: w * 0.48, y: groundY + 160),
+            CGPoint(x: w * 0.32, y: groundY + 220)
         ]
 
         for (i, pos) in signPositions.enumerated() {
@@ -131,13 +152,13 @@ final class LocaleScene: BaseLevelScene, SKPhysicsContactDelegate {
         }
 
         // Exit platform
-        createPlatform(at: CGPoint(x: size.width - 80, y: groundY + 240), size: CGSize(width: 120, height: 30))
-        createExitDoor(at: CGPoint(x: size.width - 60, y: groundY + 300))
+        createPlatform(at: CGPoint(x: w * 0.90, y: groundY + 240), size: CGSize(width: w * 0.15, height: 30))
+        createExitDoor(at: CGPoint(x: w * 0.92, y: groundY + 300))
 
         // Death zone
         let death = SKNode()
-        death.position = CGPoint(x: size.width / 2, y: -50)
-        death.physicsBody = SKPhysicsBody(rectangleOf: CGSize(width: size.width * 2, height: 100))
+        death.position = CGPoint(x: w / 2, y: -50)
+        death.physicsBody = SKPhysicsBody(rectangleOf: CGSize(width: w * 2, height: 100))
         death.physicsBody?.isDynamic = false
         death.physicsBody?.categoryBitMask = PhysicsCategory.hazard
         addChild(death)
@@ -241,10 +262,11 @@ final class LocaleScene: BaseLevelScene, SKPhysicsContactDelegate {
 
     #if DEBUG
     private func createTestButton() {
+        let w = size.width
         let button = SKShapeNode(rectOf: CGSize(width: 100, height: 30), cornerRadius: 6)
         button.fillColor = strokeColor
         button.strokeColor = strokeColor
-        button.position = CGPoint(x: size.width - 70, y: size.height - 50)
+        button.position = CGPoint(x: w * 0.88, y: size.height - 50)
         button.zPosition = 500
         button.name = "testLocaleButton"
         addChild(button)
@@ -267,8 +289,8 @@ final class LocaleScene: BaseLevelScene, SKPhysicsContactDelegate {
         panel.zPosition = 300
         addChild(panel)
 
-        // FIX #16: Larger panel with revert instructions in English AND target locale
-        let bg = SKShapeNode(rectOf: CGSize(width: 320, height: 130), cornerRadius: 8)
+        let panelWidth = min(size.width * 0.8, 320)
+        let bg = SKShapeNode(rectOf: CGSize(width: panelWidth, height: 80), cornerRadius: 8)
         bg.fillColor = fillColor
         bg.strokeColor = strokeColor
         panel.addChild(bg)
@@ -277,45 +299,21 @@ final class LocaleScene: BaseLevelScene, SKPhysicsContactDelegate {
         text1.fontName = "Menlo-Bold"
         text1.fontSize = 11
         text1.fontColor = strokeColor
-        text1.position = CGPoint(x: 0, y: 35)
+        text1.position = CGPoint(x: 0, y: 15)
         panel.addChild(text1)
 
-        let text2 = SKLabelNode(text: "CHANGE YOUR LANGUAGE TO READ")
+        let text2 = SKLabelNode(text: "YOUR LANGUAGE SHAPES THIS WORLD.")
         text2.fontName = "Menlo"
         text2.fontSize = 10
         text2.fontColor = strokeColor
-        text2.position = CGPoint(x: 0, y: 18)
+        text2.position = CGPoint(x: 0, y: -5)
         panel.addChild(text2)
 
-        // FIX #16: Revert instructions in English
-        let revertEN = SKLabelNode(text: "TO REVERT: Settings > General > Language")
-        revertEN.fontName = "Menlo"
-        revertEN.fontSize = 8
-        revertEN.fontColor = strokeColor.withAlphaComponent(0.7)
-        revertEN.position = CGPoint(x: 0, y: -2)
-        panel.addChild(revertEN)
-
-        // FIX #16: Revert instructions in Japanese (target locale)
-        let revertJA = SKLabelNode(text: "戻す: 設定 > 一般 > 言語と地域")
-        revertJA.fontName = "Menlo"
-        revertJA.fontSize = 8
-        revertJA.fontColor = strokeColor.withAlphaComponent(0.7)
-        revertJA.position = CGPoint(x: 0, y: -16)
-        panel.addChild(revertJA)
-
-        // FIX #16: Revert instructions in Spanish (alternate locale)
-        let revertES = SKLabelNode(text: "Revertir: Ajustes > General > Idioma")
-        revertES.fontName = "Menlo"
-        revertES.fontSize = 8
-        revertES.fontColor = strokeColor.withAlphaComponent(0.7)
-        revertES.position = CGPoint(x: 0, y: -30)
-        panel.addChild(revertES)
-
-        panel.run(.sequence([.wait(forDuration: 10), .fadeOut(withDuration: 0.5), .removeFromParent()]))
+        panel.run(.sequence([.wait(forDuration: 8), .fadeOut(withDuration: 0.5), .removeFromParent()]))
     }
 
     private func setupBit() {
-        spawnPoint = CGPoint(x: 80, y: 200)
+        spawnPoint = CGPoint(x: size.width * 0.1, y: size.height * 0.35)
         bit = BitCharacter.make()
         bit.position = spawnPoint
         addChild(bit)
@@ -326,17 +324,30 @@ final class LocaleScene: BaseLevelScene, SKPhysicsContactDelegate {
     // MARK: - Locale Change Logic
 
     private func onLocaleChanged(language: String) {
-        let isNonEnglish = language.lowercased() != "en"
+        let lang = language.lowercased()
+        let isNonEnglish = lang != "en"
 
         if isNonEnglish && !isUnscrambled {
-            unscrambleWorld()
+            let theme = detectTheme(for: lang)
+            unscrambleWorld(theme: theme)
         } else if !isNonEnglish && isUnscrambled {
             rescrambleWorld()
         }
     }
 
-    private func unscrambleWorld() {
+    /// Detect locale-specific platform theme.
+    private func detectTheme(for language: String) -> LocaleTheme {
+        switch language {
+        case "ja": return .japanese
+        case "es": return .spanish
+        case "fr": return .french
+        default:   return .standard
+        }
+    }
+
+    private func unscrambleWorld(theme: LocaleTheme) {
         isUnscrambled = true
+        currentTheme = theme
 
         // Unscramble sign text
         for (i, label) in signLabels.enumerated() {
@@ -368,11 +379,177 @@ final class LocaleScene: BaseLevelScene, SKPhysicsContactDelegate {
             ]))
         }
 
+        // Apply locale-specific theme decorations on the correct platforms
+        applyThemeDecorations(theme)
+
         // Fourth wall break
-        showFourthWallMessage("YOU CHANGED YOUR ENTIRE PHONE'S\nLANGUAGE FOR A GAME. RESPECT.")
+        let themeMessage: String
+        switch theme {
+        case .japanese:
+            themeMessage = "THE TORII GATES WELCOME YOU.\nYOU CHANGED YOUR PHONE'S LANGUAGE. RESPECT."
+        case .spanish:
+            themeMessage = "THE MISSION ARCHES STAND TALL.\nCAMBIASTE EL IDIOMA POR UN JUEGO. RESPECT."
+        case .french:
+            themeMessage = "THE EIFFEL BRACKETS RISE.\nVOUS AVEZ CHANGE LA LANGUE POUR UN JEU. RESPECT."
+        case .standard:
+            themeMessage = "YOU CHANGED YOUR ENTIRE PHONE'S\nLANGUAGE FOR A GAME. RESPECT."
+        }
+        showFourthWallMessage(themeMessage)
 
         JuiceManager.shared.flash(color: .white, duration: 0.3)
         HapticManager.shared.victory()
+    }
+
+    /// Add themed decorations on top of correct-route platforms.
+    private func applyThemeDecorations(_ theme: LocaleTheme) {
+        removeThemeDecorations()
+
+        guard theme != .standard else { return }
+
+        for platform in hiddenPlatforms {
+            let decoration: SKNode
+            switch theme {
+            case .japanese:
+                decoration = createToriiGate()
+            case .spanish:
+                decoration = createMissionArch()
+            case .french:
+                decoration = createEiffelBracket()
+            case .standard:
+                continue
+            }
+            decoration.position = CGPoint(x: 0, y: 25)
+            decoration.zPosition = 50
+            decoration.name = "theme_decoration"
+            platform.addChild(decoration)
+            themedDecorations.append(decoration)
+        }
+    }
+
+    private func removeThemeDecorations() {
+        for dec in themedDecorations {
+            dec.removeFromParent()
+        }
+        themedDecorations.removeAll()
+    }
+
+    /// Torii gate: two vertical pillars with a curved top beam.
+    private func createToriiGate() -> SKNode {
+        let gate = SKNode()
+
+        // Left pillar
+        let leftPillar = SKShapeNode(rectOf: CGSize(width: 4, height: 30))
+        leftPillar.fillColor = SKColor(red: 0.8, green: 0.1, blue: 0.1, alpha: 1)
+        leftPillar.strokeColor = strokeColor
+        leftPillar.lineWidth = 1
+        leftPillar.position = CGPoint(x: -18, y: 0)
+        gate.addChild(leftPillar)
+
+        // Right pillar
+        let rightPillar = SKShapeNode(rectOf: CGSize(width: 4, height: 30))
+        rightPillar.fillColor = SKColor(red: 0.8, green: 0.1, blue: 0.1, alpha: 1)
+        rightPillar.strokeColor = strokeColor
+        rightPillar.lineWidth = 1
+        rightPillar.position = CGPoint(x: 18, y: 0)
+        gate.addChild(rightPillar)
+
+        // Top beam (kasagi)
+        let beam = SKShapeNode(rectOf: CGSize(width: 48, height: 5))
+        beam.fillColor = SKColor(red: 0.8, green: 0.1, blue: 0.1, alpha: 1)
+        beam.strokeColor = strokeColor
+        beam.lineWidth = 1
+        beam.position = CGPoint(x: 0, y: 17)
+        gate.addChild(beam)
+
+        // Second beam (nuki)
+        let beam2 = SKShapeNode(rectOf: CGSize(width: 40, height: 3))
+        beam2.fillColor = SKColor(red: 0.8, green: 0.1, blue: 0.1, alpha: 1)
+        beam2.strokeColor = strokeColor
+        beam2.lineWidth = 0.5
+        beam2.position = CGPoint(x: 0, y: 10)
+        gate.addChild(beam2)
+
+        return gate
+    }
+
+    /// Mission arch: a rounded arch with a cross on top.
+    private func createMissionArch() -> SKNode {
+        let arch = SKNode()
+
+        // Arch base left
+        let leftBase = SKShapeNode(rectOf: CGSize(width: 6, height: 24))
+        leftBase.fillColor = SKColor(red: 0.85, green: 0.75, blue: 0.55, alpha: 1)
+        leftBase.strokeColor = strokeColor
+        leftBase.lineWidth = 1
+        leftBase.position = CGPoint(x: -16, y: -2)
+        arch.addChild(leftBase)
+
+        // Arch base right
+        let rightBase = SKShapeNode(rectOf: CGSize(width: 6, height: 24))
+        rightBase.fillColor = SKColor(red: 0.85, green: 0.75, blue: 0.55, alpha: 1)
+        rightBase.strokeColor = strokeColor
+        rightBase.lineWidth = 1
+        rightBase.position = CGPoint(x: 16, y: -2)
+        arch.addChild(rightBase)
+
+        // Arch top (semicircle)
+        let archPath = CGMutablePath()
+        archPath.addArc(center: CGPoint(x: 0, y: 10), radius: 16, startAngle: 0, endAngle: .pi, clockwise: false)
+        let archShape = SKShapeNode(path: archPath)
+        archShape.strokeColor = strokeColor
+        archShape.fillColor = SKColor(red: 0.85, green: 0.75, blue: 0.55, alpha: 1)
+        archShape.lineWidth = 1.5
+        arch.addChild(archShape)
+
+        // Small cross on top
+        let crossV = SKShapeNode(rectOf: CGSize(width: 2, height: 10))
+        crossV.fillColor = strokeColor
+        crossV.strokeColor = .clear
+        crossV.position = CGPoint(x: 0, y: 30)
+        arch.addChild(crossV)
+
+        let crossH = SKShapeNode(rectOf: CGSize(width: 6, height: 2))
+        crossH.fillColor = strokeColor
+        crossH.strokeColor = .clear
+        crossH.position = CGPoint(x: 0, y: 32)
+        arch.addChild(crossH)
+
+        return arch
+    }
+
+    /// Eiffel bracket: an A-frame bracket silhouette.
+    private func createEiffelBracket() -> SKNode {
+        let bracket = SKNode()
+
+        // A-frame legs
+        let path = CGMutablePath()
+        path.move(to: CGPoint(x: -18, y: -12))
+        path.addLine(to: CGPoint(x: -6, y: 22))
+        path.addLine(to: CGPoint(x: 0, y: 30))
+        path.addLine(to: CGPoint(x: 6, y: 22))
+        path.addLine(to: CGPoint(x: 18, y: -12))
+
+        let shape = SKShapeNode(path: path)
+        shape.strokeColor = SKColor(red: 0.45, green: 0.45, blue: 0.50, alpha: 1)
+        shape.fillColor = .clear
+        shape.lineWidth = 2
+        bracket.addChild(shape)
+
+        // Cross brace lower
+        let brace1 = SKShapeNode(rectOf: CGSize(width: 28, height: 2))
+        brace1.fillColor = SKColor(red: 0.45, green: 0.45, blue: 0.50, alpha: 1)
+        brace1.strokeColor = .clear
+        brace1.position = CGPoint(x: 0, y: 0)
+        bracket.addChild(brace1)
+
+        // Cross brace upper
+        let brace2 = SKShapeNode(rectOf: CGSize(width: 18, height: 2))
+        brace2.fillColor = SKColor(red: 0.45, green: 0.45, blue: 0.50, alpha: 1)
+        brace2.strokeColor = .clear
+        brace2.position = CGPoint(x: 0, y: 14)
+        bracket.addChild(brace2)
+
+        return bracket
     }
 
     private func rescrambleWorld() {
@@ -395,6 +572,8 @@ final class LocaleScene: BaseLevelScene, SKPhysicsContactDelegate {
                 .run { p.physicsBody?.categoryBitMask = PhysicsCategory.none }
             ]))
         }
+
+        removeThemeDecorations()
     }
 
     private func showFourthWallMessage(_ text: String) {
@@ -403,7 +582,8 @@ final class LocaleScene: BaseLevelScene, SKPhysicsContactDelegate {
         container.zPosition = 1000
         addChild(container)
 
-        let bg = SKShapeNode(rectOf: CGSize(width: 320, height: 70), cornerRadius: 8)
+        let panelWidth = min(size.width * 0.8, 320)
+        let bg = SKShapeNode(rectOf: CGSize(width: panelWidth, height: 70), cornerRadius: 8)
         bg.fillColor = strokeColor
         bg.strokeColor = fillColor
         bg.lineWidth = 2
@@ -447,8 +627,10 @@ final class LocaleScene: BaseLevelScene, SKPhysicsContactDelegate {
         // Test button check
         let tapped = nodes(at: location)
         if tapped.contains(where: { $0.name == "testLocaleButton" }) {
-            let testLang = isUnscrambled ? "en" : "ja"
-            InputEventBus.shared.post(.localeChanged(language: testLang))
+            // Cycle through test locales: ja -> es -> fr -> en
+            let testLocales = ["ja", "es", "fr", "en"]
+            let currentLang = isUnscrambled ? "en" : testLocales.first { detectTheme(for: $0) != currentTheme } ?? "ja"
+            InputEventBus.shared.post(.localeChanged(language: currentLang))
             return
         }
         #endif

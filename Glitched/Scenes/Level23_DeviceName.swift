@@ -5,6 +5,8 @@ import UIKit
 /// Concept: The game reads the device owner name and addresses the player personally.
 /// A doppelganger NPC mirrors the player but follows a preset path.
 /// The exit door only opens for the "real" player.
+/// The name door reacts to player proximity + identity check (not a timer).
+/// If `.deviceNameRead` doesn't arrive within 5s, falls back to "PLAYER".
 final class DeviceNameScene: BaseLevelScene, SKPhysicsContactDelegate {
 
     private let fillColor = SKColor.white
@@ -17,18 +19,28 @@ final class DeviceNameScene: BaseLevelScene, SKPhysicsContactDelegate {
 
     // Device name state
     private var playerName: String = "PLAYER"
+    private var nameReceived = false
     private var nameDoorLabel: SKLabelNode?
     private var exitDoorLabel: SKLabelNode?
     private var nameDoorOpened = false
     private var exitDoorBlocker: SKNode?
 
+    // Name door proximity
+    private var nameDoorNode: SKNode?
+    private var nameDoorBlocker: SKNode?
+    private let nameDoorProximityThreshold: CGFloat = 80
+
     // Doppelganger
     private var doppelganger: SKNode?
     private var doppelgangerStarted = false
+    private var doppelgangerDissolved = false
 
     // 4th wall
     private var hasShownGreeting = false
     private var hasShownFollowUp = false
+
+    // Fallback timer
+    private var nameFallbackFired = false
 
     override func configureScene() {
         levelID = LevelID(world: .world3, index: 23)
@@ -46,15 +58,24 @@ final class DeviceNameScene: BaseLevelScene, SKPhysicsContactDelegate {
         createDoppelganger()
         showInstructionPanel()
         setupBit()
+
+        // Fallback: if deviceNameRead doesn't arrive in 5 seconds, use generic name
+        run(.sequence([
+            .wait(forDuration: 5.0),
+            .run { [weak self] in
+                self?.handleNameFallback()
+            }
+        ]), withKey: "name_fallback")
     }
 
     // MARK: - Setup
 
     private func setupBackground() {
+        let w = size.width
         // Name tag decorations
         for i in 0..<5 {
             let tag = createNameTag(width: 40, height: 20)
-            tag.position = CGPoint(x: CGFloat(i) * 120 + 80, y: size.height - 80)
+            tag.position = CGPoint(x: w * (CGFloat(i) + 0.5) / 5.0, y: size.height - 80)
             tag.alpha = 0.1
             tag.zPosition = -10
             addChild(tag)
@@ -84,38 +105,39 @@ final class DeviceNameScene: BaseLevelScene, SKPhysicsContactDelegate {
         title.fontName = "Helvetica-Bold"
         title.fontSize = 28
         title.fontColor = strokeColor
-        title.position = CGPoint(x: 80, y: size.height - 60)
+        title.position = CGPoint(x: size.width * 0.1, y: size.height - 60)
         title.horizontalAlignmentMode = .left
         title.zPosition = 100
         addChild(title)
     }
 
     private func buildLevel() {
-        let groundY: CGFloat = 160
+        let groundY: CGFloat = size.height * 0.25
+        let w = size.width
 
         // Start platform
-        createPlatform(at: CGPoint(x: 80, y: groundY), size: CGSize(width: 140, height: 30))
+        createPlatform(at: CGPoint(x: w * 0.1, y: groundY), size: CGSize(width: w * 0.18, height: 30))
 
         // Corridor platform
-        createPlatform(at: CGPoint(x: 250, y: groundY), size: CGSize(width: 120, height: 30))
+        createPlatform(at: CGPoint(x: w * 0.33, y: groundY), size: CGSize(width: w * 0.15, height: 30))
 
         // Name-labeled door
-        createNameDoor(at: CGPoint(x: 310, y: groundY + 45))
+        createNameDoor(at: CGPoint(x: w * 0.40, y: groundY + 45))
 
         // Middle platforms
-        createPlatform(at: CGPoint(x: 400, y: groundY), size: CGSize(width: 100, height: 30))
-        createPlatform(at: CGPoint(x: 520, y: groundY + 30), size: CGSize(width: 80, height: 25))
+        createPlatform(at: CGPoint(x: w * 0.52, y: groundY), size: CGSize(width: w * 0.13, height: 30))
+        createPlatform(at: CGPoint(x: w * 0.67, y: groundY + 30), size: CGSize(width: w * 0.10, height: 25))
 
         // Exit platform
-        createPlatform(at: CGPoint(x: size.width - 80, y: groundY), size: CGSize(width: 120, height: 30))
+        createPlatform(at: CGPoint(x: w * 0.90, y: groundY), size: CGSize(width: w * 0.15, height: 30))
 
         // Exit door - only opens for real player
-        createExitDoor(at: CGPoint(x: size.width - 60, y: groundY + 50))
+        createExitDoor(at: CGPoint(x: w * 0.92, y: groundY + 50))
 
         // Death zone
         let death = SKNode()
-        death.position = CGPoint(x: size.width / 2, y: -50)
-        death.physicsBody = SKPhysicsBody(rectangleOf: CGSize(width: size.width * 2, height: 100))
+        death.position = CGPoint(x: w / 2, y: -50)
+        death.physicsBody = SKPhysicsBody(rectangleOf: CGSize(width: w * 2, height: 100))
         death.physicsBody?.isDynamic = false
         death.physicsBody?.categoryBitMask = PhysicsCategory.hazard
         addChild(death)
@@ -162,26 +184,44 @@ final class DeviceNameScene: BaseLevelScene, SKPhysicsContactDelegate {
 
         addChild(door)
 
-        // The name door auto-opens after a brief delay once name is confirmed
-        // Physical blocker that gets removed
+        // Physical blocker that gets removed on proximity check
         let blocker = SKNode()
         blocker.physicsBody = SKPhysicsBody(rectangleOf: CGSize(width: 10, height: 60))
         blocker.physicsBody?.isDynamic = false
         blocker.physicsBody?.categoryBitMask = PhysicsCategory.ground
         door.addChild(blocker)
 
-        // Auto-open after 2 seconds
+        nameDoorNode = door
+        nameDoorBlocker = blocker
+    }
+
+    /// Called each frame: when Bit is close to the name door, perform identity check and open.
+    private func checkNameDoorProximity() {
+        guard !nameDoorOpened,
+              let door = nameDoorNode,
+              let blocker = nameDoorBlocker else { return }
+
+        let dist = hypot(bit.position.x - door.position.x, bit.position.y - door.position.y)
+        guard dist < nameDoorProximityThreshold else { return }
+
+        // Identity check: the real player always passes (doppelganger dissolved or not yet present)
+        nameDoorOpened = true
+
+        blocker.physicsBody?.categoryBitMask = 0
         door.run(.sequence([
-            .wait(forDuration: 2.0),
-            .run { [weak self] in
-                self?.nameDoorOpened = true
-                blocker.physicsBody?.categoryBitMask = 0
-                door.run(.sequence([
-                    .moveBy(x: 0, y: 60, duration: 0.4),
-                    .fadeAlpha(to: 0.3, duration: 0.2)
-                ]))
-            }
+            .moveBy(x: 0, y: 60, duration: 0.4),
+            .fadeAlpha(to: 0.3, duration: 0.2)
         ]))
+
+        // Confirmation label
+        let confirmLabel = SKLabelNode(text: "\(playerName) RECOGNIZED")
+        confirmLabel.fontName = "Menlo-Bold"
+        confirmLabel.fontSize = 10
+        confirmLabel.fontColor = strokeColor
+        confirmLabel.position = CGPoint(x: door.position.x, y: door.position.y + 50)
+        confirmLabel.zPosition = 300
+        addChild(confirmLabel)
+        confirmLabel.run(.sequence([.wait(forDuration: 2), .fadeOut(withDuration: 0.5), .removeFromParent()]))
     }
 
     private func createExitDoor(at position: CGPoint) {
@@ -275,7 +315,7 @@ final class DeviceNameScene: BaseLevelScene, SKPhysicsContactDelegate {
         label.position = CGPoint(x: 0, y: 45)
         doppel.addChild(label)
 
-        doppel.position = CGPoint(x: 120, y: 200)
+        doppel.position = CGPoint(x: size.width * 0.15, y: size.height * 0.35)
         doppel.alpha = 0 // Hidden until triggered
 
         doppelganger = doppel
@@ -288,14 +328,15 @@ final class DeviceNameScene: BaseLevelScene, SKPhysicsContactDelegate {
 
         doppel.alpha = 1.0
 
+        let groundY: CGFloat = size.height * 0.25
+        let w = size.width
+
         // Doppelganger follows a preset path toward the exit
-        // It races along platforms but arrives and "fails" at the door
-        let groundY: CGFloat = 160
         let path = CGMutablePath()
-        path.move(to: CGPoint(x: 250, y: groundY + 40))
-        path.addLine(to: CGPoint(x: 400, y: groundY + 40))
-        path.addLine(to: CGPoint(x: 520, y: groundY + 70))
-        path.addLine(to: CGPoint(x: size.width - 120, y: groundY + 40))
+        path.move(to: CGPoint(x: w * 0.33, y: groundY + 40))
+        path.addLine(to: CGPoint(x: w * 0.52, y: groundY + 40))
+        path.addLine(to: CGPoint(x: w * 0.67, y: groundY + 70))
+        path.addLine(to: CGPoint(x: w * 0.85, y: groundY + 40))
 
         let followPath = SKAction.follow(path, asOffset: false, orientToPath: false, duration: 4.0)
 
@@ -311,12 +352,14 @@ final class DeviceNameScene: BaseLevelScene, SKPhysicsContactDelegate {
     private func doppelgangerRejected() {
         guard let doppel = doppelganger else { return }
 
+        let w = size.width
+
         // Show rejection text
         let rejected = SKLabelNode(text: "ACCESS DENIED: NOT \(playerName)")
         rejected.fontName = "Menlo-Bold"
         rejected.fontSize = 10
         rejected.fontColor = strokeColor
-        rejected.position = CGPoint(x: size.width - 100, y: 280)
+        rejected.position = CGPoint(x: w * 0.85, y: size.height * 0.5)
         rejected.zPosition = 300
         addChild(rejected)
         rejected.run(.sequence([.wait(forDuration: 3), .fadeOut(withDuration: 0.5), .removeFromParent()]))
@@ -328,7 +371,10 @@ final class DeviceNameScene: BaseLevelScene, SKPhysicsContactDelegate {
                 .moveBy(x: CGFloat.random(in: -3...3), y: 0, duration: 0.05)
             ]), count: 10),
             .fadeOut(withDuration: 0.5),
-            .removeFromParent()
+            .removeFromParent(),
+            .run { [weak self] in
+                self?.doppelgangerDissolved = true
+            }
         ]))
 
         // Unlock exit door for the real player
@@ -352,11 +398,12 @@ final class DeviceNameScene: BaseLevelScene, SKPhysicsContactDelegate {
             ]))
         }
 
+        let w = size.width
         let openLabel = SKLabelNode(text: "DOOR OPENS FOR \(playerName)")
         openLabel.fontName = "Menlo-Bold"
         openLabel.fontSize = 10
         openLabel.fontColor = strokeColor
-        openLabel.position = CGPoint(x: size.width - 80, y: 120)
+        openLabel.position = CGPoint(x: w * 0.88, y: size.height * 0.22)
         openLabel.zPosition = 300
         addChild(openLabel)
         openLabel.run(.sequence([.wait(forDuration: 3), .fadeOut(withDuration: 0.5), .removeFromParent()]))
@@ -368,7 +415,8 @@ final class DeviceNameScene: BaseLevelScene, SKPhysicsContactDelegate {
         panel.zPosition = 300
         addChild(panel)
 
-        let bg = SKShapeNode(rectOf: CGSize(width: 320, height: 80), cornerRadius: 8)
+        let panelWidth = min(size.width * 0.8, 320)
+        let bg = SKShapeNode(rectOf: CGSize(width: panelWidth, height: 80), cornerRadius: 8)
         bg.fillColor = fillColor
         bg.strokeColor = strokeColor
         panel.addChild(bg)
@@ -391,7 +439,7 @@ final class DeviceNameScene: BaseLevelScene, SKPhysicsContactDelegate {
     }
 
     private func setupBit() {
-        spawnPoint = CGPoint(x: 80, y: 200)
+        spawnPoint = CGPoint(x: size.width * 0.1, y: size.height * 0.35)
         bit = BitCharacter.make()
         bit.position = spawnPoint
         addChild(bit)
@@ -401,7 +449,18 @@ final class DeviceNameScene: BaseLevelScene, SKPhysicsContactDelegate {
 
     // MARK: - Name Handling
 
+    /// Fallback: if no `.deviceNameRead` event arrives within 5 seconds, proceed with "PLAYER".
+    private func handleNameFallback() {
+        guard !nameReceived, !nameFallbackFired else { return }
+        nameFallbackFired = true
+        updatePlayerName("PLAYER")
+    }
+
     private func updatePlayerName(_ name: String) {
+        guard !nameReceived else { return }
+        nameReceived = true
+        removeAction(forKey: "name_fallback")
+
         playerName = name.uppercased()
 
         // Update door labels
@@ -483,6 +542,7 @@ final class DeviceNameScene: BaseLevelScene, SKPhysicsContactDelegate {
 
     override func updatePlaying(deltaTime: TimeInterval) {
         playerController.update()
+        checkNameDoorProximity()
     }
 
     // MARK: - Physics Contact

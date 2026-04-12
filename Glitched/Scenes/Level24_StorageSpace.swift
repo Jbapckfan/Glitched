@@ -4,6 +4,8 @@ import UIKit
 /// Level 24: Storage Space
 /// Concept: A "data mass" wall blocks the path. Player must clear the app's cache
 /// (via Settings > Storage > Glitched) to dissolve it. Fallback button for simulator.
+/// The CLEAR CACHE button is gated behind a 15-second delay with hint text.
+/// The data mass wall visually shrinks as cache is cleared (not just disappear).
 final class StorageSpaceScene: BaseLevelScene, SKPhysicsContactDelegate {
 
     private let fillColor = SKColor.white
@@ -20,12 +22,18 @@ final class StorageSpaceScene: BaseLevelScene, SKPhysicsContactDelegate {
     private var dataMassBlocks: [SKShapeNode] = []
     private var cacheCleared = false
 
+    // Data mass geometry (for shrink animation)
+    private let dataMassWallWidth: CGFloat = 80
+    private let dataMassWallHeight: CGFloat = 120
+
     // Storage display
     private var storageLabel: SKLabelNode!
     private var fourthWallLabel: SKLabelNode?
 
-    // Fallback button
+    // Fallback button (gated behind delay)
     private var clearButton: SKNode?
+    private var clearButtonReady = false
+    private var hintLabel: SKLabelNode?
 
     override func configureScene() {
         levelID = LevelID(world: .world3, index: 24)
@@ -50,15 +58,17 @@ final class StorageSpaceScene: BaseLevelScene, SKPhysicsContactDelegate {
     // MARK: - Setup
 
     private func setupBackground() {
+        let w = size.width
+        let h = size.height
         // Binary/data pattern decoration
-        for i in 0..<10 {
+        for _ in 0..<10 {
             let binary = SKLabelNode(text: ["0110", "1001", "1100", "0011", "1010"].randomElement()!)
             binary.fontName = "Menlo"
             binary.fontSize = 12
             binary.fontColor = strokeColor.withAlphaComponent(0.08)
             binary.position = CGPoint(
-                x: CGFloat.random(in: 40...size.width - 40),
-                y: CGFloat.random(in: size.height * 0.6...size.height - 40)
+                x: CGFloat.random(in: w * 0.05...w * 0.95),
+                y: CGFloat.random(in: h * 0.6...h - 40)
             )
             binary.zPosition = -10
             addChild(binary)
@@ -70,31 +80,32 @@ final class StorageSpaceScene: BaseLevelScene, SKPhysicsContactDelegate {
         title.fontName = "Helvetica-Bold"
         title.fontSize = 28
         title.fontColor = strokeColor
-        title.position = CGPoint(x: 80, y: size.height - 60)
+        title.position = CGPoint(x: size.width * 0.1, y: size.height - 60)
         title.horizontalAlignmentMode = .left
         title.zPosition = 100
         addChild(title)
     }
 
     private func buildLevel() {
-        let groundY: CGFloat = 160
+        let groundY: CGFloat = size.height * 0.25
+        let w = size.width
 
         // Start platform
-        createPlatform(at: CGPoint(x: 100, y: groundY), size: CGSize(width: 180, height: 30))
+        createPlatform(at: CGPoint(x: w * 0.12, y: groundY), size: CGSize(width: w * 0.22, height: 30))
 
         // Middle area (data mass will be here)
-        createPlatform(at: CGPoint(x: size.width / 2, y: groundY), size: CGSize(width: 200, height: 30))
+        createPlatform(at: CGPoint(x: w * 0.50, y: groundY), size: CGSize(width: w * 0.25, height: 30))
 
         // Exit platform (behind the data mass)
-        createPlatform(at: CGPoint(x: size.width - 80, y: groundY), size: CGSize(width: 140, height: 30))
+        createPlatform(at: CGPoint(x: w * 0.90, y: groundY), size: CGSize(width: w * 0.17, height: 30))
 
         // Exit door
-        createExitDoor(at: CGPoint(x: size.width - 60, y: groundY + 50))
+        createExitDoor(at: CGPoint(x: w * 0.92, y: groundY + 50))
 
         // Death zone
         let death = SKNode()
-        death.position = CGPoint(x: size.width / 2, y: -50)
-        death.physicsBody = SKPhysicsBody(rectangleOf: CGSize(width: size.width * 2, height: 100))
+        death.position = CGPoint(x: w / 2, y: -50)
+        death.physicsBody = SKPhysicsBody(rectangleOf: CGSize(width: w * 2, height: 100))
         death.physicsBody?.isDynamic = false
         death.physicsBody?.categoryBitMask = PhysicsCategory.hazard
         addChild(death)
@@ -118,18 +129,17 @@ final class StorageSpaceScene: BaseLevelScene, SKPhysicsContactDelegate {
     }
 
     private func createDataMass() {
-        let groundY: CGFloat = 160
+        let groundY: CGFloat = size.height * 0.25
+        let w = size.width
         let container = SKNode()
-        container.position = CGPoint(x: size.width / 2 + 60, y: groundY + 60)
+        container.position = CGPoint(x: w * 0.58, y: groundY + 60)
         container.name = "data_mass"
 
         // Create a wall of animated "data" blocks
-        let wallWidth: CGFloat = 80
-        let wallHeight: CGFloat = 120
         let blockSize: CGFloat = 12
 
-        let cols = Int(wallWidth / blockSize)
-        let rows = Int(wallHeight / blockSize)
+        let cols = Int(dataMassWallWidth / blockSize)
+        let rows = Int(dataMassWallHeight / blockSize)
 
         for row in 0..<rows {
             for col in 0..<cols {
@@ -138,8 +148,8 @@ final class StorageSpaceScene: BaseLevelScene, SKPhysicsContactDelegate {
                 block.strokeColor = strokeColor
                 block.lineWidth = 0.5
 
-                let x = CGFloat(col) * blockSize - wallWidth / 2 + blockSize / 2
-                let y = CGFloat(row) * blockSize - wallHeight / 2 + blockSize / 2
+                let x = CGFloat(col) * blockSize - dataMassWallWidth / 2 + blockSize / 2
+                let y = CGFloat(row) * blockSize - dataMassWallHeight / 2 + blockSize / 2
                 block.position = CGPoint(x: x, y: y)
 
                 // Animated static shimmer
@@ -164,6 +174,7 @@ final class StorageSpaceScene: BaseLevelScene, SKPhysicsContactDelegate {
         label.fontColor = fillColor
         label.position = CGPoint(x: 0, y: 0)
         label.zPosition = 10
+        label.name = "data_mass_label"
         container.addChild(label)
 
         dataMassContainer = container
@@ -172,7 +183,7 @@ final class StorageSpaceScene: BaseLevelScene, SKPhysicsContactDelegate {
         // Physical blocker
         dataMassBlocker = SKNode()
         dataMassBlocker?.position = container.position
-        dataMassBlocker?.physicsBody = SKPhysicsBody(rectangleOf: CGSize(width: wallWidth, height: wallHeight))
+        dataMassBlocker?.physicsBody = SKPhysicsBody(rectangleOf: CGSize(width: dataMassWallWidth, height: dataMassWallHeight))
         dataMassBlocker?.physicsBody?.isDynamic = false
         dataMassBlocker?.physicsBody?.categoryBitMask = PhysicsCategory.ground
         addChild(dataMassBlocker!)
@@ -239,10 +250,31 @@ final class StorageSpaceScene: BaseLevelScene, SKPhysicsContactDelegate {
     }
 
     private func createClearButton() {
+        let w = size.width
+
+        // Hint text shown immediately
+        let hint = SKLabelNode(text: "TRY CLEARING APP DATA IN SETTINGS FIRST")
+        hint.fontName = "Menlo"
+        hint.fontSize = 8
+        hint.fontColor = strokeColor.withAlphaComponent(0.6)
+        hint.position = CGPoint(x: w * 0.85, y: 85)
+        hint.zPosition = 200
+        hint.name = "clear_hint"
+        addChild(hint)
+        hintLabel = hint
+
+        // Pulsing hint animation
+        hint.run(.repeatForever(.sequence([
+            .fadeAlpha(to: 0.3, duration: 1.2),
+            .fadeAlpha(to: 0.8, duration: 1.2)
+        ])))
+
+        // Button starts hidden, appears after 15-second delay
         let button = SKNode()
-        button.position = CGPoint(x: size.width - 70, y: 60)
+        button.position = CGPoint(x: w * 0.85, y: 60)
         button.zPosition = 200
         button.name = "clear_button"
+        button.alpha = 0
 
         let bg = SKShapeNode(rectOf: CGSize(width: 110, height: 30), cornerRadius: 4)
         bg.fillColor = fillColor
@@ -259,6 +291,17 @@ final class StorageSpaceScene: BaseLevelScene, SKPhysicsContactDelegate {
 
         clearButton = button
         addChild(button)
+
+        // Gate the button behind a 15-second delay
+        button.run(.sequence([
+            .wait(forDuration: 15.0),
+            .fadeIn(withDuration: 0.5),
+            .run { [weak self] in
+                self?.clearButtonReady = true
+                // Remove hint text once button is visible
+                self?.hintLabel?.run(.sequence([.fadeOut(withDuration: 0.3), .removeFromParent()]))
+            }
+        ]))
     }
 
     private func showInstructionPanel() {
@@ -267,7 +310,8 @@ final class StorageSpaceScene: BaseLevelScene, SKPhysicsContactDelegate {
         panel.zPosition = 300
         addChild(panel)
 
-        let bg = SKShapeNode(rectOf: CGSize(width: 340, height: 80), cornerRadius: 8)
+        let panelWidth = min(size.width * 0.85, 340)
+        let bg = SKShapeNode(rectOf: CGSize(width: panelWidth, height: 80), cornerRadius: 8)
         bg.fillColor = fillColor
         bg.strokeColor = strokeColor
         panel.addChild(bg)
@@ -290,7 +334,7 @@ final class StorageSpaceScene: BaseLevelScene, SKPhysicsContactDelegate {
     }
 
     private func setupBit() {
-        spawnPoint = CGPoint(x: 80, y: 200)
+        spawnPoint = CGPoint(x: size.width * 0.08, y: size.height * 0.35)
         bit = BitCharacter.make()
         bit.position = spawnPoint
         addChild(bit)
@@ -298,38 +342,45 @@ final class StorageSpaceScene: BaseLevelScene, SKPhysicsContactDelegate {
         playerController = PlayerController(character: bit, scene: self)
     }
 
-    // MARK: - Data Mass Dissolve
+    // MARK: - Data Mass Dissolve (Shrink Animation)
 
     private func dissolveDataMass() {
         guard !cacheCleared else { return }
         cacheCleared = true
 
-        // Remove blocker physics
-        dataMassBlocker?.physicsBody?.categoryBitMask = 0
+        // Shrink the data mass wall over time instead of scattering
+        let shrinkDuration: TimeInterval = 1.5
 
-        // Scatter blocks outward with physics
+        // Animate the container scaling down (visual shrink)
+        dataMassContainer?.run(.sequence([
+            .group([
+                .scaleY(to: 0, duration: shrinkDuration),
+                .fadeAlpha(to: 0.2, duration: shrinkDuration)
+            ]),
+            .run { [weak self] in
+                // Remove blocker physics after shrink completes
+                self?.dataMassBlocker?.physicsBody?.categoryBitMask = 0
+                self?.dataMassBlocker?.removeFromParent()
+            },
+            .fadeOut(withDuration: 0.3),
+            .removeFromParent()
+        ]))
+
+        // Animate individual blocks shrinking from top rows down
+        let blockSize: CGFloat = 12
+        let rows = Int(dataMassWallHeight / blockSize)
         for block in dataMassBlocks {
-            let dirX = CGFloat.random(in: -200...200)
-            let dirY = CGFloat.random(in: 50...300)
-            let delay = Double.random(in: 0...0.5)
-
+            block.removeAllActions()
+            // Blocks higher up disappear first
+            let normalizedY = (block.position.y + dataMassWallHeight / 2) / dataMassWallHeight
+            let delay = (1.0 - Double(normalizedY)) * shrinkDuration * 0.8
             block.run(.sequence([
                 .wait(forDuration: delay),
                 .group([
-                    .moveBy(x: dirX, y: dirY, duration: 0.8),
-                    .fadeOut(withDuration: 0.8),
-                    .rotate(byAngle: CGFloat.random(in: -3...3), duration: 0.8),
-                    .scale(to: 0.2, duration: 0.8)
-                ]),
-                .removeFromParent()
+                    .scaleY(to: 0, duration: 0.3),
+                    .fadeOut(withDuration: 0.3)
+                ])
             ]))
-        }
-
-        // Remove container label
-        dataMassContainer?.children.forEach { node in
-            if node is SKLabelNode {
-                node.run(.sequence([.fadeOut(withDuration: 0.3), .removeFromParent()]))
-            }
         }
 
         // Update storage display
@@ -348,14 +399,6 @@ final class StorageSpaceScene: BaseLevelScene, SKPhysicsContactDelegate {
         msg.zPosition = 400
         addChild(msg)
         msg.run(.sequence([.wait(forDuration: 2), .fadeOut(withDuration: 0.5), .removeFromParent()]))
-
-        // Remove the physical blocker fully after animation
-        run(.sequence([
-            .wait(forDuration: 1.0),
-            .run { [weak self] in
-                self?.dataMassBlocker?.removeFromParent()
-            }
-        ]))
     }
 
     // MARK: - Game Input
@@ -375,8 +418,8 @@ final class StorageSpaceScene: BaseLevelScene, SKPhysicsContactDelegate {
         guard let touch = touches.first else { return }
         let location = touch.location(in: self)
 
-        // Check clear button
-        if let button = clearButton, button.contains(location) {
+        // Check clear button (only responds after 15s delay)
+        if clearButtonReady, let button = clearButton, button.contains(location) {
             StorageSpaceManager.shared.clearCache()
             return
         }

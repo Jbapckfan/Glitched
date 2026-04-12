@@ -5,7 +5,8 @@ import UIKit
 /// Concept: Level changes based on real time.
 /// Night (9PM-6AM): enemies sleeping, dark background, peaceful.
 /// Day (6AM-9PM): enemies active, bright background.
-/// Secret hour (3:33 AM): haunted variant with ghosts and eerie glitch overlay.
+/// Secret hour (3:33 AM): haunted variant with ghosts (actual hazards) and eerie glitch overlay.
+/// Toggle button switches between simulated and live clock (not permanent override).
 final class TimeOfDayScene: BaseLevelScene, SKPhysicsContactDelegate {
 
     private let fillColor = SKColor.white
@@ -20,7 +21,8 @@ final class TimeOfDayScene: BaseLevelScene, SKPhysicsContactDelegate {
     private enum TimeMode { case day, night, secret }
     private var currentMode: TimeMode = .day
     private var currentHour: Int = 12
-    private var overrideMode: TimeMode? = nil
+    private var isSimulated = false
+    private var simulatedMode: TimeMode = .day
 
     // Enemies
     private var enemies: [SKNode] = []
@@ -28,7 +30,7 @@ final class TimeOfDayScene: BaseLevelScene, SKPhysicsContactDelegate {
     private var zzzLabels: [SKNode: SKLabelNode] = [:]
     private var enemySleeping: [SKNode: Bool] = [:]
 
-    // Ghost elements (secret hour)
+    // Ghost elements (secret hour) - now actual hazards
     private var ghostNodes: [SKNode] = []
     private var glitchOverlay: SKShapeNode?
 
@@ -37,9 +39,10 @@ final class TimeOfDayScene: BaseLevelScene, SKPhysicsContactDelegate {
     private var modeLabel: SKLabelNode!
     private var fourthWallLabel: SKLabelNode?
 
-    // Override toggle
+    // Toggle button
     private var toggleButton: SKNode?
-    private var toggleIndex = 0
+    private var toggleButtonLabel: SKLabelNode?
+    private var simulatedIndex = 0
 
     override func configureScene() {
         levelID = LevelID(world: .world3, index: 25)
@@ -51,6 +54,9 @@ final class TimeOfDayScene: BaseLevelScene, SKPhysicsContactDelegate {
         AccessibilityManager.shared.registerMechanics([.timeOfDay])
         DeviceManagerCoordinator.shared.configure(for: [.timeOfDay])
 
+        // Initialize currentHour from the real clock
+        currentHour = Calendar.current.component(.hour, from: Date())
+
         setupBackground()
         setupLevelTitle()
         buildLevel()
@@ -60,17 +66,18 @@ final class TimeOfDayScene: BaseLevelScene, SKPhysicsContactDelegate {
         showInstructionPanel()
         setupBit()
 
-        // Apply initial time state
-        applyTimeMode(determineModeFromHour(TimeOfDayManager.currentHour))
+        // Apply initial time state from real clock
+        applyTimeMode(determineModeFromHour(currentHour))
     }
 
     // MARK: - Setup
 
     private func setupBackground() {
+        let w = size.width
         // Clock face decorations
         for i in 0..<5 {
             let clock = createClockIcon(radius: 12)
-            clock.position = CGPoint(x: CGFloat(i) * 120 + 80, y: size.height - 80)
+            clock.position = CGPoint(x: w * (CGFloat(i) + 0.5) / 5.0, y: size.height - 80)
             clock.alpha = 0.1
             clock.zPosition = -10
             addChild(clock)
@@ -110,31 +117,32 @@ final class TimeOfDayScene: BaseLevelScene, SKPhysicsContactDelegate {
         title.fontName = "Helvetica-Bold"
         title.fontSize = 28
         title.fontColor = strokeColor
-        title.position = CGPoint(x: 80, y: size.height - 60)
+        title.position = CGPoint(x: size.width * 0.1, y: size.height - 60)
         title.horizontalAlignmentMode = .left
         title.zPosition = 100
         addChild(title)
     }
 
     private func buildLevel() {
-        let groundY: CGFloat = 160
+        let groundY: CGFloat = size.height * 0.25
+        let w = size.width
 
         // Start platform
-        createPlatform(at: CGPoint(x: 80, y: groundY), size: CGSize(width: 120, height: 30))
+        createPlatform(at: CGPoint(x: w * 0.1, y: groundY), size: CGSize(width: w * 0.15, height: 30))
 
         // Platforming section with enemy patrol areas
-        createPlatform(at: CGPoint(x: 220, y: groundY + 20), size: CGSize(width: 100, height: 25))
-        createPlatform(at: CGPoint(x: 370, y: groundY + 50), size: CGSize(width: 120, height: 25))
-        createPlatform(at: CGPoint(x: 500, y: groundY + 30), size: CGSize(width: 80, height: 25))
+        createPlatform(at: CGPoint(x: w * 0.28, y: groundY + 20), size: CGSize(width: w * 0.12, height: 25))
+        createPlatform(at: CGPoint(x: w * 0.48, y: groundY + 50), size: CGSize(width: w * 0.15, height: 25))
+        createPlatform(at: CGPoint(x: w * 0.65, y: groundY + 30), size: CGSize(width: w * 0.10, height: 25))
 
         // Exit platform
-        createPlatform(at: CGPoint(x: size.width - 80, y: groundY), size: CGSize(width: 120, height: 30))
-        createExitDoor(at: CGPoint(x: size.width - 60, y: groundY + 50))
+        createPlatform(at: CGPoint(x: w * 0.90, y: groundY), size: CGSize(width: w * 0.15, height: 30))
+        createExitDoor(at: CGPoint(x: w * 0.92, y: groundY + 50))
 
         // Death zone
         let death = SKNode()
-        death.position = CGPoint(x: size.width / 2, y: -50)
-        death.physicsBody = SKPhysicsBody(rectangleOf: CGSize(width: size.width * 2, height: 100))
+        death.position = CGPoint(x: w / 2, y: -50)
+        death.physicsBody = SKPhysicsBody(rectangleOf: CGSize(width: w * 2, height: 100))
         death.physicsBody?.isDynamic = false
         death.physicsBody?.categoryBitMask = PhysicsCategory.hazard
         addChild(death)
@@ -158,13 +166,14 @@ final class TimeOfDayScene: BaseLevelScene, SKPhysicsContactDelegate {
     }
 
     private func createEnemies() {
-        let groundY: CGFloat = 160
+        let groundY: CGFloat = size.height * 0.25
+        let w = size.width
 
         // Enemy patrol data: position, patrol range
         let enemyData: [(pos: CGPoint, range: CGFloat)] = [
-            (CGPoint(x: 220, y: groundY + 55), 40),
-            (CGPoint(x: 370, y: groundY + 85), 50),
-            (CGPoint(x: 500, y: groundY + 65), 30),
+            (CGPoint(x: w * 0.28, y: groundY + 55), w * 0.05),
+            (CGPoint(x: w * 0.48, y: groundY + 85), w * 0.06),
+            (CGPoint(x: w * 0.65, y: groundY + 65), w * 0.04),
         ]
 
         for (index, data) in enemyData.enumerated() {
@@ -256,7 +265,10 @@ final class TimeOfDayScene: BaseLevelScene, SKPhysicsContactDelegate {
     }
 
     private func createTimeDisplay() {
-        timeLabel = SKLabelNode(text: "12:00")
+        // Initialize display from real clock
+        let hour = Calendar.current.component(.hour, from: Date())
+
+        timeLabel = SKLabelNode(text: "\(hour):00")
         timeLabel.fontName = "Menlo-Bold"
         timeLabel.fontSize = 16
         timeLabel.fontColor = strokeColor
@@ -274,8 +286,9 @@ final class TimeOfDayScene: BaseLevelScene, SKPhysicsContactDelegate {
     }
 
     private func createToggleButton() {
+        let w = size.width
         let button = SKNode()
-        button.position = CGPoint(x: size.width - 70, y: 50)
+        button.position = CGPoint(x: w * 0.88, y: 50)
         button.zPosition = 200
         button.name = "toggle_button"
 
@@ -285,12 +298,14 @@ final class TimeOfDayScene: BaseLevelScene, SKPhysicsContactDelegate {
         bg.lineWidth = 1.5
         button.addChild(bg)
 
-        let label = SKLabelNode(text: "CYCLE TIME")
+        // Label says "SIMULATE" when using real time, "LIVE" when simulated
+        let label = SKLabelNode(text: "SIMULATE")
         label.fontName = "Menlo"
         label.fontSize = 9
         label.fontColor = strokeColor
         label.verticalAlignmentMode = .center
         button.addChild(label)
+        toggleButtonLabel = label
 
         toggleButton = button
         addChild(button)
@@ -302,7 +317,8 @@ final class TimeOfDayScene: BaseLevelScene, SKPhysicsContactDelegate {
         panel.zPosition = 300
         addChild(panel)
 
-        let bg = SKShapeNode(rectOf: CGSize(width: 340, height: 80), cornerRadius: 8)
+        let panelWidth = min(size.width * 0.85, 340)
+        let bg = SKShapeNode(rectOf: CGSize(width: panelWidth, height: 80), cornerRadius: 8)
         bg.fillColor = fillColor
         bg.strokeColor = strokeColor
         panel.addChild(bg)
@@ -325,7 +341,7 @@ final class TimeOfDayScene: BaseLevelScene, SKPhysicsContactDelegate {
     }
 
     private func setupBit() {
-        spawnPoint = CGPoint(x: 80, y: 200)
+        spawnPoint = CGPoint(x: size.width * 0.1, y: size.height * 0.35)
         bit = BitCharacter.make()
         bit.position = spawnPoint
         addChild(bit)
@@ -336,14 +352,18 @@ final class TimeOfDayScene: BaseLevelScene, SKPhysicsContactDelegate {
     // MARK: - Time Mode Logic
 
     private func determineModeFromHour(_ hour: Int) -> TimeMode {
-        if let override = overrideMode { return override }
+        // Check secret hour (3:33 AM) via TimeOfDayManager
         if TimeOfDayManager.isSecretHour { return .secret }
+        // Also check if hour == 3 and we approximate the secret hour
+        if hour == 3 {
+            let minute = Calendar.current.component(.minute, from: Date())
+            if minute == 33 { return .secret }
+        }
         if hour >= 21 || hour < 6 { return .night }
         return .day
     }
 
     private func applyTimeMode(_ mode: TimeMode) {
-        let previousMode = currentMode
         currentMode = mode
 
         switch mode {
@@ -425,7 +445,7 @@ final class TimeOfDayScene: BaseLevelScene, SKPhysicsContactDelegate {
             zzzLabels[enemy]?.alpha = 0
         }
 
-        // Add ghost shapes
+        // Add ghost shapes (now actual hazards)
         addGhostElements()
 
         // Add glitch overlay
@@ -450,15 +470,27 @@ final class TimeOfDayScene: BaseLevelScene, SKPhysicsContactDelegate {
     private func addGhostElements() {
         removeGhostElements()
 
+        let w = size.width
+        let h = size.height
+
         for i in 0..<4 {
             let ghost = createGhost()
             ghost.position = CGPoint(
-                x: CGFloat.random(in: 100...size.width - 100),
-                y: CGFloat.random(in: 200...size.height - 100)
+                x: CGFloat.random(in: w * 0.15...w * 0.85),
+                y: CGFloat.random(in: h * 0.3...h * 0.75)
             )
             ghost.alpha = 0.3
             ghost.zPosition = 80
             ghost.name = "ghost_\(i)"
+
+            // Ghosts are actual hazards with physics bodies that kill on contact
+            let ghostBody = SKPhysicsBody(circleOfRadius: 15)
+            ghostBody.isDynamic = false
+            ghostBody.categoryBitMask = PhysicsCategory.hazard
+            ghostBody.contactTestBitMask = PhysicsCategory.player
+            ghostBody.collisionBitMask = 0
+            ghost.physicsBody = ghostBody
+
             addChild(ghost)
             ghostNodes.append(ghost)
 
@@ -547,14 +579,23 @@ final class TimeOfDayScene: BaseLevelScene, SKPhysicsContactDelegate {
     }
 
     private func updateTimeDisplay() {
-        let hour = overrideMode != nil ? (overrideMode == .night ? 22 : (overrideMode == .secret ? 3 : 12)) : currentHour
-        timeLabel.text = "\(hour):00"
+        if isSimulated {
+            let hourDisplay = simulatedMode == .night ? 22 : (simulatedMode == .secret ? 3 : 12)
+            timeLabel.text = simulatedMode == .secret ? "3:33" : "\(hourDisplay):00"
+        } else {
+            timeLabel.text = "\(currentHour):00"
+        }
     }
 
     private func showFourthWall() {
         fourthWallLabel?.removeFromParent()
 
-        let hourDisplay = overrideMode != nil ? (overrideMode == .night ? 22 : (overrideMode == .secret ? 3 : 12)) : currentHour
+        let hourDisplay: Int
+        if isSimulated {
+            hourDisplay = simulatedMode == .night ? 22 : (simulatedMode == .secret ? 3 : 12)
+        } else {
+            hourDisplay = currentHour
+        }
         let label = SKLabelNode(text: "IT'S \(hourDisplay):00. YOU SHOULD PROBABLY BE DOING SOMETHING ELSE RIGHT NOW.")
         label.fontName = "Menlo"
         label.fontSize = 8
@@ -565,16 +606,33 @@ final class TimeOfDayScene: BaseLevelScene, SKPhysicsContactDelegate {
         fourthWallLabel = label
     }
 
-    private func cycleTimeOverride() {
-        let modes: [TimeMode] = [.day, .night, .secret]
-        toggleIndex = (toggleIndex + 1) % modes.count
-        overrideMode = modes[toggleIndex]
+    /// Toggle between simulated time and live clock.
+    /// When using real time, label says "SIMULATE". When simulated, label says "LIVE".
+    private func toggleTimeMode() {
+        if isSimulated {
+            // Switch back to live clock
+            isSimulated = false
+            toggleButtonLabel?.text = "SIMULATE"
 
-        // Reset label colors to defaults before applying mode
-        modeLabel.fontColor = strokeColor
-        timeLabel.fontColor = strokeColor
+            // Reset label colors to defaults before applying mode
+            modeLabel.fontColor = strokeColor
+            timeLabel.fontColor = strokeColor
 
-        applyTimeMode(overrideMode!)
+            applyTimeMode(determineModeFromHour(currentHour))
+        } else {
+            // Switch to simulated: cycle through day -> night -> secret
+            isSimulated = true
+            let modes: [TimeMode] = [.day, .night, .secret]
+            simulatedIndex = (simulatedIndex + 1) % modes.count
+            simulatedMode = modes[simulatedIndex]
+            toggleButtonLabel?.text = "LIVE"
+
+            // Reset label colors to defaults before applying mode
+            modeLabel.fontColor = strokeColor
+            timeLabel.fontColor = strokeColor
+
+            applyTimeMode(simulatedMode)
+        }
     }
 
     // MARK: - Game Input
@@ -583,7 +641,7 @@ final class TimeOfDayScene: BaseLevelScene, SKPhysicsContactDelegate {
         switch event {
         case .clockTimeUpdate(let hour):
             currentHour = hour
-            if overrideMode == nil {
+            if !isSimulated {
                 applyTimeMode(determineModeFromHour(hour))
             }
         default:
@@ -599,7 +657,7 @@ final class TimeOfDayScene: BaseLevelScene, SKPhysicsContactDelegate {
 
         // Check toggle button
         if let button = toggleButton, button.contains(location) {
-            cycleTimeOverride()
+            toggleTimeMode()
             return
         }
 
