@@ -2,7 +2,7 @@ import SpriteKit
 import UIKit
 import Security
 
-// MARK: - Keychain Helper for Reinstall Detection
+// MARK: - Keychain Helper for Purge Detection
 
 private struct KeychainHelper {
     private static let service = "com.glitched.game"
@@ -50,9 +50,10 @@ private struct KeychainHelper {
     }
 }
 
-/// Level 20: Delete to Win
-/// Concept: The ultimate fourth-wall break. The exit is blocked by a "corrupted data" wall.
-/// The only way to clear it is to delete and reinstall the app. Your progress is saved in iCloud.
+/// Level 20: System Purge
+/// Concept: The ultimate fourth-wall break. The exit is blocked by a corruption wall.
+/// The player must deliberately walk into the corruption to trigger a simulated system purge.
+/// A fake crash sequence plays, followed by a fake iOS home screen, then the level "reboots" clean.
 /// No longer the finale - leads to Level 21.
 final class MetaFinaleScene: BaseLevelScene, SKPhysicsContactDelegate {
 
@@ -76,7 +77,7 @@ final class MetaFinaleScene: BaseLevelScene, SKPhysicsContactDelegate {
     private var warningOverlay: SKShapeNode?
     private var hasShownIntro = false
     private var corruptionProximity: CGFloat = 0
-    private var hasShownFakeReview = false
+    private var hasPurgeTriggered = false
 
     override func configureScene() {
         levelID = LevelID(world: .world2, index: 20)
@@ -95,15 +96,18 @@ final class MetaFinaleScene: BaseLevelScene, SKPhysicsContactDelegate {
     // MARK: - Ominous Intro Sequence
 
     private func runOminousIntro() {
+        let w = size.width
+        let h = size.height
+
         // Heartbeat haptic
         HapticManager.shared.playPattern(.heartbeat)
 
         // Flicker on warning messages
         let warnings = [
             "W A R N I N G",
-            "CRITICAL SYSTEM FAILURE DETECTED",
+            "SYSTEM CORRUPTION DETECTED",
             "CORRUPTION LEVEL: TERMINAL",
-            "RECOMMEND: FULL SYSTEM PURGE",
+            "WALK INTO THE CORRUPTION TO INITIATE PURGE",
             "PROCEED AT YOUR OWN RISK...",
         ]
 
@@ -119,7 +123,7 @@ final class MetaFinaleScene: BaseLevelScene, SKPhysicsContactDelegate {
                     label.text = warning
                     label.fontSize = index == 0 ? 32 : 14
                     label.fontColor = index == 0 ? .red : .white
-                    label.position = CGPoint(x: self.size.width / 2, y: self.size.height / 2)
+                    label.position = CGPoint(x: w / 2, y: h / 2)
                     label.zPosition = 1000
                     label.alpha = 0
                     self.addChild(label)
@@ -169,27 +173,33 @@ final class MetaFinaleScene: BaseLevelScene, SKPhysicsContactDelegate {
         showInstructionPanel()
         setupBit()
 
+        let w = size.width
+        let h = size.height
+
         // Create ominous red pulse overlay
-        warningOverlay = SKShapeNode(rectOf: CGSize(width: size.width * 2, height: size.height * 2))
+        warningOverlay = SKShapeNode(rectOf: CGSize(width: w * 2, height: h * 2))
         warningOverlay?.fillColor = .red
         warningOverlay?.strokeColor = .clear
         warningOverlay?.alpha = 0
         warningOverlay?.zPosition = 500
-        warningOverlay?.position = CGPoint(x: size.width / 2, y: size.height / 2)
+        warningOverlay?.position = CGPoint(x: w / 2, y: h / 2)
         addChild(warningOverlay!)
 
         checkIfReinstalled()
     }
 
     private func setupBackground() {
+        let w = size.width
+        let h = size.height
+
         // Glitchy static pattern
         for _ in 0..<50 {
             let glitch = SKShapeNode(rectOf: CGSize(width: CGFloat.random(in: 5...30),
                                                      height: CGFloat.random(in: 2...8)))
             glitch.fillColor = strokeColor
             glitch.alpha = 0.05
-            glitch.position = CGPoint(x: CGFloat.random(in: 0...size.width),
-                                      y: CGFloat.random(in: 0...size.height))
+            glitch.position = CGPoint(x: CGFloat.random(in: 0...w),
+                                      y: CGFloat.random(in: 0...h))
             glitch.zPosition = -10
             glitch.name = "static"
             addChild(glitch)
@@ -197,42 +207,50 @@ final class MetaFinaleScene: BaseLevelScene, SKPhysicsContactDelegate {
     }
 
     private func setupLevelTitle() {
+        let w = size.width
+        let h = size.height
+
         let title = SKLabelNode(text: "LEVEL 20")
         title.fontName = "Helvetica-Bold"
         title.fontSize = 28
         title.fontColor = strokeColor
-        title.position = CGPoint(x: 80, y: size.height - 60)
+        title.position = CGPoint(x: w * 0.1, y: h - h * 0.07)
         title.horizontalAlignmentMode = .left
         title.zPosition = 100
         addChild(title)
 
-        let subtitle = SKLabelNode(text: "SYSTEM PURGE REQUIRED")
+        let subtitle = SKLabelNode(text: "SYSTEM CORRUPTION DETECTED")
         subtitle.fontName = "Menlo-Bold"
         subtitle.fontSize = 12
         subtitle.fontColor = strokeColor
-        subtitle.position = CGPoint(x: 80, y: size.height - 85)
+        subtitle.position = CGPoint(x: w * 0.1, y: h - h * 0.1)
         subtitle.horizontalAlignmentMode = .left
         subtitle.zPosition = 100
         addChild(subtitle)
     }
 
     private func buildLevel() {
-        let groundY: CGFloat = 160
+        let w = size.width
+        let h = size.height
+        let groundY = h * 0.2
 
         // Start platform
-        createPlatform(at: CGPoint(x: 80, y: groundY), size: CGSize(width: 120, height: 30))
+        createPlatform(at: CGPoint(x: w * 0.1, y: groundY),
+                       size: CGSize(width: w * 0.17, height: 30))
 
         // Middle area
-        createPlatform(at: CGPoint(x: size.width / 2, y: groundY), size: CGSize(width: 250, height: 30))
+        createPlatform(at: CGPoint(x: w * 0.5, y: groundY),
+                       size: CGSize(width: w * 0.36, height: 30))
 
         // Exit platform (behind corruption wall)
-        createPlatform(at: CGPoint(x: size.width - 80, y: groundY), size: CGSize(width: 120, height: 30))
-        createExitDoor(at: CGPoint(x: size.width - 60, y: groundY + 50))
+        createPlatform(at: CGPoint(x: w * 0.9, y: groundY),
+                       size: CGSize(width: w * 0.17, height: 30))
+        createExitDoor(at: CGPoint(x: w * 0.92, y: groundY + 50))
 
         // Death zone
         let death = SKNode()
-        death.position = CGPoint(x: size.width / 2, y: -50)
-        death.physicsBody = SKPhysicsBody(rectangleOf: CGSize(width: size.width * 2, height: 100))
+        death.position = CGPoint(x: w / 2, y: -50)
+        death.physicsBody = SKPhysicsBody(rectangleOf: CGSize(width: w * 2, height: 100))
         death.physicsBody?.isDynamic = false
         death.physicsBody?.categoryBitMask = PhysicsCategory.hazard
         addChild(death)
@@ -256,8 +274,12 @@ final class MetaFinaleScene: BaseLevelScene, SKPhysicsContactDelegate {
     }
 
     private func createCorruptionWall() {
+        let w = size.width
+        let h = size.height
+        let groundY = h * 0.2
+
         corruptionWall = SKNode()
-        corruptionWall.position = CGPoint(x: size.width - 160, y: 260)
+        corruptionWall.position = CGPoint(x: w * 0.77, y: groundY + 100)
         corruptionWall.zPosition = 50
         addChild(corruptionWall)
 
@@ -291,7 +313,7 @@ final class MetaFinaleScene: BaseLevelScene, SKPhysicsContactDelegate {
         error1.position = CGPoint(x: 0, y: -110)
         corruptionWall.addChild(error1)
 
-        // Physics blocker
+        // Visual physics blocker (stops the player, uses ground category for collision)
         let blocker = SKNode()
         blocker.physicsBody = SKPhysicsBody(rectangleOf: CGSize(width: 70, height: 200))
         blocker.physicsBody?.isDynamic = false
@@ -299,22 +321,32 @@ final class MetaFinaleScene: BaseLevelScene, SKPhysicsContactDelegate {
         blocker.name = "corruption_blocker"
         corruptionWall.addChild(blocker)
 
+        // Contact trigger body — overlaps the blocker, pass-through, fires didBegin on player contact
+        let contactTrigger = SKNode()
+        contactTrigger.physicsBody = SKPhysicsBody(rectangleOf: CGSize(width: 80, height: 200))
+        contactTrigger.physicsBody?.isDynamic = false
+        contactTrigger.physicsBody?.categoryBitMask = PhysicsCategory.interactable
+        contactTrigger.physicsBody?.contactTestBitMask = PhysicsCategory.player
+        contactTrigger.physicsBody?.collisionBitMask = 0
+        contactTrigger.name = "corruption_trigger"
+        corruptionWall.addChild(contactTrigger)
+
         // Hint
-        hintLabel = SKLabelNode(text: "INITIATE SYSTEM PURGE TO CLEAR CORRUPTION")
+        hintLabel = SKLabelNode(text: "WALK INTO THE CORRUPTION TO INITIATE PURGE")
         hintLabel.fontName = "Menlo"
         hintLabel.fontSize = 9
         hintLabel.fontColor = strokeColor
         hintLabel.alpha = 0.7
-        hintLabel.position = CGPoint(x: size.width / 2, y: 100)
+        hintLabel.position = CGPoint(x: w / 2, y: h * 0.12)
         hintLabel.zPosition = 100
         addChild(hintLabel)
 
         // Progress saved indicator
-        progressSavedLabel = SKLabelNode(text: "TOUCH THE WALL TO BEGIN PURGE")
+        progressSavedLabel = SKLabelNode(text: "SYSTEM CORRUPTION DETECTED")
         progressSavedLabel.fontName = "Menlo"
         progressSavedLabel.fontSize = 10
         progressSavedLabel.fontColor = strokeColor
-        progressSavedLabel.position = CGPoint(x: size.width / 2, y: 80)
+        progressSavedLabel.position = CGPoint(x: w / 2, y: h * 0.1)
         progressSavedLabel.zPosition = 100
         addChild(progressSavedLabel)
 
@@ -358,8 +390,11 @@ final class MetaFinaleScene: BaseLevelScene, SKPhysicsContactDelegate {
     }
 
     private func showInstructionPanel() {
+        let w = size.width
+        let h = size.height
+
         let panel = SKNode()
-        panel.position = CGPoint(x: size.width / 2, y: size.height - 130)
+        panel.position = CGPoint(x: w / 2, y: h - h * 0.16)
         panel.zPosition = 300
         addChild(panel)
 
@@ -368,7 +403,7 @@ final class MetaFinaleScene: BaseLevelScene, SKPhysicsContactDelegate {
         bg.strokeColor = strokeColor
         panel.addChild(bg)
 
-        let text1 = SKLabelNode(text: "THE CORRUPTION GATE")
+        let text1 = SKLabelNode(text: "SYSTEM CORRUPTION DETECTED")
         text1.fontName = "Menlo-Bold"
         text1.fontSize = 14
         text1.fontColor = strokeColor
@@ -382,14 +417,14 @@ final class MetaFinaleScene: BaseLevelScene, SKPhysicsContactDelegate {
         text2.position = CGPoint(x: 0, y: 5)
         panel.addChild(text2)
 
-        let text3 = SKLabelNode(text: "ONLY A FRESH START CAN CLEAR IT")
+        let text3 = SKLabelNode(text: "WALK INTO THE CORRUPTION TO INITIATE PURGE")
         text3.fontName = "Menlo"
         text3.fontSize = 10
         text3.fontColor = strokeColor
         text3.position = CGPoint(x: 0, y: -15)
         panel.addChild(text3)
 
-        let text4 = SKLabelNode(text: "(YOUR PROGRESS IS SAFE IN THE CLOUD)")
+        let text4 = SKLabelNode(text: "(YOUR PROGRESS IS SAFE)")
         text4.fontName = "Menlo"
         text4.fontSize = 8
         text4.fontColor = strokeColor
@@ -401,7 +436,9 @@ final class MetaFinaleScene: BaseLevelScene, SKPhysicsContactDelegate {
     }
 
     private func setupBit() {
-        spawnPoint = CGPoint(x: 80, y: 200)
+        let w = size.width
+        let h = size.height
+        spawnPoint = CGPoint(x: w * 0.1, y: h * 0.2 + 40)
         bit = BitCharacter.make()
         bit.position = spawnPoint
         addChild(bit)
@@ -420,15 +457,18 @@ final class MetaFinaleScene: BaseLevelScene, SKPhysicsContactDelegate {
     }
 
     /// Simulated corruption/reset: the app pretends to glitch out, shows a fake crash
-    /// screen, then "reboots" into a clean state. No actual app deletion required.
+    /// screen, then a fake iOS home screen, then "reboots" into a clean state.
     private func beginSimulatedPurge() {
         guard !isCleared else { return }
 
+        let w = size.width
+        let h = size.height
+
         // Phase 1: Fake crash/glitch-out
-        let crashOverlay = SKShapeNode(rectOf: CGSize(width: size.width * 2, height: size.height * 2))
+        let crashOverlay = SKShapeNode(rectOf: CGSize(width: w * 2, height: h * 2))
         crashOverlay.fillColor = .black
         crashOverlay.strokeColor = .clear
-        crashOverlay.position = CGPoint(x: size.width / 2, y: size.height / 2)
+        crashOverlay.position = CGPoint(x: w / 2, y: h / 2)
         crashOverlay.zPosition = 900
         crashOverlay.alpha = 0
         crashOverlay.name = "crashOverlay"
@@ -448,6 +488,9 @@ final class MetaFinaleScene: BaseLevelScene, SKPhysicsContactDelegate {
     }
 
     private func showFakeCrashScreen() {
+        let w = size.width
+        let h = size.height
+
         // Fake crash/reboot text sequence
         let crashTexts = [
             "FATAL ERROR: CORRUPTION OVERFLOW",
@@ -467,8 +510,8 @@ final class MetaFinaleScene: BaseLevelScene, SKPhysicsContactDelegate {
                     label.text = text
                     label.fontSize = 11
                     label.fontColor = .green
-                    label.position = CGPoint(x: self.size.width / 2,
-                                             y: self.size.height / 2 + 60 - CGFloat(index) * 22)
+                    label.position = CGPoint(x: w / 2,
+                                             y: h / 2 + 60 - CGFloat(index) * 22)
                     label.zPosition = 1000
                     label.alpha = 0
                     label.name = "crashText"
@@ -480,14 +523,143 @@ final class MetaFinaleScene: BaseLevelScene, SKPhysicsContactDelegate {
             delay += 0.7
         }
 
-        // After the fake reboot, clear corruption
+        // After fake reboot text, transition to fake home screen
         run(.sequence([
             .wait(forDuration: delay + 1.0),
             .run { [weak self] in
                 guard let self = self else { return }
-                // Remove crash overlay and text
-                self.enumerateChildNodes(withName: "crashOverlay") { node, _ in node.removeFromParent() }
+                // Remove crash text
                 self.enumerateChildNodes(withName: "crashText") { node, _ in node.removeFromParent() }
+                self.showFakeHomeScreen()
+            }
+        ]))
+    }
+
+    // MARK: - Fake iOS Home Screen
+
+    private func showFakeHomeScreen() {
+        let w = size.width
+        let h = size.height
+
+        // Dark background (the crash overlay is already black at z:900)
+        // Add home screen elements on top
+
+        let homeContainer = SKNode()
+        homeContainer.zPosition = 950
+        homeContainer.name = "fakeHomeScreen"
+        addChild(homeContainer)
+
+        // Fake status bar
+        let timeLabel = SKLabelNode(fontNamed: "Helvetica-Bold")
+        timeLabel.text = "9:41"
+        timeLabel.fontSize = 14
+        timeLabel.fontColor = .white
+        timeLabel.position = CGPoint(x: w / 2, y: h - h * 0.05)
+        homeContainer.addChild(timeLabel)
+
+        // Fake app icon grid — 4 icons in a row
+        let iconSize: CGFloat = 50
+        let iconSpacing: CGFloat = 20
+        let totalWidth = iconSize * 4 + iconSpacing * 3
+        let startX = (w - totalWidth) / 2 + iconSize / 2
+        let iconY = h * 0.55
+
+        let iconColors: [SKColor] = [
+            SKColor(red: 0.2, green: 0.5, blue: 1.0, alpha: 1.0),  // Blue (Messages-like)
+            SKColor(red: 0.3, green: 0.8, blue: 0.3, alpha: 1.0),  // Green (Phone-like)
+            SKColor(red: 1.0, green: 0.6, blue: 0.0, alpha: 1.0),  // Orange (Settings-like)
+            SKColor(red: 0.9, green: 0.2, blue: 0.3, alpha: 1.0),  // Red (Music-like)
+        ]
+
+        let iconLabels = ["Messages", "Phone", "Settings", "Music"]
+
+        for i in 0..<4 {
+            let x = startX + CGFloat(i) * (iconSize + iconSpacing)
+
+            let icon = SKShapeNode(rectOf: CGSize(width: iconSize, height: iconSize), cornerRadius: 12)
+            icon.fillColor = iconColors[i]
+            icon.strokeColor = .clear
+            icon.position = CGPoint(x: x, y: iconY)
+            homeContainer.addChild(icon)
+
+            let name = SKLabelNode(fontNamed: "Helvetica")
+            name.text = iconLabels[i]
+            name.fontSize = 9
+            name.fontColor = .white
+            name.position = CGPoint(x: x, y: iconY - iconSize / 2 - 14)
+            homeContainer.addChild(name)
+        }
+
+        // Second row — "Glitched" icon that shakes/glitches
+        let glitchedIconY = iconY - iconSize - 50
+
+        let glitchedIcon = SKShapeNode(rectOf: CGSize(width: iconSize, height: iconSize), cornerRadius: 12)
+        glitchedIcon.fillColor = strokeColor
+        glitchedIcon.strokeColor = .white
+        glitchedIcon.lineWidth = 1
+        glitchedIcon.position = CGPoint(x: w / 2, y: glitchedIconY)
+        homeContainer.addChild(glitchedIcon)
+
+        // "G" letter on the Glitched icon
+        let gLabel = SKLabelNode(fontNamed: "Menlo-Bold")
+        gLabel.text = "G"
+        gLabel.fontSize = 24
+        gLabel.fontColor = .white
+        gLabel.verticalAlignmentMode = .center
+        gLabel.position = CGPoint(x: w / 2, y: glitchedIconY)
+        homeContainer.addChild(gLabel)
+
+        let glitchedName = SKLabelNode(fontNamed: "Helvetica")
+        glitchedName.text = "Glitched"
+        glitchedName.fontSize = 9
+        glitchedName.fontColor = .white
+        glitchedName.position = CGPoint(x: w / 2, y: glitchedIconY - iconSize / 2 - 14)
+        homeContainer.addChild(glitchedName)
+
+        // Shake/glitch the Glitched icon
+        glitchedIcon.run(.repeatForever(.sequence([
+            .moveBy(x: CGFloat.random(in: -4...4), y: CGFloat.random(in: -2...2), duration: 0.05),
+            .moveBy(x: CGFloat.random(in: -4...4), y: CGFloat.random(in: -2...2), duration: 0.05),
+            .moveBy(x: CGFloat.random(in: -4...4), y: CGFloat.random(in: -2...2), duration: 0.05),
+            .move(to: CGPoint(x: w / 2, y: glitchedIconY), duration: 0.05)
+        ])))
+
+        // Glitch the G label in sync
+        gLabel.run(.repeatForever(.sequence([
+            .fadeAlpha(to: 0.3, duration: 0.08),
+            .fadeAlpha(to: 1.0, duration: 0.08),
+            .wait(forDuration: 0.2)
+        ])))
+
+        // After 2 seconds, simulate "tapping" the icon and re-launching
+        run(.sequence([
+            .wait(forDuration: 2.0),
+            .run { [weak self] in
+                guard let self = self else { return }
+
+                // Flash effect for "tap"
+                let tapFlash = SKShapeNode(circleOfRadius: 30)
+                tapFlash.fillColor = .white
+                tapFlash.strokeColor = .clear
+                tapFlash.alpha = 0.8
+                tapFlash.position = CGPoint(x: w / 2, y: glitchedIconY)
+                tapFlash.zPosition = 960
+                homeContainer.addChild(tapFlash)
+
+                tapFlash.run(.sequence([
+                    .scale(to: 2.0, duration: 0.2),
+                    .fadeOut(withDuration: 0.2),
+                    .removeFromParent()
+                ]))
+
+                HapticManager.shared.rigid()
+            },
+            .wait(forDuration: 0.5),
+            .run { [weak self] in
+                guard let self = self else { return }
+                // Remove fake home screen and crash overlay
+                self.enumerateChildNodes(withName: "fakeHomeScreen") { node, _ in node.removeFromParent() }
+                self.enumerateChildNodes(withName: "crashOverlay") { node, _ in node.removeFromParent() }
                 JuiceManager.shared.flash(color: .white, duration: 0.5)
                 self.clearCorruption()
             }
@@ -518,6 +690,9 @@ final class MetaFinaleScene: BaseLevelScene, SKPhysicsContactDelegate {
     }
 
     private func executeCorruptionClear() {
+        let w = size.width
+        let h = size.height
+
         // Massive screen shake
         JuiceManager.shared.shake(intensity: .earthquake, duration: 0.5)
 
@@ -565,11 +740,16 @@ final class MetaFinaleScene: BaseLevelScene, SKPhysicsContactDelegate {
             ]))
         }
 
+        // Remove trigger physics
+        if let trigger = corruptionWall.childNode(withName: "corruption_trigger") {
+            trigger.physicsBody = nil
+        }
+
         // Update labels with dramatic reveal
         hintLabel.run(.sequence([
             .fadeOut(withDuration: 0.2),
             .run { [weak self] in
-                self?.hintLabel.text = "✓ CORRUPTION CLEARED"
+                self?.hintLabel.text = "PURGE COMPLETE - SYSTEM RESTORED"
                 self?.hintLabel.fontColor = .green
             },
             .fadeIn(withDuration: 0.3),
@@ -589,13 +769,11 @@ final class MetaFinaleScene: BaseLevelScene, SKPhysicsContactDelegate {
         warningOverlay?.run(.fadeOut(withDuration: 0.5))
 
         // Pop text
-        JuiceManager.shared.popText("SYSTEM RESTORED", at: CGPoint(x: size.width / 2, y: size.height / 2 + 50), color: .green, fontSize: 24)
+        JuiceManager.shared.popText("PURGE COMPLETE - SYSTEM RESTORED", at: CGPoint(x: w / 2, y: h / 2 + h * 0.06), color: .green, fontSize: 24)
 
         // Mark as cleared in Keychain
         KeychainHelper.save(key: "level20_cleared", value: "true")
     }
-
-    // Fake review prompt removed — violates App Store guidelines
 
     override func handleGameInput(_ event: GameInputEvent) {
         switch event {
@@ -630,13 +808,13 @@ final class MetaFinaleScene: BaseLevelScene, SKPhysicsContactDelegate {
 
         playerController?.update()
 
-        // Calculate proximity to corruption wall
+        // Ambient proximity effects (visual/audio only, no purge trigger)
         if !isCleared {
             let distanceToCorruption = abs(bit.position.x - corruptionWall.position.x)
             let maxDistance: CGFloat = 200
             corruptionProximity = max(0, 1 - (distanceToCorruption / maxDistance))
 
-            // Intensify effects as player gets closer
+            // Intensify visual effects as player gets closer
             glitchTimer += deltaTime
             let glitchInterval = max(0.02, 0.15 - (corruptionProximity * 0.13))
 
@@ -680,12 +858,6 @@ final class MetaFinaleScene: BaseLevelScene, SKPhysicsContactDelegate {
                     JuiceManager.shared.shake(intensity: .light, duration: 0.1)
                 }
             }
-
-            // Trigger simulated purge when player touches the corruption wall
-            if corruptionProximity > 0.9 && !hasShownFakeReview {
-                hasShownFakeReview = true  // reuse flag to prevent re-trigger
-                beginSimulatedPurge()
-            }
         }
 
         // Animate background static
@@ -707,6 +879,13 @@ final class MetaFinaleScene: BaseLevelScene, SKPhysicsContactDelegate {
             handleExit()
         } else if collision == PhysicsCategory.player | PhysicsCategory.ground {
             bit.setGrounded(true)
+        } else if collision == PhysicsCategory.player | PhysicsCategory.interactable {
+            // Player walked into the corruption wall — trigger purge
+            let names = [contact.bodyA.node?.name, contact.bodyB.node?.name]
+            if names.contains("corruption_trigger") && !hasPurgeTriggered {
+                hasPurgeTriggered = true
+                beginSimulatedPurge()
+            }
         }
     }
 

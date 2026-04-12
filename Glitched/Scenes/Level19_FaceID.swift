@@ -2,8 +2,8 @@ import SpriteKit
 import UIKit
 
 /// Level 19: Face ID Gate
-/// Concept: A locked vault door requires Face ID to unlock. But there's a twist -
-/// it checks if YOU are the one who should pass, not an imposter.
+/// Concept: A locked vault door requires Face ID to unlock. Two doors, two scans.
+/// Approaching each door auto-triggers a scan. The second scan fires a fourth-wall moment.
 final class FaceIDScene: BaseLevelScene, SKPhysicsContactDelegate {
 
     private let fillColor = SKColor.white
@@ -18,14 +18,19 @@ final class FaceIDScene: BaseLevelScene, SKPhysicsContactDelegate {
     private var faceFrame: SKShapeNode!
     private var scanLines: [SKShapeNode] = []
     private var statusLabel: SKLabelNode!
-    private var isUnlocked = false
     private var doorBlocker: SKNode?
 
-    // Multi-step authentication
-    private var scanStep = 0  // 0 = not started, 1 = first scan done, 2 = second scan done, 3 = fully unlocked
+    // Multi-step authentication: 0 = not started, 1 = first scan done, 2 = fully unlocked
+    private var scanStep = 0
     private var secondDoor: SKNode?
     private var secondDoorBlocker: SKNode?
     private var hasShownFourthWall = false
+
+    // Trigger zones
+    private var firstTriggerZone: SKNode?
+    private var secondTriggerZone: SKNode?
+    private var firstTriggerFired = false
+    private var secondTriggerFired = false
 
     private var scanAnimation: SKAction?
 
@@ -50,13 +55,20 @@ final class FaceIDScene: BaseLevelScene, SKPhysicsContactDelegate {
     }
 
     private func setupBackground() {
-        // Security grid pattern
-        for i in 0..<8 {
-            for j in 0..<12 {
+        let w = size.width
+        let h = size.height
+        let cols = 12
+        let rows = 8
+        let spacingX = w / CGFloat(cols)
+        let spacingY = h / CGFloat(rows)
+
+        for i in 0..<rows {
+            for j in 0..<cols {
                 let dot = SKShapeNode(circleOfRadius: 2)
                 dot.fillColor = strokeColor
                 dot.alpha = 0.1
-                dot.position = CGPoint(x: CGFloat(j) * 60 + 30, y: CGFloat(i) * 60 + 30)
+                dot.position = CGPoint(x: spacingX * (CGFloat(j) + 0.5),
+                                       y: spacingY * (CGFloat(i) + 0.5))
                 dot.zPosition = -10
                 addChild(dot)
             }
@@ -68,38 +80,71 @@ final class FaceIDScene: BaseLevelScene, SKPhysicsContactDelegate {
         title.fontName = "Helvetica-Bold"
         title.fontSize = 28
         title.fontColor = strokeColor
-        title.position = CGPoint(x: 80, y: size.height - 60)
+        title.position = CGPoint(x: size.width * 0.1, y: size.height - size.height * 0.07)
         title.horizontalAlignmentMode = .left
         title.zPosition = 100
         addChild(title)
     }
 
     private func buildLevel() {
-        let groundY: CGFloat = 160
+        let w = size.width
+        let h = size.height
+        let groundY = h * 0.2
 
         // Start platform
-        createPlatform(at: CGPoint(x: 80, y: groundY), size: CGSize(width: 120, height: 30))
+        createPlatform(at: CGPoint(x: w * 0.1, y: groundY),
+                       size: CGSize(width: w * 0.17, height: 30))
 
         // Middle platform (before first vault)
-        createPlatform(at: CGPoint(x: size.width / 2 - 40, y: groundY), size: CGSize(width: 160, height: 30))
+        createPlatform(at: CGPoint(x: w * 0.4, y: groundY),
+                       size: CGSize(width: w * 0.22, height: 30))
 
         // Platform between doors
-        createPlatform(at: CGPoint(x: size.width / 2 + 120, y: groundY), size: CGSize(width: 100, height: 30))
+        createPlatform(at: CGPoint(x: w * 0.65, y: groundY),
+                       size: CGSize(width: w * 0.14, height: 30))
 
         // Exit platform (after second door)
-        createPlatform(at: CGPoint(x: size.width - 80, y: groundY), size: CGSize(width: 120, height: 30))
-        createExitDoor(at: CGPoint(x: size.width - 60, y: groundY + 50))
+        createPlatform(at: CGPoint(x: w * 0.9, y: groundY),
+                       size: CGSize(width: w * 0.17, height: 30))
+        createExitDoor(at: CGPoint(x: w * 0.92, y: groundY + 50))
 
         // Second door blocker (between middle and exit)
-        createSecondDoor(at: CGPoint(x: size.width / 2 + 170, y: 230))
+        createSecondDoor(at: CGPoint(x: w * 0.72, y: groundY + 70))
+
+        // Trigger zone for first door (placed just before vault door)
+        firstTriggerZone = createTriggerZone(
+            at: CGPoint(x: w * 0.47, y: groundY + 40),
+            size: CGSize(width: 50, height: 80),
+            name: "firstScanTrigger"
+        )
+
+        // Trigger zone for second door (placed just before second door)
+        secondTriggerZone = createTriggerZone(
+            at: CGPoint(x: w * 0.68, y: groundY + 40),
+            size: CGSize(width: 50, height: 80),
+            name: "secondScanTrigger"
+        )
 
         // Death zone
         let death = SKNode()
-        death.position = CGPoint(x: size.width / 2, y: -50)
-        death.physicsBody = SKPhysicsBody(rectangleOf: CGSize(width: size.width * 2, height: 100))
+        death.position = CGPoint(x: w / 2, y: -50)
+        death.physicsBody = SKPhysicsBody(rectangleOf: CGSize(width: w * 2, height: 100))
         death.physicsBody?.isDynamic = false
         death.physicsBody?.categoryBitMask = PhysicsCategory.hazard
         addChild(death)
+    }
+
+    private func createTriggerZone(at position: CGPoint, size: CGSize, name: String) -> SKNode {
+        let zone = SKNode()
+        zone.position = position
+        zone.name = name
+        zone.physicsBody = SKPhysicsBody(rectangleOf: size)
+        zone.physicsBody?.isDynamic = false
+        zone.physicsBody?.categoryBitMask = PhysicsCategory.interactable
+        zone.physicsBody?.contactTestBitMask = PhysicsCategory.player
+        zone.physicsBody?.collisionBitMask = 0
+        addChild(zone)
+        return zone
     }
 
     private func createSecondDoor(at position: CGPoint) {
@@ -156,8 +201,12 @@ final class FaceIDScene: BaseLevelScene, SKPhysicsContactDelegate {
     }
 
     private func createVaultDoor() {
+        let w = size.width
+        let h = size.height
+        let groundY = h * 0.2
+
         vaultDoor = SKNode()
-        vaultDoor.position = CGPoint(x: size.width / 2 + 60, y: 230)
+        vaultDoor.position = CGPoint(x: w * 0.52, y: groundY + 70)
         vaultDoor.zPosition = 50
         addChild(vaultDoor)
 
@@ -218,7 +267,7 @@ final class FaceIDScene: BaseLevelScene, SKPhysicsContactDelegate {
 
         // Door blocker physics
         doorBlocker = SKNode()
-        doorBlocker?.position = CGPoint(x: size.width / 2 + 60, y: 210)
+        doorBlocker?.position = CGPoint(x: w * 0.52, y: groundY + 50)
         doorBlocker?.physicsBody = SKPhysicsBody(rectangleOf: CGSize(width: 80, height: 100))
         doorBlocker?.physicsBody?.isDynamic = false
         doorBlocker?.physicsBody?.categoryBitMask = PhysicsCategory.ground
@@ -263,7 +312,7 @@ final class FaceIDScene: BaseLevelScene, SKPhysicsContactDelegate {
 
     private func showInstructionPanel() {
         let panel = SKNode()
-        panel.position = CGPoint(x: size.width / 2, y: size.height - 120)
+        panel.position = CGPoint(x: size.width / 2, y: size.height - size.height * 0.14)
         panel.zPosition = 300
         addChild(panel)
 
@@ -279,7 +328,7 @@ final class FaceIDScene: BaseLevelScene, SKPhysicsContactDelegate {
         text1.position = CGPoint(x: 0, y: 10)
         panel.addChild(text1)
 
-        let text2 = SKLabelNode(text: "AUTHENTICATE TO PROCEED")
+        let text2 = SKLabelNode(text: "APPROACH EACH GATE TO SCAN")
         text2.fontName = "Menlo"
         text2.fontSize = 10
         text2.fontColor = strokeColor
@@ -290,7 +339,9 @@ final class FaceIDScene: BaseLevelScene, SKPhysicsContactDelegate {
     }
 
     private func setupBit() {
-        spawnPoint = CGPoint(x: 80, y: 200)
+        let w = size.width
+        let h = size.height
+        spawnPoint = CGPoint(x: w * 0.1, y: h * 0.2 + 40)
         bit = BitCharacter.make()
         bit.position = spawnPoint
         addChild(bit)
@@ -299,7 +350,7 @@ final class FaceIDScene: BaseLevelScene, SKPhysicsContactDelegate {
     }
 
     private func triggerFaceIDPrompt() {
-        guard scanStep < 3 else { return }
+        guard scanStep < 2 else { return }
 
         // Animate scanning
         vaultDoor.removeAction(forKey: "idle_scan")
@@ -318,7 +369,7 @@ final class FaceIDScene: BaseLevelScene, SKPhysicsContactDelegate {
         } else {
             // On simulator/no-biometrics, we wait for proximity sensor instead of auto-completing
             statusLabel.text = "COVER SENSOR"
-            
+
             // Visual hint for proximity
             faceFrame.run(.repeatForever(.sequence([
                 .fadeAlpha(to: 0.3, duration: 0.5),
@@ -341,13 +392,16 @@ final class FaceIDScene: BaseLevelScene, SKPhysicsContactDelegate {
         statusLabel.text = "IMPOSTER DETECTED"
         faceFrame.strokeColor = strokeColor
 
+        let w = size.width
+        let h = size.height
+
         // Red flash alarm animation
-        let redFlash = SKShapeNode(rectOf: CGSize(width: size.width * 2, height: size.height * 2))
+        let redFlash = SKShapeNode(rectOf: CGSize(width: w * 2, height: h * 2))
         redFlash.fillColor = .red
         redFlash.strokeColor = .clear
         redFlash.alpha = 0
         redFlash.zPosition = 450
-        redFlash.position = CGPoint(x: size.width / 2, y: size.height / 2)
+        redFlash.position = CGPoint(x: w / 2, y: h / 2)
         addChild(redFlash)
 
         redFlash.run(.sequence([
@@ -374,7 +428,7 @@ final class FaceIDScene: BaseLevelScene, SKPhysicsContactDelegate {
         imposterLabel.fontName = "Menlo-Bold"
         imposterLabel.fontSize = 18
         imposterLabel.fontColor = strokeColor
-        imposterLabel.position = CGPoint(x: size.width / 2, y: size.height / 2 + 80)
+        imposterLabel.position = CGPoint(x: w / 2, y: h / 2 + h * 0.1)
         imposterLabel.zPosition = 500
         imposterLabel.alpha = 0
         addChild(imposterLabel)
@@ -385,6 +439,13 @@ final class FaceIDScene: BaseLevelScene, SKPhysicsContactDelegate {
             .fadeOut(withDuration: 0.3),
             .removeFromParent()
         ]))
+
+        // Reset trigger so player can re-approach
+        if scanStep == 0 {
+            firstTriggerFired = false
+        } else {
+            secondTriggerFired = false
+        }
 
         // Reset after delay
         run(.sequence([
@@ -434,40 +495,27 @@ final class FaceIDScene: BaseLevelScene, SKPhysicsContactDelegate {
             ]))
 
         case 2:
-            // Second scan: "FACE CHANGED - RESCANNING..." with delay
-            statusLabel.text = "FACE CHANGED - RESCANNING..."
+            // Second scan: fourth-wall moment
+            statusLabel.text = "I KNOW WHAT YOU LOOK LIKE NOW."
             faceFrame.strokeColor = strokeColor
 
-            // Brief delay to build tension
-            run(.sequence([
-                .wait(forDuration: 1.5),
-                .run { [weak self] in
-                    self?.statusLabel.text = "RESCAN COMPLETE"
-
-                    // Open second door
-                    self?.secondDoor?.run(.sequence([
-                        .wait(forDuration: 0.3),
-                        .moveBy(x: 0, y: 150, duration: 0.5)
-                    ]))
-                    self?.secondDoorBlocker?.physicsBody = nil
-
-                    let gen2 = UINotificationFeedbackGenerator()
-                    gen2.notificationOccurred(.success)
-                }
+            // Open second door
+            secondDoor?.run(.sequence([
+                .wait(forDuration: 0.3),
+                .moveBy(x: 0, y: 150, duration: 0.5)
             ]))
+            secondDoorBlocker?.physicsBody = nil
 
-        case 3:
-            // Third scan: "BIOMETRIC LOCK RELEASED"
-            statusLabel.text = "BIOMETRIC LOCK RELEASED"
-            isUnlocked = true
+            let gen2 = UINotificationFeedbackGenerator()
+            gen2.notificationOccurred(.success)
 
-            let gen3 = UINotificationFeedbackGenerator()
-            gen3.notificationOccurred(.success)
-
-            // 4th wall text after final unlock
+            // Show full fourth-wall panel
             if !hasShownFourthWall {
                 hasShownFourthWall = true
-                showFourthWallText()
+                run(.sequence([
+                    .wait(forDuration: 0.5),
+                    .run { [weak self] in self?.showFourthWallText() }
+                ]))
             }
 
         default:
@@ -478,8 +526,11 @@ final class FaceIDScene: BaseLevelScene, SKPhysicsContactDelegate {
     // MARK: - 4th Wall Text
 
     private func showFourthWallText() {
+        let w = size.width
+        let h = size.height
+
         let panel = SKNode()
-        panel.position = CGPoint(x: size.width / 2, y: size.height / 2 + 80)
+        panel.position = CGPoint(x: w / 2, y: h / 2 + h * 0.1)
         panel.zPosition = 500
         panel.alpha = 0
         addChild(panel)
@@ -517,12 +568,12 @@ final class FaceIDScene: BaseLevelScene, SKPhysicsContactDelegate {
         case .faceIDResult(let recognized):
             handleFaceIDResult(recognized)
         case .proximityFlipped(let isCovered):
-            if isCovered && scanStep < 3 {
+            if isCovered && scanStep < 2 {
                 if !AuthenticationManager.shared.isBiometricAvailable {
                     // Stop hint
                     faceFrame.removeAction(forKey: "proximity_hint")
                     faceFrame.alpha = 1.0
-                    
+
                     // Trigger success for the proximity interaction
                     handleFaceIDResult(true)
                 } else {
@@ -539,21 +590,6 @@ final class FaceIDScene: BaseLevelScene, SKPhysicsContactDelegate {
         guard let touch = touches.first else { return }
         let location = touch.location(in: self)
         if handlePermissionOverlayTouch(at: location) { return }
-
-        // Tap on vault to trigger Face ID (first door)
-        if scanStep == 0 && vaultDoor.contains(location) {
-            triggerFaceIDPrompt()
-            return
-        }
-
-        // Tap on second door for second/third scan
-        if let door2 = secondDoor, scanStep >= 1 && scanStep < 3 {
-            if door2.contains(location) {
-                triggerFaceIDPrompt()
-                return
-            }
-        }
-
         playerController.touchBegan(at: location)
     }
 
@@ -584,6 +620,16 @@ final class FaceIDScene: BaseLevelScene, SKPhysicsContactDelegate {
             handleExit()
         } else if collision == PhysicsCategory.player | PhysicsCategory.ground {
             bit.setGrounded(true)
+        } else if collision == PhysicsCategory.player | PhysicsCategory.interactable {
+            // Approach triggers for auto-scan
+            let names = [contact.bodyA.node?.name, contact.bodyB.node?.name]
+            if names.contains("firstScanTrigger") && !firstTriggerFired && scanStep == 0 {
+                firstTriggerFired = true
+                triggerFaceIDPrompt()
+            } else if names.contains("secondScanTrigger") && !secondTriggerFired && scanStep == 1 {
+                secondTriggerFired = true
+                triggerFaceIDPrompt()
+            }
         }
     }
 
@@ -601,6 +647,7 @@ final class FaceIDScene: BaseLevelScene, SKPhysicsContactDelegate {
     }
 
     private func handleExit() {
+        guard scanStep >= 2 else { return } // Must complete both scans to exit
         succeedLevel()
         bit.run(.sequence([.fadeOut(withDuration: 0.5), .run { [weak self] in self?.transitionToNextLevel() }]))
     }
