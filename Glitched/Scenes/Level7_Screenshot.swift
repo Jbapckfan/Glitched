@@ -17,7 +17,6 @@ final class ScreenshotScene: BaseLevelScene, SKPhysicsContactDelegate {
     private var bridgeSegments: [SKNode] = []
     private var isBridgeFrozen = false
     private var frozenTimeRemaining: TimeInterval = 0
-    private let freezeDuration: TimeInterval = 5.0
 
     // Flicker timing - 33% visible (100ms on, 200ms off) for better visibility
     private var flickerTimer: TimeInterval = 0
@@ -731,6 +730,10 @@ final class ScreenshotScene: BaseLevelScene, SKPhysicsContactDelegate {
         // Reset bridge to flickering
         for segment in bridgeSegments {
             segment.physicsBody?.categoryBitMask = 0
+            // Restore stroke color in case low-time warning turned it red
+            if let surface = segment.childNode(withName: "surface") as? SKShapeNode {
+                surface.strokeColor = strokeColor
+            }
             if let pattern = segment.childNode(withName: "pattern") as? SKShapeNode {
                 pattern.alpha = 0.3
             }
@@ -768,9 +771,20 @@ final class ScreenshotScene: BaseLevelScene, SKPhysicsContactDelegate {
                 let pulse = abs(sin(CACurrentMediaTime() * 8))
                 timerLabel?.alpha = 0.5 + pulse * 0.5
 
-                // Bridge starts flickering as warning
-                for segment in bridgeSegments {
-                    segment.alpha = 0.6 + CGFloat(pulse) * 0.4
+                if frozenTimeRemaining < 1.0 {
+                    // Urgent: flash bridge segments RED so it's distinct from normal flicker
+                    let dangerColor = VisualConstants.Colors.danger
+                    for segment in bridgeSegments {
+                        segment.alpha = 0.6 + CGFloat(pulse) * 0.4
+                        if let surface = segment.childNode(withName: "surface") as? SKShapeNode {
+                            surface.strokeColor = dangerColor
+                        }
+                    }
+                } else {
+                    // Moderate warning: alpha pulse only
+                    for segment in bridgeSegments {
+                        segment.alpha = 0.6 + CGFloat(pulse) * 0.4
+                    }
                 }
             }
 
@@ -801,6 +815,7 @@ final class ScreenshotScene: BaseLevelScene, SKPhysicsContactDelegate {
             if screenshotCooldown <= 0 {
                 freezeBridge()
                 screenshotCooldown = cooldownDuration
+                resetProgressTimer()
             }
         default:
             break
@@ -861,6 +876,9 @@ final class ScreenshotScene: BaseLevelScene, SKPhysicsContactDelegate {
         guard GameState.shared.levelState == .playing else { return }
         playerController.cancel()
         screenshotCount = 0
+        frozenTimeRemaining = 0
+        screenshotCooldown = 0
+        unfreezeBridge()
         bit.playBufferDeath(respawnAt: spawnPoint) { [weak self] in
             self?.bit.setGrounded(true)
         }

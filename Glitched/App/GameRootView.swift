@@ -123,6 +123,7 @@ struct SpriteKitContainer: UIViewRepresentable {
 // Each mechanic that requires hardware gets a corresponding on-screen button.
 struct AccessibilityOverlay: View {
     @ObservedObject private var accessibility = AccessibilityManager.shared
+    @State private var darkModeToggle: Bool = false
 
     var body: some View {
         VStack {
@@ -157,9 +158,7 @@ struct AccessibilityOverlay: View {
                     accessibilityButton(for: .screenshot, icon: "camera", color: .gray) {
                         InputEventBus.shared.post(.screenshotTaken)
                     }
-                    accessibilityButton(for: .darkMode, icon: "moon.fill", color: .indigo) {
-                        InputEventBus.shared.post(.darkModeChanged(isDark: true))
-                    }
+                    accessibilityToggleButton(for: .darkMode, icon: "moon.fill", color: .indigo)
                     accessibilityButton(for: .orientation, icon: "rotate.right", color: .teal) {
                         InputEventBus.shared.post(.orientationChanged(isLandscape: true))
                     }
@@ -242,6 +241,24 @@ struct AccessibilityOverlay: View {
                     .background(Circle().fill(color.opacity(0.7)))
             }
             .accessibilityLabel(Text(mechanic.rawValue))
+        }
+    }
+
+    /// Toggle button for dark mode: posts light when currently dark, dark when currently light
+    @ViewBuilder
+    private func accessibilityToggleButton(for mechanic: MechanicType, icon: String, color: Color) -> some View {
+        if accessibility.needsFallbackUI(for: mechanic) {
+            Button {
+                darkModeToggle.toggle()
+                InputEventBus.shared.post(.darkModeChanged(isDark: darkModeToggle))
+            } label: {
+                Image(systemName: darkModeToggle ? "sun.max.fill" : "moon.fill")
+                    .font(.system(size: 26))
+                    .foregroundColor(.white)
+                    .padding(10)
+                    .background(Circle().fill(color.opacity(0.7)))
+            }
+            .accessibilityLabel(Text(darkModeToggle ? "Switch to Light Mode" : "Switch to Dark Mode"))
         }
     }
 }

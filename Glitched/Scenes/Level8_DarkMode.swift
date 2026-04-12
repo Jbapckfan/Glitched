@@ -15,6 +15,7 @@ final class DarkModeScene: BaseLevelScene, SKPhysicsContactDelegate {
 
     private var isDarkMode: Bool = false
     private var isDoorUnlocked = false
+    private var hasShownInitialPanel = false
 
     // Visual elements
     private var backgroundNode: SKShapeNode!
@@ -55,7 +56,8 @@ final class DarkModeScene: BaseLevelScene, SKPhysicsContactDelegate {
                 if currentDark != self.isDarkMode {
                     self.isDarkMode = currentDark
                     self.updateColorScheme(animated: false)
-                    self.updateDoorState()
+                    // Don't call updateDoorState() here — the 1.5s delayed
+                    // call handles it so the instruction panel stays visible
                     self.updateDualPlatforms()
                     self.updateHiddenDarkText()
                     self.updateShadowEnemy()
@@ -86,9 +88,15 @@ final class DarkModeScene: BaseLevelScene, SKPhysicsContactDelegate {
         createHiddenDarkText()
         createShadowEnemy()
 
-        updateDoorState()
+        // Delay the initial door/state update so the instruction panel is always
+        // visible first, even if the device is already in dark mode.
         updateHiddenDarkText()
         updateShadowEnemy()
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in
+            guard let self = self else { return }
+            self.hasShownInitialPanel = true
+            self.updateDoorState()
+        }
     }
 
     // MARK: - Background
@@ -684,7 +692,7 @@ final class DarkModeScene: BaseLevelScene, SKPhysicsContactDelegate {
         addChild(instructionPanel!)
 
         // Panel background
-        let panelBG = SKShapeNode(rectOf: CGSize(width: 180, height: 110), cornerRadius: 8)
+        let panelBG = SKShapeNode(rectOf: CGSize(width: 200, height: 140), cornerRadius: 8)
         panelBG.fillColor = fillColor
         panelBG.strokeColor = strokeColor
         panelBG.lineWidth = lineWidth
@@ -744,23 +752,50 @@ final class DarkModeScene: BaseLevelScene, SKPhysicsContactDelegate {
         ])))
 
         // Text
-        let label = SKLabelNode(text: "DARK MODE")
+        let label = SKLabelNode(text: "TOGGLE DARK")
         label.fontName = "Menlo-Bold"
-        label.fontSize = 14
+        label.fontSize = 13
         label.fontColor = strokeColor
-        label.position = CGPoint(x: 30, y: 10)
+        label.position = CGPoint(x: 30, y: 18)
         label.name = "instruction_label"
         instructionPanel?.addChild(label)
         lineElements.append(label)
 
-        let subLabel = SKLabelNode(text: "IN SETTINGS")
+        let subLabel = SKLabelNode(text: "MODE IN SETTINGS")
         subLabel.fontName = "Menlo"
         subLabel.fontSize = 11
         subLabel.fontColor = strokeColor
-        subLabel.position = CGPoint(x: 30, y: -8)
+        subLabel.position = CGPoint(x: 30, y: 2)
         subLabel.name = "instruction_sublabel"
         instructionPanel?.addChild(subLabel)
         lineElements.append(subLabel)
+
+        let hintLabel = SKLabelNode(text: "SOME PLATFORMS ONLY")
+        hintLabel.fontName = "Menlo"
+        hintLabel.fontSize = 9
+        hintLabel.fontColor = strokeColor
+        hintLabel.position = CGPoint(x: 30, y: -14)
+        hintLabel.name = "instruction_hint1"
+        instructionPanel?.addChild(hintLabel)
+        lineElements.append(hintLabel)
+
+        let hintLabel2 = SKLabelNode(text: "EXIST IN ONE MODE.")
+        hintLabel2.fontName = "Menlo"
+        hintLabel2.fontSize = 9
+        hintLabel2.fontColor = strokeColor
+        hintLabel2.position = CGPoint(x: 30, y: -27)
+        hintLabel2.name = "instruction_hint2"
+        instructionPanel?.addChild(hintLabel2)
+        lineElements.append(hintLabel2)
+
+        let hintLabel3 = SKLabelNode(text: "SWITCH BACK AND FORTH.")
+        hintLabel3.fontName = "Menlo-Bold"
+        hintLabel3.fontSize = 9
+        hintLabel3.fontColor = strokeColor
+        hintLabel3.position = CGPoint(x: 30, y: -40)
+        hintLabel3.name = "instruction_hint3"
+        instructionPanel?.addChild(hintLabel3)
+        lineElements.append(hintLabel3)
     }
 
     // MARK: - Hidden Dark Mode Text
@@ -925,12 +960,14 @@ final class DarkModeScene: BaseLevelScene, SKPhysicsContactDelegate {
             let generator = UINotificationFeedbackGenerator()
             generator.notificationOccurred(.success)
 
-            // Hide instruction panel
-            instructionPanel?.run(.sequence([
-                .fadeOut(withDuration: 0.3),
-                .removeFromParent()
-            ]))
-            instructionPanel = nil
+            // Hide instruction panel (only after player has had time to read it)
+            if hasShownInitialPanel {
+                instructionPanel?.run(.sequence([
+                    .fadeOut(withDuration: 0.3),
+                    .removeFromParent()
+                ]))
+                instructionPanel = nil
+            }
 
         } else if !shouldUnlock && isDoorUnlocked {
             // Lock
@@ -1044,9 +1081,7 @@ final class DarkModeScene: BaseLevelScene, SKPhysicsContactDelegate {
             }
         }
 
-        for child in node.children {
-            updateElementColors(child, animated: animated)
-        }
+        // All visual nodes are tracked in lineElements — no recursion needed.
     }
 
     private func interpolateColor(from: SKColor, to: SKColor, progress: CGFloat) -> SKColor {
