@@ -29,13 +29,15 @@ final class TimeTravelScene: BaseLevelScene, SKPhysicsContactDelegate {
     private var fullTreeNode: SKNode?
     private var treeBranches: [SKNode] = []
 
-    private var clockDisplay: SKNode?
+    private var yearCounterNode: SKNode?
+    private var yearCounterLabel: SKLabelNode?
     private var signNode: SKNode?
     private var instructionPanel: SKNode?
     private var syncingLabel: SKLabelNode?
 
     private let timeMultiplier: Double = 2.0
     private let requiredYears: Double = 10.0
+    private let passiveYearsPerSecond: Double = 1.0 / 30.0  // 1 game-year per 30 real seconds
 
     private var lineElements: [SKNode] = []
 
@@ -56,7 +58,7 @@ final class TimeTravelScene: BaseLevelScene, SKPhysicsContactDelegate {
         buildLevel()
         createSapling()
         createTimeSign()
-        createClockDisplay()
+        createYearCounter()
         showInstructionPanel()
         setupBit()
     }
@@ -542,40 +544,42 @@ final class TimeTravelScene: BaseLevelScene, SKPhysicsContactDelegate {
         lineElements.append(text2)
     }
 
-    // MARK: - Clock Display
+    // MARK: - Year Counter
 
-    private func createClockDisplay() {
-        clockDisplay = SKNode()
-        clockDisplay?.position = CGPoint(x: size.width / 2 - 80, y: 280)
-        clockDisplay?.zPosition = 50
-        addChild(clockDisplay!)
+    private func createYearCounter() {
+        yearCounterNode = SKNode()
+        yearCounterNode?.position = CGPoint(x: size.width / 2 - 80, y: 280)
+        yearCounterNode?.zPosition = 50
+        addChild(yearCounterNode!)
 
-        // Clock background
-        let clockBG = SKShapeNode(circleOfRadius: 25)
-        clockBG.fillColor = fillColor
-        clockBG.strokeColor = strokeColor
-        clockBG.lineWidth = lineWidth
-        clockDisplay?.addChild(clockBG)
-        lineElements.append(clockBG)
+        // Counter background
+        let counterBG = SKShapeNode(rectOf: CGSize(width: 120, height: 36), cornerRadius: 5)
+        counterBG.fillColor = fillColor
+        counterBG.strokeColor = strokeColor
+        counterBG.lineWidth = lineWidth
+        yearCounterNode?.addChild(counterBG)
+        lineElements.append(counterBG)
 
-        // Hour marks
-        for i in 0..<12 {
-            let angle = CGFloat(i) * (.pi / 6) - .pi / 2
-            let mark = SKShapeNode()
-            let markPath = CGMutablePath()
-            markPath.move(to: CGPoint(x: cos(angle) * 18, y: sin(angle) * 18))
-            markPath.addLine(to: CGPoint(x: cos(angle) * 22, y: sin(angle) * 22))
-            mark.path = markPath
-            mark.strokeColor = strokeColor
-            mark.lineWidth = lineWidth * 0.4
-            clockDisplay?.addChild(mark)
-            lineElements.append(mark)
+        // Year label
+        yearCounterLabel = SKLabelNode(text: "YEAR 0 / 10")
+        yearCounterLabel?.fontName = "Menlo-Bold"
+        yearCounterLabel?.fontSize = 13
+        yearCounterLabel?.fontColor = strokeColor
+        yearCounterLabel?.verticalAlignmentMode = .center
+        yearCounterLabel?.horizontalAlignmentMode = .center
+        yearCounterNode?.addChild(yearCounterLabel!)
+        lineElements.append(yearCounterLabel!)
+    }
+
+    private func updateYearCounter() {
+        let displayYears = min(gameYears, requiredYears)
+        let formatted: String
+        if displayYears == 0 || displayYears == floor(displayYears) {
+            formatted = String(format: "YEAR %.0f / %.0f", displayYears, requiredYears)
+        } else {
+            formatted = String(format: "YEAR %.1f / %.0f", displayYears, requiredYears)
         }
-
-        // Animate clock spinning
-        clockDisplay?.run(.repeatForever(.sequence([
-            .rotate(byAngle: .pi * 2, duration: 2.0)
-        ])))
+        yearCounterLabel?.text = formatted
     }
 
     // MARK: - Instruction Panel
@@ -587,7 +591,7 @@ final class TimeTravelScene: BaseLevelScene, SKPhysicsContactDelegate {
         addChild(instructionPanel!)
 
         // Panel background
-        let panelBG = SKShapeNode(rectOf: CGSize(width: 200, height: 100), cornerRadius: 8)
+        let panelBG = SKShapeNode(rectOf: CGSize(width: 210, height: 115), cornerRadius: 8)
         panelBG.fillColor = fillColor
         panelBG.strokeColor = strokeColor
         panelBG.lineWidth = lineWidth
@@ -633,29 +637,37 @@ final class TimeTravelScene: BaseLevelScene, SKPhysicsContactDelegate {
         lineElements.append(awayArrow)
 
         // Text
-        let label = SKLabelNode(text: "GO HOME")
+        let label = SKLabelNode(text: "TIME PASSES")
         label.fontName = "Menlo-Bold"
-        label.fontSize = 14
+        label.fontSize = 13
         label.fontColor = strokeColor
         label.position = CGPoint(x: 30, y: 15)
         instructionPanel?.addChild(label)
         lineElements.append(label)
 
-        let subLabel = SKLabelNode(text: "WAIT 5 SEC")
+        let subLabel = SKLabelNode(text: "WHEN YOU'RE AWAY...")
         subLabel.fontName = "Menlo"
-        subLabel.fontSize = 12
+        subLabel.fontSize = 11
         subLabel.fontColor = strokeColor
-        subLabel.position = CGPoint(x: 30, y: -5)
+        subLabel.position = CGPoint(x: 30, y: -2)
         instructionPanel?.addChild(subLabel)
         lineElements.append(subLabel)
 
-        let subLabel2 = SKLabelNode(text: "RETURN")
+        let subLabel2 = SKLabelNode(text: "AND SLOWLY")
         subLabel2.fontName = "Menlo"
-        subLabel2.fontSize = 12
+        subLabel2.fontSize = 11
         subLabel2.fontColor = strokeColor
-        subLabel2.position = CGPoint(x: 30, y: -22)
+        subLabel2.position = CGPoint(x: 30, y: -17)
         instructionPanel?.addChild(subLabel2)
         lineElements.append(subLabel2)
+
+        let subLabel3 = SKLabelNode(text: "WHILE YOU WATCH.")
+        subLabel3.fontName = "Menlo"
+        subLabel3.fontSize = 11
+        subLabel3.fontColor = strokeColor
+        subLabel3.position = CGPoint(x: 30, y: -32)
+        instructionPanel?.addChild(subLabel3)
+        lineElements.append(subLabel3)
     }
 
     // MARK: - Setup
@@ -674,22 +686,27 @@ final class TimeTravelScene: BaseLevelScene, SKPhysicsContactDelegate {
     // MARK: - Time Passage
 
     private func applyTimePassage(deltaTime: TimeInterval) {
-        let newYears = gameYears + (deltaTime * timeMultiplier)
-        gameYears = newYears
+        gameYears += deltaTime * timeMultiplier
+        gameYears = min(gameYears, requiredYears)
+        updateYearCounter()
 
         // Show 4th-wall return commentary
         showReturnCommentary(secondsAway: deltaTime)
 
-        // Determine target tree state based on time away
+        checkGrowthStage()
+    }
+
+    /// Determine the target tree state from accumulated gameYears and grow if needed
+    private func checkGrowthStage() {
         let targetState: TreeState
-        if deltaTime >= 30 || gameYears >= requiredYears {
+        if gameYears >= 8.0 {
             targetState = .ancientTree
-        } else if deltaTime >= 15 {
+        } else if gameYears >= 5.0 {
             targetState = .matureTree
-        } else if deltaTime >= 5 {
+        } else if gameYears >= 2.0 {
             targetState = .youngTree
         } else {
-            targetState = currentTreeState
+            targetState = .sapling
         }
 
         if targetState.rawValue > currentTreeState.rawValue {
@@ -770,28 +787,37 @@ final class TimeTravelScene: BaseLevelScene, SKPhysicsContactDelegate {
     }
 
     private func growTreeToStage(_ stage: TreeState) {
+        let previousStage = currentTreeState
         currentTreeState = stage
 
-        // Clear previous tree if exists
-        fullTreeNode?.removeFromParent()
-        fullTreeNode = nil
+        // Fade out previous tree (if any) and build the new stage with a growth transition
+        let previousTree = fullTreeNode
         treeBranches.removeAll()
 
         // Build the tree for this stage
         createTreeForStage(stage)
 
-        // Hide sapling
-        saplingNode?.run(.fadeOut(withDuration: 0.3))
+        // Hide sapling on first real growth
+        if previousStage == .sapling {
+            saplingNode?.run(.fadeOut(withDuration: 0.3))
+        }
 
-        // Grow tree
-        fullTreeNode?.setScale(0.1)
+        // Growth animation: scale from the previous stage size to full, not from 0.1
+        let startScale: CGFloat = previousTree != nil ? 0.7 : 0.1
+        fullTreeNode?.setScale(startScale)
         fullTreeNode?.alpha = 1
+
+        // Cross-fade: fade out old tree while growing new one
+        previousTree?.run(.sequence([
+            .fadeOut(withDuration: 0.4),
+            .removeFromParent()
+        ]))
 
         let grow = SKAction.scale(to: 1.0, duration: 1.5)
         grow.timingMode = .easeOut
         fullTreeNode?.run(grow)
 
-        // Screen shake
+        // Screen shake (proportional to growth stage)
         let shake = SKAction.sequence([
             .moveBy(x: 5, y: 0, duration: 0.05),
             .moveBy(x: -10, y: 0, duration: 0.05),
@@ -807,8 +833,8 @@ final class TimeTravelScene: BaseLevelScene, SKPhysicsContactDelegate {
 
         // Only activate exit for ancient tree (full growth)
         if stage == .ancientTree {
-            // Hide clock and sign
-            clockDisplay?.run(.fadeOut(withDuration: 0.5))
+            // Hide year counter and sign
+            yearCounterNode?.run(.fadeOut(withDuration: 0.5))
             signNode?.run(.fadeOut(withDuration: 0.5))
 
             // Activate exit arrow
@@ -967,6 +993,23 @@ final class TimeTravelScene: BaseLevelScene, SKPhysicsContactDelegate {
 
     override func updatePlaying(deltaTime: TimeInterval) {
         playerController.update()
+
+        // Slow passive growth while app is open (1 game-year per 30 seconds)
+        let previousYears = gameYears
+        gameYears += deltaTime * passiveYearsPerSecond
+        gameYears = min(gameYears, requiredYears)
+
+        updateYearCounter()
+
+        // Check if passive growth crossed a stage boundary
+        let crossedBoundary =
+            (previousYears < 2.0 && gameYears >= 2.0) ||
+            (previousYears < 5.0 && gameYears >= 5.0) ||
+            (previousYears < 8.0 && gameYears >= 8.0)
+
+        if crossedBoundary {
+            checkGrowthStage()
+        }
     }
 
     // MARK: - Input Handling
@@ -977,26 +1020,13 @@ final class TimeTravelScene: BaseLevelScene, SKPhysicsContactDelegate {
             applyTimePassage(deltaTime: deltaTime)
         case .timePassageSimulated(let years):
             gameYears += years
-            // Simulate time away based on years for stage calculation
+            gameYears = min(gameYears, requiredYears)
+            updateYearCounter()
+
             let simulatedSeconds = years / timeMultiplier
             showReturnCommentary(secondsAway: simulatedSeconds)
 
-            let targetState: TreeState
-            if simulatedSeconds >= 30 || gameYears >= requiredYears {
-                targetState = .ancientTree
-            } else if simulatedSeconds >= 15 {
-                targetState = .matureTree
-            } else if simulatedSeconds >= 5 {
-                targetState = .youngTree
-            } else {
-                targetState = currentTreeState
-            }
-
-            if targetState.rawValue > currentTreeState.rawValue {
-                showSyncingAnimation {
-                    self.growTreeToStage(targetState)
-                }
-            }
+            checkGrowthStage()
         default:
             break
         }

@@ -55,10 +55,16 @@ final class OrientationScene: BaseLevelScene, SKPhysicsContactDelegate {
         setupBackground()
         setupLevelTitle()
         buildLevel()
-        showInstructionPanel()
         setupBit()
 
-        updateWorldScale(animated: false)
+        if isLandscape {
+            // Already in landscape — skip instruction panel, go straight to gameplay
+            corridorGap = landscapeGap
+            updateWorldScale(animated: false)
+        } else {
+            showInstructionPanel()
+            updateWorldScale(animated: false)
+        }
     }
 
     // MARK: - Background
@@ -657,67 +663,76 @@ final class OrientationScene: BaseLevelScene, SKPhysicsContactDelegate {
     // MARK: - Orientation Change
 
     private func updateWorldScale(animated: Bool) {
-        let duration = animated ? 0.5 : 0
+        let duration: TimeInterval = animated ? 0.5 : 0
+
+        let targetGap: CGFloat
+        let targetScaleX: CGFloat
+        let targetScaleY: CGFloat
 
         if isLandscape {
-            // Stretch world horizontally
-            let scaleX: CGFloat = 1.4
-            let scaleY: CGFloat = 0.85
-
-            corridorGap = landscapeGap
-
-            if animated {
-                let scale = SKAction.scaleX(to: scaleX, y: scaleY, duration: duration)
-                scale.timingMode = .easeInEaseOut
-                worldNode.run(scale)
-
-                // Animate corridor walls apart
-                if let topWall = corridor.childNode(withName: "corridor_top") {
-                    topWall.run(.moveTo(y: corridorGap / 2 + 12.5, duration: duration))
-                }
-                if let bottomWall = corridor.childNode(withName: "corridor_bottom") {
-                    bottomWall.run(.moveTo(y: -corridorGap / 2 - 12.5, duration: duration))
-                }
-            } else {
-                worldNode.xScale = scaleX
-                worldNode.yScale = scaleY
-            }
-
+            targetGap = landscapeGap
+            targetScaleX = 1.4
+            targetScaleY = 0.85
         } else {
-            // Normal portrait
-            corridorGap = portraitGap
+            targetGap = portraitGap
+            targetScaleX = 1.0
+            targetScaleY = 1.0
+        }
 
-            if animated {
-                let scale = SKAction.scaleX(to: 1.0, y: 1.0, duration: duration)
-                scale.timingMode = .easeInEaseOut
-                worldNode.run(scale)
+        corridorGap = targetGap
 
-                // Animate corridor walls together
-                if let topWall = corridor.childNode(withName: "corridor_top") {
-                    topWall.run(.moveTo(y: corridorGap / 2 + 12.5, duration: duration))
+        if animated {
+            let scale = SKAction.scaleX(to: targetScaleX, y: targetScaleY, duration: duration)
+            scale.timingMode = .easeInEaseOut
+            worldNode.run(scale)
+
+            // Animate corridor walls and bind physics updates to the animation
+            let topTarget = targetGap / 2 + 12.5
+            let bottomTarget = -targetGap / 2 - 12.5
+
+            if let topWall = corridor.childNode(withName: "corridor_top") {
+                let startY = topWall.position.y
+                let moveAndSync = SKAction.customAction(withDuration: duration) { [weak self] node, elapsed in
+                    let t = elapsed / CGFloat(duration)
+                    let eased = t * t * (3.0 - 2.0 * t) // smoothstep
+                    node.position.y = startY + (topTarget - startY) * eased
+                    // Rebuild physics body at current position
+                    node.physicsBody = nil
+                    node.physicsBody = SKPhysicsBody(rectangleOf: CGSize(width: 350, height: 25))
+                    node.physicsBody?.isDynamic = false
+                    node.physicsBody?.categoryBitMask = PhysicsCategory.ground
+                    self?.updateCorridorPhysics()
                 }
-                if let bottomWall = corridor.childNode(withName: "corridor_bottom") {
-                    bottomWall.run(.moveTo(y: -corridorGap / 2 - 12.5, duration: duration))
-                }
-            } else {
-                worldNode.xScale = 1.0
-                worldNode.yScale = 1.0
+                topWall.run(moveAndSync)
             }
+
+            if let bottomWall = corridor.childNode(withName: "corridor_bottom") {
+                let startY = bottomWall.position.y
+                let moveAndSync = SKAction.customAction(withDuration: duration) { node, elapsed in
+                    let t = elapsed / CGFloat(duration)
+                    let eased = t * t * (3.0 - 2.0 * t)
+                    node.position.y = startY + (bottomTarget - startY) * eased
+                    node.physicsBody = nil
+                    node.physicsBody = SKPhysicsBody(rectangleOf: CGSize(width: 350, height: 25))
+                    node.physicsBody?.isDynamic = false
+                    node.physicsBody?.categoryBitMask = PhysicsCategory.ground
+                }
+                bottomWall.run(moveAndSync)
+            }
+        } else {
+            worldNode.xScale = targetScaleX
+            worldNode.yScale = targetScaleY
+            updateCorridorPhysics()
         }
 
-        // Update physics after animation
-        DispatchQueue.main.asyncAfter(deadline: .now() + duration) { [weak self] in
-            self?.updateCorridorPhysics()
-        }
-
-        // Hide hint after first landscape rotation
+        // Hide hint after first landscape rotation, but keep crusher active (half speed)
         if isLandscape && animated {
             instructionPanel?.run(.sequence([
                 .fadeOut(withDuration: 0.3),
                 .removeFromParent()
             ]))
             instructionPanel = nil
-            isCrusherActive = false
+            // Crusher stays active — speed is halved in landscape (see updatePlaying)
         }
     }
 
@@ -726,9 +741,11 @@ final class OrientationScene: BaseLevelScene, SKPhysicsContactDelegate {
     override func updatePlaying(deltaTime: TimeInterval) {
         playerController.update()
 
-        // Crusher creep in portrait mode
-        if isCrusherActive && !isLandscape {
-            let creepSpeed: CGFloat = 8.0 * CGFloat(deltaTime)
+        // Crusher creep — full speed in portrait, half speed in landscape
+        if isCrusherActive {
+            let baseSpeed: CGFloat = 8.0
+            let speedMultiplier: CGFloat = isLandscape ? 0.5 : 1.0
+            let creepSpeed = baseSpeed * speedMultiplier * CGFloat(deltaTime)
             crusherWall.position.x += creepSpeed
 
             // Check if crusher caught up to Bit
