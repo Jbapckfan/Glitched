@@ -356,7 +356,14 @@ final class HeaderScene: BaseLevelScene, SKPhysicsContactDelegate {
             y: size.height - screenPosition.y
         )
 
-        if skPosition.x > pitStartX && skPosition.x < pitEndX {
+        // FIX: Accept drops over or near the pit (with generous tolerance),
+        // AND verify the Y position is below the top third of the screen
+        // so the bridge only spawns when the header is dragged down meaningfully.
+        let pitTolerance: CGFloat = 40
+        let belowTopThird = skPosition.y < size.height * 0.66
+        let overPit = skPosition.x > (pitStartX - pitTolerance) && skPosition.x < (pitEndX + pitTolerance)
+
+        if overPit && belowTopThird {
             spawnBridge()
         }
     }
@@ -526,6 +533,7 @@ override func onLevelSucceeded() {
 }
 
 override func hintText() -> String? {
-    return nil
+    // FIX: Provide a real hint instead of nil so the 30s hint timer is useful
+    return bridgeSpawned ? nil : "The level title looks unstable... try dragging it down."
 }
 }

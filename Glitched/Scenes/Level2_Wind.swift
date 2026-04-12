@@ -614,11 +614,14 @@ final class WindBridgeScene: BaseLevelScene, SKPhysicsContactDelegate {
     }
 
     private func triggerOverdriveEffect() {
-        // Screen shake
+        // FIX: Screen shake must return to camera's ACTUAL center, not (0,0).
+        // The camera is centered at (size.width/2, size.height/2), so resetting
+        // to origin breaks the entire scene view.
+        let cameraHome = CGPoint(x: size.width / 2, y: size.height / 2)
         let shake = SKAction.sequence([
             .moveBy(x: CGFloat.random(in: -3...3), y: CGFloat.random(in: -2...2), duration: 0.02),
             .moveBy(x: CGFloat.random(in: -3...3), y: CGFloat.random(in: -2...2), duration: 0.02),
-            .move(to: CGPoint(x: 0, y: 0), duration: 0.02)
+            .move(to: cameraHome, duration: 0.02)
         ])
         if gameCamera.action(forKey: "overdrive_shake") == nil {
             gameCamera.run(shake, withKey: "overdrive_shake")
@@ -638,6 +641,10 @@ final class WindBridgeScene: BaseLevelScene, SKPhysicsContactDelegate {
 
     private func animateWind(intensity: Float) {
         for (index, particle) in windParticles.enumerated() {
+            // FIX: Use keyed actions to prevent stacking — each new call
+            // replaces the previous animation instead of queuing on top
+            let key = "wind_\(index)"
+            guard particle.action(forKey: key) == nil else { continue }
             let delay = Double(index) * 0.05
             particle.run(.sequence([
                 .wait(forDuration: delay),
@@ -651,7 +658,7 @@ final class WindBridgeScene: BaseLevelScene, SKPhysicsContactDelegate {
                     particle.position.x = self.chasmStartX + CGFloat(index) * 25
                     particle.position.y = self.groundHeight + 30 + CGFloat.random(in: -10...10)
                 }
-            ]))
+            ]), withKey: key)
         }
     }
 
@@ -665,17 +672,18 @@ final class WindBridgeScene: BaseLevelScene, SKPhysicsContactDelegate {
         let diff = bridgeTargetWidth - bridgeCurrentWidth
         bridgeCurrentWidth += diff * CGFloat(deltaTime) * lerpSpeed
 
-        // Bridge retracts VERY slowly when no sound - this is an early level.
-        // Give the player plenty of time to cross after blowing.
+        // FIX: Bridge retracts MUCH more slowly — give player a real crossing window.
+        // Previous decay (0.995/frame + 5pt/s retract) gave ~2.3s half-life which felt rushed.
+        // New: ~6s half-life for target decay + slower retract = relaxed crossing.
         if lastMicLevel < 0.1 {
-            bridgeCurrentWidth = max(0, bridgeCurrentWidth - CGFloat(deltaTime) * 5)
+            bridgeCurrentWidth = max(0, bridgeCurrentWidth - CGFloat(deltaTime) * 2) // was 5
         }
 
         bridgeCurrentWidth = max(0, min(bridgeCurrentWidth, bridgeFullWidth))
         updateBridgePhysics()
 
-        // Very slow decay of target so bridge stays extended much longer
-        bridgeTargetWidth *= 0.995
+        // Much slower decay so bridge stays extended after a good blow
+        bridgeTargetWidth *= 0.998 // was 0.995
     }
 
     // MARK: - Touch Handling
@@ -756,7 +764,8 @@ final class WindBridgeScene: BaseLevelScene, SKPhysicsContactDelegate {
     }
 
     override func hintText() -> String? {
-        return "???"
+        // FIX: Provide a real hint instead of "???"
+        return bridgeCurrentWidth > 10 ? nil : "The vents seem responsive to airflow..."
     }
 
     override func willMove(from view: SKView) {
