@@ -456,11 +456,11 @@
 				LastUpgradeCheck = 1500;
 				TargetAttributes = {
 					2395CFB9B365507208E32EB5 = {
-						DevelopmentTeam = 3KC59UY783;
+						DevelopmentTeam = 529ZZJHQR4;
 						ProvisioningStyle = Automatic;
 					};
 					A3B1FDAFE70810DCBE2DBBA6 = {
-						DevelopmentTeam = 3KC59UY783;
+						DevelopmentTeam = 529ZZJHQR4;
 						ProvisioningStyle = Automatic;
 					};
 				};
@@ -620,7 +620,7 @@
 			buildSettings = {
 				BUNDLE_LOADER = "$(TEST_HOST)";
 				CODE_SIGN_STYLE = Automatic;
-				DEVELOPMENT_TEAM = 3KC59UY783;
+				DEVELOPMENT_TEAM = 529ZZJHQR4;
 				GENERATE_INFOPLIST_FILE = YES;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
@@ -696,7 +696,7 @@
 			buildSettings = {
 				BUNDLE_LOADER = "$(TEST_HOST)";
 				CODE_SIGN_STYLE = Automatic;
-				DEVELOPMENT_TEAM = 3KC59UY783;
+				DEVELOPMENT_TEAM = 529ZZJHQR4;
 				GENERATE_INFOPLIST_FILE = YES;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
@@ -782,7 +782,7 @@
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = 3KC59UY783;
+				DEVELOPMENT_TEAM = 529ZZJHQR4;
 				ENABLE_PREVIEWS = YES;
 				INFOPLIST_FILE = Glitched/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -805,7 +805,7 @@
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = 3KC59UY783;
+				DEVELOPMENT_TEAM = 529ZZJHQR4;
 				ENABLE_PREVIEWS = YES;
 				INFOPLIST_FILE = Glitched/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
