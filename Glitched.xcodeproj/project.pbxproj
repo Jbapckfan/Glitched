@@ -10,6 +10,7 @@
 		00AB645198D637A0FED2507F /* BrightnessManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7336C3943F02282AC5DBACF8 /* BrightnessManager.swift */; };
 		00DF7007792B952FCE013DD5 /* ProgressManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5E577B8468EA96708AB71BC /* ProgressManager.swift */; };
 		03AAC790327E0A572082A7F9 /* DeviceNameManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 80A5BB481BDD99C3A39A3BBC /* DeviceNameManager.swift */; };
+		06A8DBBD6B7131ADCFC6C63E /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = 70A98EF066BF4492F78BE95E /* PrivacyInfo.xcprivacy */; };
 		0B2B0AE4A2BCA6D1954800C7 /* BitCharacter.swift in Sources */ = {isa = PBXBuildFile; fileRef = F80099F4DD230213DDF15870 /* BitCharacter.swift */; };
 		0E012B163A1DE726DF13E644 /* HapticManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = C183FF931CCBBA2BBEB5D51C /* HapticManager.swift */; };
 		0F0065460F7D2835EBC2E377 /* Level6_Brightness.swift in Sources */ = {isa = PBXBuildFile; fileRef = 72820D4FA4FA2EAB83F9EA7A /* Level6_Brightness.swift */; };
@@ -154,6 +155,7 @@
 		63B3641B109025C0DDCE2B5E /* BatteryManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BatteryManager.swift; sourceTree = "<group>"; };
 		6617AC71A777BF51EA8A8908 /* Level17_AirplaneMode.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Level17_AirplaneMode.swift; sourceTree = "<group>"; };
 		6875D6C339DB4C95CE1B7F47 /* VoiceOverManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceOverManager.swift; sourceTree = "<group>"; };
+		70A98EF066BF4492F78BE95E /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
 		711F568B1776028CC88CD672 /* Level20_MetaFinale.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Level20_MetaFinale.swift; sourceTree = "<group>"; };
 		72820D4FA4FA2EAB83F9EA7A /* Level6_Brightness.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Level6_Brightness.swift; sourceTree = "<group>"; };
 		7336C3943F02282AC5DBACF8 /* BrightnessManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BrightnessManager.swift; sourceTree = "<group>"; };
@@ -203,7 +205,7 @@
 		E1AC373A9D5EEE940CC32F48 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
 		E94A8D5694571314896A0BB3 /* Level5_Charging.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Level5_Charging.swift; sourceTree = "<group>"; };
 		E9A6300473FBBF48BA89C785 /* Level26_Locale.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Level26_Locale.swift; sourceTree = "<group>"; };
-		EF2ED4B8D969089335BDE94C /* Glitched.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Glitched.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		EF2ED4B8D969089335BDE94C /* Glitched.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = Glitched.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		F043D5C26DE91D715EB8AD27 /* Level29_TheLie.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Level29_TheLie.swift; sourceTree = "<group>"; };
 		F4A66C1B6B495950E381E8ED /* GameState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GameState.swift; sourceTree = "<group>"; };
 		F6EA61A360E8670568C1F5C8 /* Level32_MultiTouch.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Level32_MultiTouch.swift; sourceTree = "<group>"; };
@@ -218,6 +220,7 @@
 			children = (
 				AF3B2394E568A4A0D2BAD3A2 /* Glitched.entitlements */,
 				288B2C30D58D7B698D2213A0 /* Info.plist */,
+				70A98EF066BF4492F78BE95E /* PrivacyInfo.xcprivacy */,
 				431065F9F2AE3E767D85AE85 /* App */,
 				A99346295E9D9C6EBE66CC7A /* Assets */,
 				D23058EB1B539A53645E9D5C /* Characters */,
@@ -457,11 +460,13 @@
 						ProvisioningStyle = Automatic;
 					};
 					A3B1FDAFE70810DCBE2DBBA6 = {
+						DevelopmentTeam = 3KC59UY783;
 						ProvisioningStyle = Automatic;
 					};
 				};
 			};
 			buildConfigurationList = C8E6968B986A4DFFF74D3F21 /* Build configuration list for PBXProject "Glitched" */;
+			compatibilityVersion = "Xcode 14.0";
 			developmentRegion = en;
 			hasScannedForEncodings = 0;
 			knownRegions = (
@@ -471,7 +476,6 @@
 			mainGroup = BF29292DB7BD41B4EA4CBB9D;
 			minimizedProjectReferenceProxies = 1;
 			preferredProjectObjectVersion = 77;
-			productRefGroup = B6D022D07D4D4520959AEB86 /* Products */;
 			projectDirPath = "";
 			projectRoot = "";
 			targets = (
@@ -487,6 +491,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				3EDDD33EC2F11770CFF82E33 /* Assets.xcassets in Resources */,
+				06A8DBBD6B7131ADCFC6C63E /* PrivacyInfo.xcprivacy in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -777,7 +782,7 @@
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = 529ZZJHQR4;
+				DEVELOPMENT_TEAM = 3KC59UY783;
 				ENABLE_PREVIEWS = YES;
 				INFOPLIST_FILE = Glitched/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -800,7 +805,7 @@
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = 529ZZJHQR4;
+				DEVELOPMENT_TEAM = 3KC59UY783;
 				ENABLE_PREVIEWS = YES;
 				INFOPLIST_FILE = Glitched/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (

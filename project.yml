@@ -16,6 +16,7 @@ targets:
           - "**/.DS_Store"
     resources:
       - path: Glitched/Assets/Assets.xcassets
+      - path: Glitched/PrivacyInfo.xcprivacy
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.glitched.app.jalford2026
