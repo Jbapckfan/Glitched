@@ -33,7 +33,7 @@ struct GlitchedApp: App {
     @AppStorage("forceDarkMode") private var forceDarkMode = true
     // FIX #12: Track whether the permissions preflight has been shown
     @AppStorage("hasSeenPreflight") private var hasSeenPreflight = false
-    @StateObject private var gameState = GameState.shared
+    @ObservedObject private var gameState = GameState.shared
     private let notificationDelegate = NotificationDelegate()
 
     init() {
@@ -50,12 +50,16 @@ struct GlitchedApp: App {
         WindowGroup {
             if hasSeenPreflight {
                 Group {
-                    if gameState.appScreen == .worldMap {
+                    switch gameState.appScreen {
+                    case .worldMap:
                         WorldMapView()
-                    } else {
+                    case .game:
                         GameRootView()
+                            .id(gameState.currentLevelID)
                     }
                 }
+                .id(gameState.appScreen)
+                .environmentObject(gameState)
                 .preferredColorScheme(forceDarkMode ? .dark : nil)
                 .statusBarHidden(true)
             } else {

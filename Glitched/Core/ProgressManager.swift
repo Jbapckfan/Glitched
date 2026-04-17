@@ -31,20 +31,76 @@ struct PlayerProgress: Codable {
     }
 }
 
+// MARK: - Storage Abstraction for Testing
+
+protocol ProgressStorage {
+    func data(forKey key: String) -> Data?
+    func set(_ data: Data?, forKey key: String)
+    @discardableResult func synchronize() -> Bool
+}
+
+extension UserDefaults: ProgressStorage {
+    func set(_ data: Data?, forKey key: String) {
+        self.set(data as Any?, forKey: key)
+    }
+}
+
+extension NSUbiquitousKeyValueStore: ProgressStorage {
+    func set(_ data: Data?, forKey key: String) {
+        self.set(data as Any?, forKey: key)
+    }
+}
+
+#if DEBUG
+final class MockProgressStorage: ProgressStorage {
+    private var storage: [String: Data] = [:]
+    func data(forKey key: String) -> Data? { storage[key] }
+    func set(_ data: Data?, forKey key: String) { storage[key] = data }
+    func synchronize() -> Bool { true }
+}
+#endif
+// We can't easily extend NSUbiquitousKeyValueStore because it's not a class we can mock easily without a protocol,
+// but we can provide a wrapper or just use two storages in the manager.
+
 final class ProgressManager {
-    static let shared = ProgressManager()
+    static let shared = ProgressManager(
+        localStore: UserDefaults.standard,
+        cloudStore: NSUbiquitousKeyValueStore.default
+    )
+    
+    #if DEBUG
+    /// Isolated instance for unit tests to avoid wiping real player data
+    static var testInstance: ProgressManager {
+        ProgressManager(localStore: MockProgressStorage(), cloudStore: MockProgressStorage())
+    }
+    #endif
 
     private let storageKey = "PlayerProgress_v1"
-    private let defaults = UserDefaults.standard
-    private let ubiquitousStore = NSUbiquitousKeyValueStore.default
+    private let defaults: ProgressStorage
+    private let ubiquitousStore: ProgressStorage?
     private var cached: PlayerProgress?
 
-    private init() {}
+    private var isTestUnlockEnabled: Bool {
+        if let override = Bundle.main.object(forInfoDictionaryKey: "GLITCHED_UNLOCK_ALL_LEVELS") as? NSNumber {
+            return override.boolValue
+        }
+
+        #if DEBUG
+        return true
+        #else
+        return false
+        #endif
+    }
+
+    init(localStore: ProgressStorage, cloudStore: ProgressStorage?) {
+        self.defaults = localStore
+        self.ubiquitousStore = cloudStore
+    }
 
     func load() -> PlayerProgress {
         if let cached = cached { return cached }
         let local = decodeProgress(from: defaults.data(forKey: storageKey))
-        let cloud = decodeProgress(from: ubiquitousStore.data(forKey: storageKey))
+        let cloud = decodeProgress(from: ubiquitousStore?.data(forKey: storageKey))
         let resolved = resolveProgress(local: local, cloud: cloud) ?? PlayerProgress()
         cached = resolved
         return resolved
@@ -53,8 +109,8 @@ final class ProgressManager {
     func save(_ progress: PlayerProgress) {
         guard let data = try? JSONEncoder().encode(progress) else { return }
         defaults.set(data, forKey: storageKey)
-        ubiquitousStore.set(data, forKey: storageKey)
-        ubiquitousStore.synchronize()
+        ubiquitousStore?.set(data, forKey: storageKey)
+        ubiquitousStore?.synchronize()
         cached = progress
     }
 
@@ -125,10 +181,16 @@ final class ProgressManager {
         if let lastPlayedLevel = progress.lastPlayedLevel, isUnlocked(lastPlayedLevel) {
             return lastPlayedLevel
         }
+        if isTestUnlockEnabled && progress.completedLevels.isEmpty {
+            return LevelID(world: .world1, index: 1)
+        }
         return highestUnlockedLevel()
     }
 
     func isUnlocked(_ levelID: LevelID) -> Bool {
+        if isTestUnlockEnabled {
+            return true
+        }
         let progress = load()
         if levelID == .boot { return true }
         // Any level in a completed world is unlocked
@@ -138,8 +200,8 @@ final class ProgressManager {
         // Cross-world boundary: if the previous world is complete, unlock the first level of the next world
         if let previousWorld = World(rawValue: levelID.world.rawValue - 1) {
             let previousWorldComplete = progress.highestWorld.rawValue > previousWorld.rawValue ||
-                (progress.highestWorld == previousWorld && progress.completedLevels.contains(where: { $0.world == previousWorld }))
-            if previousWorldComplete && levelID.index == firstLevelIndex(for: levelID.world) {
+                (progress.highestWorld == previousWorld && progress.highestLevelIndex >= previousWorld.lastLevelIndex)
+            if previousWorldComplete && levelID.index == previousWorld.lastLevelIndex + 1 {
                 return true
             }
         }

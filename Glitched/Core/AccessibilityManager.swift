@@ -84,4 +84,8 @@ final class AccessibilityManager: ObservableObject {
         guard activeMechanics.contains(mechanic) else { return false }
         return !usesHardware(for: mechanic)
     }
+
+    var showsFallbackOverlay: Bool {
+        hardwareFreeMode || activeMechanics.contains(where: needsFallbackUI(for:))
+    }
 }

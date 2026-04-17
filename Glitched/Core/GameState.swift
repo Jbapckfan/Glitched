@@ -30,7 +30,7 @@ final class GameState: ObservableObject {
 
     @Published private(set) var currentLevelID: LevelID = .boot
     @Published private(set) var levelState: LevelState = .loading
-    @Published private(set) var appScreen: AppScreen = .worldMap
+    @Published private(set) var appScreen: AppScreen = ProgressManager.shared.load().completedLevels.isEmpty ? .game : .worldMap
 
     // FIX #6: Single source of truth for UI overlay state
     @Published private(set) var uiState: UIState = .playing

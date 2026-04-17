@@ -40,6 +40,7 @@ final class DeviceManagerCoordinator: DeviceManagerCoordinating {
             AppSwitcherManager.shared,
             AuthenticationManager.shared,
             ReinstallManager.shared,
+            ProximityManager.shared,
 
             // World 3: Data Corruption
             VoiceCommandManager.shared,

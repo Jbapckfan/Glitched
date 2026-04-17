@@ -2,7 +2,7 @@ import AVFoundation
 import Combine
 
 extension Notification.Name {
-    static let micPermissionDenied = Notification.Name("micPermissionDenied")
+    static let envPermissionDenied = Notification.Name("envPermissionDenied")
 }
 
 final class MicrophoneManager: DeviceManager {
@@ -24,7 +24,7 @@ final class MicrophoneManager: DeviceManager {
                     self?.startCapture()
                 } else {
                     AccessibilityManager.shared.forceHardwareFallback(for: .microphone)
-                    NotificationCenter.default.post(name: .micPermissionDenied, object: nil)
+                    NotificationCenter.default.post(name: .envPermissionDenied, object: nil)
                 }
             }
         }

@@ -9,7 +9,7 @@
 	<key>CFBundleExecutable</key>
 	<string>$(EXECUTABLE_NAME)</string>
 	<key>CFBundleIdentifier</key>
-	<string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
+	<string>com.glitched.app.jalford2026</string>
 	<key>CFBundleInfoDictionaryVersion</key>
 	<string>6.0</string>
 	<key>CFBundleName</key>
@@ -20,18 +20,18 @@
 	<string>$(MARKETING_VERSION)</string>
 	<key>CFBundleVersion</key>
 	<string>$(CURRENT_PROJECT_VERSION)</string>
-	<key>NSMicrophoneUsageDescription</key>
-	<string>Blow into the microphone to create wind in the game.</string>
-	<key>NSSpeechRecognitionUsageDescription</key>
-	<string>Speak words to solve puzzles.</string>
 	<key>NSFaceIDUsageDescription</key>
 	<string>Authenticate to unlock the security vault puzzle.</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>Blow into the microphone to create wind in the game.</string>
+	<key>NSMotionUsageDescription</key>
+	<string>Shake your device to rewind time in the game.</string>
+	<key>NSSpeechRecognitionUsageDescription</key>
+	<string>Speak words to solve puzzles.</string>
 	<key>UILaunchScreen</key>
 	<dict/>
 	<key>UIRequiresFullScreen</key>
 	<true/>
-	<key>NSMotionUsageDescription</key>
-	<string>Shake your device to rewind time in the game.</string>
 	<key>UISupportedInterfaceOrientations</key>
 	<array>
 		<string>UIInterfaceOrientationPortrait</string>

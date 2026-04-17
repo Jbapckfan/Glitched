@@ -2,7 +2,7 @@ import Foundation
 import UIKit
 import Combine
 
-/// Monitors clipboard/pasteboard changes
+/// Monitors data buffer changes
 final class ClipboardManager: DeviceManager {
     static let shared = ClipboardManager()
 

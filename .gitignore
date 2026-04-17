@@ -35,3 +35,7 @@ fastlane/test_output
 iOSInjectionProject/
 build/
 LEVEL_BACKUP_BEFORE_REDESIGN.md
+
+
+# Build logs
+*.log

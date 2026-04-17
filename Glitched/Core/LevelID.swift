@@ -61,6 +61,13 @@ struct LevelID: Hashable, Codable {
         return "LEVEL \(world.rawValue)-\(index)"
     }
 
+    var next: LevelID? {
+        let all = LevelID.allLevels
+        guard let currentIndex = all.firstIndex(of: self) else { return nil }
+        let nextIndex = currentIndex + 1
+        return nextIndex < all.count ? all[nextIndex] : nil
+    }
+
     static var allLevels: [LevelID] {
         [LevelID.boot] + World.campaignWorlds.flatMap(\.levels)
     }

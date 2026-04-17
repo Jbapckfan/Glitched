@@ -13,6 +13,18 @@ final class StoreManager: ObservableObject {
 
     private var updatesTask: Task<Void, Never>?
 
+    private var isTestUnlockEnabled: Bool {
+        if let override = Bundle.main.object(forInfoDictionaryKey: "GLITCHED_UNLOCK_ALL_LEVELS") as? NSNumber {
+            return override.boolValue
+        }
+
+        #if DEBUG
+        return true
+        #else
+        return false
+        #endif
+    }
+
     private init() {
         updatesTask = Task {
             await refreshEntitlements()
@@ -67,7 +79,10 @@ final class StoreManager: ObservableObject {
     }
 
     func isUnlocked(_ productID: String) -> Bool {
-        purchasedProductIDs.contains(productID)
+        if isTestUnlockEnabled && productID == Self.fullGameProductID {
+            return true
+        }
+        return purchasedProductIDs.contains(productID)
     }
 
     func canAccess(world: World) -> Bool {

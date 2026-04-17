@@ -1,4 +1,7 @@
 import GameKit
+#if canImport(UIKit)
+import UIKit
+#endif
 
 // FIX #15: GameCenter integration with basic achievement support.
 // Achievements: completing each world, speedrun times, no-hint completions.
@@ -7,23 +10,63 @@ final class GameCenterManager {
     static let shared = GameCenterManager()
 
     private var isAuthenticated = false
+    private var didAttemptAuthentication = false
+    private var isUnavailable = false
 
     private init() {}
+
+    private var shouldAuthenticateInCurrentBuild: Bool {
+        if let override = Bundle.main.object(forInfoDictionaryKey: "GLITCHED_ENABLE_GAME_CENTER") as? NSNumber {
+            return override.boolValue
+        }
+
+        #if DEBUG
+        return false
+        #else
+        return true
+        #endif
+    }
 
     // MARK: - Authentication
 
     /// Call on app launch to authenticate with Game Center
     func authenticate() {
+        guard !didAttemptAuthentication else { return }
+        didAttemptAuthentication = true
+
+        guard shouldAuthenticateInCurrentBuild else {
+            print("GameCenterManager: Skipping authentication in this build. Set GLITCHED_ENABLE_GAME_CENTER=YES in Info.plist to enable it.")
+            return
+        }
+
+        guard !isUnavailable, !isAuthenticated else { return }
+
+        print("GameCenterManager: Starting authentication...")
+
         GKLocalPlayer.local.authenticateHandler = { [weak self] viewController, error in
-            if let error = error {
-                print("GameCenterManager: Auth error: \(error.localizedDescription)")
+            if let viewController {
+                self?.presentAuthenticationViewController(viewController)
                 return
             }
 
-            if GKLocalPlayer.local.isAuthenticated {
-                self?.isAuthenticated = true
-                print("GameCenterManager: Authenticated as \(GKLocalPlayer.local.displayName)")
+            if let error = error {
+                let nsError = error as NSError
+                // Error code 15: The requested operation could not be completed because this application is not recognized by Game Center.
+                if nsError.domain == GKErrorDomain && nsError.code == 15 {
+                    self?.disableGameCenter("GameCenterManager: Game Center is not configured for bundle \(Bundle.main.bundleIdentifier ?? "<unknown>"). Continuing in offline mode.")
+                } else {
+                    print("GameCenterManager: Auth error: \(error.localizedDescription)")
+                }
+                return
             }
+
+            guard GKLocalPlayer.local.isAuthenticated else {
+                print("GameCenterManager: Authentication finished without an authenticated player. Continuing in offline mode.")
+                return
+            }
+
+            self?.isAuthenticated = true
+            print("GameCenterManager: Authenticated as \(GKLocalPlayer.local.displayName)")
         }
     }
 
@@ -122,4 +165,40 @@ final class GameCenterManager {
             }
         }
     }
+
+    private func disableGameCenter(_ message: String) {
+        isAuthenticated = false
+        isUnavailable = true
+        GKLocalPlayer.local.authenticateHandler = nil
+        print(message)
+    }
+
+    #if canImport(UIKit)
+    private func presentAuthenticationViewController(_ viewController: UIViewController) {
+        DispatchQueue.main.async {
+            guard let presenter = self.topViewController() else {
+                print("GameCenterManager: Received authentication UI but could not find a presenter.")
+                return
+            }
+            presenter.present(viewController, animated: true)
+        }
+    }
+
+    private func topViewController() -> UIViewController? {
+        let scenes = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
+        let window = scenes
+            .flatMap(\.windows)
+            .first(where: \.isKeyWindow) ?? scenes.flatMap(\.windows).first
+
+        var controller = window?.rootViewController
+        while let presented = controller?.presentedViewController {
+            controller = presented
+        }
+        return controller
+    }
+    #else
+    private func presentAuthenticationViewController(_ viewController: Any) {
+        print("GameCenterManager: Received authentication UI on a platform without UIKit support.")
+    }
+    #endif
 }

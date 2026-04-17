@@ -12,11 +12,11 @@ struct PermissionsPreflightView: View {
     @ScaledMetric(relativeTo: .body) private var bodySize: CGFloat = 14
 
     private let permissions: [(icon: String, title: String, reason: String)] = [
-        ("mic.fill", "Microphone", "Some puzzles use your voice or breath to move objects."),
-        ("faceid", "Face ID", "One level requires biometric authentication to prove identity."),
-        ("bell.fill", "Notifications", "A puzzle sends you real notifications to tap."),
-        ("eye.fill", "Screenshots", "We detect when you take screenshots as a game mechanic (no camera needed)."),
-        ("location.fill", "Motion Sensors", "Shake and tilt your device to interact with levels."),
+        ("mic.fill", "ENVIRONMENTAL", "Detects external vibrations and atmospheric changes."),
+        ("faceid", "IDENTITY", "Verifies the operator's physical presence."),
+        ("bell.fill", "INTAKE", "Intercepts external system signals."),
+        ("eye.fill", "MEMORY", "Monitors captured instances of the system state."),
+        ("location.fill", "KINETICS", "Tracks physical movement and orientation."),
     ]
 
     var body: some View {
@@ -68,23 +68,37 @@ struct PermissionsPreflightView: View {
                     .padding(.top, 8)
 
                 Spacer()
+Button(action: {
+    withAnimation {
+        hasSeenPreflight = true
+    }
+}) {
+    Text("> START_BOOT_SEQUENCE")
+        .font(.custom(VisualConstants.Fonts.terminal, size: bodySize + 2))
+        .foregroundColor(VisualConstants.Colors.successUI)
+        .padding(.horizontal, 32)
+        .padding(.vertical, 14)
+        .background(
+            Rectangle()
+                .stroke(VisualConstants.Colors.successUI, lineWidth: 2)
+        )
+}
 
-                Button(action: {
-                    withAnimation {
-                        hasSeenPreflight = true
-                    }
-                }) {
-                    Text("> START_BOOT_SEQUENCE")
-                        .font(.custom(VisualConstants.Fonts.terminal, size: bodySize + 2))
-                        .foregroundColor(VisualConstants.Colors.successUI)
-                        .padding(.horizontal, 32)
-                        .padding(.vertical, 14)
-                        .background(
-                            Rectangle()
-                                .stroke(VisualConstants.Colors.successUI, lineWidth: 2)
-                        )
-                }
-                .padding(.bottom, 40)
+#if DEBUG
+Button(action: {
+    withAnimation {
+        hasSeenPreflight = true
+        GameState.shared.load(level: LevelID(world: .world1, index: 1))
+    }
+}) {
+    Text("[ DEBUG: SKIP TO LEVEL 1 ]")
+        .font(.custom(VisualConstants.Fonts.terminal, size: bodySize - 2))
+        .foregroundColor(.gray)
+        .padding(.top, 12)
+}
+#endif
+
+Spacer()
             }
         }
     }

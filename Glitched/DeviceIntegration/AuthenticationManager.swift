@@ -2,7 +2,7 @@ import Foundation
 import LocalAuthentication
 import UIKit
 
-/// Manages Face ID / Touch ID authentication for puzzles
+/// Manages biometric authentication for puzzles
 final class AuthenticationManager: DeviceManager {
     static let shared = AuthenticationManager()
 
@@ -72,7 +72,7 @@ final class AuthenticationManager: DeviceManager {
         }
     }
 
-    /// For testing: simulate looking away (Face ID would fail)
+    /// For testing: simulate looking away
     func simulateNotRecognized() {
         DispatchQueue.main.async {
             InputEventBus.shared.post(.faceIDResult(recognized: false))

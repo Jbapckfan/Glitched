@@ -71,7 +71,7 @@ struct WorldMapView: View {
                 Button(action: resume) {
                     HStack(spacing: 8) {
                         Image(systemName: "play.fill")
-                        Text("RESUME")
+                        Text("START / RESUME")
                             .font(.custom(VisualConstants.Fonts.main, size: 13))
                     }
                     .foregroundStyle(Color.cyan)
@@ -233,7 +233,7 @@ struct WorldMapView: View {
 
         return Button {
             guard unlocked else { return }
-            GameState.shared.load(level: level)
+            start(level)
         } label: {
             ZStack(alignment: .topTrailing) {
                 Circle()
@@ -310,14 +310,19 @@ struct WorldMapView: View {
     private func resume() {
         let preferred = ProgressManager.shared.resumeLevel()
         if store.canAccess(level: preferred) {
-            GameState.shared.load(level: preferred)
+            start(preferred)
             return
         }
 
         let fallback = LevelID.allLevels.last {
             ProgressManager.shared.isUnlocked($0) && store.canAccess(level: $0)
         } ?? .boot
-        GameState.shared.load(level: fallback)
+        start(fallback)
+    }
+
+    private func start(_ level: LevelID) {
+        print("WorldMapView: starting \(level.displayName)")
+        gameState.load(level: level)
     }
 
     private func unlockAllWorlds() {
@@ -340,7 +345,7 @@ struct WorldMapView: View {
         case .world1:
             return "GEARS / MIC / POWER"
         case .world2:
-            return "NOTIFICATIONS / CLIPBOARD / FACE ID"
+            return "SIGNALS / BUFFER / IDENTITY"
         case .world3:
             return "VOICE / STORAGE / CORRUPTION"
         case .world4:

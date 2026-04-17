@@ -337,18 +337,10 @@ final class JuiceManager {
     func playSceneTransitionGlitch() {
         guard let scene = currentScene else { return }
         
-        glitchEffect(duration: 0.5)
-        shake(intensity: .heavy, duration: 0.5)
+        glitchEffect(duration: 0.3)
+        shake(intensity: .medium, duration: 0.3)
         
-        // Add static noise over everything
-        let staticOverlay = ParticleFactory.shared.createDigitalRain(in: scene)
-        staticOverlay.zPosition = 10000
-        scene.addChild(staticOverlay)
-        
-        staticOverlay.run(.sequence([
-            .wait(forDuration: 0.5),
-            .fadeOut(withDuration: 0.2),
-            .removeFromParent()
-        ]))
+        // Use a simpler flash instead of full digital rain during transition
+        flash(color: .white, duration: 0.1)
     }
 }
