@@ -16,6 +16,12 @@ final class BrightnessScene: BaseLevelScene, SKPhysicsContactDelegate {
     private var uvPlatforms: [SKNode] = []
     private var currentBrightness: CGFloat = 0.5
 
+    // Responsive layout state (computed in buildLevel from the device canvas
+    // so the climb fills the screen instead of clustering in the bottom-left).
+    private var generatedPlatformFrames: [CGRect] = []
+    private var climbExitPoint: CGPoint = .zero
+    private var playerSpawnPoint: CGPoint = .zero
+
     private let invisibleThreshold: CGFloat = 0.2
     private let ghostlyThreshold: CGFloat = 0.5
     private let solidThreshold: CGFloat = 0.8
@@ -40,6 +46,7 @@ final class BrightnessScene: BaseLevelScene, SKPhysicsContactDelegate {
     private var brightnessBar: SKNode?
     private var brightnessIndicator: SKShapeNode?
     private var instructionPanel: SKNode?
+    private weak var currentGroundPlatform: SKNode?
 
     // MARK: - Configuration
 
@@ -65,6 +72,7 @@ final class BrightnessScene: BaseLevelScene, SKPhysicsContactDelegate {
         updatePlatformVisibility()
         updateBurnZones()
         createMaxBrightnessSun()
+        updateMaxBrightnessSun()
         updateBrightnessCommentary()
     }
 
@@ -73,11 +81,7 @@ final class BrightnessScene: BaseLevelScene, SKPhysicsContactDelegate {
     private func createBurnZones() {
         // Sun-focused danger zones that activate at max brightness.
         // Placed over the open air above the UV staircase.
-        let burnPositions: [CGPoint] = [
-            CGPoint(x: 175, y: 280),
-            CGPoint(x: 250, y: 320),
-            CGPoint(x: 320, y: 290)
-        ]
+        let burnPositions = burnZonePositions()
 
         for (index, pos) in burnPositions.enumerated() {
             let zone = SKNode()
@@ -197,6 +201,25 @@ final class BrightnessScene: BaseLevelScene, SKPhysicsContactDelegate {
                 screenFlash?.removeAction(forKey: "flash")
                 screenFlash?.run(.fadeOut(withDuration: 0.2))
             }
+        }
+    }
+
+    private func burnZonePositions() -> [CGPoint] {
+        guard !generatedPlatformFrames.isEmpty else {
+            return [
+                CGPoint(x: 175, y: 280),
+                CGPoint(x: 250, y: 320),
+                CGPoint(x: 320, y: 290)
+            ]
+        }
+
+        let candidateFrames = generatedPlatformFrames.suffix(6)
+        let selectedFrames = candidateFrames.enumerated().compactMap { index, frame -> CGRect? in
+            index.isMultiple(of: 2) ? frame : nil
+        }
+
+        return Array(selectedFrames.prefix(3)).map { frame in
+            CGPoint(x: frame.midX, y: frame.midY + 52)
         }
     }
 
@@ -352,7 +375,9 @@ final class BrightnessScene: BaseLevelScene, SKPhysicsContactDelegate {
         drawSunRays()
 
         // Window frames
-        drawWindowFrame(at: CGPoint(x: 80, y: topSafeY - 170))
+        if size.width >= 500 {
+            drawWindowFrame(at: CGPoint(x: 80, y: topSafeY - 170))
+        }
         drawWindowFrame(at: CGPoint(x: size.width - 80, y: topSafeY - 150))
 
         // Light fixtures hanging from ceiling
@@ -574,32 +599,58 @@ final class BrightnessScene: BaseLevelScene, SKPhysicsContactDelegate {
     // MARK: - Level Building
 
     private func buildLevel() {
-        let groundY: CGFloat = 160
+        let centerX = size.width / 2
 
-        // Starting platform (always visible)
+        // Responsive UV climb. The old layout hardcoded a 4-step staircase in a
+        // ~300×210 box pinned to the bottom-left of a 390-pt iPhone, which left
+        // most of a modern phone (and nearly all of an iPad) empty. Here we build
+        // a centered zig-zag column sized to the device's safe-area span.
+        //
+        // Rises stay <= the ~72-pt jump ceiling (BitCharacter caps jump velocity
+        // at 550 → ~72-pt apex under the -14 (×150 pt/m) gravity). We target ~50.
+        let usableBottom = bottomSafeY + 70
+        let usableTop = topSafeY - 110
+        let fullClimb = max(260, usableTop - usableBottom)
+
+        // Cap the climb so very tall canvases (iPad) get a tall *centered* column
+        // rather than an endless ladder, then center whatever we don't use.
+        let climb = min(fullClimb, 470)
+        let maxRise: CGFloat = 50
+        let stepCount = max(6, min(10, Int((climb / maxRise).rounded())))
+        let rise = climb / CGFloat(stepCount)
+        let baseY = usableBottom + (fullClimb - climb) / 2
+
+        // Gentle alternating stagger around center keeps edge-to-edge gaps small
+        // (~16 pt) while reading as a climb; the column stays centered on all sizes.
+        let stagger: CGFloat = 40
+        let uvSize = CGSize(width: 64, height: 26)
+
+        // Starting platform (always visible) at the base, just left of center.
+        playerSpawnPoint = CGPoint(x: centerX - stagger, y: baseY + 60)
         let startPlatform = createPlatform(
-            at: CGPoint(x: 50, y: groundY),
-            size: CGSize(width: 80, height: 40),
+            at: CGPoint(x: centerX - stagger, y: baseY),
+            size: CGSize(width: 92, height: 34),
             isUV: false
         )
         startPlatform.name = "start_platform"
 
-        // UV-reactive staircase. Fits a 390-pt iPhone canvas; each rise
-        // is 40 pt (< 72-pt max jump) with edge-to-edge gaps ≤20 pt.
-        let platformData: [(CGPoint, CGSize)] = [
-            (CGPoint(x: 135, y: groundY + 40), CGSize(width: 55, height: 25)),
-            (CGPoint(x: 210, y: groundY + 80), CGSize(width: 55, height: 25)),
-            (CGPoint(x: 285, y: groundY + 120), CGSize(width: 55, height: 25)),
-            (CGPoint(x: 345, y: groundY + 160), CGSize(width: 65, height: 35)),
-        ]
-
-        for (position, pSize) in platformData {
-            let platform = createUVPlatform(at: position, size: pSize)
+        generatedPlatformFrames = []
+        var lastCenter = CGPoint(x: centerX - stagger, y: baseY)
+        for step in 1...stepCount {
+            let x = centerX + (step % 2 == 0 ? -stagger : stagger)
+            let y = baseY + CGFloat(step) * rise
+            let platform = createUVPlatform(at: CGPoint(x: x, y: y), size: uvSize)
             uvPlatforms.append(platform)
+            generatedPlatformFrames.append(
+                CGRect(x: x - uvSize.width / 2, y: y - uvSize.height / 2,
+                       width: uvSize.width, height: uvSize.height)
+            )
+            lastCenter = CGPoint(x: x, y: y)
         }
 
-        // Exit door on final platform
-        createExitDoor(at: CGPoint(x: 345, y: groundY + 210))
+        // Exit door above the final platform.
+        climbExitPoint = CGPoint(x: lastCenter.x, y: lastCenter.y + 48)
+        createExitDoor(at: climbExitPoint)
 
         // Death zone
         let deathZone = SKNode()
@@ -909,13 +960,17 @@ final class BrightnessScene: BaseLevelScene, SKPhysicsContactDelegate {
     // MARK: - Instruction Panel
 
     private func showInstructionPanel() {
+        let isCompactPhone = size.width < 500
+        let panelWidth: CGFloat = isCompactPhone ? 132 : 160
+        let panelX: CGFloat = isCompactPhone ? 84 : 140
+
         instructionPanel = SKNode()
-        instructionPanel?.position = CGPoint(x: 140, y: topSafeY - 120)
+        instructionPanel?.position = CGPoint(x: panelX, y: topSafeY - 120)
         instructionPanel?.zPosition = 200
         addChild(instructionPanel!)
 
         // Panel background
-        let panelBG = SKShapeNode(rectOf: CGSize(width: 160, height: 100), cornerRadius: 8)
+        let panelBG = SKShapeNode(rectOf: CGSize(width: panelWidth, height: 100), cornerRadius: 8)
         panelBG.fillColor = fillColor
         panelBG.strokeColor = strokeColor
         panelBG.lineWidth = lineWidth
@@ -926,7 +981,7 @@ final class BrightnessScene: BaseLevelScene, SKPhysicsContactDelegate {
         phone.fillColor = fillColor
         phone.strokeColor = strokeColor
         phone.lineWidth = lineWidth * 0.8
-        phone.position = CGPoint(x: -40, y: 5)
+        phone.position = CGPoint(x: isCompactPhone ? -32 : -40, y: 5)
         instructionPanel?.addChild(phone)
 
         // Sun symbol
@@ -934,7 +989,7 @@ final class BrightnessScene: BaseLevelScene, SKPhysicsContactDelegate {
         miniSun.fillColor = .clear
         miniSun.strokeColor = strokeColor
         miniSun.lineWidth = lineWidth * 0.5
-        miniSun.position = CGPoint(x: -40, y: 5)
+        miniSun.position = phone.position
         instructionPanel?.addChild(miniSun)
 
         // Arrow pointing up
@@ -948,7 +1003,7 @@ final class BrightnessScene: BaseLevelScene, SKPhysicsContactDelegate {
         upArrow.path = arrowPath
         upArrow.strokeColor = strokeColor
         upArrow.lineWidth = lineWidth
-        upArrow.position = CGPoint(x: 20, y: 5)
+        upArrow.position = CGPoint(x: isCompactPhone ? 16 : 20, y: 5)
         instructionPanel?.addChild(upArrow)
 
         // Bounce animation
@@ -960,7 +1015,7 @@ final class BrightnessScene: BaseLevelScene, SKPhysicsContactDelegate {
         // Text
         let label = SKLabelNode(text: "BRIGHTNESS")
         label.fontName = "Menlo-Bold"
-        label.fontSize = 14
+        label.fontSize = isCompactPhone ? 13 : 14
         label.fontColor = strokeColor
         label.position = CGPoint(x: 0, y: -35)
         instructionPanel?.addChild(label)
@@ -980,6 +1035,8 @@ final class BrightnessScene: BaseLevelScene, SKPhysicsContactDelegate {
               let dashedOutline = platform.childNode(withName: "dashed_outline") as? SKShapeNode,
               let uvSymbol = platform.childNode(withName: "uv_symbol"),
               let depthLine = platform.childNode(withName: "depth_line") as? SKShapeNode else { return }
+
+        let wasSolid = platform.physicsBody?.categoryBitMask == PhysicsCategory.ground
 
         if currentBrightness < invisibleThreshold {
             // Barely visible hint
@@ -1011,13 +1068,13 @@ final class BrightnessScene: BaseLevelScene, SKPhysicsContactDelegate {
             }
 
         } else if currentBrightness < solidThreshold {
-            // Becoming solid
+            // Brightening, but not yet solid
             let progress = (currentBrightness - ghostlyThreshold) / (solidThreshold - ghostlyThreshold)
             surface.alpha = progress * 0.8
             dashedOutline.alpha = 0.5 + progress * 0.5
             uvSymbol.alpha = 0.3 + progress * 0.4
             depthLine.alpha = progress * 0.5
-            platform.physicsBody?.categoryBitMask = PhysicsCategory.ground
+            platform.physicsBody?.categoryBitMask = 0
 
             // Glow effect starts appearing
             if let glow = platform.childNode(withName: "glow_outline") as? SKShapeNode {
@@ -1044,12 +1101,19 @@ final class BrightnessScene: BaseLevelScene, SKPhysicsContactDelegate {
                 }
             }
         }
+
+        if wasSolid,
+           platform.physicsBody?.categoryBitMask == 0,
+           currentGroundPlatform === platform {
+            currentGroundPlatform = nil
+            bit?.setGrounded(false)
+        }
     }
 
     // MARK: - Bit Setup
 
     private func setupBit() {
-        spawnPoint = CGPoint(x: 50, y: 200)
+        spawnPoint = playerSpawnPoint
 
         bit = BitCharacter.make()
         bit.position = spawnPoint
@@ -1121,6 +1185,7 @@ final class BrightnessScene: BaseLevelScene, SKPhysicsContactDelegate {
         } else if collision == PhysicsCategory.player | PhysicsCategory.exit {
             handleExit()
         } else if collision == PhysicsCategory.player | PhysicsCategory.ground {
+            currentGroundPlatform = groundNode(from: contact)
             bit.setGrounded(true)
         }
     }
@@ -1129,6 +1194,10 @@ final class BrightnessScene: BaseLevelScene, SKPhysicsContactDelegate {
         let collision = contact.bodyA.categoryBitMask | contact.bodyB.categoryBitMask
 
         if collision == PhysicsCategory.player | PhysicsCategory.ground {
+            if currentGroundPlatform === groundNode(from: contact) {
+                currentGroundPlatform = nil
+            }
+
             run(.sequence([
                 .wait(forDuration: 0.05),
                 .run { [weak self] in
@@ -1138,12 +1207,24 @@ final class BrightnessScene: BaseLevelScene, SKPhysicsContactDelegate {
         }
     }
 
+    private func groundNode(from contact: SKPhysicsContact) -> SKNode? {
+        if contact.bodyA.categoryBitMask == PhysicsCategory.ground {
+            return contact.bodyA.node
+        }
+        if contact.bodyB.categoryBitMask == PhysicsCategory.ground {
+            return contact.bodyB.node
+        }
+        return nil
+    }
+
     // MARK: - Game Events
 
     private func handleDeath() {
         guard GameState.shared.levelState == .playing else { return }
         playerController.cancel()
+        currentGroundPlatform = nil
         bit.playBufferDeath(respawnAt: spawnPoint) { [weak self] in
+            self?.currentGroundPlatform = nil
             self?.bit.setGrounded(true)
         }
     }

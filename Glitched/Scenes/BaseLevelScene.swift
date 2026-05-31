@@ -1,4 +1,5 @@
 import SpriteKit
+import UIKit
 import Combine
 import AVFoundation
 import Speech
@@ -19,11 +20,30 @@ class BaseLevelScene: SKScene {
 
     /// The largest Y coordinate that is fully visible above the top safe-area
     /// inset (status bar / Dynamic Island).
-    var topSafeY: CGFloat { max(0, size.height - safeAreaInsets.top) }
+    var topSafeY: CGFloat { max(0, size.height - effectiveTopSafeInset) }
 
     /// The smallest Y coordinate that is fully visible above the bottom safe-area
     /// inset (home indicator).
-    var bottomSafeY: CGFloat { safeAreaInsets.bottom }
+    var bottomSafeY: CGFloat { effectiveBottomSafeInset }
+
+    private var effectiveTopSafeInset: CGFloat {
+        max(safeAreaInsets.top, hardwareCutoutFallbackInsets.top)
+    }
+
+    private var effectiveBottomSafeInset: CGFloat {
+        max(safeAreaInsets.bottom, hardwareCutoutFallbackInsets.bottom)
+    }
+
+    private var hardwareCutoutFallbackInsets: UIEdgeInsets {
+        let shortSide = min(size.width, size.height)
+        let longSide = max(size.width, size.height)
+        let isTallPhone = shortSide >= 375 && shortSide <= 500 && longSide >= 800
+        let isPortrait = size.height >= size.width
+        let isPhone = UIDevice.current.userInterfaceIdiom == .phone || isTallPhone
+        guard isPhone && isTallPhone && isPortrait else { return .zero }
+
+        return UIEdgeInsets(top: 59, left: 0, bottom: 34, right: 0)
+    }
 
     // Juice system references
     private(set) var gameCamera: SKCameraNode!

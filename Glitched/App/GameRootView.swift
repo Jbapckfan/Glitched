@@ -102,7 +102,7 @@ struct SpriteKitContainer: UIViewRepresentable {
         // SwiftUI will resize the view to its final frame during layout.
         view.frame = UIScreen.main.bounds
         let scene = LevelFactory.makeScene(for: levelID, size: view.bounds.size)
-        applySafeArea(to: scene)
+        applySafeArea(to: scene, in: view)
         view.presentScene(scene)
 
         return view
@@ -118,26 +118,58 @@ struct SpriteKitContainer: UIViewRepresentable {
 
             let nextSize = uiView.bounds.size.width > 0 ? uiView.bounds.size : UIScreen.main.bounds.size
             let newScene = LevelFactory.makeScene(for: levelID, size: nextSize)
-            applySafeArea(to: newScene)
+            applySafeArea(to: newScene, in: uiView)
             if uiView.scene != nil {
                 uiView.presentScene(newScene, transition: .crossFade(withDuration: 0.4))
             } else {
                 uiView.presentScene(newScene)
             }
         } else if let scene = uiView.scene {
-            applySafeArea(to: scene)
+            applySafeArea(to: scene, in: uiView)
         }
     }
 
-    private func applySafeArea(to scene: SKScene) {
+    private func applySafeArea(to scene: SKScene, in view: UIView) {
         guard let level = scene as? BaseLevelScene else { return }
-        let insets = UIEdgeInsets(
+        let swiftUIInsets = UIEdgeInsets(
             top: safeAreaInsets.top,
             left: safeAreaInsets.leading,
             bottom: safeAreaInsets.bottom,
             right: safeAreaInsets.trailing
         )
+
+        let viewInsets = view.window?.safeAreaInsets ?? view.safeAreaInsets
+        let windowInsets = Self.currentWindowSafeAreaInsets
+        let hardwareInsets = Self.hardwareCutoutFallbackInsets(for: view)
+        let insets = UIEdgeInsets(
+            top: max(swiftUIInsets.top, viewInsets.top, windowInsets.top, hardwareInsets.top),
+            left: max(swiftUIInsets.left, viewInsets.left, windowInsets.left, hardwareInsets.left),
+            bottom: max(swiftUIInsets.bottom, viewInsets.bottom, windowInsets.bottom, hardwareInsets.bottom),
+            right: max(swiftUIInsets.right, viewInsets.right, windowInsets.right, hardwareInsets.right)
+        )
         level.updateSafeAreaInsets(insets)
+    }
+
+    private static var currentWindowSafeAreaInsets: UIEdgeInsets {
+        let scenes = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
+        let windows = scenes
+            .filter { $0.activationState == .foregroundActive || $0.activationState == .foregroundInactive }
+            .flatMap(\.windows)
+
+        return (windows.first { $0.isKeyWindow } ?? windows.first)?.safeAreaInsets ?? .zero
+    }
+
+    private static func hardwareCutoutFallbackInsets(for view: UIView) -> UIEdgeInsets {
+        let isPhone = view.traitCollection.userInterfaceIdiom == .phone
+            || UIDevice.current.userInterfaceIdiom == .phone
+        guard isPhone else { return .zero }
+
+        let bounds = view.bounds == .zero ? UIScreen.main.bounds : view.bounds
+        let shortSide = min(bounds.width, bounds.height)
+        let longSide = max(bounds.width, bounds.height)
+        guard bounds.height >= bounds.width, shortSide >= 375, longSide >= 800 else { return .zero }
+
+        return UIEdgeInsets(top: 59, left: 0, bottom: 34, right: 0)
     }
 }
 
