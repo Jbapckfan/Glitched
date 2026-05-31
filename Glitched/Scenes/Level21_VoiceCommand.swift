@@ -456,6 +456,15 @@ final class VoiceCommandScene: BaseLevelScene, SKPhysicsContactDelegate {
 
     /// Schedule the on-screen fallback in case no mic-denied event fires and no
     /// command is recognized (e.g. simulator: mic yields nothing silently).
+    ///
+    /// The reveal is gated on actual progress (bridgeExtended), NOT on
+    /// hasSpokenFirst. BRIDGE is the first required command, so a player who
+    /// hasn't extended the bridge by the timeout is stuck regardless of how
+    /// many commands were "recognized". This matters because the shared
+    /// accessibility OPEN button posts a .voiceCommandRecognized("open") event,
+    /// which would otherwise flip hasSpokenFirst and suppress the in-scene
+    /// controls forever — leaving BRIDGE/FLY unreachable. A working mic that
+    /// recognized BRIDGE has bridgeExtended == true, so controls stay hidden.
     private func armFallbackTimeout() {
         let timer = SKNode()
         addChild(timer)
@@ -463,7 +472,7 @@ final class VoiceCommandScene: BaseLevelScene, SKPhysicsContactDelegate {
         timer.run(.sequence([
             .wait(forDuration: 6.0),
             .run { [weak self] in
-                guard let self = self, !self.hasSpokenFirst else { return }
+                guard let self = self, !self.bridgeExtended else { return }
                 self.presentFallbackControls()
             }
         ]))
