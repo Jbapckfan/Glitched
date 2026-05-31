@@ -31,8 +31,18 @@ final class TheLieScene: BaseLevelScene, SKPhysicsContactDelegate {
     private var hazardNodes: [SKNode] = []
     private var realExitPlatform: SKNode?
 
-    // Extended level width for scrolling
-    private let levelWidth: CGFloat = 1200
+    // Extended level width for scrolling.
+    // BUG FIX (P1): scale to device so the fake exit at the far right starts
+    // OFF-SCREEN on every device (incl. wide iPads). Factor 2.2 guarantees the
+    // far-right fake exit is >1 screen-width from spawn even on a 1366-wide iPad,
+    // so the camera always scrolls (levelWidth > size.width) and the twist isn't spoiled.
+    private lazy var levelWidth: CGFloat = max(1200, size.width * 2.2)
+
+    // Far-right anchors derived from levelWidth so the fake exit, its trigger,
+    // and the reveal trigger all scale consistently.
+    private var fakeExitX: CGFloat { levelWidth - 50 }
+    private var lastPlatformX: CGFloat { levelWidth - 150 }
+    private var revealTriggerX: CGFloat { levelWidth - 100 }
 
     override func configureScene() {
         levelID = LevelID(world: .world4, index: 29)
@@ -105,13 +115,42 @@ final class TheLieScene: BaseLevelScene, SKPhysicsContactDelegate {
             (CGPoint(x: 660, y: groundY + 30), CGSize(width: 70, height: 25)),
             (CGPoint(x: 790, y: groundY + 10), CGSize(width: 80, height: 25)),
             (CGPoint(x: 920, y: groundY), CGSize(width: 100, height: 25)),
-            (CGPoint(x: 1050, y: groundY + 20), CGSize(width: 90, height: 25)),
+            (CGPoint(x: lastPlatformX, y: groundY + 20), CGSize(width: 90, height: 25)),
         ]
 
         for (pos, sz) in platformData {
             let p = createPlatformNode(at: pos, size: sz)
             addChild(p)
             levelPlatforms.append(p)
+        }
+
+        // BUG FIX (P1 regression): the hand-placed chain above is anchored to the
+        // first screen (last fixed platform at x=920) and then jumps straight to the
+        // far-right platform at lastPlatformX. On wide devices levelWidth scales up
+        // (iPad ~3005 -> lastPlatformX ~2855), leaving a huge ground-less gap that the
+        // player cannot cross, so revealTriggerX is never reached and the level is
+        // uncompletable. Evenly fill the span between the x=920 platform and the
+        // lastPlatformX platform with jumpable platforms (edge-to-edge gaps bounded
+        // <= ~130pt, well within Bit's jump). On iPhone (levelWidth=1200,
+        // lastPlatformX ~= 1050) the span is too short for any filler, so the loop
+        // adds nothing and the original layout is unchanged.
+        let fillWidth: CGFloat = 90
+        let fillFromX: CGFloat = 920            // center of last fixed early platform
+        let fillToX: CGFloat = lastPlatformX    // center of far-right platform
+        let maxEdgeGap: CGFloat = 130           // max jumpable edge-to-edge gap
+        let maxCenterStep = maxEdgeGap + fillWidth          // center-to-center budget
+        let span = fillToX - fillFromX
+        // number of evenly spaced platforms needed strictly between the two anchors
+        let fillCount = max(0, Int(ceil(span / maxCenterStep)) - 1)
+        if fillCount > 0 {
+            let step = span / CGFloat(fillCount + 1)
+            for i in 1...fillCount {
+                let fx = fillFromX + step * CGFloat(i)
+                let dy: CGFloat = (i % 2 == 0) ? 0 : 20   // gentle vertical variation
+                let p = createPlatformNode(at: CGPoint(x: fx, y: groundY + dy), size: CGSize(width: fillWidth, height: 25))
+                addChild(p)
+                levelPlatforms.append(p)
+            }
         }
 
         // Moving hazards (spikes oscillating vertically)
@@ -136,12 +175,12 @@ final class TheLieScene: BaseLevelScene, SKPhysicsContactDelegate {
         }
 
         // Fake exit door (at far right)
-        let fakeExitPlat = createPlatformNode(at: CGPoint(x: 1150, y: groundY), size: CGSize(width: 100, height: 30))
+        let fakeExitPlat = createPlatformNode(at: CGPoint(x: fakeExitX, y: groundY), size: CGSize(width: 100, height: 30))
         addChild(fakeExitPlat)
         levelPlatforms.append(fakeExitPlat)
 
         fakeExitDoor = SKNode()
-        fakeExitDoor!.position = CGPoint(x: 1150, y: groundY + 50)
+        fakeExitDoor!.position = CGPoint(x: fakeExitX, y: groundY + 50)
 
         let fakeFrame = SKShapeNode(rectOf: CGSize(width: 40, height: 60))
         fakeFrame.fillColor = fillColor
@@ -159,7 +198,7 @@ final class TheLieScene: BaseLevelScene, SKPhysicsContactDelegate {
 
         // Fake exit trigger
         let fakeTrigger = SKNode()
-        fakeTrigger.position = CGPoint(x: 1150, y: groundY + 50)
+        fakeTrigger.position = CGPoint(x: fakeExitX, y: groundY + 50)
         fakeTrigger.physicsBody = SKPhysicsBody(rectangleOf: CGSize(width: 40, height: 60))
         fakeTrigger.physicsBody?.isDynamic = false
         fakeTrigger.physicsBody?.categoryBitMask = PhysicsCategory.interactable
@@ -445,7 +484,15 @@ final class TheLieScene: BaseLevelScene, SKPhysicsContactDelegate {
         hesitLabel.position = CGPoint(x: 0, y: -7)
         container.addChild(hesitLabel)
 
-        let trustLabel = SKLabelNode(text: "TRUST LEVEL: LOW")
+        // Derive trust from actual behavior: more hesitation => the player
+        // doubted the "no gimmick" promise => lower trust.
+        let trust: String
+        switch hesitationCount {
+        case 0:  trust = "HIGH"
+        case 1:  trust = "MEDIUM"
+        default: trust = "LOW"
+        }
+        let trustLabel = SKLabelNode(text: "TRUST LEVEL: \(trust)")
         trustLabel.fontName = "Menlo-Bold"
         trustLabel.fontSize = 9
         trustLabel.fontColor = fillColor
@@ -550,7 +597,7 @@ final class TheLieScene: BaseLevelScene, SKPhysicsContactDelegate {
         lastPlayerX = bit.position.x
 
         // Check if player reached fake exit area
-        if !hasReachedFakeExit && bit.position.x > 1100 {
+        if !hasReachedFakeExit && bit.position.x > revealTriggerX {
             triggerFakeExitReveal()
         }
     }
