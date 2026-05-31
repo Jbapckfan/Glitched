@@ -459,5 +459,9 @@ final class StorageSpaceScene: BaseLevelScene, SKPhysicsContactDelegate {
     override func willMove(from view: SKView) {
         super.willMove(from: view)
         DeviceManagerCoordinator.shared.deactivateAll()
+        // True level teardown: remove the on-disk cache file so it isn't
+        // orphaned. Done here (not in deactivate) so app backgrounding leaves
+        // the file intact for the Settings-based solve path.
+        StorageSpaceManager.shared.removeCacheFile()
     }
 }

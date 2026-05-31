@@ -34,14 +34,24 @@ final class StorageSpaceManager: DeviceManager {
         timer?.invalidate()
         timer = nil
 
-        // Remove the on-disk cache file so it isn't orphaned if the player
-        // quits without clearing it. Best-effort; don't post a cleared event.
+        // NOTE: Do NOT delete the cache file here. deactivate() is also called
+        // on app backgrounding (DeviceManagerCoordinator.appDidEnterBackground),
+        // and the intended solve path is for the player to clear the cache from
+        // iOS Settings while backgrounded. Deleting on background would corrupt
+        // that flow and auto-bypass the puzzle. File removal happens only on true
+        // level teardown via removeCacheFile().
+
+        print("StorageSpaceManager: Deactivated")
+    }
+
+    /// Removes the on-disk cache file so it isn't orphaned. Call only on true
+    /// level teardown (scene willMove), never on app backgrounding. Best-effort;
+    /// does not post a cleared event.
+    func removeCacheFile() {
         if let url = cacheFileURL {
             try? FileManager.default.removeItem(at: url)
             cacheFileURL = nil
         }
-
-        print("StorageSpaceManager: Deactivated")
     }
 
     private func createCacheFile() {
