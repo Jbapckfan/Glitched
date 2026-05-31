@@ -291,11 +291,16 @@ final class MetaFinaleScene: BaseLevelScene, SKPhysicsContactDelegate {
         error1.position = CGPoint(x: 0, y: -110)
         corruptionWall.addChild(error1)
 
-        // Physics blocker
+        // Physics blocker.
+        // Keep the category as `ground` so Bit still physically collides with (and is
+        // stopped by) the wall. Add a contact test against the player so that the purge
+        // fires on real physical contact — the player can only reach the wall's face,
+        // which is too far for the old proximity threshold to ever trip (see didBegin).
         let blocker = SKNode()
         blocker.physicsBody = SKPhysicsBody(rectangleOf: CGSize(width: 70, height: 200))
         blocker.physicsBody?.isDynamic = false
         blocker.physicsBody?.categoryBitMask = PhysicsCategory.ground
+        blocker.physicsBody?.contactTestBitMask = PhysicsCategory.player
         blocker.name = "corruption_blocker"
         corruptionWall.addChild(blocker)
 
@@ -422,7 +427,11 @@ final class MetaFinaleScene: BaseLevelScene, SKPhysicsContactDelegate {
     /// Simulated corruption/reset: the app pretends to glitch out, shows a fake crash
     /// screen, then "reboots" into a clean state. No actual app deletion required.
     private func beginSimulatedPurge() {
-        guard !isCleared else { return }
+        // Idempotent: guard against re-entry while the purge is already running
+        // (isCleared only flips ~6s later in clearCorruption(), so repeated physics
+        // contacts between trigger and clear would otherwise stack crash overlays).
+        guard !isCleared, !hasShownFakeReview else { return }
+        hasShownFakeReview = true
 
         // Phase 1: Fake crash/glitch-out
         let crashOverlay = SKShapeNode(rectOf: CGSize(width: size.width * 2, height: size.height * 2))
@@ -681,9 +690,12 @@ final class MetaFinaleScene: BaseLevelScene, SKPhysicsContactDelegate {
                 }
             }
 
-            // Trigger simulated purge when player touches the corruption wall
-            if corruptionProximity > 0.9 && !hasShownFakeReview {
-                hasShownFakeReview = true  // reuse flag to prevent re-trigger
+            // Fallback trigger: fire when the player is pressed up against the wall.
+            // The physics body stops Bit at the wall's left face, where proximity
+            // tops out at ~0.77 (distance ~46 of maxDistance 200); 0.6 is comfortably
+            // reachable. The primary trigger is the physics contact in didBegin().
+            // beginSimulatedPurge() is idempotent, so both paths are safe.
+            if corruptionProximity > 0.6 {
                 beginSimulatedPurge()
             }
         }
@@ -707,6 +719,16 @@ final class MetaFinaleScene: BaseLevelScene, SKPhysicsContactDelegate {
             handleExit()
         } else if collision == PhysicsCategory.player | PhysicsCategory.ground {
             bit.setGrounded(true)
+
+            // The corruption blocker shares the `ground` category. When the player
+            // physically touches it, kick off the simulated purge. This is the
+            // primary, geometry-proof trigger (the proximity check below is a
+            // fallback). beginSimulatedPurge() is idempotent via its own guard.
+            if !isCleared,
+               contact.bodyA.node?.name == "corruption_blocker" ||
+               contact.bodyB.node?.name == "corruption_blocker" {
+                beginSimulatedPurge()
+            }
         }
     }
 
