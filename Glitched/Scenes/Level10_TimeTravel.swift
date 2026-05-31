@@ -1045,20 +1045,41 @@ final class TimeTravelScene: BaseLevelScene, SKPhysicsContactDelegate {
         lineElements.append(trunk)
 
         // Main branches: a climbable ladder reaching toward the cliff/exit.
-        // Vertical rises are kept <= ~50pt per step so every hop clears the
-        // jump apex (~72pt under this gravity). Branch local-y `y` yields a
-        // world surface-top of groundY + 27 + y; the floor surface-top is
-        // groundY + 17.5, so the rise to the first foothold is 9.5 + y.
+        // Vertical rises are kept well under the jump apex (~91pt above launch
+        // at the 620 velocity cap, which governs here) so every hop is
+        // comfortably clearable. A branch's world surface-top is
+        // groundY + 17 (treeContainer.y) + local-y + 10 (half-height) =
+        // groundY + 27 + local-y; the floor surface-top is groundY + 17.5, so
+        // the rise to the first foothold is 9.5 + local-y.
         //
-        // First foothold at y=42 → rise ≈ 51.5pt from the floor (jumpable).
-        // Each subsequent branch is +48..50pt above the one below, and the
-        // X-spans of consecutive branches overlap (or are within ~40pt) so the
-        // climb stays continuous. The top branch (y=282) reaches a world
-        // surface-top of groundY + 309, level with / above the cliff top
-        // (groundY + cliffHeight, cliffHeight ≤ 280) so the player can step
-        // across to the exit — honouring the "physical bridge" spec promise.
+        // FIRST FOOTHOLD — head-squeeze fix (supersedes the y 42→54 attempt):
+        // Bit's resting *body top* is groundY + 71.9 (floor surface-top
+        // groundY+17.5 + the 54.4pt-tall body). The first branch's centre Y is
+        // only groundY+71, so the underside of a 20pt-tall branch dips to
+        // ~groundY+56..61 — i.e. 12-16pt INTO Bit — wherever the branch
+        // overhangs the spawn x-span [89,111]. Raising y alone cannot fix this:
+        // reachability caps local-y at ~70 (rise → 79.5pt), still too low to
+        // lift a 20pt-tall underside clear of groundY+71.9 over the spawn.
+        // The robust fix removes the overhang entirely: the first branch is
+        // shifted right to local-x 30 (world centre 180/192 on iPhone 390/402)
+        // and narrowed to width 80, so its left edge sits at world x≈139/151 —
+        // 28pt (390) / 40pt (402) clear of Bit's body right edge (x=111). With
+        // no part of the branch over the spawn x-span there is no underside to
+        // penetrate Bit, regardless of the body-top height. The tilt is +0.10
+        // (low end toward the trunk, away from the spawn). Spawn x stays at 100
+        // (on the floor, on-screen on both widths). Floor → first foothold rise
+        // is 9.5 + 56 = 65.5pt of surface-top climb (world surface-top
+        // groundY+86.9, rise 69.4pt) — jumpable and ≤ 80pt.
+        //
+        // Each subsequent branch is +36..54pt above the one below — all ≤ 80pt —
+        // and the X-spans of consecutive branches overlap (first branch right
+        // edge ≈221/233 reaches into the second branch's span [124,236]/
+        // [136,248]) so the climb stays continuous. The top branch (y=282)
+        // reaches a world surface-top of groundY + 309, level with / above the
+        // cliff top (groundY + cliffHeight, cliffHeight ≤ 280) so the player can
+        // step across to the exit — honouring the "physical bridge" spec promise.
         let branchData: [(CGPoint, CGFloat, CGSize)] = [
-            (CGPoint(x: -70, y: 42), -0.15, CGSize(width: 110, height: 20)),
+            (CGPoint(x: 30, y: 56), 0.10, CGSize(width: 80, height: 20)),
             (CGPoint(x: 30, y: 90), 0.12, CGSize(width: 110, height: 20)),
             (CGPoint(x: -40, y: 138), -0.1, CGSize(width: 100, height: 20)),
             (CGPoint(x: 60, y: 186), 0.12, CGSize(width: 110, height: 20)),

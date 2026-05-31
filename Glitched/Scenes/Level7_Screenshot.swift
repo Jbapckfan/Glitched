@@ -26,11 +26,27 @@ final class ScreenshotScene: BaseLevelScene, SKPhysicsContactDelegate {
     private var bridgeY: CGFloat = 190
     // Horizontal chasm edges (right edge of left platform / left edge of right
     // platform). The ghost bridge derives its span from these so it always
-    // physically connects the two edge-pinned platforms on every canvas width.
+    // physically connects the two narrow platforms on every canvas width.
     private var gapStart: CGFloat = 120
     private var gapEnd: CGFloat = 120
-    // Each platform overhangs/overlaps the bridge by this much so the frozen
-    // surface is continuous from platform to platform.
+    // Platform centers, derived in buildLevel() from the chasm edges. Spawn and
+    // exit re-derive from these so the player and door always sit ON a platform.
+    private var leftPlatformCenterX: CGFloat = 70
+    private var rightPlatformCenterX: CGFloat = 70
+    // Narrow platform footprint. Kept small so the platforms read as thin
+    // cliff edges flanking a wide chasm.
+    private let platformWidth: CGFloat = 40
+    // The chasm is a FIXED, screen-centered width rather than (width - margin):
+    // anchoring it to the canvas width made the gap scale up to ~900-1246pt on
+    // iPad (uncrossable in any freeze) and ~270pt on phones (too wide to cross
+    // inside the shortest 1.0s freeze). A fixed 220pt chasm is simultaneously
+    // (a) wider than Bit's ~184pt run-jump+coyote reach, so the bridge is
+    // REQUIRED and the chasm cannot be single-jumped, and (b) crossable in
+    // 220/245 ~= 0.90s, comfortably inside the shortest (1.0s) degraded freeze,
+    // on every device from iPhone 390 to iPad 1366.
+    private let chasmWidth: CGFloat = 220
+    // Each platform overlaps the bridge by this much so the frozen surface is
+    // continuous from platform to platform.
     private let bridgeOverlap: CGFloat = 20
 
     // Coyote grace: when the freeze timer hits 0 while the player is resting on
@@ -270,37 +286,44 @@ final class ScreenshotScene: BaseLevelScene, SKPhysicsContactDelegate {
         groundY = max(180, size.height * 0.28)
         bridgeY = groundY + 10
 
-        // Narrow, edge-pinned platforms. Width 100, centered at x=70 / width-70,
-        // so the left platform's right edge is x=120 and the right platform's
-        // left edge is x=(width-120). This makes the inner chasm (width-240)
-        // wider than Bit's ~110-117pt run-jump reach on every phone (>=150pt at
-        // width 390) so the bridge is REQUIRED and cannot be single-jumped.
-        let platformWidth: CGFloat = 100
+        // Fixed, screen-centered chasm. Clamp the chasm to the canvas so a very
+        // narrow window still leaves a sliver of platform on each side; on every
+        // mandated device (iPhone 390/402, iPad 1024/1366 both orientations) the
+        // full 220pt fits with room to spare.
         let platformHeight: CGFloat = 40
+        let halfChasm = min(chasmWidth, size.width - 2 * platformWidth) / 2
+        let chasmCenterX = size.width / 2
+
+        // Chasm edges (right edge of left platform / left edge of right platform).
+        gapStart = chasmCenterX - halfChasm
+        gapEnd = chasmCenterX + halfChasm
+
+        // Platforms sit just outside the chasm edges: the left platform's right
+        // edge lands exactly on gapStart, the right platform's left edge on
+        // gapEnd, so the two thin cliffs flank the fixed-width chasm.
+        leftPlatformCenterX = gapStart - platformWidth / 2
+        rightPlatformCenterX = gapEnd + platformWidth / 2
 
         // Left cliff platform
         let leftPlatform = createPlatform(
-            at: CGPoint(x: 70, y: groundY),
+            at: CGPoint(x: leftPlatformCenterX, y: groundY),
             size: CGSize(width: platformWidth, height: platformHeight)
         )
         leftPlatform.name = "ground"
 
         // Right cliff platform
         let rightPlatform = createPlatform(
-            at: CGPoint(x: size.width - 70, y: groundY),
+            at: CGPoint(x: rightPlatformCenterX, y: groundY),
             size: CGSize(width: platformWidth, height: platformHeight)
         )
         rightPlatform.name = "ground"
 
-        // Store chasm edges for the bridge to span exactly.
-        gapStart = 70 + platformWidth / 2          // left platform right edge
-        gapEnd = size.width - (70 + platformWidth / 2)  // right platform left edge
-
         // Chasm hatching between platforms
         drawChasmHatching(from: gapStart, to: gapEnd, y: groundY - 60)
 
-        // Exit door
-        createExitDoor(at: CGPoint(x: size.width - 80, y: groundY + 70))
+        // Exit door, seated on the right platform (derived from its center so it
+        // sits ON the platform regardless of canvas width).
+        createExitDoor(at: CGPoint(x: rightPlatformCenterX, y: groundY + 70))
 
         // Death zone
         let deathZone = SKNode()
@@ -677,9 +700,9 @@ final class ScreenshotScene: BaseLevelScene, SKPhysicsContactDelegate {
     // MARK: - Setup
 
     private func setupBit() {
-        // Spawn on the left platform, derived from the responsive groundY so the
-        // player drops onto the (now lifted) platform on every canvas size.
-        spawnPoint = CGPoint(x: 70, y: groundY + 40)
+        // Spawn on the left platform, derived from its center and the responsive
+        // groundY so the player drops onto the platform on every canvas size.
+        spawnPoint = CGPoint(x: leftPlatformCenterX, y: groundY + 40)
 
         bit = BitCharacter.make()
         bit.position = spawnPoint

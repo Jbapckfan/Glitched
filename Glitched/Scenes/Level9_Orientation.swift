@@ -41,9 +41,18 @@ final class OrientationScene: BaseLevelScene, SKPhysicsContactDelegate {
     private let designHeight: CGFloat = 420
     private var portraitFitScale: CGFloat = 1.0
 
-    // Center of the rebased gameplay extents (deathzone .. exit) in worldNode
-    // local space; backdrop layers center on this so they track the playfield.
-    private var playfieldCenterX: CGFloat { ((-280) + 450) / 2 + worldOffsetX }
+    // Center of the rebased gameplay TRAVERSAL in worldNode local space. The
+    // span the player must SEE (and that must stay on-screen) is spawn -> exit,
+    // i.e. local (-120 .. 450) + offset = (170 .. 740) -> center 455. We center
+    // on this (NOT the old deathzone..exit midpoint 375): the deathzone/crusher
+    // sit BEHIND the spawn and are an off-path kill wall, so weighting them into
+    // the center shoved the corridor's right wall and the exit off the RIGHT
+    // screen edge under the 1.4x landscape stretch on every device. Centering on
+    // 455 keeps spawn -> corridor -> exit fully on-screen in both orientations.
+    // worldNode.position.x is derived from this so local x=playfieldCenterX maps
+    // to screen center; backdrop layers center on the SAME value so they track
+    // the playfield with no double-applied offset.
+    private var playfieldCenterX: CGFloat { ((-120) + 450) / 2 + worldOffsetX }
 
     private var instructionPanel: SKNode?
     private var lineElements: [SKNode] = []
@@ -76,9 +85,12 @@ final class OrientationScene: BaseLevelScene, SKPhysicsContactDelegate {
         // Check initial orientation
         isLandscape = UIDevice.current.orientation.isLandscape
 
-        // Create world container (for scale transform)
+        // Create world container (for scale transform). X is recentered on the
+        // playfield in updateWorldScale (after the final scale is known) so the
+        // corridor/exit don't render off the right edge; set a sane initial X
+        // here too to avoid a one-frame off-screen flash before that runs.
         worldNode = SKNode()
-        worldNode.position = CGPoint(x: size.width / 2, y: size.height / 2)
+        worldNode.position = CGPoint(x: size.width / 2 - playfieldCenterX, y: size.height / 2)
         addChild(worldNode)
 
         // Portrait baseline scale so the fixed ~800x420 playfield fills the
@@ -774,10 +786,24 @@ final class OrientationScene: BaseLevelScene, SKPhysicsContactDelegate {
             corridorGap = portraitGap
         }
 
+        // Recenter the world's X on the playfield using the FINAL scale: local
+        // x=playfieldCenterX must land at screen center, otherwise the 1.4x
+        // landscape stretch (and the +290 rebase) push the corridor/exit off the
+        // right screen edge. y stays centered. Derived from targetScaleX so it is
+        // correct in both the animated and immediate branches below.
+        let targetPosX = size.width / 2 - playfieldCenterX * targetScaleX
+        let targetPosY = size.height / 2
+
         if animated {
             let scale = SKAction.scaleX(to: targetScaleX, y: targetScaleY, duration: duration)
             scale.timingMode = .easeInEaseOut
             worldNode.run(scale)
+
+            // Track the recenter with the stretch so the playfield never drifts
+            // off the right edge mid-rotation.
+            let move = SKAction.move(to: CGPoint(x: targetPosX, y: targetPosY), duration: duration)
+            move.timingMode = .easeInEaseOut
+            worldNode.run(move)
 
             // Animate corridor walls to the new gap
             if let topWall = corridor.childNode(withName: "corridor_top") {
@@ -789,6 +815,7 @@ final class OrientationScene: BaseLevelScene, SKPhysicsContactDelegate {
         } else {
             worldNode.xScale = targetScaleX
             worldNode.yScale = targetScaleY
+            worldNode.position = CGPoint(x: targetPosX, y: targetPosY)
         }
 
         // Update physics after animation
@@ -828,10 +855,13 @@ final class OrientationScene: BaseLevelScene, SKPhysicsContactDelegate {
         // Guard on corridor too: updateWorldScale dereferences it, and an early
         // resize before buildLevel() must be a no-op.
         guard worldNode != nil, corridor != nil else { return }
-        worldNode.position = CGPoint(x: size.width / 2, y: size.height / 2)
 
-        // Recompute the fit baseline for the new canvas and re-apply the scale
-        // so the playfield keeps filling the screen in the new orientation.
+        // Recompute the fit baseline for the new canvas FIRST, then re-apply the
+        // scale; updateWorldScale recenters worldNode.position on the playfield
+        // (size.width/2 - playfieldCenterX * xScale) using the new scale, so the
+        // corridor/exit stay on-screen after rotation. (No separate position
+        // assignment here — that would briefly map local x=0, not the playfield
+        // center, to screen center and maroon the playfield off the right edge.)
         portraitFitScale = min(size.width / designWidth, size.height / designHeight)
         updateWorldScale(animated: false)
 

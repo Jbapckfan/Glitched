@@ -326,14 +326,28 @@ final class DarkModeScene: BaseLevelScene, SKPhysicsContactDelegate {
         let riseBand = max(0, topSafeY - groundY)
         let step = min(50, riseBand * 0.10)   // one "step up" unit
 
-        // Horizontal route spans the canvas as fractions of width so the
-        // left-to-right progression (start -> dark1 -> light1 -> dark2 -> door)
-        // holds on every device, from a 390pt iPhone to a 1024pt iPad.
+        // Horizontal route is REACH-BOUNDED, not width-fractional. Width-fractional
+        // X (the old w*0.30..0.86) made inner edge-to-edge gaps explode on iPad
+        // (dark1->light1 hit 125pt, light1->dark2 104pt at w=1024) while platform
+        // widths stayed fixed — pushing the climb past Bit's ~95pt rising-jump reach
+        // and soft-locking the exit. Instead, place platform CENTERS a fixed `pitch`
+        // apart (capped at ~90pt) so the inner edge-to-edge gap can never exceed
+        // ~95pt for a <=+50pt rise, regardless of canvas width.
+        //
+        // Anchor the start at the same w*0.12 the spawn (setupBit) and easter-egg
+        // text (createHiddenDarkText) already key off, so those stay aligned without
+        // touching them. Each subsequent element steps one pitch to the right.
+        let pitch = min(w * 0.18, 90)        // center-to-center spacing
         let startX = w * 0.12
-        let dark1X = w * 0.30
-        let light1X = w * 0.50
-        let dark2X = w * 0.68
-        let doorX  = w * 0.86
+        let dark1X = startX + pitch
+        let light1X = startX + pitch * 2
+        let dark2X = startX + pitch * 3
+        let doorX  = startX + pitch * 4
+
+        // Scale the dual-platform width with the pitch so adjacent platforms still
+        // nearly overlap on wide canvases (continuous footing); floor at 80pt so the
+        // moon/sun icon and dashed ghost outline stay legible on narrow iPhones.
+        let dualW = max(80, pitch * 0.85)
 
         // Start platform (always solid)
         let startPlatform = createPlatform(
@@ -345,7 +359,7 @@ final class DarkModeScene: BaseLevelScene, SKPhysicsContactDelegate {
         // GHOST PLATFORMS: Only solid in DARK mode (moon icon)
         let darkPlatform1 = createDualPlatform(
             at: CGPoint(x: dark1X, y: groundY + step),
-            size: CGSize(width: 80, height: 25),
+            size: CGSize(width: dualW, height: 25),
             isDarkModeOnly: true
         )
         darkModePlatforms.append(darkPlatform1)
@@ -354,7 +368,7 @@ final class DarkModeScene: BaseLevelScene, SKPhysicsContactDelegate {
         let light1Y = groundY + step * 2
         let lightPlatform1 = createDualPlatform(
             at: CGPoint(x: light1X, y: light1Y),
-            size: CGSize(width: 80, height: 25),
+            size: CGSize(width: dualW, height: 25),
             isDarkModeOnly: false
         )
         lightModePlatforms.append(lightPlatform1)
@@ -363,7 +377,7 @@ final class DarkModeScene: BaseLevelScene, SKPhysicsContactDelegate {
         // Another dark mode platform
         let darkPlatform2 = createDualPlatform(
             at: CGPoint(x: dark2X, y: groundY + step * 3),
-            size: CGSize(width: 80, height: 25),
+            size: CGSize(width: dualW, height: 25),
             isDarkModeOnly: true
         )
         darkModePlatforms.append(darkPlatform2)
