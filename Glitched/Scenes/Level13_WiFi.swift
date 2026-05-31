@@ -78,16 +78,35 @@ final class WiFiScene: BaseLevelScene, SKPhysicsContactDelegate {
     private func buildLevel() {
         let groundY: CGFloat = 160
 
-        // Fits a 390-pt iPhone canvas. Solid end platforms bookend three
-        // WiFi-dependent stepping stones with a WiFi wall between stones 2 and 3.
-        createPlatform(at: CGPoint(x: 50, y: groundY), size: CGSize(width: 80, height: 30), isWifiDependent: false)
-        createPlatform(at: CGPoint(x: size.width - 40, y: groundY), size: CGSize(width: 70, height: 30), isWifiDependent: false)
+        // Fits a 390-pt iPhone canvas. The puzzle is split into two disjoint
+        // segments so the two opposing WiFi rules never apply to the same
+        // standing surface (the old layout put the wall *between* two stepping
+        // stones, so toggling WiFi off to pass it deleted the stone under Bit ->
+        // guaranteed fall/softlock):
+        //   Segment A — WiFi ON: cross the WiFi-dependent stepping stones.
+        //   Segment B — WiFi OFF: from the solid landing floor, walk through the
+        //               WiFi wall (which stands ON that floor) to the exit.
+        // Because the level starts WiFi-on (stones solid by default) and needs
+        // exactly one OFF toggle, the one-directional `.wifi` accessibility
+        // fallback (which only posts isEnabled:false) is sufficient to win.
 
-        createPlatform(at: CGPoint(x: 135, y: groundY + 30), size: CGSize(width: 55, height: 25), isWifiDependent: true)
-        createPlatform(at: CGPoint(x: 215, y: groundY + 60), size: CGSize(width: 55, height: 25), isWifiDependent: true)
-        createPlatform(at: CGPoint(x: 290, y: groundY + 30), size: CGSize(width: 55, height: 25), isWifiDependent: true)
+        // Left bookend (WiFi-independent) — spawn footing.
+        createPlatform(at: CGPoint(x: 45, y: groundY), size: CGSize(width: 70, height: 30), isWifiDependent: false)
 
-        createWiFiWall(at: CGPoint(x: 255, y: groundY + 85))
+        // Wide solid landing floor on the right. The WiFi wall and the exit both
+        // sit on this floor, so the player is always on solid ground when they
+        // toggle WiFi off to pass the wall.
+        let landingWidth: CGFloat = 140
+        createPlatform(at: CGPoint(x: size.width - landingWidth / 2, y: groundY),
+                       size: CGSize(width: landingWidth, height: 30), isWifiDependent: false)
+
+        // WiFi-dependent stepping stones across the gap (solid only when WiFi ON).
+        createPlatform(at: CGPoint(x: 120, y: groundY + 26), size: CGSize(width: 50, height: 24), isWifiDependent: true)
+        createPlatform(at: CGPoint(x: 175, y: groundY + 46), size: CGSize(width: 50, height: 24), isWifiDependent: true)
+        createPlatform(at: CGPoint(x: 225, y: groundY + 26), size: CGSize(width: 46, height: 24), isWifiDependent: true)
+
+        // WiFi wall stands on the left edge of the landing floor (passable when OFF).
+        createWiFiWall(at: CGPoint(x: size.width - landingWidth + 25, y: groundY + 80))
 
         createExitDoor(at: CGPoint(x: size.width - 30, y: groundY + 50))
 
