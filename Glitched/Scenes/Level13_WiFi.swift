@@ -9,6 +9,23 @@ final class WiFiScene: BaseLevelScene, SKPhysicsContactDelegate {
     private let strokeColor = SKColor.black
     private let lineWidth: CGFloat = 2.5
 
+    // MARK: - Gameplay Course (fixed logical width, centered)
+    // Gameplay geometry (spawn, platforms, stepping stones, WiFi wall, exit) is
+    // authored in a fixed `designSize.width`-point logical course so platform
+    // spacing, gaps, the WiFi wall, and traversal distance stay consistent
+    // across iPhone and iPad instead of the exit/landing-floor stretching to
+    // fill an iPad. The course never overflows a narrow screen (scale clamps at
+    // 1.0); on iPhone it stays full-bleed (slightly compressed at width 390),
+    // and on iPad it is centered with the side margins filled by the decorative
+    // signal art / HUD / panels, which still key off size.width + safe-area.
+    private let designSize = CGSize(width: 430, height: 932)
+    private var courseScale: CGFloat { min(1.0, size.width / designSize.width) }
+    private var courseOriginX: CGFloat { (size.width - designSize.width * courseScale) / 2 }
+    /// Map a logical x (0...designSize.width) into centered course space.
+    private func courseX(_ logicalX: CGFloat) -> CGFloat { courseOriginX + logicalX * courseScale }
+    /// Scale a logical length (platform width, etc.) into course space.
+    private func courseLen(_ logical: CGFloat) -> CGFloat { logical * courseScale }
+
     private var bit: BitCharacter!
     private var playerController: PlayerController!
     private var spawnPoint: CGPoint = .zero
@@ -90,25 +107,34 @@ final class WiFiScene: BaseLevelScene, SKPhysicsContactDelegate {
         // exactly one OFF toggle, the one-directional `.wifi` accessibility
         // fallback (which only posts isEnabled:false) is sufficient to win.
 
+        // Gameplay geometry is authored in fixed logical course space (0...430)
+        // and centered via courseX/courseLen so the gap spacing, WiFi wall, and
+        // exit jump stay identical on iPhone and iPad. The landing floor / wall /
+        // exit no longer stretch to size.width.
+
         // Left bookend (WiFi-independent) — spawn footing.
-        createPlatform(at: CGPoint(x: 45, y: groundY), size: CGSize(width: 70, height: 30), isWifiDependent: false)
+        createPlatform(at: CGPoint(x: courseX(45), y: groundY),
+                       size: CGSize(width: courseLen(70), height: 30), isWifiDependent: false)
 
         // Wide solid landing floor on the right. The WiFi wall and the exit both
         // sit on this floor, so the player is always on solid ground when they
-        // toggle WiFi off to pass the wall.
+        // toggle WiFi off to pass the wall. Authored as the rightmost 140 logical
+        // points of the course: center at logical x = 430 - 70 = 360.
         let landingWidth: CGFloat = 140
-        createPlatform(at: CGPoint(x: size.width - landingWidth / 2, y: groundY),
-                       size: CGSize(width: landingWidth, height: 30), isWifiDependent: false)
+        createPlatform(at: CGPoint(x: courseX(designSize.width - landingWidth / 2), y: groundY),
+                       size: CGSize(width: courseLen(landingWidth), height: 30), isWifiDependent: false)
 
         // WiFi-dependent stepping stones across the gap (solid only when WiFi ON).
-        createPlatform(at: CGPoint(x: 120, y: groundY + 26), size: CGSize(width: 50, height: 24), isWifiDependent: true)
-        createPlatform(at: CGPoint(x: 175, y: groundY + 46), size: CGSize(width: 50, height: 24), isWifiDependent: true)
-        createPlatform(at: CGPoint(x: 225, y: groundY + 26), size: CGSize(width: 46, height: 24), isWifiDependent: true)
+        createPlatform(at: CGPoint(x: courseX(120), y: groundY + 26), size: CGSize(width: courseLen(50), height: 24), isWifiDependent: true)
+        createPlatform(at: CGPoint(x: courseX(175), y: groundY + 46), size: CGSize(width: courseLen(50), height: 24), isWifiDependent: true)
+        createPlatform(at: CGPoint(x: courseX(225), y: groundY + 26), size: CGSize(width: courseLen(46), height: 24), isWifiDependent: true)
 
-        // WiFi wall stands on the left edge of the landing floor (passable when OFF).
-        createWiFiWall(at: CGPoint(x: size.width - landingWidth + 25, y: groundY + 80))
+        // WiFi wall stands on the left side of the landing floor (passable when
+        // OFF). Logical x = 430 - 140 + 25 = 315, which lies inside the landing
+        // floor's logical span [290, 430], so the wall is always on solid ground.
+        createWiFiWall(at: CGPoint(x: courseX(designSize.width - landingWidth + 25), y: groundY + 80))
 
-        createExitDoor(at: CGPoint(x: size.width - 30, y: groundY + 50))
+        createExitDoor(at: CGPoint(x: courseX(designSize.width - 30), y: groundY + 50))
 
         // Death zone
         let death = SKNode()
@@ -155,11 +181,13 @@ final class WiFiScene: BaseLevelScene, SKPhysicsContactDelegate {
         wall.position = position
         wall.name = "wifi_wall"
 
-        // Wall is 130 pt tall so its top (y ≈ 310 at wall center y=245) is
+        // Wall is 130 pt tall so its top (y ≈ 310 at wall center y=240) is
         // above the player's jump-apex body bottom (~304.5 when taking off
         // from stone 2 at y-top 232.5), preventing a skip-over jump while
-        // Wi-Fi is on.
-        let wallShape = SKShapeNode(rectOf: CGSize(width: 20, height: 130))
+        // Wi-Fi is on. Height stays in screen units (vertical, jump-math driven);
+        // width is course-scaled so the wall keeps its logical footprint.
+        let wallWidth = courseLen(20)
+        let wallShape = SKShapeNode(rectOf: CGSize(width: wallWidth, height: 130))
         wallShape.fillColor = strokeColor.withAlphaComponent(0.3)
         wallShape.strokeColor = strokeColor
         wallShape.lineWidth = lineWidth
@@ -170,11 +198,11 @@ final class WiFiScene: BaseLevelScene, SKPhysicsContactDelegate {
         for i in 0..<3 {
             let bar = SKShapeNode(rectOf: CGSize(width: 4, height: CGFloat(10 + i * 8)))
             bar.fillColor = strokeColor
-            bar.position = CGPoint(x: CGFloat(i - 1) * 6, y: 30)
+            bar.position = CGPoint(x: courseLen(CGFloat(i - 1) * 6), y: 30)
             wall.addChild(bar)
         }
 
-        wall.physicsBody = SKPhysicsBody(rectangleOf: CGSize(width: 20, height: 130))
+        wall.physicsBody = SKPhysicsBody(rectangleOf: CGSize(width: wallWidth, height: 130))
         wall.physicsBody?.isDynamic = false
         wall.physicsBody?.categoryBitMask = PhysicsCategory.ground
 
@@ -320,14 +348,17 @@ final class WiFiScene: BaseLevelScene, SKPhysicsContactDelegate {
     }
 
     private func createExitDoor(at position: CGPoint) {
-        let frame = SKShapeNode(rectOf: CGSize(width: 40, height: 60))
+        // Width is course-scaled (horizontal gameplay footprint); height stays in
+        // screen units like the platforms.
+        let doorSize = CGSize(width: courseLen(40), height: 60)
+        let frame = SKShapeNode(rectOf: doorSize)
         frame.fillColor = fillColor
         frame.strokeColor = strokeColor
         frame.lineWidth = lineWidth
         frame.position = position
         addChild(frame)
 
-        let exit = SKSpriteNode(color: .clear, size: CGSize(width: 40, height: 60))
+        let exit = SKSpriteNode(color: .clear, size: doorSize)
         exit.position = position
         exit.physicsBody = SKPhysicsBody(rectangleOf: exit.size)
         exit.physicsBody?.isDynamic = false
@@ -358,7 +389,7 @@ final class WiFiScene: BaseLevelScene, SKPhysicsContactDelegate {
     }
 
     private func setupBit() {
-        spawnPoint = CGPoint(x: 50, y: 200)
+        spawnPoint = CGPoint(x: courseX(50), y: 200)
         bit = BitCharacter.make()
         bit.position = spawnPoint
         addChild(bit)

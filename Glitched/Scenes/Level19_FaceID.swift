@@ -9,6 +9,22 @@ final class FaceIDScene: BaseLevelScene, SKPhysicsContactDelegate {
     private let fillColor = SKColor.white
     private let strokeColor = SKColor.black
     private let lineWidth: CGFloat = 2.5
+    private let designSize = CGSize(width: 430, height: 932)
+
+    // MARK: - Gameplay Course (fixed logical width, centered)
+    // Gameplay geometry (platforms, vault doors, blockers, exit) is authored in a
+    // fixed `designSize.width`-point logical course so platform spacing, gaps, the
+    // door2-blocks-exit relationship, and traversal distance stay consistent across
+    // iPhone and iPad instead of stretching to fill an iPad. The course never
+    // overflows a narrow screen (scale clamps at 1.0); on iPhone it stays full-bleed
+    // (slightly compressed at width 390), and on iPad it is centered with the
+    // surrounding margins filled by decoration (which still keys off size.width).
+    private var courseScale: CGFloat { min(1.0, size.width / designSize.width) }
+    private var courseOriginX: CGFloat { (size.width - designSize.width * courseScale) / 2 }
+    /// Map a logical x (0...designSize.width) into centered course space.
+    private func courseX(_ logicalX: CGFloat) -> CGFloat { courseOriginX + logicalX * courseScale }
+    /// Scale a logical length (platform width, etc.) into course space.
+    private func courseLen(_ logical: CGFloat) -> CGFloat { logical * courseScale }
 
     private var bit: BitCharacter!
     private var playerController: PlayerController!
@@ -79,26 +95,29 @@ final class FaceIDScene: BaseLevelScene, SKPhysicsContactDelegate {
         let groundY: CGFloat = 160
 
         // Start platform
-        createPlatform(at: CGPoint(x: 80, y: groundY), size: CGSize(width: 120, height: 30))
+        createPlatform(at: CGPoint(x: courseX(80), y: groundY), size: CGSize(width: courseLen(120), height: 30))
 
         // Middle platform (before first vault)
-        createPlatform(at: CGPoint(x: size.width / 2 - 40, y: groundY), size: CGSize(width: 160, height: 30))
+        createPlatform(at: CGPoint(x: courseX(175), y: groundY), size: CGSize(width: courseLen(160), height: 30))
 
         // Platform between doors
-        createPlatform(at: CGPoint(x: size.width / 2 + 120, y: groundY), size: CGSize(width: 100, height: 30))
+        createPlatform(at: CGPoint(x: courseX(335), y: groundY), size: CGSize(width: courseLen(100), height: 30))
 
         // Second door blocker (between middle and exit)
-        createSecondDoor(at: CGPoint(x: size.width / 2 + 170, y: 230))
+        createSecondDoor(at: CGPoint(x: courseX(385), y: 230))
 
         // Exit platform (after second door) - extends under and past door2's blocker
         // so the exit can only be reached once door2 opens at step 2.
-        createPlatform(at: CGPoint(x: size.width - 50, y: groundY), size: CGSize(width: 120, height: 30))
-        // Exit sits BEHIND door2's blocker (x in [355,395]); door2 closed (blocker
-        // spans x in [340,400]) physically stops the player at x=340, so unreachable
-        // until secondDoorBlocker is cleared at step 2.
-        createExitDoor(at: CGPoint(x: size.width - 25, y: groundY + 50))
+        createPlatform(at: CGPoint(x: courseX(380), y: groundY), size: CGSize(width: courseLen(120), height: 30))
+        // Exit sits BEHIND door2's blocker. In logical course space the blocker spans
+        // logical x [355,415] (center 385, width 60) and the exit body spans logical
+        // x [385,425] (center 405, width 40). While door2 is closed, Bit (half-width
+        // ~11 logical at courseScale 1.0) is stopped at the blocker's LEFT edge (355),
+        // so its right edge reaches only logical 355 — still 30pt left of the exit's
+        // left edge (385). Unreachable until secondDoorBlocker is cleared at step 2.
+        createExitDoor(at: CGPoint(x: courseX(405), y: groundY + 50))
 
-        // Death zone
+        // Death zone (stays full-width so it always catches falls)
         let death = SKNode()
         death.position = CGPoint(x: size.width / 2, y: -50)
         death.physicsBody = SKPhysicsBody(rectangleOf: CGSize(width: size.width * 2, height: 100))
@@ -114,7 +133,7 @@ final class FaceIDScene: BaseLevelScene, SKPhysicsContactDelegate {
         addChild(secondDoor!)
 
         // Smaller vault frame
-        let frame = SKShapeNode(rectOf: CGSize(width: 60, height: 100), cornerRadius: 4)
+        let frame = SKShapeNode(rectOf: CGSize(width: courseLen(60), height: 100), cornerRadius: 4)
         frame.fillColor = fillColor
         frame.strokeColor = strokeColor
         frame.lineWidth = lineWidth * 1.2
@@ -134,10 +153,10 @@ final class FaceIDScene: BaseLevelScene, SKPhysicsContactDelegate {
         lockLabel2.position = CGPoint(x: 0, y: 3)
         secondDoor!.addChild(lockLabel2)
 
-        // Physics blocker for second door
+        // Physics blocker for second door (logical width 60 -> course space)
         secondDoorBlocker = SKNode()
         secondDoorBlocker!.position = position
-        secondDoorBlocker!.physicsBody = SKPhysicsBody(rectangleOf: CGSize(width: 60, height: 100))
+        secondDoorBlocker!.physicsBody = SKPhysicsBody(rectangleOf: CGSize(width: courseLen(60), height: 100))
         secondDoorBlocker!.physicsBody?.isDynamic = false
         secondDoorBlocker!.physicsBody?.categoryBitMask = PhysicsCategory.ground
         addChild(secondDoorBlocker!)
@@ -162,12 +181,12 @@ final class FaceIDScene: BaseLevelScene, SKPhysicsContactDelegate {
 
     private func createVaultDoor() {
         vaultDoor = SKNode()
-        vaultDoor.position = CGPoint(x: size.width / 2 + 60, y: 230)
+        vaultDoor.position = CGPoint(x: courseX(275), y: 230)
         vaultDoor.zPosition = 50
         addChild(vaultDoor)
 
         // Vault frame
-        let frame = SKShapeNode(rectOf: CGSize(width: 80, height: 120), cornerRadius: 5)
+        let frame = SKShapeNode(rectOf: CGSize(width: courseLen(80), height: 120), cornerRadius: 5)
         frame.fillColor = fillColor
         frame.strokeColor = strokeColor
         frame.lineWidth = lineWidth * 1.5
@@ -221,10 +240,10 @@ final class FaceIDScene: BaseLevelScene, SKPhysicsContactDelegate {
         statusLabel.position = CGPoint(x: 0, y: -50)
         vaultDoor.addChild(statusLabel)
 
-        // Door blocker physics
+        // Door blocker physics (logical x 275, logical width 80 -> course space)
         doorBlocker = SKNode()
-        doorBlocker?.position = CGPoint(x: size.width / 2 + 60, y: 210)
-        doorBlocker?.physicsBody = SKPhysicsBody(rectangleOf: CGSize(width: 80, height: 100))
+        doorBlocker?.position = CGPoint(x: courseX(275), y: 210)
+        doorBlocker?.physicsBody = SKPhysicsBody(rectangleOf: CGSize(width: courseLen(80), height: 100))
         doorBlocker?.physicsBody?.isDynamic = false
         doorBlocker?.physicsBody?.categoryBitMask = PhysicsCategory.ground
         addChild(doorBlocker!)
@@ -249,14 +268,14 @@ final class FaceIDScene: BaseLevelScene, SKPhysicsContactDelegate {
     }
 
     private func createExitDoor(at position: CGPoint) {
-        let frame = SKShapeNode(rectOf: CGSize(width: 40, height: 60))
+        let frame = SKShapeNode(rectOf: CGSize(width: courseLen(40), height: 60))
         frame.fillColor = fillColor
         frame.strokeColor = strokeColor
         frame.lineWidth = lineWidth
         frame.position = position
         addChild(frame)
 
-        let exit = SKSpriteNode(color: .clear, size: CGSize(width: 40, height: 60))
+        let exit = SKSpriteNode(color: .clear, size: CGSize(width: courseLen(40), height: 60))
         exit.position = position
         exit.physicsBody = SKPhysicsBody(rectangleOf: exit.size)
         exit.physicsBody?.isDynamic = false
@@ -295,7 +314,7 @@ final class FaceIDScene: BaseLevelScene, SKPhysicsContactDelegate {
     }
 
     private func setupBit() {
-        spawnPoint = CGPoint(x: 80, y: 200)
+        spawnPoint = CGPoint(x: courseX(80), y: 200)
         bit = BitCharacter.make()
         bit.position = spawnPoint
         addChild(bit)

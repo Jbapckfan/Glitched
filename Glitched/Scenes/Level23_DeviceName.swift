@@ -10,6 +10,22 @@ final class DeviceNameScene: BaseLevelScene, SKPhysicsContactDelegate {
     private let fillColor = SKColor.white
     private let strokeColor = SKColor.black
     private let lineWidth: CGFloat = 2.5
+    private let designSize = CGSize(width: 430, height: 932)
+
+    // MARK: - Gameplay Course (fixed logical width, centered)
+    // Gameplay geometry (platforms, doors, doppelganger path, spawn) is authored
+    // in a fixed `designSize.width`-point logical course so platform spacing,
+    // gaps, and the exit jump stay consistent across iPhone and iPad instead of
+    // stretching to fill an iPad. The course clamps at scale 1.0 so it never
+    // overflows a narrow screen; on a ~390 iPhone it stays effectively full-bleed
+    // (slightly compressed), and on iPad it is centered with the surrounding
+    // space filled by decoration/UI, which still keys off size.width.
+    private var courseScale: CGFloat { min(1.0, size.width / designSize.width) }
+    private var courseOriginX: CGFloat { (size.width - designSize.width * courseScale) / 2 }
+    /// Map a logical x (0...designSize.width) into centered course space.
+    private func courseX(_ logicalX: CGFloat) -> CGFloat { courseOriginX + logicalX * courseScale }
+    /// Scale a logical length (platform width, etc.) into course space.
+    private func courseLen(_ logical: CGFloat) -> CGFloat { logical * courseScale }
 
     private var bit: BitCharacter!
     private var playerController: PlayerController!
@@ -114,22 +130,26 @@ final class DeviceNameScene: BaseLevelScene, SKPhysicsContactDelegate {
     private func buildLevel() {
         let groundY: CGFloat = 160
 
-        // Layout fits a 390-pt iPhone canvas with ≤ 20-pt gaps and a
-        // single 30-pt rise — all inside the 72-pt max jump.
-        createPlatform(at: CGPoint(x: 45, y: groundY), size: CGSize(width: 80, height: 30))
+        // Gameplay is authored in fixed logical course space (0...430) so the
+        // platform spacing, gaps, and the final exit jump stay constant across
+        // iPhone/iPad. Logical layout: ≤ ~50-pt edge-to-edge gaps and a single
+        // 30-pt rise — all inside the safe ~120-pt jump reach / ~91-pt rise.
+        // (Heights/Y are left on their original scaling, matching L3.)
+        createPlatform(at: CGPoint(x: courseX(45), y: groundY), size: CGSize(width: courseLen(80), height: 30))
 
-        createPlatform(at: CGPoint(x: 145, y: groundY), size: CGSize(width: 80, height: 30))
+        createPlatform(at: CGPoint(x: courseX(145), y: groundY), size: CGSize(width: courseLen(80), height: 30))
 
-        createNameDoor(at: CGPoint(x: 185, y: groundY + 45))
+        createNameDoor(at: CGPoint(x: courseX(185), y: groundY + 45))
 
-        createPlatform(at: CGPoint(x: 230, y: groundY), size: CGSize(width: 50, height: 30))
-        createPlatform(at: CGPoint(x: 285, y: groundY + 30), size: CGSize(width: 40, height: 25))
+        createPlatform(at: CGPoint(x: courseX(230), y: groundY), size: CGSize(width: courseLen(50), height: 30))
+        createPlatform(at: CGPoint(x: courseX(285), y: groundY + 30), size: CGSize(width: courseLen(40), height: 25))
 
-        createPlatform(at: CGPoint(x: size.width - 40, y: groundY), size: CGSize(width: 70, height: 30))
+        createPlatform(at: CGPoint(x: courseX(designSize.width - 40), y: groundY), size: CGSize(width: courseLen(70), height: 30))
 
-        createExitDoor(at: CGPoint(x: size.width - 30, y: groundY + 50))
+        createExitDoor(at: CGPoint(x: courseX(designSize.width - 30), y: groundY + 50))
 
-        // Death zone
+        // Death zone — stays full-width (centered at size.width/2) so it always
+        // catches falls regardless of where the centered course sits.
         let death = SKNode()
         death.position = CGPoint(x: size.width / 2, y: -50)
         death.physicsBody = SKPhysicsBody(rectangleOf: CGSize(width: size.width * 2, height: 100))
@@ -292,7 +312,7 @@ final class DeviceNameScene: BaseLevelScene, SKPhysicsContactDelegate {
         label.position = CGPoint(x: 0, y: 45)
         doppel.addChild(label)
 
-        doppel.position = CGPoint(x: 90, y: 200)
+        doppel.position = CGPoint(x: courseX(90), y: 200)
         doppel.alpha = 0 // Hidden until triggered
 
         doppelganger = doppel
@@ -308,11 +328,13 @@ final class DeviceNameScene: BaseLevelScene, SKPhysicsContactDelegate {
         // Doppelganger follows a preset path toward the exit
         // It races along platforms but arrives and "fails" at the door
         let groundY: CGFloat = 160
+        // Waypoints routed through the course so the doppelganger visually tracks
+        // the centered platforms (logical x: 145, 230, 285, 350 == 430-80).
         let path = CGMutablePath()
-        path.move(to: CGPoint(x: 145, y: groundY + 40))
-        path.addLine(to: CGPoint(x: 230, y: groundY + 40))
-        path.addLine(to: CGPoint(x: 285, y: groundY + 55))
-        path.addLine(to: CGPoint(x: size.width - 80, y: groundY + 40))
+        path.move(to: CGPoint(x: courseX(145), y: groundY + 40))
+        path.addLine(to: CGPoint(x: courseX(230), y: groundY + 40))
+        path.addLine(to: CGPoint(x: courseX(285), y: groundY + 55))
+        path.addLine(to: CGPoint(x: courseX(designSize.width - 80), y: groundY + 40))
 
         let followPath = SKAction.follow(path, asOffset: false, orientToPath: false, duration: 4.0)
 
@@ -333,7 +355,9 @@ final class DeviceNameScene: BaseLevelScene, SKPhysicsContactDelegate {
         rejected.fontName = "Menlo-Bold"
         rejected.fontSize = 10
         rejected.fontColor = strokeColor
-        rejected.position = CGPoint(x: size.width - 100, y: 280)
+        // Anchored at the (course-space) exit area so the rejection reads over
+        // the door the doppelganger just failed to open.
+        rejected.position = CGPoint(x: courseX(designSize.width - 100), y: 280)
         rejected.zPosition = 300
         addChild(rejected)
         rejected.run(.sequence([.wait(forDuration: 3), .fadeOut(withDuration: 0.5), .removeFromParent()]))
@@ -373,7 +397,9 @@ final class DeviceNameScene: BaseLevelScene, SKPhysicsContactDelegate {
         openLabel.fontName = "Menlo-Bold"
         openLabel.fontSize = 10
         openLabel.fontColor = strokeColor
-        openLabel.position = CGPoint(x: size.width - 80, y: 120)
+        // Anchored at the (course-space) exit area so the "door opens" feedback
+        // reads over the real exit door.
+        openLabel.position = CGPoint(x: courseX(designSize.width - 80), y: 120)
         openLabel.zPosition = 300
         addChild(openLabel)
         openLabel.run(.sequence([.wait(forDuration: 3), .fadeOut(withDuration: 0.5), .removeFromParent()]))
@@ -408,7 +434,7 @@ final class DeviceNameScene: BaseLevelScene, SKPhysicsContactDelegate {
     }
 
     private func setupBit() {
-        spawnPoint = CGPoint(x: 45, y: 200)
+        spawnPoint = CGPoint(x: courseX(45), y: 200)
         bit = BitCharacter.make()
         bit.position = spawnPoint
         addChild(bit)

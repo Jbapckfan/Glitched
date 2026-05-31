@@ -8,6 +8,24 @@ final class ShakeUndoScene: BaseLevelScene, SKPhysicsContactDelegate {
     private let fillColor = SKColor.white
     private let strokeColor = SKColor.black
     private let lineWidth: CGFloat = 2.5
+    private let designSize = CGSize(width: 430, height: 932)
+
+    // MARK: - Gameplay Course (fixed logical width, centered)
+    // Gameplay geometry (platforms, moving-platform base X, final platform,
+    // exit) is authored in a fixed `designSize.width`-point logical course so
+    // spacing, gaps and traversal distance stay consistent across devices
+    // instead of the final platform/exit stretching to fill an iPad. The course
+    // never overflows a narrow screen (scale clamps at 1.0); on a 430-pt iPhone
+    // and on every iPad it is 430pt wide and centered, with the surrounding
+    // space filled by decorative clocks / panels / HUD that still key off
+    // size.width and the safe-area helpers. On a 390-pt iPhone it stays
+    // full-bleed at scale 0.907 (same shape as the previous fixed layout).
+    private var courseScale: CGFloat { min(1.0, size.width / designSize.width) }
+    private var courseOriginX: CGFloat { (size.width - designSize.width * courseScale) / 2 }
+    /// Map a logical x (0...designSize.width) into centered course space.
+    private func courseX(_ logicalX: CGFloat) -> CGFloat { courseOriginX + logicalX * courseScale }
+    /// Scale a logical length (platform width, etc.) into course space.
+    private func courseLen(_ logical: CGFloat) -> CGFloat { logical * courseScale }
 
     private var bit: BitCharacter!
     private var playerController: PlayerController!
@@ -101,20 +119,25 @@ final class ShakeUndoScene: BaseLevelScene, SKPhysicsContactDelegate {
     private func buildLevel() {
         let groundY: CGFloat = 160
 
-        // Fits a 390-pt iPhone canvas. The moving platform oscillates ±40 pt
-        // around y=240 (low point 200 → top 210). Every gap ≤30 pt and
-        // every rise ≤45 pt fits inside the 72-pt max jump.
-        createPlatform(at: CGPoint(x: 45, y: groundY), size: CGSize(width: 80, height: 30))
+        // Gameplay geometry is authored in the fixed 430-pt logical course (X via
+        // courseX, widths via courseLen) so spacing/gaps stay device-independent;
+        // Y stays on the single-screen-height scaling the file already used. The
+        // moving platform oscillates ±40 pt in Y around y=240 (driven in
+        // updatePlaying); only its BASE X is course-mapped. The widest gameplay
+        // gaps occur at courseScale 1.0 (430-pt iPhone / iPad) and stay inside
+        // the jumpable budget (see trace below).
+        createPlatform(at: CGPoint(x: courseX(45), y: groundY), size: CGSize(width: courseLen(80), height: 30))
 
-        movingPlatform = createPlatform(at: CGPoint(x: 160, y: groundY + 80), size: CGSize(width: 55, height: 20))
+        movingPlatform = createPlatform(at: CGPoint(x: courseX(160), y: groundY + 80), size: CGSize(width: courseLen(55), height: 20))
         movingPlatform.name = "moving"
 
-        createPlatform(at: CGPoint(x: 260, y: groundY + 40), size: CGSize(width: 60, height: 25))
+        createPlatform(at: CGPoint(x: courseX(260), y: groundY + 40), size: CGSize(width: courseLen(60), height: 25))
 
-        createPlatform(at: CGPoint(x: size.width - 45, y: groundY), size: CGSize(width: 70, height: 30))
-        createExitDoor(at: CGPoint(x: size.width - 35, y: groundY + 50))
+        createPlatform(at: CGPoint(x: courseX(designSize.width - 45), y: groundY), size: CGSize(width: courseLen(70), height: 30))
+        createExitDoor(at: CGPoint(x: courseX(designSize.width - 35), y: groundY + 50))
 
-        // Death zone
+        // Death zone — stays full-width so it always catches falls regardless of
+        // course centering (decorative-scope geometry, intentionally not course-mapped).
         let death = SKNode()
         death.position = CGPoint(x: size.width / 2, y: -50)
         death.physicsBody = SKPhysicsBody(rectangleOf: CGSize(width: size.width * 2, height: 100))
@@ -223,7 +246,7 @@ final class ShakeUndoScene: BaseLevelScene, SKPhysicsContactDelegate {
     }
 
     private func setupBit() {
-        spawnPoint = CGPoint(x: 45, y: 200)
+        spawnPoint = CGPoint(x: courseX(45), y: 200)
         bit = BitCharacter.make()
         bit.position = spawnPoint
         addChild(bit)

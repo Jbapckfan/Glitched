@@ -60,6 +60,23 @@ final class MetaFinaleScene: BaseLevelScene, SKPhysicsContactDelegate {
     private let strokeColor = SKColor.black
     private let lineWidth: CGFloat = 2.5
 
+    // MARK: - Gameplay Course (fixed logical width, centered)
+    // Gameplay geometry (platforms, corruption wall, exit, spawn) is authored in a
+    // fixed `designSize.width`-point logical course so platform spacing, gaps, and
+    // traversal distance stay consistent across devices instead of stretching to
+    // fill an iPad. The course never overflows a narrow screen (scale clamps at
+    // 1.0), and on a 430-wide iPhone it stays full-bleed (output identical to the
+    // previous hardcoded-iPhone layout). On iPad the course is centered and the
+    // surrounding space is filled by decorative static / titles / panels, which
+    // still key off size.width and the safe-area helpers.
+    private let designSize = CGSize(width: 430, height: 932)
+    private var courseScale: CGFloat { min(1.0, size.width / designSize.width) }
+    private var courseOriginX: CGFloat { (size.width - designSize.width * courseScale) / 2 }
+    /// Map a logical x (0...designSize.width) into centered course space.
+    private func courseX(_ logicalX: CGFloat) -> CGFloat { courseOriginX + logicalX * courseScale }
+    /// Scale a logical length (platform width, etc.) into course space.
+    private func courseLen(_ logical: CGFloat) -> CGFloat { logical * courseScale }
+
     private var bit: BitCharacter!
     private var playerController: PlayerController!
     private var spawnPoint: CGPoint = .zero
@@ -219,17 +236,17 @@ final class MetaFinaleScene: BaseLevelScene, SKPhysicsContactDelegate {
     private func buildLevel() {
         let groundY: CGFloat = 160
 
-        // Start platform
-        createPlatform(at: CGPoint(x: 80, y: groundY), size: CGSize(width: 120, height: 30))
+        // Start platform (logical x=80, w=120)
+        createPlatform(at: CGPoint(x: courseX(80), y: groundY), size: CGSize(width: courseLen(120), height: 30))
 
-        // Middle area
-        createPlatform(at: CGPoint(x: size.width / 2, y: groundY), size: CGSize(width: 250, height: 30))
+        // Middle area (logical center x=215, w=250)
+        createPlatform(at: CGPoint(x: courseX(215), y: groundY), size: CGSize(width: courseLen(250), height: 30))
 
-        // Exit platform (behind corruption wall)
-        createPlatform(at: CGPoint(x: size.width - 80, y: groundY), size: CGSize(width: 120, height: 30))
-        createExitDoor(at: CGPoint(x: size.width - 60, y: groundY + 50))
+        // Exit platform (behind corruption wall) — logical x=350 (430-80), w=120
+        createPlatform(at: CGPoint(x: courseX(350), y: groundY), size: CGSize(width: courseLen(120), height: 30))
+        createExitDoor(at: CGPoint(x: courseX(370), y: groundY + 50))
 
-        // Death zone
+        // Death zone — left full-width (decorative-catch), only needs to catch falls
         let death = SKNode()
         death.position = CGPoint(x: size.width / 2, y: -50)
         death.physicsBody = SKPhysicsBody(rectangleOf: CGSize(width: size.width * 2, height: 100))
@@ -257,7 +274,9 @@ final class MetaFinaleScene: BaseLevelScene, SKPhysicsContactDelegate {
 
     private func createCorruptionWall() {
         corruptionWall = SKNode()
-        corruptionWall.position = CGPoint(x: size.width - 160, y: 260)
+        // Logical x = 270 (430 - 160); stays in the same coordinate space as Bit so
+        // the proximity fallback math in updatePlaying() still holds (see below).
+        corruptionWall.position = CGPoint(x: courseX(270), y: 260)
         corruptionWall.zPosition = 50
         addChild(corruptionWall)
 
@@ -296,8 +315,12 @@ final class MetaFinaleScene: BaseLevelScene, SKPhysicsContactDelegate {
         // stopped by) the wall. Add a contact test against the player so that the purge
         // fires on real physical contact — the player can only reach the wall's face,
         // which is too far for the old proximity threshold to ever trip (see didBegin).
+        // Blocker footprint scales with the course so the wall occupies the same
+        // logical width across devices (height stays screen-space — single-screen
+        // level). At courseScale 1.0 the left face sits at wall.x - 35; Bit (half
+        // width 11) stops at distance 35+11=46 -> proximity 1-46/200 = 0.77 (>0.6).
         let blocker = SKNode()
-        blocker.physicsBody = SKPhysicsBody(rectangleOf: CGSize(width: 70, height: 200))
+        blocker.physicsBody = SKPhysicsBody(rectangleOf: CGSize(width: courseLen(70), height: 200))
         blocker.physicsBody?.isDynamic = false
         blocker.physicsBody?.categoryBitMask = PhysicsCategory.ground
         blocker.physicsBody?.contactTestBitMask = PhysicsCategory.player
@@ -406,7 +429,7 @@ final class MetaFinaleScene: BaseLevelScene, SKPhysicsContactDelegate {
     }
 
     private func setupBit() {
-        spawnPoint = CGPoint(x: 80, y: 200)
+        spawnPoint = CGPoint(x: courseX(80), y: 200)
         bit = BitCharacter.make()
         bit.position = spawnPoint
         addChild(bit)
@@ -691,9 +714,13 @@ final class MetaFinaleScene: BaseLevelScene, SKPhysicsContactDelegate {
             }
 
             // Fallback trigger: fire when the player is pressed up against the wall.
-            // The physics body stops Bit at the wall's left face, where proximity
-            // tops out at ~0.77 (distance ~46 of maxDistance 200); 0.6 is comfortably
-            // reachable. The primary trigger is the physics contact in didBegin().
+            // The physics body stops Bit at the wall's left face. Bit (phys half
+            // width 11) and the wall live in the same screen space, so the closest
+            // reachable distance is blockerHalfWidth + 11. At courseScale 1.0
+            // (iPad / 430 iPhone) blockerHalfWidth = 35 -> distance 46 -> proximity
+            // 1 - 46/200 = 0.77; at courseScale 0.907 (390 iPhone) blockerHalfWidth
+            // = 31.75 -> distance 42.75 -> proximity 0.786. Both clear the 0.6
+            // threshold. The primary trigger is the physics contact in didBegin();
             // beginSimulatedPurge() is idempotent, so both paths are safe.
             if corruptionProximity > 0.6 {
                 beginSimulatedPurge()
