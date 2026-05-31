@@ -212,7 +212,7 @@ final class AppSwitcherScene: BaseLevelScene, SKPhysicsContactDelegate {
         bg.strokeColor = strokeColor
         panel.addChild(bg)
 
-        let text1 = SKLabelNode(text: "SWIPE UP TO FREEZE TIME")
+        let text1 = SKLabelNode(text: "THE WORLD HOLDS ITS BREATH WHEN YOU LOOK AWAY")
         text1.fontName = "Menlo-Bold"
         text1.fontSize = 11
         text1.fontColor = strokeColor

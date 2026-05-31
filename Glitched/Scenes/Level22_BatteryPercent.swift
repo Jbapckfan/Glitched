@@ -284,7 +284,7 @@ final class BatteryPercentScene: BaseLevelScene, SKPhysicsContactDelegate {
         bg.strokeColor = strokeColor
         panel.addChild(bg)
 
-        let text1 = SKLabelNode(text: "PLATFORMS EXIST BASED ON BATTERY %")
+        let text1 = SKLabelNode(text: "SOME THINGS ONLY APPEAR WHEN YOU'RE RUNNING LOW")
         text1.fontName = "Menlo-Bold"
         text1.fontSize = 10
         text1.fontColor = strokeColor
@@ -515,7 +515,7 @@ final class BatteryPercentScene: BaseLevelScene, SKPhysicsContactDelegate {
     }
 
     override func hintText() -> String? {
-        return "Your battery level controls the visible platforms"
+        return "Lower your battery % — the real way down only appears when power drops"
     }
 
     override func willMove(from view: SKView) {

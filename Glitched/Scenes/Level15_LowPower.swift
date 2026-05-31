@@ -251,14 +251,14 @@ final class LowPowerScene: BaseLevelScene, SKPhysicsContactDelegate {
         bg.strokeColor = strokeColor
         panel.addChild(bg)
 
-        let text1 = SKLabelNode(text: "LOW POWER = LOW GRAVITY")
+        let text1 = SKLabelNode(text: "CONSERVE ENERGY. FLOAT.")
         text1.fontName = "Menlo-Bold"
         text1.fontSize = 12
         text1.fontColor = strokeColor
         text1.position = CGPoint(x: 0, y: 10)
         panel.addChild(text1)
 
-        let text2 = SKLabelNode(text: "JUMP HIGHER, FALL SLOWER")
+        let text2 = SKLabelNode(text: "THE LESS I SPEND, THE LIGHTER WE GET")
         text2.fontName = "Menlo"
         text2.fontSize = 10
         text2.fontColor = strokeColor

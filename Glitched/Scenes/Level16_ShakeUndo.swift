@@ -228,14 +228,14 @@ final class ShakeUndoScene: BaseLevelScene, SKPhysicsContactDelegate {
         bg.strokeColor = strokeColor
         panel.addChild(bg)
 
-        let text1 = SKLabelNode(text: "SHAKE TO REWIND 3 SECONDS")
+        let text1 = SKLabelNode(text: "MISTAKES CAN BE UNMADE")
         text1.fontName = "Menlo-Bold"
         text1.fontSize = 11
         text1.fontColor = strokeColor
         text1.position = CGPoint(x: 0, y: 10)
         panel.addChild(text1)
 
-        let text2 = SKLabelNode(text: "LIMITED USES PER LEVEL")
+        let text2 = SKLabelNode(text: "BUT NOT FOREVER")
         text2.fontName = "Menlo"
         text2.fontSize = 10
         text2.fontColor = strokeColor

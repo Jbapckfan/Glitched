@@ -348,21 +348,21 @@ final class NotificationScene: BaseLevelScene, SKPhysicsContactDelegate {
         bg.lineWidth = lineWidth
         instructionPanel?.addChild(bg)
 
-        let text1 = SKLabelNode(text: "TAP THE BUTTON")
+        let text1 = SKLabelNode(text: "THE DOOR WON'T BUDGE.")
         text1.fontName = "Menlo-Bold"
         text1.fontSize = 14
         text1.fontColor = strokeColor
         text1.position = CGPoint(x: 0, y: 20)
         instructionPanel?.addChild(text1)
 
-        let text2 = SKLabelNode(text: "WAIT FOR NOTIFICATION")
+        let text2 = SKLabelNode(text: "SO ASK FOR PERMISSION.")
         text2.fontName = "Menlo"
         text2.fontSize = 11
         text2.fontColor = strokeColor
         text2.position = CGPoint(x: 0, y: 0)
         instructionPanel?.addChild(text2)
 
-        let text3 = SKLabelNode(text: "TAP IT TO UNLOCK DOOR")
+        let text3 = SKLabelNode(text: "THEN WAIT FOR A REPLY.")
         text3.fontName = "Menlo"
         text3.fontSize = 11
         text3.fontColor = strokeColor
@@ -677,7 +677,7 @@ final class NotificationScene: BaseLevelScene, SKPhysicsContactDelegate {
     }
 
     override func hintText() -> String? {
-        return "Watch for notifications and tap the right one"
+        return "Wait for the notification, then tap it to unlock the door"
     }
 
     override func willMove(from view: SKView) {

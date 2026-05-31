@@ -298,14 +298,14 @@ final class FocusModeScene: BaseLevelScene, SKPhysicsContactDelegate {
         bg.strokeColor = strokeColor
         panel.addChild(bg)
 
-        let text1 = SKLabelNode(text: "FOCUS MODE FREEZES HAZARDS")
+        let text1 = SKLabelNode(text: "THE NOISE NEVER STOPS...")
         text1.fontName = "Menlo-Bold"
         text1.fontSize = 11
         text1.fontColor = strokeColor
         text1.position = CGPoint(x: 0, y: 10)
         panel.addChild(text1)
 
-        let text2 = SKLabelNode(text: "BUT DOOR REQUIRES FOCUS OFF")
+        let text2 = SKLabelNode(text: "UNLESS YOU LET IT.")
         text2.fontName = "Menlo"
         text2.fontSize = 10
         text2.fontColor = strokeColor

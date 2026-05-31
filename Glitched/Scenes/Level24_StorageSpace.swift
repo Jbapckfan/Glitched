@@ -308,7 +308,7 @@ final class StorageSpaceScene: BaseLevelScene, SKPhysicsContactDelegate {
         text1.position = CGPoint(x: 0, y: 12)
         panel.addChild(text1)
 
-        let text2 = SKLabelNode(text: "CLEAR THE APP CACHE TO DISSOLVE IT")
+        let text2 = SKLabelNode(text: "IT'S JUST CLUTTER. MAKE ROOM.")
         text2.fontName = "Menlo"
         text2.fontSize = 10
         text2.fontColor = strokeColor
@@ -477,7 +477,7 @@ final class StorageSpaceScene: BaseLevelScene, SKPhysicsContactDelegate {
     }
 
     override func hintText() -> String? {
-        return "Clear some storage space on your device"
+        return "Clear the app cache"
     }
 
     override func willMove(from view: SKView) {

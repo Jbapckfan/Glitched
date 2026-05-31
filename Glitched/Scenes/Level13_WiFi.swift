@@ -379,7 +379,7 @@ final class WiFiScene: BaseLevelScene, SKPhysicsContactDelegate {
         bg.strokeColor = strokeColor
         panel.addChild(bg)
 
-        let text = SKLabelNode(text: "TOGGLE WIFI TO PHASE PLATFORMS")
+        let text = SKLabelNode(text: "THE SIGNAL COMES AND GOES...")
         text.fontName = "Menlo-Bold"
         text.fontSize = 11
         text.fontColor = strokeColor

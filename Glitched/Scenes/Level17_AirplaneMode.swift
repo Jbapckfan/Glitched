@@ -251,14 +251,14 @@ final class AirplaneModeScene: BaseLevelScene, SKPhysicsContactDelegate {
         bg.strokeColor = strokeColor
         panel.addChild(bg)
 
-        let text1 = SKLabelNode(text: "AIRPLANE MODE = PLATFORMS FLY")
+        let text1 = SKLabelNode(text: "THE GROUND IS NO PLACE TO STAY.")
         text1.fontName = "Menlo-Bold"
         text1.fontSize = 11
         text1.fontColor = strokeColor
         text1.position = CGPoint(x: 0, y: 10)
         panel.addChild(text1)
 
-        let text2 = SKLabelNode(text: "TOGGLE TO REACH NEW HEIGHTS")
+        let text2 = SKLabelNode(text: "CUT THE WORLD LOOSE. LET IT RISE.")
         text2.fontName = "Menlo"
         text2.fontSize = 10
         text2.fontColor = strokeColor
