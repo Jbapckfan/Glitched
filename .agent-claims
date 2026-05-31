@@ -1,0 +1,31 @@
+# Agent coordination claims — commit+push when you claim/release a lane.
+# Two machines edit this repo: MacBook Pro (cockpit) and Mac Mini (hub).
+# RULE: own whole FILES, not lines. Never edit another agent's claimed files.
+# RULE: shared files are RESERVED for a single serialized pass, done LAST.
+
+mac-mini (Claude Opus):
+  lane: L15, L16, L19, L20, L21, L23, L24, L30
+  scope: LEVEL-INTERNAL fixes only (each level's own scene file +
+         that level's dedicated manager). No shared-file edits.
+  started: 2026-05-31
+  files:
+    Glitched/Scenes/Level15_LowPower.swift
+    Glitched/Scenes/Level16_ShakeUndo.swift  + Glitched/DeviceIntegration/ShakeUndoManager.swift
+    Glitched/Scenes/Level19_FaceID.swift
+    Glitched/Scenes/Level20_MetaFinale.swift
+    Glitched/Scenes/Level21_VoiceCommand.swift
+    Glitched/Scenes/Level23_DeviceName.swift
+    Glitched/Scenes/Level24_StorageSpace.swift + Glitched/DeviceIntegration/StorageSpaceManager.swift
+    Glitched/Scenes/Level30_CreditsFinale.swift
+
+macbook-pro (Claude + Codex):
+  lane: L6 (+ MBP team's other levels — fill in)
+  files:
+    Glitched/Scenes/Level6_Brightness.swift
+
+RESERVED — single serialized pass, LAST, one agent only:
+  Glitched/App/GameRootView.swift            # fallback overlay buttons
+  Glitched/Core/AccessibilityManager.swift   # forceHardwareFallback audit
+  Glitched/Scenes/BaseLevelScene.swift
+  Glitched/Core/PlayerController.swift
+  Glitched/Info.plist                        # L9 orientation decision
