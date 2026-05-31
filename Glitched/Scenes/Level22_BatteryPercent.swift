@@ -29,6 +29,10 @@ final class BatteryPercentScene: BaseLevelScene, SKPhysicsContactDelegate {
     private var simulatedBattery: Float? = nil
     private var drainButton: SKNode?
 
+    // Battery visuals: reused dim overlay + last-applied atmosphere mood bucket
+    private var dimOverlay: SKShapeNode?
+    private var lastAtmosphereMood: AtmosphereMood?
+
     override func configureScene() {
         levelID = LevelID(world: .world3, index: 22)
         backgroundColor = fillColor
@@ -349,29 +353,38 @@ final class BatteryPercentScene: BaseLevelScene, SKPhysicsContactDelegate {
         let dimFactor = 0.4 + normalizedPct * 0.6
         let dimColor = SKColor(white: 0, alpha: 1.0 - dimFactor)
 
-        // Remove old dim overlay
-        gameCamera.childNode(withName: "batteryDimOverlay")?.removeFromParent()
-
-        let overlay = SKShapeNode(rectOf: CGSize(width: size.width * 2, height: size.height * 2))
-        overlay.fillColor = dimColor
-        overlay.strokeColor = .clear
-        overlay.zPosition = 8500
-        overlay.name = "batteryDimOverlay"
-        overlay.isUserInteractionEnabled = false
-        gameCamera.addChild(overlay)
-
-        // At low battery, switch to tense/glitch atmosphere
-        if percentage < 30 {
-            setupBackgroundAtmosphere(mood: .glitch)
-        } else if percentage < 60 {
-            setupBackgroundAtmosphere(mood: .tense)
+        // Reuse the dim overlay node (create once), then just update its color.
+        let overlay: SKShapeNode
+        if let existing = dimOverlay {
+            overlay = existing
         } else {
-            setupBackgroundAtmosphere(mood: .calm)
+            overlay = SKShapeNode(rectOf: CGSize(width: size.width * 2, height: size.height * 2))
+            overlay.strokeColor = .clear
+            overlay.zPosition = 8500
+            overlay.name = "batteryDimOverlay"
+            overlay.isUserInteractionEnabled = false
+            gameCamera.addChild(overlay)
+            dimOverlay = overlay
+        }
+        overlay.fillColor = dimColor
+
+        // Only rebuild the (expensive) background atmosphere when the mood bucket changes.
+        let mood: AtmosphereMood
+        if percentage < 30 {
+            mood = .glitch
+        } else if percentage < 60 {
+            mood = .tense
+        } else {
+            mood = .calm
+        }
+        if mood != lastAtmosphereMood {
+            lastAtmosphereMood = mood
+            setupBackgroundAtmosphere(mood: mood)
         }
 
-        // Slow down scene speed slightly at very low battery to simulate "power drain"
-        let speedFactor = max(0.7, CGFloat(percentage / 100.0))
-        self.speed = speedFactor
+        // NOTE: previously scaled self.speed by battery, which slowed every action
+        // including the player/gameplay — an unintended side effect. The dim overlay
+        // alone conveys the "power drain" feel, so scene speed is left untouched.
     }
 
     private func showFourthWall(percentage: Float) {
