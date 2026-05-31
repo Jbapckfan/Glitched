@@ -24,6 +24,10 @@ final class LocaleScene: BaseLevelScene, SKPhysicsContactDelegate {
     private var wrongPlatformOrigins: [CGPoint] = []
     private var hiddenPlatformOrigins: [CGPoint] = []
     private var isUnscrambled = false
+    // Once the player has committed to the unscrambled route the puzzle is
+    // already solved. Latch that fact so a later language revert is purely
+    // cosmetic and can never desolidify footing or eject Bit mid-climb.
+    private var puzzleLatched = false
 
     // Hint texts when unscrambled
     private let hintTexts = [
@@ -203,7 +207,7 @@ final class LocaleScene: BaseLevelScene, SKPhysicsContactDelegate {
     }
 
     private func scrambleText(_ text: String) -> String {
-        return String(text.map { _ in scrambleChars.randomElement()! })
+        return String(text.map { _ in scrambleChars.randomElement() ?? "0" })
     }
 
     private func createExitDoor(at position: CGPoint) {
@@ -333,12 +337,22 @@ final class LocaleScene: BaseLevelScene, SKPhysicsContactDelegate {
         if isNonEnglish && !isUnscrambled {
             unscrambleWorld()
         } else if !isNonEnglish && isUnscrambled {
-            rescrambleWorld()
+            // Reverting to English. If the puzzle is already latched the
+            // correct route stays solid — re-scramble text only, never touch
+            // physics — so a mid-climb revert can't drop or eject Bit.
+            if puzzleLatched {
+                rescrambleTextOnly()
+            } else {
+                rescrambleWorld()
+            }
         }
     }
 
     private func unscrambleWorld() {
         isUnscrambled = true
+        // The correct route to the exit now exists; the puzzle is solved.
+        // Latch so any later revert is non-destructive to footing.
+        puzzleLatched = true
 
         // Unscramble sign text
         for (i, label) in signLabels.enumerated() {
@@ -396,6 +410,16 @@ final class LocaleScene: BaseLevelScene, SKPhysicsContactDelegate {
                 .group([.fadeOut(withDuration: 0.3), .move(to: orig, duration: 0.3)]),
                 .run { p.physicsBody?.categoryBitMask = PhysicsCategory.none }
             ]))
+        }
+    }
+
+    /// Revert after the puzzle is latched: re-scramble only the cosmetic sign
+    /// text. Leaves all platform physics untouched so the correct route stays
+    /// solid and no wrong platform re-solidifies under/into Bit.
+    private func rescrambleTextOnly() {
+        isUnscrambled = false
+        for (i, label) in signLabels.enumerated() {
+            label.text = scrambleText(hintTexts[i])
         }
     }
 
