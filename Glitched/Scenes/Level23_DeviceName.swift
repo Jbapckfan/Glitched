@@ -22,6 +22,13 @@ final class DeviceNameScene: BaseLevelScene, SKPhysicsContactDelegate {
     private var nameDoorOpened = false
     private var exitDoorBlocker: SKNode?
 
+    // Hardware-free safety net: if `.deviceNameRead` never arrives (e.g. simulator
+    // or no device-name permission), self-trigger the same unlock chain so the
+    // exit can't soft-lock. Guarded by `nameReceived` so the real event wins.
+    private var nameReceived = false
+    private let nameFallbackKey = "name_fallback"
+    private let nameFallbackDelay: TimeInterval = 5.0
+
     // Doppelganger
     private var doppelganger: SKNode?
     private var doppelgangerStarted = false
@@ -46,6 +53,20 @@ final class DeviceNameScene: BaseLevelScene, SKPhysicsContactDelegate {
         createDoppelganger()
         showInstructionPanel()
         setupBit()
+        scheduleNameFallback()
+    }
+
+    /// Hardware-free safety net. If the real `.deviceNameRead` event never fires
+    /// (simulator / no permission), drive the same unlock chain with a fallback
+    /// name after a short delay. No-op if the real name already arrived.
+    private func scheduleNameFallback() {
+        run(.sequence([
+            .wait(forDuration: nameFallbackDelay),
+            .run { [weak self] in
+                guard let self, !self.nameReceived else { return }
+                self.updatePlayerName("PLAYER")
+            }
+        ]), withKey: nameFallbackKey)
     }
 
     // MARK: - Setup
@@ -398,6 +419,12 @@ final class DeviceNameScene: BaseLevelScene, SKPhysicsContactDelegate {
     // MARK: - Name Handling
 
     private func updatePlayerName(_ name: String) {
+        // Whichever path arrives first (real event or fallback) wins; the other
+        // is suppressed so the doppelganger race never starts twice.
+        guard !nameReceived else { return }
+        nameReceived = true
+        removeAction(forKey: nameFallbackKey)
+
         playerName = name.uppercased()
 
         // Update door labels
@@ -526,6 +553,7 @@ final class DeviceNameScene: BaseLevelScene, SKPhysicsContactDelegate {
 
     override func willMove(from view: SKView) {
         super.willMove(from: view)
+        removeAction(forKey: nameFallbackKey)
         DeviceManagerCoordinator.shared.deactivateAll()
     }
 }
