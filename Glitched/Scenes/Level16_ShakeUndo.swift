@@ -13,10 +13,9 @@ final class ShakeUndoScene: BaseLevelScene, SKPhysicsContactDelegate {
     private var playerController: PlayerController!
     private var spawnPoint: CGPoint = .zero
 
-    // Time rewind system - now stores platform position too
-    private var positionHistory: [(position: CGPoint, platformPos: CGPoint, time: TimeInterval)] = []
+    // Time rewind system - stores platform position + oscillator phase
+    private var positionHistory: [(position: CGPoint, platformPos: CGPoint, platformPhase: CGFloat, time: TimeInterval)] = []
     private let historyDuration: TimeInterval = 3.0
-    private let maxHistoryCount = 90  // 3 seconds at 30fps
     private var gameTime: TimeInterval = 0
 
     private var undoIcon: SKNode!
@@ -233,10 +232,12 @@ final class ShakeUndoScene: BaseLevelScene, SKPhysicsContactDelegate {
     }
 
     private func recordPosition() {
-        positionHistory.append((position: bit.position, platformPos: movingPlatform.position, time: gameTime))
+        positionHistory.append((position: bit.position, platformPos: movingPlatform.position, platformPhase: platformPhase, time: gameTime))
 
-        // Trim old history
-        while positionHistory.count > maxHistoryCount {
+        // Trim by time, not count — keep one full historyDuration window
+        // regardless of frame rate (so a rewind target is always available).
+        let cutoff = gameTime - historyDuration
+        while let first = positionHistory.first, first.time < cutoff {
             positionHistory.removeFirst()
         }
     }
@@ -317,7 +318,10 @@ final class ShakeUndoScene: BaseLevelScene, SKPhysicsContactDelegate {
     }
 
     private func performUndo() {
-        guard undoCount > 0, positionHistory.count > 10 else {
+        // Need an undo available AND a real entry to rewind to. The history is
+        // time-windowed, so the oldest entry is the closest point we have to
+        // gameTime - historyDuration.
+        guard undoCount > 0, let target = rewindTarget() else {
             // Feedback when undo fails
             JuiceManager.shared.shake(intensity: .light, duration: 0.2)
             JuiceManager.shared.popText("NO UNDOS LEFT", at: CGPoint(x: size.width / 2, y: size.height / 2), color: strokeColor, fontSize: 18)
@@ -325,6 +329,7 @@ final class ShakeUndoScene: BaseLevelScene, SKPhysicsContactDelegate {
             return
         }
 
+        // Only consume an undo once we know a valid rewind will happen.
         undoCount -= 1
         undoLabel.text = "x\(undoCount)"
 
@@ -334,23 +339,15 @@ final class ShakeUndoScene: BaseLevelScene, SKPhysicsContactDelegate {
             showFourthWallText()
         }
 
-        // Find position from ~3 seconds ago
-        let targetTime = gameTime - historyDuration
-        var targetPosition = spawnPoint
-        var targetPlatformPos = movingPlatform.position
-
-        for entry in positionHistory.reversed() {
-            if entry.time <= targetTime {
-                targetPosition = entry.position
-                targetPlatformPos = entry.platformPos
-                break
-            }
-        }
+        let targetPosition = target.position
+        let targetPlatformPos = target.platformPos
 
         // Ghost trail effect before teleporting
         createGhostTrail()
 
-        // Rewind the moving platform position too
+        // Rewind the moving platform: restore its oscillator phase so the
+        // per-frame driver in updatePlaying keeps it there instead of snapping.
+        platformPhase = target.platformPhase
         movingPlatform.run(.move(to: targetPlatformPos, duration: 0.2))
 
         // Rewind effect
@@ -369,14 +366,28 @@ final class ShakeUndoScene: BaseLevelScene, SKPhysicsContactDelegate {
         addChild(flash)
         flash.run(.sequence([.fadeOut(withDuration: 0.3), .removeFromParent()]))
 
-        // Clear recent history
-        positionHistory.removeAll()
+        // Drop everything newer than the rewind target so the next undo still
+        // has a full window to walk back through (do NOT wipe the buffer).
+        positionHistory.removeAll { $0.time > target.time }
 
         let generator = UIImpactFeedbackGenerator(style: .heavy)
         generator.impactOccurred()
 
         // Animate undo icon with smooth continuous rotation
         undoIcon.run(.rotate(byAngle: -.pi * 2, duration: 0.3))
+    }
+
+    /// The history entry closest to gameTime - historyDuration. Because the
+    /// buffer is trimmed to a historyDuration window, the oldest entry is the
+    /// best ~3s-ago target. Returns nil only when there's nothing to rewind to.
+    private func rewindTarget() -> (position: CGPoint, platformPos: CGPoint, platformPhase: CGFloat, time: TimeInterval)? {
+        let targetTime = gameTime - historyDuration
+        // Prefer the newest entry at or before the target time; fall back to the
+        // oldest entry we have (the full extent of the buffer).
+        for entry in positionHistory.reversed() where entry.time <= targetTime {
+            return entry
+        }
+        return positionHistory.first
     }
 
     override func handleGameInput(_ event: GameInputEvent) {

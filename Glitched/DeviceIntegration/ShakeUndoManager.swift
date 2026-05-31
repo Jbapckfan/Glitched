@@ -13,9 +13,10 @@ final class ShakeUndoManager: DeviceManager {
     private var lastShakeTime: Date?
     private let shakeDebounce: TimeInterval = 0.5
 
-    // Shake detection thresholds
-    private let shakeThreshold: Double = 2.5
-    private var accelerationHistory: [Double] = []
+    // Shake detection: single-sample peak above threshold (in g over gravity).
+    // A real shake produces brief spikes well past ~2g; gentle handling stays
+    // under it. shakeDebounce gives us one undo per shake.
+    private let shakeThreshold: Double = 2.0
 
     private init() {}
 
@@ -25,6 +26,7 @@ final class ShakeUndoManager: DeviceManager {
             print("ShakeUndoManager: Accelerometer not available")
             return
         }
+        lastShakeTime = nil
 
         isActive = true
 
@@ -41,7 +43,7 @@ final class ShakeUndoManager: DeviceManager {
         guard isActive else { return }
         isActive = false
         motionManager.stopAccelerometerUpdates()
-        accelerationHistory.removeAll()
+        lastShakeTime = nil
         print("ShakeUndoManager: Deactivated")
     }
 
@@ -56,30 +58,23 @@ final class ShakeUndoManager: DeviceManager {
         // Remove gravity (approximately 1.0)
         let delta = abs(magnitude - 1.0)
 
-        accelerationHistory.append(delta)
-        if accelerationHistory.count > 10 {
-            accelerationHistory.removeFirst()
+        // Peak detection: a single sample above the threshold is a shake. A real
+        // shake briefly spikes past ~2g; gentle tilting/handling stays well below,
+        // so this fires on shakes but not on slow motion.
+        guard delta > shakeThreshold else { return }
+
+        // Debounce / cooldown so one shake = one undo.
+        if let lastShake = lastShakeTime, Date().timeIntervalSince(lastShake) < shakeDebounce {
+            return
         }
+        lastShakeTime = Date()
 
-        // Detect shake: need sustained high acceleration
-        let avgAcceleration = accelerationHistory.reduce(0, +) / Double(accelerationHistory.count)
+        // Haptic feedback
+        let generator = UIImpactFeedbackGenerator(style: .heavy)
+        generator.impactOccurred()
 
-        if avgAcceleration > shakeThreshold {
-            // Debounce
-            if let lastShake = lastShakeTime, Date().timeIntervalSince(lastShake) < shakeDebounce {
-                return
-            }
-
-            lastShakeTime = Date()
-            accelerationHistory.removeAll()
-
-            // Haptic feedback
-            let generator = UIImpactFeedbackGenerator(style: .heavy)
-            generator.impactOccurred()
-
-            DispatchQueue.main.async {
-                InputEventBus.shared.post(.shakeUndoTriggered)
-            }
+        DispatchQueue.main.async {
+            InputEventBus.shared.post(.shakeUndoTriggered)
         }
     }
 }
