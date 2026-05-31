@@ -18,6 +18,7 @@ final class LowPowerScene: BaseLevelScene, SKPhysicsContactDelegate {
     private var isLowPower = false
     private var batteryIndicator: SKNode!
     private var batteryBars: [SKShapeNode] = []
+    private var lowPowerToggleButton: SKNode?
     private var platformSurfaces: [(shape: SKShapeNode, size: CGSize)] = []  // Track platforms for visual degradation
     private var fourthWallLabel: SKLabelNode?
     private var hasShownFourthWall = false
@@ -36,6 +37,7 @@ final class LowPowerScene: BaseLevelScene, SKPhysicsContactDelegate {
         setupLevelTitle()
         buildLevel()
         createBatteryIndicator()
+        createLowPowerToggleButton()
         showInstructionPanel()
         setupBit()
     }
@@ -113,6 +115,14 @@ final class LowPowerScene: BaseLevelScene, SKPhysicsContactDelegate {
         ceilingGuard.physicsBody = SKPhysicsBody(rectangleOf: CGSize(width: 5, height: 70))
         ceilingGuard.physicsBody?.isDynamic = false
         ceilingGuard.physicsBody?.categoryBitMask = PhysicsCategory.ground
+
+        // Visible wall so the collision reads instead of being an unseen ledge.
+        let ceilingVisual = SKShapeNode(rectOf: CGSize(width: 5, height: 70))
+        ceilingVisual.fillColor = fillColor
+        ceilingVisual.strokeColor = strokeColor
+        ceilingVisual.lineWidth = lineWidth
+        ceilingVisual.name = "platform_surface"
+        ceilingGuard.addChild(ceilingVisual)
         addChild(ceilingGuard)
 
         // Exit sits on section 3. The 97.5-pt catch-to-section-3 gap blocks
@@ -178,6 +188,40 @@ final class LowPowerScene: BaseLevelScene, SKPhysicsContactDelegate {
         }
     }
 
+    // Manual Low Power toggle — fallback when real LPM detection is
+    // unavailable (e.g. simulator). Additive to real-device detection.
+    private func createLowPowerToggleButton() {
+        let button = SKNode()
+        button.position = CGPoint(x: 60, y: topSafeY - 20)
+        button.zPosition = 200
+        button.name = "lowPowerToggle"
+
+        let bg = SKShapeNode(rectOf: CGSize(width: 110, height: 36), cornerRadius: 8)
+        bg.fillColor = fillColor
+        bg.strokeColor = strokeColor
+        bg.lineWidth = lineWidth
+        bg.name = "lowPowerToggle"
+        button.addChild(bg)
+
+        let label = SKLabelNode(text: "POWER")
+        label.fontName = "Menlo-Bold"
+        label.fontSize = 11
+        label.fontColor = strokeColor
+        label.verticalAlignmentMode = .center
+        label.position = CGPoint(x: 0, y: 0)
+        label.name = "lowPowerToggle"
+        button.addChild(label)
+
+        addChild(button)
+        lowPowerToggleButton = button
+        updateToggleButtonVisual()
+    }
+
+    private func updateToggleButtonVisual() {
+        // Amber-ish low-power cue mirrors the battery indicator: dim when active.
+        lowPowerToggleButton?.alpha = isLowPower ? 0.55 : 1.0
+    }
+
     private func createExitDoor(at position: CGPoint) {
         let frame = SKShapeNode(rectOf: CGSize(width: 40, height: 60))
         frame.fillColor = fillColor
@@ -231,6 +275,14 @@ final class LowPowerScene: BaseLevelScene, SKPhysicsContactDelegate {
         addChild(bit)
         registerPlayer(bit)
         playerController = PlayerController(character: bit, scene: self)
+    }
+
+    /// Single source of truth for low-power state. Both the real
+    /// `.lowPowerModeChanged` event and the in-scene toggle button route
+    /// through here so gravity and visuals can never desync.
+    private func setLowPower(_ lowPower: Bool) {
+        updatePowerState(lowPower)
+        updateToggleButtonVisual()
     }
 
     private func updatePowerState(_ lowPower: Bool) {
@@ -326,7 +378,7 @@ final class LowPowerScene: BaseLevelScene, SKPhysicsContactDelegate {
     override func handleGameInput(_ event: GameInputEvent) {
         switch event {
         case .lowPowerModeChanged(let enabled):
-            updatePowerState(enabled)
+            setLowPower(enabled)
         default:
             break
         }
@@ -334,7 +386,16 @@ final class LowPowerScene: BaseLevelScene, SKPhysicsContactDelegate {
 
     override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent?) {
         guard let touch = touches.first else { return }
-        playerController.touchBegan(at: touch.location(in: self))
+        let location = touch.location(in: self)
+
+        // Manual Low Power toggle tap — flips state both directions.
+        let tapped = nodes(at: location)
+        if tapped.contains(where: { $0.name == "lowPowerToggle" }) {
+            setLowPower(!isLowPower)
+            return
+        }
+
+        playerController.touchBegan(at: location)
     }
 
     override func touchesMoved(_ touches: Set<UITouch>, with event: UIEvent?) {
