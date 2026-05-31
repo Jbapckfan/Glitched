@@ -16,13 +16,28 @@ final class DarkModeScene: BaseLevelScene, SKPhysicsContactDelegate {
     private var isDarkMode: Bool = false
     private var isDoorUnlocked = false
 
+    // MARK: - Derived Layout (responsive to canvas size)
+    // Computed in buildLevel() and reused by createDoor/createMoonSensor/createExitTrigger
+    // so the door, sensor, and exit trigger always sit on the door platform regardless
+    // of device width/height. Avoids the old hardcoded `160 + 100 + ...` / `size.width - 80`
+    // magic numbers that broke on iPhone-width and iPad-height canvases.
+    private var groundY: CGFloat = 160
+    private var doorPlatformPoint: CGPoint = .zero      // center of the door platform
+    private var doorPlatformTopY: CGFloat = 0            // top surface Y of the door platform
+    private var light1Point: CGPoint = .zero            // center of the light-mode platform (shadow enemy patrols here)
+
     // Visual elements
     private var backgroundNode: SKShapeNode!
-    private var doorNode: SKNode!
-    private var doorLock: SKNode!
-    private var moonSensor: SKNode!
+    private var doorNode: SKNode?
+    private var doorLock: SKNode?
+    private var moonSensor: SKNode?
     private var instructionPanel: SKNode?
     private var statusIndicator: SKShapeNode?
+
+    // Accessibility fallback: in-scene toggle for users who can't change the
+    // system appearance (MDM-forced appearance, pinned accessibility settings).
+    // Only shown when AccessibilityManager warrants a fallback for .darkMode.
+    private var fallbackToggle: SKNode?
 
     // NEW: Ghost/Real platform duality
     private var darkModePlatforms: [SKNode] = []  // Only solid in dark mode
@@ -37,6 +52,15 @@ final class DarkModeScene: BaseLevelScene, SKPhysicsContactDelegate {
     // All line elements for color updates
     private var lineElements: [SKNode] = []
 
+    // Tracks the platform Bit currently rests on, so grounded state can be cleared
+    // when a mode platform de-solidifies under him (SpriteKit emits no didEnd for a
+    // categoryBitMask mutation). Mirrors Level 6's currentGroundPlatform pattern.
+    private weak var currentGroundPlatform: SKNode?
+
+    // Once a .darkModeChanged event / accessibility toggle has driven appearance,
+    // the delayed initial hardware re-read must not clobber it (the Level 5 lesson).
+    private var hasReceivedAppearanceInput = false
+
     // MARK: - Configuration
 
     override func configureScene() {
@@ -50,6 +74,10 @@ final class DarkModeScene: BaseLevelScene, SKPhysicsContactDelegate {
         // time to propagate the forceDarkMode = false change above
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [weak self] in
             guard let self = self else { return }
+            // The level enters .playing right after configureScene, so a
+            // .darkModeChanged event or fallback toggle may already have driven
+            // state. Don't clobber it with a stale hardware read.
+            guard !self.hasReceivedAppearanceInput else { return }
             if let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene {
                 let currentDark = windowScene.traitCollection.userInterfaceStyle == .dark
                 if currentDark != self.isDarkMode {
@@ -76,12 +104,17 @@ final class DarkModeScene: BaseLevelScene, SKPhysicsContactDelegate {
         AccessibilityManager.shared.registerMechanics([.darkMode])
         DeviceManagerCoordinator.shared.configure(for: [.darkMode])
 
+        // Anchor the play strip to the bottom safe area before any geometry is built,
+        // so the floor decor (setupBackground) and platforms (buildLevel) agree.
+        groundY = bottomSafeY + 120
+
         setupBackground()
         setupLevelTitle()
         buildLevel()
         createDoor()
         createMoonSensor()
         showInstructionPanel()
+        createFallbackToggle()
         setupBit()
         createHiddenDarkText()
         createShadowEnemy()
@@ -158,14 +191,16 @@ final class DarkModeScene: BaseLevelScene, SKPhysicsContactDelegate {
     }
 
     private func drawStars() {
-        // Small stars scattered
+        // Small stars scattered across the top — X as fractions of width so none
+        // run off a narrow (390pt) canvas (were absolute 80..520 for a wide canvas).
+        let w = size.width
         let starPositions = [
-            CGPoint(x: 80, y: topSafeY - 70),
-            CGPoint(x: 150, y: topSafeY - 120),
-            CGPoint(x: 200, y: topSafeY - 50),
-            CGPoint(x: 300, y: topSafeY - 100),
-            CGPoint(x: 450, y: topSafeY - 60),
-            CGPoint(x: 520, y: topSafeY - 130)
+            CGPoint(x: w * 0.14, y: topSafeY - 70),
+            CGPoint(x: w * 0.26, y: topSafeY - 120),
+            CGPoint(x: w * 0.36, y: topSafeY - 50),
+            CGPoint(x: w * 0.55, y: topSafeY - 100),
+            CGPoint(x: w * 0.78, y: topSafeY - 60),
+            CGPoint(x: w * 0.90, y: topSafeY - 130)
         ]
 
         for (i, pos) in starPositions.enumerated() {
@@ -228,7 +263,9 @@ final class DarkModeScene: BaseLevelScene, SKPhysicsContactDelegate {
     }
 
     private func drawFloorGrid() {
-        let floorY: CGFloat = 140
+        // Decorative floor baseline tracks the bottom-anchored ground (was hardcoded 140
+        // for an old ~600pt canvas; 20pt below ground center keeps the original look).
+        let floorY: CGFloat = groundY - 20
 
         // Horizontal floor line
         let floorLine = SKShapeNode()
@@ -266,7 +303,9 @@ final class DarkModeScene: BaseLevelScene, SKPhysicsContactDelegate {
         title.fontName = "Helvetica-Bold"
         title.fontSize = 28
         title.fontColor = strokeColor
-        title.position = CGPoint(x: 80, y: topSafeY - 30)
+        // Lower the baseline so the 28pt cap height clears the top safe-area inset
+        // (~16pt padding below the Dynamic Island / status bar).
+        title.position = CGPoint(x: 80, y: topSafeY - 44)
         title.horizontalAlignmentMode = .left
         title.zPosition = 100
         title.name = "level_title"
@@ -290,45 +329,84 @@ final class DarkModeScene: BaseLevelScene, SKPhysicsContactDelegate {
     // MARK: - Level Building
 
     private func buildLevel() {
-        let groundY: CGFloat = 160
+        let w = size.width
+
+        // groundY is set in configureScene (bottomSafeY + 120) so floor decor and
+        // platforms share the same baseline.
+
+        // Per-step vertical rise: scale gently with available height but cap each
+        // step at 50pt so every jump stays feasible (rule: rises <= ~55pt).
+        let riseBand = max(0, topSafeY - groundY)
+        let step = min(50, riseBand * 0.10)   // one "step up" unit
+
+        // Horizontal route is REACH-BOUNDED, not width-fractional. Width-fractional
+        // X (the old w*0.30..0.86) made inner edge-to-edge gaps explode on iPad
+        // (dark1->light1 hit 125pt, light1->dark2 104pt at w=1024) while platform
+        // widths stayed fixed — pushing the climb past Bit's ~95pt rising-jump reach
+        // and soft-locking the exit. Instead, place platform CENTERS a fixed `pitch`
+        // apart (capped at ~90pt) so the inner edge-to-edge gap can never exceed
+        // ~95pt for a <=+50pt rise, regardless of canvas width.
+        //
+        // Anchor the start at the same w*0.12 the spawn (setupBit) and easter-egg
+        // text (createHiddenDarkText) already key off, so those stay aligned without
+        // touching them. Each subsequent element steps one pitch to the right.
+        let pitch = min(w * 0.18, 90)        // center-to-center spacing
+        let startX = w * 0.12
+        let dark1X = startX + pitch
+        let light1X = startX + pitch * 2
+        let dark2X = startX + pitch * 3
+        let doorX  = startX + pitch * 4
+
+        // Scale the dual-platform width with the pitch so adjacent platforms still
+        // nearly overlap on wide canvases (continuous footing); floor at 80pt so the
+        // moon/sun icon and dashed ghost outline stay legible on narrow iPhones.
+        let dualW = max(80, pitch * 0.85)
 
         // Start platform (always solid)
         let startPlatform = createPlatform(
-            at: CGPoint(x: 100, y: groundY),
+            at: CGPoint(x: startX, y: groundY),
             size: CGSize(width: 160, height: 40)
         )
         startPlatform.name = "start_platform"
 
         // GHOST PLATFORMS: Only solid in DARK mode (moon icon)
         let darkPlatform1 = createDualPlatform(
-            at: CGPoint(x: 250, y: groundY + 80),
-            size: CGSize(width: 80, height: 25),
+            at: CGPoint(x: dark1X, y: groundY + step),
+            size: CGSize(width: dualW, height: 25),
             isDarkModeOnly: true
         )
         darkModePlatforms.append(darkPlatform1)
 
         // REAL PLATFORMS: Only solid in LIGHT mode (sun icon)
+        let light1Y = groundY + step * 2
         let lightPlatform1 = createDualPlatform(
-            at: CGPoint(x: 380, y: groundY + 50),
-            size: CGSize(width: 80, height: 25),
+            at: CGPoint(x: light1X, y: light1Y),
+            size: CGSize(width: dualW, height: 25),
             isDarkModeOnly: false
         )
         lightModePlatforms.append(lightPlatform1)
+        light1Point = CGPoint(x: light1X, y: light1Y)
 
         // Another dark mode platform
         let darkPlatform2 = createDualPlatform(
-            at: CGPoint(x: 500, y: groundY + 100),
-            size: CGSize(width: 80, height: 25),
+            at: CGPoint(x: dark2X, y: groundY + step * 3),
+            size: CGSize(width: dualW, height: 25),
             isDarkModeOnly: true
         )
         darkModePlatforms.append(darkPlatform2)
 
-        // Door platform (always solid)
+        // Door platform (always solid) — rightmost element, at the top of the climb.
+        let doorPlatformY = groundY + step * 4
         let doorPlatform = createPlatform(
-            at: CGPoint(x: size.width - 100, y: groundY + 100),
+            at: CGPoint(x: doorX, y: doorPlatformY),
             size: CGSize(width: 140, height: 35)
         )
         doorPlatform.name = "door_platform"
+
+        // Record derived geometry so the door, moon sensor, and exit trigger
+        // sit on the door platform on every canvas (no hardcoded constants).
+        doorPlatformPoint = CGPoint(x: doorX, y: doorPlatformY)
+        doorPlatformTopY = doorPlatformY + 35 / 2   // platform half-height
 
         // Death zone
         let deathZone = SKNode()
@@ -455,24 +533,27 @@ final class DarkModeScene: BaseLevelScene, SKPhysicsContactDelegate {
     private func updateDualPlatforms() {
         // Dark mode platforms: solid in dark, ghost in light
         for platform in darkModePlatforms {
-            if isDarkMode {
-                platform.alpha = 1.0
-                platform.physicsBody?.categoryBitMask = PhysicsCategory.ground
-            } else {
-                platform.alpha = 0.3
-                platform.physicsBody?.categoryBitMask = 0
-            }
+            platform.alpha = isDarkMode ? 1.0 : 0.3
+            setPlatformSolid(platform, solid: isDarkMode)
         }
 
         // Light mode platforms: solid in light, ghost in dark
         for platform in lightModePlatforms {
-            if isDarkMode {
-                platform.alpha = 0.3
-                platform.physicsBody?.categoryBitMask = 0
-            } else {
-                platform.alpha = 1.0
-                platform.physicsBody?.categoryBitMask = PhysicsCategory.ground
-            }
+            platform.alpha = isDarkMode ? 0.3 : 1.0
+            setPlatformSolid(platform, solid: !isDarkMode)
+        }
+    }
+
+    /// Toggle a mode platform's solidity. If the platform Bit is currently standing
+    /// on de-solidifies, clear grounded state — SpriteKit emits no didEnd for a
+    /// categoryBitMask mutation, so without this Bit could keep jumping while falling
+    /// through a vanished platform (the Level 6 grounded-state bug).
+    private func setPlatformSolid(_ platform: SKNode, solid: Bool) {
+        let wasSolid = platform.physicsBody?.categoryBitMask == PhysicsCategory.ground
+        platform.physicsBody?.categoryBitMask = solid ? PhysicsCategory.ground : 0
+        if wasSolid && !solid && currentGroundPlatform === platform {
+            currentGroundPlatform = nil
+            bit?.setGrounded(false)
         }
     }
 
@@ -521,12 +602,18 @@ final class DarkModeScene: BaseLevelScene, SKPhysicsContactDelegate {
     private func createDoor() {
         let doorWidth: CGFloat = 45
         let doorHeight: CGFloat = 65
-        let doorPos = CGPoint(x: size.width - 80, y: 160 + 100 + 52)
+        // Sit the door on the door platform (derived in buildLevel), offset slightly
+        // right of platform center to match the original composition.
+        let doorPos = CGPoint(
+            x: doorPlatformPoint.x + 20,
+            y: doorPlatformTopY + doorHeight / 2
+        )
 
-        doorNode = SKNode()
-        doorNode.position = doorPos
-        doorNode.zPosition = 10
-        addChild(doorNode)
+        let door = SKNode()
+        door.position = doorPos
+        door.zPosition = 10
+        addChild(door)
+        doorNode = door
 
         // Door frame
         let frame = SKShapeNode(rectOf: CGSize(width: doorWidth, height: doorHeight))
@@ -534,7 +621,7 @@ final class DarkModeScene: BaseLevelScene, SKPhysicsContactDelegate {
         frame.strokeColor = strokeColor
         frame.lineWidth = lineWidth
         frame.name = "door_frame"
-        doorNode.addChild(frame)
+        door.addChild(frame)
         lineElements.append(frame)
 
         // Door panels
@@ -546,14 +633,15 @@ final class DarkModeScene: BaseLevelScene, SKPhysicsContactDelegate {
             panel.lineWidth = lineWidth * 0.5
             panel.position = CGPoint(x: 0, y: panelY)
             panel.name = "door_panel_\(i)"
-            doorNode.addChild(panel)
+            door.addChild(panel)
             lineElements.append(panel)
         }
 
         // Lock indicator
-        doorLock = SKNode()
-        doorLock.position = CGPoint(x: 0, y: -5)
-        doorNode.addChild(doorLock)
+        let lock = SKNode()
+        lock.position = CGPoint(x: 0, y: -5)
+        door.addChild(lock)
+        doorLock = lock
 
         // Padlock shape
         let padlockBody = SKShapeNode(rectOf: CGSize(width: 14, height: 12), cornerRadius: 2)
@@ -561,7 +649,7 @@ final class DarkModeScene: BaseLevelScene, SKPhysicsContactDelegate {
         padlockBody.strokeColor = strokeColor
         padlockBody.lineWidth = lineWidth * 0.6
         padlockBody.name = "padlock_body"
-        doorLock.addChild(padlockBody)
+        lock.addChild(padlockBody)
         lineElements.append(padlockBody)
 
         // Padlock shackle
@@ -573,17 +661,18 @@ final class DarkModeScene: BaseLevelScene, SKPhysicsContactDelegate {
         shackle.lineWidth = lineWidth * 0.5
         shackle.fillColor = .clear
         shackle.name = "shackle"
-        doorLock.addChild(shackle)
+        lock.addChild(shackle)
         lineElements.append(shackle)
 
         // Status light
-        statusIndicator = SKShapeNode(circleOfRadius: 5)
-        statusIndicator?.fillColor = strokeColor
-        statusIndicator?.strokeColor = strokeColor
-        statusIndicator?.lineWidth = lineWidth * 0.3
-        statusIndicator?.position = CGPoint(x: doorWidth / 2 + 15, y: doorHeight / 2 - 10)
-        statusIndicator?.name = "status_light"
-        doorNode.addChild(statusIndicator!)
+        let status = SKShapeNode(circleOfRadius: 5)
+        status.fillColor = strokeColor
+        status.strokeColor = strokeColor
+        status.lineWidth = lineWidth * 0.3
+        status.position = CGPoint(x: doorWidth / 2 + 15, y: doorHeight / 2 - 10)
+        status.name = "status_light"
+        statusIndicator = status
+        door.addChild(status)
 
         // Arrow (hidden until unlocked)
         let arrow = createArrow()
@@ -591,7 +680,7 @@ final class DarkModeScene: BaseLevelScene, SKPhysicsContactDelegate {
         arrow.name = "door_arrow"
         arrow.alpha = 0
         arrow.zPosition = 15
-        doorNode.addChild(arrow)
+        door.addChild(arrow)
         lineElements.append(arrow)
     }
 
@@ -617,10 +706,12 @@ final class DarkModeScene: BaseLevelScene, SKPhysicsContactDelegate {
     // MARK: - Moon Sensor
 
     private func createMoonSensor() {
-        moonSensor = SKNode()
-        moonSensor.position = CGPoint(x: size.width - 80, y: 160 + 100 + 120)
-        moonSensor.zPosition = 50
-        addChild(moonSensor)
+        let sensor = SKNode()
+        // Mounted above the door on the door platform (derived in buildLevel).
+        sensor.position = CGPoint(x: doorPlatformPoint.x + 20, y: doorPlatformTopY + 120)
+        sensor.zPosition = 50
+        addChild(sensor)
+        moonSensor = sensor
 
         // Sensor box
         let sensorBox = SKShapeNode(rectOf: CGSize(width: 60, height: 45), cornerRadius: 5)
@@ -628,14 +719,14 @@ final class DarkModeScene: BaseLevelScene, SKPhysicsContactDelegate {
         sensorBox.strokeColor = strokeColor
         sensorBox.lineWidth = lineWidth
         sensorBox.name = "sensor_box"
-        moonSensor.addChild(sensorBox)
+        sensor.addChild(sensorBox)
         lineElements.append(sensorBox)
 
         // Moon icon inside
         let moonIcon = createMoonIcon()
         moonIcon.position = CGPoint(x: -10, y: 0)
         moonIcon.name = "sensor_moon"
-        moonSensor.addChild(moonIcon)
+        sensor.addChild(moonIcon)
         lineElements.append(moonIcon)
 
         // Signal waves
@@ -651,7 +742,7 @@ final class DarkModeScene: BaseLevelScene, SKPhysicsContactDelegate {
             wave.position = CGPoint(x: 15, y: 0)
             wave.alpha = 0.3
             wave.name = "signal_wave_\(i)"
-            moonSensor.addChild(wave)
+            sensor.addChild(wave)
             lineElements.append(wave)
         }
     }
@@ -766,11 +857,14 @@ final class DarkModeScene: BaseLevelScene, SKPhysicsContactDelegate {
     // MARK: - Hidden Dark Mode Text
 
     private func createHiddenDarkText() {
+        // Easter-egg text sits on the floor near the start area; anchor to the
+        // bottom-derived groundY (was hardcoded y=130/115 for an old short canvas).
+        let textX = size.width * 0.12 + 30
         hiddenDarkText = SKLabelNode(text: "PSST. BETWEEN YOU AND ME...")
         hiddenDarkText?.fontName = "Menlo-Bold"
         hiddenDarkText?.fontSize = 10
         hiddenDarkText?.fontColor = .white
-        hiddenDarkText?.position = CGPoint(x: 120, y: 130)
+        hiddenDarkText?.position = CGPoint(x: textX, y: groundY - 30)
         hiddenDarkText?.zPosition = 50
         hiddenDarkText?.alpha = 0
         addChild(hiddenDarkText!)
@@ -779,7 +873,7 @@ final class DarkModeScene: BaseLevelScene, SKPhysicsContactDelegate {
         hiddenDarkText2.fontName = "Menlo-Bold"
         hiddenDarkText2.fontSize = 10
         hiddenDarkText2.fontColor = .white
-        hiddenDarkText2.position = CGPoint(x: 120, y: 115)
+        hiddenDarkText2.position = CGPoint(x: textX, y: groundY - 45)
         hiddenDarkText2.zPosition = 50
         hiddenDarkText2.alpha = 0
         hiddenDarkText2.name = "hidden_dark_text_2"
@@ -798,7 +892,9 @@ final class DarkModeScene: BaseLevelScene, SKPhysicsContactDelegate {
 
     private func createShadowEnemy() {
         shadowEnemy = SKNode()
-        shadowEnemy?.position = CGPoint(x: 380, y: 160 + 50 + 25)
+        // Patrols the light-mode platform (derived in buildLevel). Start 20pt left of
+        // center so the +40 patrol sweep stays over the 80pt-wide platform.
+        shadowEnemy?.position = CGPoint(x: light1Point.x - 20, y: light1Point.y + 25)
         shadowEnemy?.zPosition = 20
         shadowEnemy?.alpha = 0
         addChild(shadowEnemy!)
@@ -870,7 +966,10 @@ final class DarkModeScene: BaseLevelScene, SKPhysicsContactDelegate {
     // MARK: - Setup
 
     private func setupBit() {
-        spawnPoint = CGPoint(x: 90, y: 200)
+        // Spawn on the start platform (derived in buildLevel): start is at x = size.width*0.12,
+        // groundY anchored to the bottom safe area. Keep ~40pt above ground center so Bit
+        // lands cleanly on the start platform on every canvas.
+        spawnPoint = CGPoint(x: size.width * 0.12, y: groundY + 40)
 
         bit = BitCharacter.make()
         bit.position = spawnPoint
@@ -883,6 +982,11 @@ final class DarkModeScene: BaseLevelScene, SKPhysicsContactDelegate {
     // MARK: - Door State
 
     private func updateDoorState() {
+        // Defensive: door/sensor geometry must exist (createDoor/createMoonSensor
+        // run in configureScene before any .darkModeChanged event can be delivered).
+        // Guarding here removes the crash surface entirely if ordering ever changes.
+        guard let doorNode, let doorLock, let moonSensor else { return }
+
         let shouldUnlock = isDarkMode
 
         if shouldUnlock && !isDoorUnlocked {
@@ -962,7 +1066,8 @@ final class DarkModeScene: BaseLevelScene, SKPhysicsContactDelegate {
 
     private func createExitTrigger() {
         let exit = SKSpriteNode(color: .clear, size: CGSize(width: 45, height: 65))
-        exit.position = CGPoint(x: size.width - 80, y: 160 + 100 + 52)
+        // Match the door's derived position exactly (door is the visual; this is the trigger).
+        exit.position = CGPoint(x: doorPlatformPoint.x + 20, y: doorPlatformTopY + 65 / 2)
         exit.physicsBody = SKPhysicsBody(rectangleOf: exit.size)
         exit.physicsBody?.isDynamic = false
         exit.physicsBody?.categoryBitMask = PhysicsCategory.exit
@@ -1075,24 +1180,79 @@ final class DarkModeScene: BaseLevelScene, SKPhysicsContactDelegate {
     override func handleGameInput(_ event: GameInputEvent) {
         switch event {
         case .darkModeChanged(let isDark):
-            if isDark != isDarkMode {
-                isDarkMode = isDark
-                updateColorScheme(animated: true)
-                updateDoorState()
-                updateDualPlatforms()
-                updateHiddenDarkText()
-                updateShadowEnemy()
-            }
+            applyAppearance(isDark: isDark, animated: true)
         default:
             break
         }
+    }
+
+    /// Single entry point for an appearance change, whether from the real system
+    /// trait change (.darkModeChanged) or the in-scene accessibility fallback toggle.
+    private func applyAppearance(isDark: Bool, animated: Bool) {
+        // An event/toggle has taken control of appearance; suppress the delayed
+        // initial hardware re-read even if this call is a no-op (same target state).
+        hasReceivedAppearanceInput = true
+        guard isDark != isDarkMode else { return }
+        isDarkMode = isDark
+        updateColorScheme(animated: animated)
+        updateDoorState()
+        updateDualPlatforms()
+        updateHiddenDarkText()
+        updateShadowEnemy()
+    }
+
+    // MARK: - Accessibility Fallback Toggle
+
+    private func createFallbackToggle() {
+        // Only surface the in-scene toggle when the system-appearance puzzle isn't
+        // reachable for this user; otherwise the system toggle stays the primary path.
+        guard AccessibilityManager.shared.needsFallbackUI(for: .darkMode) else { return }
+
+        let button = SKNode()
+        button.position = CGPoint(x: size.width / 2, y: bottomSafeY + 30)
+        button.zPosition = 200
+        button.name = "fallback_toggle"
+
+        let bg = SKShapeNode(rectOf: CGSize(width: 150, height: 32), cornerRadius: 4)
+        bg.fillColor = fillColor
+        bg.strokeColor = strokeColor
+        bg.lineWidth = lineWidth
+        bg.name = "fallback_toggle_bg"
+        button.addChild(bg)
+        lineElements.append(bg)
+
+        let label = SKLabelNode(text: "TOGGLE DARK MODE")
+        label.fontName = "Menlo-Bold"
+        label.fontSize = 11
+        label.fontColor = strokeColor
+        label.verticalAlignmentMode = .center
+        label.name = "fallback_toggle_label"
+        button.addChild(label)
+        lineElements.append(label)
+
+        fallbackToggle = button
+        addChild(button)
+    }
+
+    private func toggleAppearanceFallback() {
+        applyAppearance(isDark: !isDarkMode, animated: true)
+        let generator = UIImpactFeedbackGenerator(style: .light)
+        generator.impactOccurred()
     }
 
     // MARK: - Touch Handling
 
     override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent?) {
         guard let touch = touches.first else { return }
-        playerController.touchBegan(at: touch.location(in: self))
+        let location = touch.location(in: self)
+
+        // In-scene accessibility fallback toggle takes priority over movement taps.
+        if let toggle = fallbackToggle, toggle.contains(location) {
+            toggleAppearanceFallback()
+            return
+        }
+
+        playerController.touchBegan(at: location)
     }
 
     override func touchesMoved(_ touches: Set<UITouch>, with event: UIEvent?) {
@@ -1119,6 +1279,7 @@ final class DarkModeScene: BaseLevelScene, SKPhysicsContactDelegate {
         } else if collision == PhysicsCategory.player | PhysicsCategory.exit {
             handleExit()
         } else if collision == PhysicsCategory.player | PhysicsCategory.ground {
+            currentGroundPlatform = groundNode(from: contact)
             bit.setGrounded(true)
         }
     }
@@ -1127,13 +1288,33 @@ final class DarkModeScene: BaseLevelScene, SKPhysicsContactDelegate {
         let collision = contact.bodyA.categoryBitMask | contact.bodyB.categoryBitMask
 
         if collision == PhysicsCategory.player | PhysicsCategory.ground {
+            if currentGroundPlatform === groundNode(from: contact) {
+                currentGroundPlatform = nil
+            }
             run(.sequence([
                 .wait(forDuration: 0.05),
                 .run { [weak self] in
-                    self?.bit.setGrounded(false)
+                    guard let self = self else { return }
+                    // Only drop grounded if Bit hasn't landed on another platform
+                    // in the meantime (avoids dropping grounding while resting on
+                    // an adjacent/overlapping platform).
+                    if self.currentGroundPlatform == nil {
+                        self.bit.setGrounded(false)
+                    }
                 }
             ]))
         }
+    }
+
+    /// Returns the ground-category node participating in a contact, if any.
+    private func groundNode(from contact: SKPhysicsContact) -> SKNode? {
+        if contact.bodyA.categoryBitMask == PhysicsCategory.ground {
+            return contact.bodyA.node
+        }
+        if contact.bodyB.categoryBitMask == PhysicsCategory.ground {
+            return contact.bodyB.node
+        }
+        return nil
     }
 
     // MARK: - Game Events
@@ -1141,6 +1322,7 @@ final class DarkModeScene: BaseLevelScene, SKPhysicsContactDelegate {
     private func handleDeath() {
         guard GameState.shared.levelState == .playing else { return }
         playerController.cancel()
+        currentGroundPlatform = nil
         bit.playBufferDeath(respawnAt: spawnPoint) { [weak self] in
             self?.bit.setGrounded(true)
         }
@@ -1161,6 +1343,10 @@ final class DarkModeScene: BaseLevelScene, SKPhysicsContactDelegate {
     override func onLevelSucceeded() {
         ProgressManager.shared.markCompleted(levelID)
         DeviceManagerCoordinator.shared.deactivateAll()
+        // Restore forced dark mode now (not only in willMove) so the next level
+        // never momentarily renders in the released system appearance during the
+        // ~0.5s success fade-out before willMove fires.
+        UserDefaults.standard.set(true, forKey: "forceDarkMode")
     }
 
     override func hintText() -> String? {

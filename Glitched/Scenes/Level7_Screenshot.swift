@@ -19,6 +19,42 @@ final class ScreenshotScene: BaseLevelScene, SKPhysicsContactDelegate {
     private var frozenTimeRemaining: TimeInterval = 0
     private let freezeDuration: TimeInterval = 5.0
 
+    // MARK: - Responsive Layout
+    // Vertical play zone is anchored to the canvas so the puzzle lifts toward
+    // center on tall (iPad) canvases instead of being marooned at the floor.
+    private var groundY: CGFloat = 180
+    private var bridgeY: CGFloat = 190
+    // Horizontal chasm edges (right edge of left platform / left edge of right
+    // platform). The ghost bridge derives its span from these so it always
+    // physically connects the two narrow platforms on every canvas width.
+    private var gapStart: CGFloat = 120
+    private var gapEnd: CGFloat = 120
+    // Platform centers, derived in buildLevel() from the chasm edges. Spawn and
+    // exit re-derive from these so the player and door always sit ON a platform.
+    private var leftPlatformCenterX: CGFloat = 70
+    private var rightPlatformCenterX: CGFloat = 70
+    // Narrow platform footprint. Kept small so the platforms read as thin
+    // cliff edges flanking a wide chasm.
+    private let platformWidth: CGFloat = 40
+    // The chasm is a FIXED, screen-centered width rather than (width - margin):
+    // anchoring it to the canvas width made the gap scale up to ~900-1246pt on
+    // iPad (uncrossable in any freeze) and ~270pt on phones (too wide to cross
+    // inside the shortest 1.0s freeze). A fixed 220pt chasm is simultaneously
+    // (a) wider than Bit's ~184pt run-jump+coyote reach, so the bridge is
+    // REQUIRED and the chasm cannot be single-jumped, and (b) crossable in
+    // 220/245 ~= 0.90s, comfortably inside the shortest (1.0s) degraded freeze,
+    // on every device from iPhone 390 to iPad 1366.
+    private let chasmWidth: CGFloat = 220
+    // Each platform overlaps the bridge by this much so the frozen surface is
+    // continuous from platform to platform.
+    private let bridgeOverlap: CGFloat = 20
+
+    // Coyote grace: when the freeze timer hits 0 while the player is resting on
+    // the bridge, keep the bridge solid for a short window so the drop is not a
+    // sharp unsignalled death edge.
+    private var bridgeGraceRemaining: TimeInterval = 0
+    private let bridgeGraceDuration: TimeInterval = 0.2
+
     // Flicker timing - 33% visible (100ms on, 200ms off) for better visibility
     private var flickerTimer: TimeInterval = 0
     private let flickerOnDuration: TimeInterval = 0.10   // 100ms visible
@@ -113,21 +149,29 @@ final class ScreenshotScene: BaseLevelScene, SKPhysicsContactDelegate {
     }
 
     private func drawFilmStrips() {
+        // Frame the gameplay band rather than running the full canvas height
+        // behind the title/HUD: stop the strips ~40pt below the top HUD line and
+        // ~20pt above the bottom safe edge, then center them in that band.
+        let stripTop = topSafeY - 40
+        let stripBottom = bottomSafeY + 20
+        let stripHeight = max(40, stripTop - stripBottom)
+        let stripCenterY = (stripTop + stripBottom) / 2
+
         // Film perforations along edges
         for side in [0, 1] {
             let x: CGFloat = side == 0 ? 20 : size.width - 20
 
             // Film strip border
-            let strip = SKShapeNode(rectOf: CGSize(width: 25, height: size.height - 100))
+            let strip = SKShapeNode(rectOf: CGSize(width: 25, height: stripHeight))
             strip.fillColor = fillColor
             strip.strokeColor = strokeColor
             strip.lineWidth = lineWidth * 0.5
-            strip.position = CGPoint(x: x, y: size.height / 2)
+            strip.position = CGPoint(x: x, y: stripCenterY)
             strip.zPosition = -15
             addChild(strip)
 
             // Perforations
-            for y in stride(from: CGFloat(80), to: size.height - 60, by: 40) {
+            for y in stride(from: stripBottom + 20, to: stripTop - 10, by: 40) {
                 let perf = SKShapeNode(rectOf: CGSize(width: 8, height: 12), cornerRadius: 2)
                 perf.fillColor = strokeColor
                 perf.strokeColor = .clear
@@ -139,10 +183,12 @@ final class ScreenshotScene: BaseLevelScene, SKPhysicsContactDelegate {
     }
 
     private func drawFlashBulbs() {
-        // Flash bulb icons
+        // Flash bulb icons. Pushed below the HUD band and to the horizontal
+        // extremes so they don't crowd the left-aligned title (x=80) or the
+        // centered instruction/timer panel that live in the top strip.
         let positions = [
-            CGPoint(x: 100, y: topSafeY - 90),
-            CGPoint(x: size.width - 100, y: topSafeY - 70)
+            CGPoint(x: 50, y: topSafeY - 170),
+            CGPoint(x: size.width - 50, y: topSafeY - 150)
         ]
 
         for pos in positions {
@@ -234,27 +280,50 @@ final class ScreenshotScene: BaseLevelScene, SKPhysicsContactDelegate {
     // MARK: - Level Building
 
     private func buildLevel() {
-        let groundY: CGFloat = 180
+        // Anchor the vertical play zone to the canvas: on a tall iPad this lifts
+        // the platforms/bridge/exit toward center instead of pinning them to the
+        // floor; on a phone (height ~844) max(...) keeps the original layout.
+        groundY = max(180, size.height * 0.28)
+        bridgeY = groundY + 10
+
+        // Fixed, screen-centered chasm. Clamp the chasm to the canvas so a very
+        // narrow window still leaves a sliver of platform on each side; on every
+        // mandated device (iPhone 390/402, iPad 1024/1366 both orientations) the
+        // full 220pt fits with room to spare.
+        let platformHeight: CGFloat = 40
+        let halfChasm = min(chasmWidth, size.width - 2 * platformWidth) / 2
+        let chasmCenterX = size.width / 2
+
+        // Chasm edges (right edge of left platform / left edge of right platform).
+        gapStart = chasmCenterX - halfChasm
+        gapEnd = chasmCenterX + halfChasm
+
+        // Platforms sit just outside the chasm edges: the left platform's right
+        // edge lands exactly on gapStart, the right platform's left edge on
+        // gapEnd, so the two thin cliffs flank the fixed-width chasm.
+        leftPlatformCenterX = gapStart - platformWidth / 2
+        rightPlatformCenterX = gapEnd + platformWidth / 2
 
         // Left cliff platform
         let leftPlatform = createPlatform(
-            at: CGPoint(x: 100, y: groundY),
-            size: CGSize(width: 160, height: 40)
+            at: CGPoint(x: leftPlatformCenterX, y: groundY),
+            size: CGSize(width: platformWidth, height: platformHeight)
         )
         leftPlatform.name = "ground"
 
         // Right cliff platform
         let rightPlatform = createPlatform(
-            at: CGPoint(x: size.width - 100, y: groundY),
-            size: CGSize(width: 160, height: 40)
+            at: CGPoint(x: rightPlatformCenterX, y: groundY),
+            size: CGSize(width: platformWidth, height: platformHeight)
         )
         rightPlatform.name = "ground"
 
         // Chasm hatching between platforms
-        drawChasmHatching(from: 180, to: size.width - 180, y: groundY - 60)
+        drawChasmHatching(from: gapStart, to: gapEnd, y: groundY - 60)
 
-        // Exit door
-        createExitDoor(at: CGPoint(x: size.width - 80, y: groundY + 70))
+        // Exit door, seated on the right platform (derived from its center so it
+        // sits ON the platform regardless of canvas width).
+        createExitDoor(at: CGPoint(x: rightPlatformCenterX, y: groundY + 70))
 
         // Death zone
         let deathZone = SKNode()
@@ -393,15 +462,26 @@ final class ScreenshotScene: BaseLevelScene, SKPhysicsContactDelegate {
     // MARK: - Ghost Bridge
 
     private func createGhostBridge() {
+        // Span the actual chasm: from just inside the left platform's right edge
+        // to just inside the right platform's left edge (overlapping each by
+        // bridgeOverlap so the frozen surface is continuous). This keeps the
+        // bridge covering exactly the chasm on every canvas width, instead of a
+        // fixed 350pt span that maroons the bridge on iPad and overhangs phones.
+        let bridgeLeft = gapStart - bridgeOverlap
+        let bridgeRight = gapEnd + bridgeOverlap
+        let totalWidth = max(50, bridgeRight - bridgeLeft)
+        let bridgeCenterX = (bridgeLeft + bridgeRight) / 2
+
         ghostBridge = SKNode()
-        ghostBridge.position = CGPoint(x: size.width / 2, y: 190)
+        ghostBridge.position = CGPoint(x: bridgeCenterX, y: bridgeY)
         ghostBridge.zPosition = 20
         addChild(ghostBridge)
 
-        let segmentCount = 7
-        let segmentWidth: CGFloat = 50
+        // Target ~50pt segments, then size segments exactly to fill totalWidth.
+        let targetSegmentWidth: CGFloat = 50
+        let segmentCount = max(1, Int(ceil(totalWidth / targetSegmentWidth)))
+        let segmentWidth: CGFloat = totalWidth / CGFloat(segmentCount)
         let segmentHeight: CGFloat = 18
-        let totalWidth = CGFloat(segmentCount) * segmentWidth
         let startX = -totalWidth / 2 + segmentWidth / 2
 
         for i in 0..<segmentCount {
@@ -620,7 +700,9 @@ final class ScreenshotScene: BaseLevelScene, SKPhysicsContactDelegate {
     // MARK: - Setup
 
     private func setupBit() {
-        spawnPoint = CGPoint(x: 100, y: 220)
+        // Spawn on the left platform, derived from its center and the responsive
+        // groundY so the player drops onto the platform on every canvas size.
+        spawnPoint = CGPoint(x: leftPlatformCenterX, y: groundY + 40)
 
         bit = BitCharacter.make()
         bit.position = spawnPoint
@@ -649,7 +731,10 @@ final class ScreenshotScene: BaseLevelScene, SKPhysicsContactDelegate {
         label.fontName = "Menlo-Bold"
         label.fontSize = 13
         label.fontColor = strokeColor
-        label.position = CGPoint(x: size.width / 2, y: size.height / 2 + 60)
+        // Anchor the 4th-wall beat just above the play zone (the just-frozen
+        // bridge the message reacts to), not scene center, so on iPad it doesn't
+        // float ~550pt above where the player is looking.
+        label.position = CGPoint(x: size.width / 2, y: bridgeY + 140)
         label.zPosition = 400
         label.alpha = 0
         addChild(label)
@@ -658,7 +743,7 @@ final class ScreenshotScene: BaseLevelScene, SKPhysicsContactDelegate {
         label2.fontName = "Menlo-Bold"
         label2.fontSize = 11
         label2.fontColor = strokeColor
-        label2.position = CGPoint(x: size.width / 2, y: size.height / 2 + 40)
+        label2.position = CGPoint(x: size.width / 2, y: bridgeY + 120)
         label2.zPosition = 400
         label2.alpha = 0
         addChild(label2)
@@ -676,6 +761,9 @@ final class ScreenshotScene: BaseLevelScene, SKPhysicsContactDelegate {
     private func freezeBridge() {
         guard !isBridgeFrozen else { return }
         isBridgeFrozen = true
+        // Cancel any pending coyote-grace drop from a just-expired freeze so the
+        // re-freeze isn't immediately dropped mid-frame.
+        bridgeGraceRemaining = 0
         let duration = currentFreezeDuration()
         screenshotCount += 1
         frozenTimeRemaining = duration
@@ -728,15 +816,20 @@ final class ScreenshotScene: BaseLevelScene, SKPhysicsContactDelegate {
     private func unfreezeBridge() {
         isBridgeFrozen = false
 
-        // Reset bridge to flickering
-        for segment in bridgeSegments {
-            segment.physicsBody?.categoryBitMask = 0
-            if let pattern = segment.childNode(withName: "pattern") as? SKShapeNode {
-                pattern.alpha = 0.3
-            }
-            if let cameraIcon = segment.childNode(withName: "camera_icon") {
-                cameraIcon.alpha = 0.4
-            }
+        // If the player is currently resting on the bridge when the timer hits 0,
+        // give a short coyote grace: keep the bridge solid for an extra beat so
+        // the drop into the death zone is not a sharp, unsignalled death edge on
+        // the shortest (1.0s) freezes. The bridge already flickers as warning;
+        // this just adds reaction time to actually jump off.
+        let bridgeLeft = ghostBridge.position.x - bridgeSpanHalfWidth()
+        let bridgeRight = ghostBridge.position.x + bridgeSpanHalfWidth()
+        let onBridge = bit.isGrounded
+            && bit.position.x > bridgeLeft
+            && bit.position.x < bridgeRight
+        if onBridge {
+            bridgeGraceRemaining = bridgeGraceDuration
+        } else {
+            dropBridge()
         }
 
         // Remove timer
@@ -746,6 +839,29 @@ final class ScreenshotScene: BaseLevelScene, SKPhysicsContactDelegate {
         ]))
         timerDisplay = nil
         timerLabel = nil
+    }
+
+    /// Half the bridge's world-space span, used to test whether the player is
+    /// standing on it. Derived from the segments so it tracks the responsive
+    /// bridge geometry.
+    private func bridgeSpanHalfWidth() -> CGFloat {
+        guard let first = bridgeSegments.first, let last = bridgeSegments.last else {
+            return 0
+        }
+        return (abs(last.position.x - first.position.x)) / 2 + 30
+    }
+
+    /// Remove the bridge's collision and return it to its flickering ghost state.
+    private func dropBridge() {
+        for segment in bridgeSegments {
+            segment.physicsBody?.categoryBitMask = 0
+            if let pattern = segment.childNode(withName: "pattern") as? SKShapeNode {
+                pattern.alpha = 0.3
+            }
+            if let cameraIcon = segment.childNode(withName: "camera_icon") {
+                cameraIcon.alpha = 0.4
+            }
+        }
     }
 
     // MARK: - Update
@@ -758,13 +874,24 @@ final class ScreenshotScene: BaseLevelScene, SKPhysicsContactDelegate {
             screenshotCooldown -= deltaTime
         }
 
+        if bridgeGraceRemaining > 0 {
+            // Coyote grace: bridge stayed solid an extra beat after the timer hit
+            // 0 because the player was standing on it. Now remove collision.
+            bridgeGraceRemaining -= deltaTime
+            if bridgeGraceRemaining <= 0 {
+                bridgeGraceRemaining = 0
+                dropBridge()
+            }
+        }
+
         if isBridgeFrozen {
             // Update frozen timer
             frozenTimeRemaining -= deltaTime
             timerLabel?.text = "\(max(0, Int(ceil(frozenTimeRemaining))))"
 
-            // Warning when low
-            if frozenTimeRemaining < 2.0 {
+            // Warning when low. Start the flicker telegraph earlier (2.5s) so the
+            // player has reaction time even on the shortest 1.0s freezes.
+            if frozenTimeRemaining < 2.5 {
                 let pulse = abs(sin(CACurrentMediaTime() * 8))
                 timerLabel?.alpha = 0.5 + pulse * 0.5
 
@@ -867,6 +994,11 @@ final class ScreenshotScene: BaseLevelScene, SKPhysicsContactDelegate {
     }
 
     private func handleExit() {
+        // One-shot guard: didBegin can fire the player|exit contact more than
+        // once in a step. Mirror succeedLevel's own guard so a second contact
+        // returns before touching bit's actions (which would cancel and restart
+        // the fade, causing a visible stutter).
+        guard GameState.shared.levelState == .playing else { return }
         succeedLevel()
 
         bit.removeAllActions()

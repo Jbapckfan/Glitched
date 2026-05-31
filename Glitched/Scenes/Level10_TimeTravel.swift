@@ -39,6 +39,13 @@ final class TimeTravelScene: BaseLevelScene, SKPhysicsContactDelegate {
 
     private var lineElements: [SKNode] = []
 
+    // The ancient tree stacks six overlapping branch bodies plus the floor, so
+    // the player can be in contact with two ground bodies at once. Count active
+    // player|ground contacts and only drop grounded when the last one ends, or
+    // ending contact with one branch while standing on another would wrongly
+    // strip the jump ability mid-climb.
+    private var groundContacts = 0
+
     // MARK: - Configuration
 
     override func configureScene() {
@@ -71,7 +78,11 @@ final class TimeTravelScene: BaseLevelScene, SKPhysicsContactDelegate {
     }
 
     private func drawClockFace() {
-        let clockCenter = CGPoint(x: 100, y: topSafeY - 120)
+        // Float the decorative clock in the empty upper canvas (centered
+        // horizontally, well below the safe-area top) so on iPad it occupies
+        // the void instead of clinging to the top-left corner. The max() floor
+        // keeps it near the original top region on iPhone.
+        let clockCenter = CGPoint(x: size.width / 2, y: topSafeY - max(140, size.height * 0.26))
         let clockRadius: CGFloat = 50
 
         // Clock circle
@@ -140,11 +151,20 @@ final class TimeTravelScene: BaseLevelScene, SKPhysicsContactDelegate {
     }
 
     private func drawTimeLines() {
-        // Flowing time lines across background
-        for i in 0..<5 {
+        // Flowing time lines spread across the whole canvas so the larger iPad
+        // upper half isn't left blank. Line count scales with height (floored
+        // at 5 to keep the iPhone look) and is distributed from 15% → 95% of
+        // the height rather than a fixed 5-line band starting at 0.3.
+        let lineCount = max(5, Int(size.height / 90))
+        let bottomY = size.height * 0.15
+        let topY = size.height * 0.95
+        let span = max(1, topY - bottomY)
+        let step = span / CGFloat(max(1, lineCount - 1))
+
+        for i in 0..<lineCount {
             let timeLine = SKShapeNode()
             let path = CGMutablePath()
-            let y = size.height * 0.3 + CGFloat(i) * 50
+            let y = bottomY + CGFloat(i) * step
             path.move(to: CGPoint(x: 0, y: y))
 
             // Wavy line
@@ -228,8 +248,34 @@ final class TimeTravelScene: BaseLevelScene, SKPhysicsContactDelegate {
 
     // MARK: - Level Building
 
+    // MARK: - Responsive Layout
+
+    // Derived once in buildLevel() and reused by every furniture-placement
+    // helper so the puzzle fills the canvas on iPad instead of hugging the
+    // bottom-left strip it was originally tuned for on iPhone. Floors are
+    // applied so the iPhone result stays near the original constants.
+    private var groundY: CGFloat = 160
+    private var cliffX: CGFloat = 0
+    private var cliffHeight: CGFloat = 280
+    private var exitDoorY: CGFloat = 470
+
     private func buildLevel() {
-        let groundY: CGFloat = 160
+        // Lift the ground off the bottom safe area but keep the iPhone value
+        // close to the original 160 via the max() floor; on iPad this pushes
+        // the whole puzzle up out of the very-bottom strip.
+        groundY = bottomSafeY + max(140, size.height * 0.16)
+
+        // Scale the cliff/exit reach off the available headroom so the exit
+        // door lands in the visible upper-middle on iPad rather than the
+        // bottom 35%. Clamp to roughly the original 280 on iPhone.
+        let headroom = max(0, topSafeY - groundY)
+        cliffHeight = min(280, headroom * 0.55)
+        // The exit door sits 30pt above the cliff top.
+        exitDoorY = groundY + cliffHeight + 30
+
+        // Anchor the cliff (and therefore the whole climbable cluster) so the
+        // tree always reads as a bridge toward the exit at any width.
+        cliffX = size.width - 40
 
         // Main floor
         let floor = createPlatform(
@@ -239,11 +285,11 @@ final class TimeTravelScene: BaseLevelScene, SKPhysicsContactDelegate {
         floor.name = "ground"
 
         // Cliff on right (where exit is)
-        let cliff = SKShapeNode(rectOf: CGSize(width: 80, height: 280))
+        let cliff = SKShapeNode(rectOf: CGSize(width: 80, height: cliffHeight))
         cliff.fillColor = fillColor
         cliff.strokeColor = strokeColor
         cliff.lineWidth = lineWidth
-        cliff.position = CGPoint(x: size.width - 40, y: groundY + 140)
+        cliff.position = CGPoint(x: cliffX, y: groundY + cliffHeight / 2)
         cliff.zPosition = 5
         addChild(cliff)
         lineElements.append(cliff)
@@ -251,9 +297,9 @@ final class TimeTravelScene: BaseLevelScene, SKPhysicsContactDelegate {
         // Cliff depth
         let cliffDepth = SKShapeNode()
         let cliffDepthPath = CGMutablePath()
-        cliffDepthPath.move(to: CGPoint(x: size.width - 80, y: groundY + 280))
-        cliffDepthPath.addLine(to: CGPoint(x: size.width - 88, y: groundY + 288))
-        cliffDepthPath.addLine(to: CGPoint(x: size.width - 88, y: groundY))
+        cliffDepthPath.move(to: CGPoint(x: cliffX - 40, y: groundY + cliffHeight))
+        cliffDepthPath.addLine(to: CGPoint(x: cliffX - 48, y: groundY + cliffHeight + 8))
+        cliffDepthPath.addLine(to: CGPoint(x: cliffX - 48, y: groundY))
         cliffDepth.path = cliffDepthPath
         cliffDepth.strokeColor = strokeColor
         cliffDepth.lineWidth = lineWidth * 0.6
@@ -262,11 +308,13 @@ final class TimeTravelScene: BaseLevelScene, SKPhysicsContactDelegate {
         lineElements.append(cliffDepth)
 
         // Exit platform at top of cliff
-        createExitDoor(at: CGPoint(x: size.width - 40, y: groundY + 310))
+        createExitDoor(at: CGPoint(x: cliffX, y: exitDoorY))
 
-        // Tree container
+        // Tree container — anchored relative to the cliff so the climb always
+        // bridges toward the exit. On iPhone (cliffX≈350) this lands the tree
+        // near x≈150, matching the original size.width/2 - 80 spacing.
         treeContainer = SKNode()
-        treeContainer.position = CGPoint(x: size.width / 2 - 80, y: groundY + 17)
+        treeContainer.position = CGPoint(x: cliffX - 200, y: groundY + 17)
         addChild(treeContainer)
 
         // Death zone
@@ -458,12 +506,30 @@ final class TimeTravelScene: BaseLevelScene, SKPhysicsContactDelegate {
         lineElements.append(depthLine)
 
         // Physics
+        //
+        // SKPhysicsBody dimensions do NOT scale with node.setScale, so while
+        // the tree is animating from scale 0.1 → 1.0 (growTreeToStage), a
+        // full-size ground body here would float as invisible collision
+        // geometry where the grown tree will eventually be. Create the body
+        // with NO ground category up front; growTreeToStage re-enables the
+        // ground/contact masks on every branch in the grow action's
+        // completion, so footholds only become solid once the visuals match.
         branch.physicsBody = SKPhysicsBody(rectangleOf: branchSize)
         branch.physicsBody?.isDynamic = false
-        branch.physicsBody?.categoryBitMask = PhysicsCategory.ground
+        branch.physicsBody?.categoryBitMask = PhysicsCategory.none
+        branch.physicsBody?.collisionBitMask = 0
+        branch.physicsBody?.contactTestBitMask = 0
         branch.name = "branch"
 
         return branch
+    }
+
+    // Re-enables collision on every branch once the grow animation finishes,
+    // so the footholds line up with their (now full-size) visuals.
+    private func enableBranchCollision() {
+        for branch in treeBranches {
+            branch.physicsBody?.categoryBitMask = PhysicsCategory.ground
+        }
     }
 
     private func addDecorativeBranches() {
@@ -530,7 +596,10 @@ final class TimeTravelScene: BaseLevelScene, SKPhysicsContactDelegate {
 
     private func createTimeSign() {
         signNode = SKNode()
-        signNode?.position = CGPoint(x: size.width / 2 + 80, y: 240)
+        // Anchored to the cliff cluster (cliffX - 100) so the sign sits between
+        // the tree and the exit at any width. On iPhone (cliffX≈350) this lands
+        // near x≈250, close to the original size.width/2 + 80 placement.
+        signNode?.position = CGPoint(x: cliffX - 100, y: groundY + 80)
         addChild(signNode!)
 
         // Sign board
@@ -572,7 +641,9 @@ final class TimeTravelScene: BaseLevelScene, SKPhysicsContactDelegate {
 
     private func createClockDisplay() {
         clockDisplay = SKNode()
-        clockDisplay?.position = CGPoint(x: size.width / 2 - 80, y: 280)
+        // Anchored over the tree (cliffX - 200) so it floats above the sapling
+        // at any width, matching the original size.width/2 - 80 on iPhone.
+        clockDisplay?.position = CGPoint(x: cliffX - 200, y: groundY + 120)
         clockDisplay?.zPosition = 50
         addChild(clockDisplay!)
 
@@ -689,7 +760,9 @@ final class TimeTravelScene: BaseLevelScene, SKPhysicsContactDelegate {
     // MARK: - Setup
 
     private func setupBit() {
-        spawnPoint = CGPoint(x: 100, y: 200)
+        // Spawn relative to the derived ground so Bit lands on the floor on
+        // any canvas (was a hardcoded y=200 tuned for groundY=160).
+        spawnPoint = CGPoint(x: 100, y: groundY + 40)
 
         bit = BitCharacter.make()
         bit.position = spawnPoint
@@ -721,8 +794,8 @@ final class TimeTravelScene: BaseLevelScene, SKPhysicsContactDelegate {
         }
 
         if targetState.rawValue > currentTreeState.rawValue {
-            showSyncingAnimation {
-                self.growTreeToStage(targetState)
+            showSyncingAnimation { [weak self] in
+                self?.growTreeToStage(targetState)
             }
         }
     }
@@ -815,9 +888,15 @@ final class TimeTravelScene: BaseLevelScene, SKPhysicsContactDelegate {
         fullTreeNode?.setScale(0.1)
         fullTreeNode?.alpha = 1
 
+        // Branch physics bodies are fixed-size and do not scale with the node
+        // (see createBranch). They are created collision-disabled; only enable
+        // them once the scale-up finishes so footholds match their visuals and
+        // the player can't stand on invisible full-size geometry mid-grow.
         let grow = SKAction.scale(to: 1.0, duration: 1.5)
         grow.timingMode = .easeOut
-        fullTreeNode?.run(grow)
+        fullTreeNode?.run(grow) { [weak self] in
+            self?.enableBranchCollision()
+        }
 
         // Screen shake
         let shake = SKAction.sequence([
@@ -965,14 +1044,47 @@ final class TimeTravelScene: BaseLevelScene, SKPhysicsContactDelegate {
         fullTreeNode?.addChild(trunk)
         lineElements.append(trunk)
 
-        // Main branches (3 climbable platforms reaching toward the cliff)
+        // Main branches: a climbable ladder reaching toward the cliff/exit.
+        // Vertical rises are kept well under the jump apex (~91pt above launch
+        // at the 620 velocity cap, which governs here) so every hop is
+        // comfortably clearable. A branch's world surface-top is
+        // groundY + 17 (treeContainer.y) + local-y + 10 (half-height) =
+        // groundY + 27 + local-y; the floor surface-top is groundY + 17.5, so
+        // the rise to the first foothold is 9.5 + local-y.
+        //
+        // FIRST FOOTHOLD — head-squeeze fix (supersedes the y 42→54 attempt):
+        // Bit's resting *body top* is groundY + 71.9 (floor surface-top
+        // groundY+17.5 + the 54.4pt-tall body). The first branch's centre Y is
+        // only groundY+71, so the underside of a 20pt-tall branch dips to
+        // ~groundY+56..61 — i.e. 12-16pt INTO Bit — wherever the branch
+        // overhangs the spawn x-span [89,111]. Raising y alone cannot fix this:
+        // reachability caps local-y at ~70 (rise → 79.5pt), still too low to
+        // lift a 20pt-tall underside clear of groundY+71.9 over the spawn.
+        // The robust fix removes the overhang entirely: the first branch is
+        // shifted right to local-x 30 (world centre 180/192 on iPhone 390/402)
+        // and narrowed to width 80, so its left edge sits at world x≈139/151 —
+        // 28pt (390) / 40pt (402) clear of Bit's body right edge (x=111). With
+        // no part of the branch over the spawn x-span there is no underside to
+        // penetrate Bit, regardless of the body-top height. The tilt is +0.10
+        // (low end toward the trunk, away from the spawn). Spawn x stays at 100
+        // (on the floor, on-screen on both widths). Floor → first foothold rise
+        // is 9.5 + 56 = 65.5pt of surface-top climb (world surface-top
+        // groundY+86.9, rise 69.4pt) — jumpable and ≤ 80pt.
+        //
+        // Each subsequent branch is +36..54pt above the one below — all ≤ 80pt —
+        // and the X-spans of consecutive branches overlap (first branch right
+        // edge ≈221/233 reaches into the second branch's span [124,236]/
+        // [136,248]) so the climb stays continuous. The top branch (y=282)
+        // reaches a world surface-top of groundY + 309, level with / above the
+        // cliff top (groundY + cliffHeight, cliffHeight ≤ 280) so the player can
+        // step across to the exit — honouring the "physical bridge" spec promise.
         let branchData: [(CGPoint, CGFloat, CGSize)] = [
-            (CGPoint(x: -80, y: 80), -0.2, CGSize(width: 100, height: 20)),
-            (CGPoint(x: 70, y: 140), 0.15, CGSize(width: 110, height: 20)),
-            (CGPoint(x: -60, y: 200), -0.1, CGSize(width: 90, height: 20)),
-            (CGPoint(x: 90, y: 260), 0.2, CGSize(width: 120, height: 20)),
-            (CGPoint(x: 0, y: 320), 0, CGSize(width: 100, height: 20)),
-            (CGPoint(x: 110, y: 380), 0.1, CGSize(width: 110, height: 20)),
+            (CGPoint(x: 30, y: 56), 0.10, CGSize(width: 80, height: 20)),
+            (CGPoint(x: 30, y: 90), 0.12, CGSize(width: 110, height: 20)),
+            (CGPoint(x: -40, y: 138), -0.1, CGSize(width: 100, height: 20)),
+            (CGPoint(x: 60, y: 186), 0.12, CGSize(width: 110, height: 20)),
+            (CGPoint(x: 20, y: 234), 0, CGSize(width: 110, height: 20)),
+            (CGPoint(x: 100, y: 282), 0.1, CGSize(width: 120, height: 20)),
         ]
 
         for (position, rotation, branchSize) in branchData {
@@ -1021,8 +1133,8 @@ final class TimeTravelScene: BaseLevelScene, SKPhysicsContactDelegate {
             }
 
             if targetState.rawValue > currentTreeState.rawValue {
-                showSyncingAnimation {
-                    self.growTreeToStage(targetState)
+                showSyncingAnimation { [weak self] in
+                    self?.growTreeToStage(targetState)
                 }
             }
         default:
@@ -1061,6 +1173,7 @@ final class TimeTravelScene: BaseLevelScene, SKPhysicsContactDelegate {
         } else if collision == PhysicsCategory.player | PhysicsCategory.exit {
             handleExit()
         } else if collision == PhysicsCategory.player | PhysicsCategory.ground {
+            groundContacts += 1
             bit.setGrounded(true)
         }
     }
@@ -1069,10 +1182,17 @@ final class TimeTravelScene: BaseLevelScene, SKPhysicsContactDelegate {
         let collision = contact.bodyA.categoryBitMask | contact.bodyB.categoryBitMask
 
         if collision == PhysicsCategory.player | PhysicsCategory.ground {
+            groundContacts = max(0, groundContacts - 1)
+            // Only drop grounded once we've left every ground body. Debounce by
+            // 0.05s and re-check the count at fire time, so straddling two
+            // overlapping branches and stepping off one keeps the jump.
             run(.sequence([
                 .wait(forDuration: 0.05),
                 .run { [weak self] in
-                    self?.bit.setGrounded(false)
+                    guard let self else { return }
+                    if self.groundContacts == 0 {
+                        self.bit.setGrounded(false)
+                    }
                 }
             ]))
         }
