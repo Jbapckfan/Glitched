@@ -9,6 +9,23 @@ final class StorageSpaceScene: BaseLevelScene, SKPhysicsContactDelegate {
     private let fillColor = SKColor.white
     private let strokeColor = SKColor.black
     private let lineWidth: CGFloat = 2.5
+    private let designSize = CGSize(width: 430, height: 932)
+
+    // MARK: - Gameplay Course (fixed logical width, centered)
+    // Gameplay geometry (platforms, gaps, data-mass wall, exit) is authored in a
+    // fixed `designSize.width`-point logical course so spacing and traversal
+    // distance stay consistent across devices instead of stretching to fill an
+    // iPad. The course never overflows a narrow screen (scale clamps at 1.0), and
+    // on iPhone it stays full-bleed (output identical to the previous
+    // size.width-fraction layout). On iPad the course is centered and the
+    // surrounding margins are filled by decoration / HUD, which still key off
+    // size.width and the safe-area helpers.
+    private var courseScale: CGFloat { min(1.0, size.width / designSize.width) }
+    private var courseOriginX: CGFloat { (size.width - designSize.width * courseScale) / 2 }
+    /// Map a logical x (0...designSize.width) into centered course space.
+    private func courseX(_ logicalX: CGFloat) -> CGFloat { courseOriginX + logicalX * courseScale }
+    /// Scale a logical length (platform width, etc.) into course space.
+    private func courseLen(_ logical: CGFloat) -> CGFloat { logical * courseScale }
 
     private var bit: BitCharacter!
     private var playerController: PlayerController!
@@ -79,17 +96,17 @@ final class StorageSpaceScene: BaseLevelScene, SKPhysicsContactDelegate {
     private func buildLevel() {
         let groundY: CGFloat = 160
 
-        // Start platform
-        createPlatform(at: CGPoint(x: 100, y: groundY), size: CGSize(width: 180, height: 30))
+        // Start platform (course space)
+        createPlatform(at: CGPoint(x: courseX(100), y: groundY), size: CGSize(width: courseLen(180), height: 30))
 
-        // Middle area (data mass will be here)
-        createPlatform(at: CGPoint(x: size.width / 2, y: groundY), size: CGSize(width: 200, height: 30))
+        // Middle area (data mass will be here) — logical center at designSize.width/2 = 215
+        createPlatform(at: CGPoint(x: courseX(designSize.width / 2), y: groundY), size: CGSize(width: courseLen(200), height: 30))
 
-        // Exit platform (behind the data mass)
-        createPlatform(at: CGPoint(x: size.width - 80, y: groundY), size: CGSize(width: 140, height: 30))
+        // Exit platform (behind the data mass) — logical center at designSize.width-80 = 350
+        createPlatform(at: CGPoint(x: courseX(designSize.width - 80), y: groundY), size: CGSize(width: courseLen(140), height: 30))
 
-        // Exit door
-        createExitDoor(at: CGPoint(x: size.width - 60, y: groundY + 50))
+        // Exit door — logical x = designSize.width-60 = 370
+        createExitDoor(at: CGPoint(x: courseX(designSize.width - 60), y: groundY + 50))
 
         // Death zone
         let death = SKNode()
@@ -130,11 +147,14 @@ final class StorageSpaceScene: BaseLevelScene, SKPhysicsContactDelegate {
         let wallCenterY = wallBottom + wallHeight / 2
 
         let container = SKNode()
-        container.position = CGPoint(x: size.width / 2 + 60, y: wallCenterY)
+        // Center ONLY the X in course space (logical x = designSize.width/2 + 60 = 275).
+        // Vertical extent (wallBottom/wallTop) is intentionally left keyed to
+        // topSafeY/groundY so the floor-to-ceiling unjumpable relationship holds.
+        container.position = CGPoint(x: courseX(designSize.width / 2 + 60), y: wallCenterY)
         container.name = "data_mass"
 
-        // Create a wall of animated "data" blocks
-        let wallWidth: CGFloat = 80
+        // Create a wall of animated "data" blocks (width course-scaled to match platforms)
+        let wallWidth: CGFloat = courseLen(80)
         let blockSize: CGFloat = 12
 
         let cols = Int(wallWidth / blockSize)
@@ -299,7 +319,11 @@ final class StorageSpaceScene: BaseLevelScene, SKPhysicsContactDelegate {
     }
 
     private func setupBit() {
-        spawnPoint = CGPoint(x: 80, y: 200)
+        // Course-mapped so Bit spawns on the centered start platform (logical
+        // span [10,190]) on every device. A raw x:80 was left over from the
+        // pre-centering layout and put Bit over empty space on iPad once the
+        // start platform was centered → fall-at-spawn softlock.
+        spawnPoint = CGPoint(x: courseX(80), y: 200)
         bit = BitCharacter.make()
         bit.position = spawnPoint
         addChild(bit)
