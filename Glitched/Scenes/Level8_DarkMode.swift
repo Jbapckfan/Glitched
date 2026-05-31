@@ -52,6 +52,15 @@ final class DarkModeScene: BaseLevelScene, SKPhysicsContactDelegate {
     // All line elements for color updates
     private var lineElements: [SKNode] = []
 
+    // Tracks the platform Bit currently rests on, so grounded state can be cleared
+    // when a mode platform de-solidifies under him (SpriteKit emits no didEnd for a
+    // categoryBitMask mutation). Mirrors Level 6's currentGroundPlatform pattern.
+    private weak var currentGroundPlatform: SKNode?
+
+    // Once a .darkModeChanged event / accessibility toggle has driven appearance,
+    // the delayed initial hardware re-read must not clobber it (the Level 5 lesson).
+    private var hasReceivedAppearanceInput = false
+
     // MARK: - Configuration
 
     override func configureScene() {
@@ -65,6 +74,10 @@ final class DarkModeScene: BaseLevelScene, SKPhysicsContactDelegate {
         // time to propagate the forceDarkMode = false change above
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [weak self] in
             guard let self = self else { return }
+            // The level enters .playing right after configureScene, so a
+            // .darkModeChanged event or fallback toggle may already have driven
+            // state. Don't clobber it with a stale hardware read.
+            guard !self.hasReceivedAppearanceInput else { return }
             if let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene {
                 let currentDark = windowScene.traitCollection.userInterfaceStyle == .dark
                 if currentDark != self.isDarkMode {
@@ -520,24 +533,27 @@ final class DarkModeScene: BaseLevelScene, SKPhysicsContactDelegate {
     private func updateDualPlatforms() {
         // Dark mode platforms: solid in dark, ghost in light
         for platform in darkModePlatforms {
-            if isDarkMode {
-                platform.alpha = 1.0
-                platform.physicsBody?.categoryBitMask = PhysicsCategory.ground
-            } else {
-                platform.alpha = 0.3
-                platform.physicsBody?.categoryBitMask = 0
-            }
+            platform.alpha = isDarkMode ? 1.0 : 0.3
+            setPlatformSolid(platform, solid: isDarkMode)
         }
 
         // Light mode platforms: solid in light, ghost in dark
         for platform in lightModePlatforms {
-            if isDarkMode {
-                platform.alpha = 0.3
-                platform.physicsBody?.categoryBitMask = 0
-            } else {
-                platform.alpha = 1.0
-                platform.physicsBody?.categoryBitMask = PhysicsCategory.ground
-            }
+            platform.alpha = isDarkMode ? 0.3 : 1.0
+            setPlatformSolid(platform, solid: !isDarkMode)
+        }
+    }
+
+    /// Toggle a mode platform's solidity. If the platform Bit is currently standing
+    /// on de-solidifies, clear grounded state — SpriteKit emits no didEnd for a
+    /// categoryBitMask mutation, so without this Bit could keep jumping while falling
+    /// through a vanished platform (the Level 6 grounded-state bug).
+    private func setPlatformSolid(_ platform: SKNode, solid: Bool) {
+        let wasSolid = platform.physicsBody?.categoryBitMask == PhysicsCategory.ground
+        platform.physicsBody?.categoryBitMask = solid ? PhysicsCategory.ground : 0
+        if wasSolid && !solid && currentGroundPlatform === platform {
+            currentGroundPlatform = nil
+            bit?.setGrounded(false)
         }
     }
 
@@ -1173,6 +1189,9 @@ final class DarkModeScene: BaseLevelScene, SKPhysicsContactDelegate {
     /// Single entry point for an appearance change, whether from the real system
     /// trait change (.darkModeChanged) or the in-scene accessibility fallback toggle.
     private func applyAppearance(isDark: Bool, animated: Bool) {
+        // An event/toggle has taken control of appearance; suppress the delayed
+        // initial hardware re-read even if this call is a no-op (same target state).
+        hasReceivedAppearanceInput = true
         guard isDark != isDarkMode else { return }
         isDarkMode = isDark
         updateColorScheme(animated: animated)
@@ -1260,6 +1279,7 @@ final class DarkModeScene: BaseLevelScene, SKPhysicsContactDelegate {
         } else if collision == PhysicsCategory.player | PhysicsCategory.exit {
             handleExit()
         } else if collision == PhysicsCategory.player | PhysicsCategory.ground {
+            currentGroundPlatform = groundNode(from: contact)
             bit.setGrounded(true)
         }
     }
@@ -1268,13 +1288,33 @@ final class DarkModeScene: BaseLevelScene, SKPhysicsContactDelegate {
         let collision = contact.bodyA.categoryBitMask | contact.bodyB.categoryBitMask
 
         if collision == PhysicsCategory.player | PhysicsCategory.ground {
+            if currentGroundPlatform === groundNode(from: contact) {
+                currentGroundPlatform = nil
+            }
             run(.sequence([
                 .wait(forDuration: 0.05),
                 .run { [weak self] in
-                    self?.bit.setGrounded(false)
+                    guard let self = self else { return }
+                    // Only drop grounded if Bit hasn't landed on another platform
+                    // in the meantime (avoids dropping grounding while resting on
+                    // an adjacent/overlapping platform).
+                    if self.currentGroundPlatform == nil {
+                        self.bit.setGrounded(false)
+                    }
                 }
             ]))
         }
+    }
+
+    /// Returns the ground-category node participating in a contact, if any.
+    private func groundNode(from contact: SKPhysicsContact) -> SKNode? {
+        if contact.bodyA.categoryBitMask == PhysicsCategory.ground {
+            return contact.bodyA.node
+        }
+        if contact.bodyB.categoryBitMask == PhysicsCategory.ground {
+            return contact.bodyB.node
+        }
+        return nil
     }
 
     // MARK: - Game Events
@@ -1282,6 +1322,7 @@ final class DarkModeScene: BaseLevelScene, SKPhysicsContactDelegate {
     private func handleDeath() {
         guard GameState.shared.levelState == .playing else { return }
         playerController.cancel()
+        currentGroundPlatform = nil
         bit.playBufferDeath(respawnAt: spawnPoint) { [weak self] in
             self?.bit.setGrounded(true)
         }
