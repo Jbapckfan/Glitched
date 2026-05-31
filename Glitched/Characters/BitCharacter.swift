@@ -20,9 +20,14 @@ final class BitCharacter: SKSpriteNode {
     private var isWalking: Bool = false
     private var walkPhase: CGFloat = 0
     private var trailNode: SKNode?
+    private var horizontalVelocity: CGFloat = 0
+    private var displayScale: CGFloat = 1.0
 
-    private let moveSpeed: CGFloat = 220
-    private let jumpImpulse: CGFloat = 420
+    private let moveSpeed: CGFloat = 245
+    private let groundAcceleration: CGFloat = 2_800
+    private let groundDeceleration: CGFloat = 3_600
+    private let airAcceleration: CGFloat = 1_900
+    private let jumpImpulse: CGFloat = 470
 
     // Colors - Clean black and white line art style
     private let fillColor = VisualConstants.Colors.foreground
@@ -70,11 +75,16 @@ final class BitCharacter: SKSpriteNode {
         physicsBody = SKPhysicsBody(rectangleOf: CGSize(width: size.width * 0.5, height: size.height * 0.85))
         physicsBody?.allowsRotation = false
         physicsBody?.restitution = 0
-        physicsBody?.friction = 0.2
-        physicsBody?.linearDamping = 0.1  // Less damping for snappier movement
+        physicsBody?.friction = 0.05
+        physicsBody?.linearDamping = 0.0
         physicsBody?.categoryBitMask = PhysicsCategory.player
         physicsBody?.contactTestBitMask = PhysicsCategory.hazard | PhysicsCategory.exit | PhysicsCategory.ground
         physicsBody?.collisionBitMask = PhysicsCategory.ground
+    }
+
+    func setDisplayScale(_ scale: CGFloat) {
+        displayScale = scale
+        setScale(scale)
     }
 
     private func createAstronautVisual() {
@@ -252,8 +262,8 @@ final class BitCharacter: SKSpriteNode {
     private func startIdleAnimation() {
         // Subtle breathing + antenna pulse
         let breathe = SKAction.sequence([
-            SKAction.scaleY(to: 1.015, duration: 1.2),
-            SKAction.scaleY(to: 0.985, duration: 1.2)
+            SKAction.scaleY(to: displayScale * 1.015, duration: 1.2),
+            SKAction.scaleY(to: displayScale * 0.985, duration: 1.2)
         ])
         
         let antennaPulse = SKAction.sequence([
@@ -319,12 +329,14 @@ final class BitCharacter: SKSpriteNode {
     }
 
     private func playGlitchFlicker() {
-        guard let body = bodyNode, let head = headNode else { return }
+        guard bodyNode != nil, headNode != nil else { return }
 
         let glitchColor = glitchColors.randomElement() ?? glitchColors[0]
         let intensity = Double.random(in: 0...1)
 
-        if intensity < 0.4 {
+        if intensity > 0.92 {
+            playSliceShiftGlitch()
+        } else if intensity < 0.4 {
             playSubtleGlitch(color: glitchColor)
         } else if intensity < 0.8 {
             playMediumGlitch(color: glitchColor)
@@ -548,6 +560,92 @@ final class BitCharacter: SKSpriteNode {
 
     // MARK: - Glitch Helper Functions
 
+    private func playSliceShiftGlitch() {
+        guard action(forKey: "sliceShiftGlitch") == nil,
+              let scene = scene,
+              let view = scene.view,
+              let texture = view.texture(from: self) else {
+            return
+        }
+
+        let visualNodes = currentVisualNodes()
+        let container = SKNode()
+        container.zPosition = 240
+        addChild(container)
+
+        let textureSize = texture.size()
+        let sliceCount = Int.random(in: 7...10)
+        var currentY: CGFloat = 0
+
+        for index in 0..<sliceCount {
+            let remainingSlices = sliceCount - index
+            let remainingHeight = textureSize.height - currentY
+            let idealHeight = remainingHeight / CGFloat(remainingSlices)
+            let bandHeight = index == sliceCount - 1
+                ? remainingHeight
+                : max(2, min(remainingHeight, idealHeight + CGFloat.random(in: -4...5)))
+
+            let normalizedRect = CGRect(
+                x: 0,
+                y: currentY / textureSize.height,
+                width: 1,
+                height: bandHeight / textureSize.height
+            )
+            let bandTexture = SKTexture(rect: normalizedRect, in: texture)
+            let yPosition = -textureSize.height / 2 + currentY + bandHeight / 2
+            let primaryOffset = CGFloat.random(in: -6...6)
+
+            let slice = SKSpriteNode(texture: bandTexture, size: CGSize(width: textureSize.width, height: bandHeight))
+            slice.position = CGPoint(x: primaryOffset, y: yPosition)
+            slice.zPosition = CGFloat(index)
+            container.addChild(slice)
+
+            if index % 3 == 0 {
+                let chroma = SKSpriteNode(texture: bandTexture, size: CGSize(width: textureSize.width, height: bandHeight))
+                chroma.position = CGPoint(x: -primaryOffset * 0.6, y: yPosition)
+                chroma.zPosition = CGFloat(index) - 0.1
+                chroma.alpha = 0.35
+                chroma.color = Bool.random() ? .cyan : .magenta
+                chroma.colorBlendFactor = 0.9
+                container.addChild(chroma)
+            }
+
+            slice.run(.sequence([
+                .moveBy(x: CGFloat.random(in: -3...3), y: 0, duration: 0.04),
+                .moveBy(x: CGFloat.random(in: -5...5), y: 0, duration: 0.05)
+            ]))
+
+            currentY += bandHeight
+        }
+
+        let sliceAction = SKAction.sequence([
+            .run {
+                visualNodes.forEach { $0.isHidden = true }
+                container.alpha = 1
+            },
+            .wait(forDuration: Double.random(in: 0.15...0.23)),
+            .run {
+                visualNodes.forEach { $0.isHidden = false }
+                container.removeFromParent()
+            }
+        ])
+        run(sliceAction, withKey: "sliceShiftGlitch")
+    }
+
+    private func currentVisualNodes() -> [SKNode] {
+        [
+            bodyNode,
+            headNode,
+            visorNode,
+            leftArm,
+            rightArm,
+            leftLeg,
+            rightLeg,
+            backpack,
+            antenna
+        ].compactMap { $0 }
+    }
+
     private func createStaticNoise() -> SKNode {
         let container = SKNode()
         let noiseSize = CGSize(width: 50, height: 70)
@@ -608,15 +706,34 @@ final class BitCharacter: SKSpriteNode {
     func move(direction: CGFloat) {
         guard let body = physicsBody else { return }
 
-        body.velocity.dx = direction * moveSpeed
+        let deltaTime: CGFloat = 1.0 / 60.0
+        let normalizedDirection = max(-1, min(1, direction))
+        let targetVelocity = normalizedDirection * moveSpeed
+        let rate = abs(normalizedDirection) > 0.1
+            ? (isGrounded ? groundAcceleration : airAcceleration)
+            : groundDeceleration
+        let maxDelta = rate * deltaTime
+        let velocityDelta = targetVelocity - horizontalVelocity
 
-        if direction > 0.1 {
+        if abs(velocityDelta) <= maxDelta {
+            horizontalVelocity = targetVelocity
+        } else {
+            horizontalVelocity += (velocityDelta > 0 ? 1 : -1) * maxDelta
+        }
+
+        if abs(normalizedDirection) <= 0.1 && abs(horizontalVelocity) < 1 {
+            horizontalVelocity = 0
+        }
+
+        body.velocity.dx = horizontalVelocity
+
+        if normalizedDirection > 0.1 {
             xScale = abs(xScale)
-        } else if direction < -0.1 {
+        } else if normalizedDirection < -0.1 {
             xScale = -abs(xScale)
         }
 
-        if abs(direction) > 0.1 && isGrounded {
+        if abs(normalizedDirection) > 0.1 && isGrounded {
             if !isWalking {
                 isWalking = true
                 removeAction(forKey: "idle")
@@ -676,8 +793,8 @@ final class BitCharacter: SKSpriteNode {
         walkPhase = 0
     }
 
-    func jump() {
-        guard let body = physicsBody else { return }
+    func jump(allowGraceJump: Bool = false) {
+        guard let body = physicsBody, isGrounded || allowGraceJump else { return }
 
         // Cap existing upward velocity to prevent stacking jumps.
         // (Grounded/coyote gating happens in PlayerController; guarding
@@ -688,7 +805,7 @@ final class BitCharacter: SKSpriteNode {
         body.applyImpulse(CGVector(dx: 0, dy: jumpImpulse))
 
         // Immediately cap the velocity to prevent flying off screen
-        let maxJumpVelocity: CGFloat = 550
+        let maxJumpVelocity: CGFloat = 620
         if body.velocity.dy > maxJumpVelocity {
             body.velocity.dy = maxJumpVelocity
         }
@@ -706,9 +823,9 @@ final class BitCharacter: SKSpriteNode {
         rightArm?.run(SKAction.rotate(toAngle: 0.8, duration: tuckDuration))
 
         let jumpAnim = SKAction.sequence([
-            SKAction.scaleY(to: 0.85, duration: 0.05),
-            SKAction.scaleY(to: 1.1, duration: 0.1),
-            SKAction.scaleY(to: 1.0, duration: 0.15)
+            SKAction.scaleY(to: displayScale * 0.85, duration: 0.05),
+            SKAction.scaleY(to: displayScale * 1.1, duration: 0.1),
+            SKAction.scaleY(to: displayScale, duration: 0.15)
         ])
         run(jumpAnim)
     }
@@ -733,8 +850,8 @@ final class BitCharacter: SKSpriteNode {
             rightArm?.run(SKAction.rotate(toAngle: 0, duration: resetDuration))
 
             let land = SKAction.sequence([
-                SKAction.scaleY(to: 0.88, duration: 0.05),
-                SKAction.scaleY(to: 1.0, duration: 0.1)
+                SKAction.scaleY(to: displayScale * 0.88, duration: 0.05),
+                SKAction.scaleY(to: displayScale, duration: 0.1)
             ])
             run(land)
 
@@ -749,8 +866,13 @@ final class BitCharacter: SKSpriteNode {
         stopWalkAnimation()
         physicsBody?.isDynamic = false
         isWalking = false
+        horizontalVelocity = 0
         
-        JuiceManager.shared.shake(intensity: .heavy, duration: 0.4)
+        if let scene {
+            JuiceManager.shared.shake(in: scene, intensity: .heavy, duration: 0.4, force: true)
+        } else {
+            JuiceManager.shared.shake(intensity: .heavy, duration: 0.4)
+        }
         
         let explosion = ParticleFactory.shared.createDeathExplosion(at: position, color: VisualConstants.Colors.accent)
         parent?.addChild(explosion)
@@ -758,20 +880,20 @@ final class BitCharacter: SKSpriteNode {
         let deathEffect = SKAction.sequence([
             SKAction.group([
                 SKAction.fadeAlpha(to: 0.0, duration: 0.08),
-                SKAction.scale(to: 1.5, duration: 0.08),
+                SKAction.scale(to: displayScale * 1.5, duration: 0.08),
                 SKAction.run { [weak self] in self?.playIntenseGlitch(color: .white) }
             ]),
             SKAction.wait(forDuration: 0.2),
             SKAction.run { [weak self] in
                 guard let self = self else { return }
                 self.position = point
-                self.setScale(0.1)
+                self.setScale(self.displayScale * 0.1)
                 self.alpha = 0
             },
             // Respawn "reassembly"
             SKAction.group([
                 SKAction.fadeAlpha(to: 1.0, duration: 0.15),
-                SKAction.scale(to: 1.0, duration: 0.15),
+                SKAction.scale(to: displayScale, duration: 0.15),
                 SKAction.run { [weak self] in
                     self?.playMediumGlitch(color: VisualConstants.Colors.accent)
                 }
@@ -780,6 +902,7 @@ final class BitCharacter: SKSpriteNode {
                 guard let self = self else { return }
                 self.physicsBody?.isDynamic = true
                 self.physicsBody?.velocity = .zero
+                self.horizontalVelocity = 0
                 self.startGlitchEffect()
                 self.startIdleAnimation()
                 completion()

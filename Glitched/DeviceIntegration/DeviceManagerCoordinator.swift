@@ -98,8 +98,10 @@ final class DeviceManagerCoordinator: DeviceManagerCoordinating {
         AccessibilityManager.shared.registerMechanics(Array(mechanics))
 
         for manager in managers {
-            let needed = !manager.supportedMechanics.isDisjoint(with: mechanics)
-            if needed {
+            let needsHardware = manager.supportedMechanics.contains { mechanic in
+                mechanics.contains(mechanic) && AccessibilityManager.shared.usesHardware(for: mechanic)
+            }
+            if needsHardware {
                 manager.activate()
             } else {
                 manager.deactivate()

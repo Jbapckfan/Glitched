@@ -35,6 +35,8 @@ class BaseLevelScene: SKScene {
 
     // FIX #13: Dynamic difficulty hint timer
     private var noProgressTimer: TimeInterval = 0
+    private let noProgressHintDelay: TimeInterval = 18.0
+    private var struggleCount = 0
     private var hintShown = false
     private var playStartedAt: Date?
     private var permissionOverlay: SKNode?
@@ -292,7 +294,12 @@ class BaseLevelScene: SKScene {
         addChild(confetti)
 
         // Victory text
-        JuiceManager.shared.popText("COMPLETE!", at: CGPoint(x: size.width / 2, y: size.height / 2), color: .green, fontSize: 36)
+        JuiceManager.shared.popText(
+            "LEVEL COMPLETE",
+            at: CGPoint(x: size.width / 2, y: size.height / 2),
+            color: VisualConstants.Colors.accent,
+            fontSize: 32
+        )
     }
 
     /// Called automatically on level failure - override to customize
@@ -401,11 +408,10 @@ class BaseLevelScene: SKScene {
 
         guard GameState.shared.levelState == .playing else { return }
 
-        // FIX #13: Track time without progress and show hint after 30 seconds
+        // FIX #13: Track time without progress and show a hint once the player stalls.
         noProgressTimer += clampedDt
-        if noProgressTimer >= 30.0 && !hintShown {
-            hintShown = true
-            showDifficultyHint()
+        if noProgressTimer >= noProgressHintDelay {
+            showDifficultyHintIfNeeded()
         }
 
         updatePlaying(deltaTime: clampedDt)
@@ -414,8 +420,21 @@ class BaseLevelScene: SKScene {
     /// FIX #13: Call this whenever the player makes meaningful progress
     /// (e.g. reaches a checkpoint, activates a mechanic) to reset the hint timer.
     func resetProgressTimer() {
+        notePlayerProgress()
+    }
+
+    func notePlayerProgress() {
         noProgressTimer = 0
+        struggleCount = 0
         hintShown = false
+    }
+
+    func notePlayerStruggle() {
+        struggleCount += 1
+        let elapsedPlayTime = playStartedAt.map { Date().timeIntervalSince($0) } ?? 0
+        if struggleCount >= 2 && elapsedPlayTime >= 8.0 {
+            showDifficultyHintIfNeeded()
+        }
     }
 
     /// FIX #13: Override in subclasses to provide level-specific hints.
@@ -424,15 +443,40 @@ class BaseLevelScene: SKScene {
         return nil
     }
 
+    func difficultyHintDidShow() {}
+
+    func topSafeAreaY(offset: CGFloat, minimumPadding: CGFloat = 16) -> CGFloat {
+        let safeTopInset = view?.safeAreaInsets.top ?? estimatedTopSafeAreaInset()
+        return size.height - max(offset, safeTopInset + minimumPadding)
+    }
+
+    private func estimatedTopSafeAreaInset() -> CGFloat {
+        // SpriteKit scenes are sometimes configured before SKView has final
+        // safeAreaInsets. Keep top UI clear of Dynamic Island/notch devices,
+        // including the height of compact labels that extend above their anchor.
+        if min(size.width, size.height) < 700 {
+            return 86
+        }
+        return 24
+    }
+
+    private func showDifficultyHintIfNeeded() {
+        guard !hintShown else { return }
+        hintShown = true
+        showDifficultyHint()
+    }
+
     private func showDifficultyHint() {
         ProgressManager.shared.recordHintUsed(for: levelID)
+        difficultyHintDidShow()
         let text = hintText() ?? "Try using your device's features..."
 
         let container = SKNode()
         container.zPosition = 8000
         container.alpha = 0
 
-        let bg = SKShapeNode(rectOf: CGSize(width: 280, height: 40), cornerRadius: 8)
+        let bgWidth = min(320, max(220, size.width - 48))
+        let bg = SKShapeNode(rectOf: CGSize(width: bgWidth, height: 40), cornerRadius: 8)
         bg.fillColor = SKColor.black.withAlphaComponent(0.7)
         bg.strokeColor = VisualConstants.Colors.accent.withAlphaComponent(0.5)
         bg.lineWidth = 1
@@ -445,8 +489,10 @@ class BaseLevelScene: SKScene {
         label.verticalAlignmentMode = .center
         container.addChild(label)
 
-        // Position at bottom of camera view
-        container.position = CGPoint(x: size.width / 2, y: 60)
+        // Position in camera-local coordinates so it stays centered on every
+        // device instead of drifting to the right edge on wide scenes.
+        let bottomInset = view?.safeAreaInsets.bottom ?? 0
+        container.position = CGPoint(x: 0, y: -size.height / 2 + max(60, bottomInset + 44))
         gameCamera.addChild(container)
 
         container.run(.sequence([
@@ -463,6 +509,11 @@ class BaseLevelScene: SKScene {
     /// to enable death explosion effects, landing dust, etc.
     func registerPlayer(_ node: SKNode) {
         playerNode = node
+
+        if let bit = node as? BitCharacter {
+            let isTabletCanvas = min(size.width, size.height) >= 700
+            bit.setDisplayScale(isTabletCanvas ? 1.25 : 1.0)
+        }
     }
 
     // MARK: - World Atmosphere Helpers

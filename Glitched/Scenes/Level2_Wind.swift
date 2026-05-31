@@ -5,7 +5,27 @@ final class WindBridgeScene: BaseLevelScene, SKPhysicsContactDelegate {
     // MARK: - Line Art Style
     private let fillColor = VisualConstants.Colors.foreground
     private let strokeColor = VisualConstants.Colors.background
-    private let lineWidth: CGFloat = 2.5
+    private let designSize = CGSize(width: 430, height: 932)
+
+    private var layoutXScale: CGFloat {
+        size.width / designSize.width
+    }
+
+    private var layoutYScale: CGFloat {
+        size.height / designSize.height
+    }
+
+    private var visualScale: CGFloat {
+        min(layoutXScale, layoutYScale)
+    }
+
+    private var lineWidth: CGFloat {
+        max(2.0, 2.5 * visualScale)
+    }
+
+    private var isCompactPhoneLayout: Bool {
+        min(size.width, size.height) < 700
+    }
 
     private var bit: BitCharacter!
     private var playerController: PlayerController!
@@ -16,18 +36,17 @@ final class WindBridgeScene: BaseLevelScene, SKPhysicsContactDelegate {
     private var bridgeFullWidth: CGFloat = 200
     private var bridgeCurrentWidth: CGFloat = 0
     private var bridgeTargetWidth: CGFloat = 0
+    private var lastPhysicsSegmentCount = -1
 
-    private let groundHeight: CGFloat = 100
-    // Chasm width must stay > 115 pt (max horizontal jump range) so the
-    // bridge mechanic is required. Edges are chosen so the right platform
-    // is still ≥120 pt wide on a 390-pt iPhone canvas, leaving solid
-    // ground under the exit door.
-    private let chasmStartX: CGFloat = 120
-    private let chasmEndX: CGFloat = 260
+    private var groundHeight: CGFloat { 100 * layoutYScale }
+    private var chasmStartX: CGFloat { 140 * layoutXScale }
+    private var chasmEndX: CGFloat { 340 * layoutXScale }
+    private var bridgeOverlap: CGFloat { 80 * layoutXScale }
 
     private var windParticles: [SKShapeNode] = []
     private var lastMicLevel: Float = 0
     private var hasShownBlowCommentary = false
+    private var microphoneHint: SKNode?
 
     // MARK: - Configuration
 
@@ -62,16 +81,12 @@ final class WindBridgeScene: BaseLevelScene, SKPhysicsContactDelegate {
 
     private func setupBackground() {
         // Industrial fans/vents on walls
-        drawVent(at: CGPoint(x: 60, y: topSafeY - 70), size: 60)
-        drawVent(at: CGPoint(x: size.width - 60, y: topSafeY - 70), size: 60)
-
-        // Hanging sensors
-        drawHangingVibrationPickup(at: CGPoint(x: size.width / 2 - 80, y: topSafeY - 10))
-        drawHangingVibrationPickup(at: CGPoint(x: size.width / 2 + 80, y: topSafeY - 30))
+        drawVent(at: CGPoint(x: 60 * layoutXScale, y: size.height - 100 * layoutYScale), size: 60 * visualScale)
+        drawVent(at: CGPoint(x: size.width - 60 * layoutXScale, y: size.height - 100 * layoutYScale), size: 60 * visualScale)
 
         // Wind turbines in background
-        drawWindTurbine(at: CGPoint(x: 100, y: groundHeight + 200))
-        drawWindTurbine(at: CGPoint(x: size.width - 80, y: groundHeight + 250))
+        drawWindTurbine(at: CGPoint(x: 100 * layoutXScale, y: groundHeight + 200 * layoutYScale))
+        drawWindTurbine(at: CGPoint(x: size.width - 80 * layoutXScale, y: groundHeight + 250 * layoutYScale))
 
         // Industrial pipes
         drawPipes()
@@ -162,7 +177,7 @@ final class WindBridgeScene: BaseLevelScene, SKPhysicsContactDelegate {
         addChild(pole)
 
         // Hub
-        let hub = SKShapeNode(circleOfRadius: 8)
+        let hub = SKShapeNode(circleOfRadius: 8 * visualScale)
         hub.fillColor = fillColor
         hub.strokeColor = strokeColor
         hub.lineWidth = lineWidth * 0.8
@@ -171,7 +186,7 @@ final class WindBridgeScene: BaseLevelScene, SKPhysicsContactDelegate {
         addChild(hub)
 
         // Blades (3)
-        let bladeLength: CGFloat = 40
+        let bladeLength: CGFloat = 40 * visualScale
         for i in 0..<3 {
             let angle = CGFloat(i) * .pi * 2 / 3
             let blade = SKShapeNode()
@@ -194,8 +209,9 @@ final class WindBridgeScene: BaseLevelScene, SKPhysicsContactDelegate {
         // Horizontal pipes across top
         let pipe1 = SKShapeNode()
         let pipe1Path = CGMutablePath()
-        pipe1Path.move(to: CGPoint(x: 0, y: topSafeY - 120))
-        pipe1Path.addLine(to: CGPoint(x: size.width, y: topSafeY - 120))
+        let pipeY = size.height - 150 * layoutYScale
+        pipe1Path.move(to: CGPoint(x: 0, y: pipeY))
+        pipe1Path.addLine(to: CGPoint(x: size.width, y: pipeY))
         pipe1.path = pipe1Path
         pipe1.strokeColor = strokeColor
         pipe1.lineWidth = lineWidth
@@ -203,12 +219,12 @@ final class WindBridgeScene: BaseLevelScene, SKPhysicsContactDelegate {
         addChild(pipe1)
 
         // Pipe joints
-        for x in stride(from: CGFloat(80), to: size.width, by: 120) {
-            let joint = SKShapeNode(circleOfRadius: 6)
+        for x in stride(from: 80 * layoutXScale, to: size.width, by: 120 * layoutXScale) {
+            let joint = SKShapeNode(circleOfRadius: 6 * visualScale)
             joint.fillColor = fillColor
             joint.strokeColor = strokeColor
             joint.lineWidth = lineWidth * 0.6
-            joint.position = CGPoint(x: x, y: topSafeY - 120)
+            joint.position = CGPoint(x: x, y: pipeY)
             joint.zPosition = -14
             addChild(joint)
         }
@@ -251,7 +267,7 @@ final class WindBridgeScene: BaseLevelScene, SKPhysicsContactDelegate {
         container.addChild(platform)
 
         // 3D depth lines
-        let depthOffset: CGFloat = 8
+        let depthOffset: CGFloat = 8 * visualScale
         let depthLine = SKShapeNode()
         let depthPath = CGMutablePath()
         depthPath.move(to: CGPoint(x: -width / 2, y: height / 2))
@@ -266,13 +282,13 @@ final class WindBridgeScene: BaseLevelScene, SKPhysicsContactDelegate {
         container.addChild(depthLine)
 
         // Surface detail lines
-        let lineCount = max(0, Int(width / 30))
+        let lineCount = max(0, Int(width / (30 * visualScale)))
         for i in 0..<lineCount {
             let x = -width / 2 + CGFloat(i + 1) * width / CGFloat(lineCount + 1)
             let detail = SKShapeNode()
             let detailPath = CGMutablePath()
-            detailPath.move(to: CGPoint(x: x, y: -height / 2 + 5))
-            detailPath.addLine(to: CGPoint(x: x, y: height / 2 - 5))
+            detailPath.move(to: CGPoint(x: x, y: -height / 2 + 5 * visualScale))
+            detailPath.addLine(to: CGPoint(x: x, y: height / 2 - 5 * visualScale))
             detail.path = detailPath
             detail.strokeColor = strokeColor.withAlphaComponent(0.3)
             detail.lineWidth = 1.0
@@ -300,8 +316,7 @@ final class WindBridgeScene: BaseLevelScene, SKPhysicsContactDelegate {
         addChild(deathPlane)
 
         // Visual darkness in chasm with hatching
-        let chasmWidth = chasmEndX - chasmStartX
-        for y in stride(from: CGFloat(0), to: groundHeight, by: 8) {
+        for y in stride(from: CGFloat(0), to: groundHeight, by: 8 * visualScale) {
             let hatchLine = SKShapeNode()
             let hatchPath = CGMutablePath()
             hatchPath.move(to: CGPoint(x: chasmStartX, y: y))
@@ -314,7 +329,7 @@ final class WindBridgeScene: BaseLevelScene, SKPhysicsContactDelegate {
         }
 
         // Diagonal hatching for depth
-        for x in stride(from: chasmStartX, to: chasmEndX, by: 12) {
+        for x in stride(from: chasmStartX, to: chasmEndX, by: 12 * layoutXScale) {
             let diag = SKShapeNode()
             let diagPath = CGMutablePath()
             diagPath.move(to: CGPoint(x: x, y: 0))
@@ -331,28 +346,26 @@ final class WindBridgeScene: BaseLevelScene, SKPhysicsContactDelegate {
 
     private func setupBridge() {
         // Bridge needs to span the entire chasm plus generous overlap onto both platforms
-        // Chasm is from chasmStartX (140) to chasmEndX (340) = 200 points
-        // Add 160 points total overlap (80 on each side) for comfortable walking
-        bridgeFullWidth = chasmEndX - chasmStartX + 160  // 360 points total
+        bridgeFullWidth = chasmEndX - chasmStartX + bridgeOverlap * 2
 
         bridge = SKNode()
-        // Position bridge to start from right platform edge (80 point overlap)
-        bridge.position = CGPoint(x: chasmEndX + 80, y: groundHeight)
+        bridge.position = CGPoint(x: chasmStartX - bridgeOverlap, y: groundHeight)
         bridge.zPosition = 2
         addChild(bridge)
 
-        // Create individual bridge segments - more segments for smoother appearance
-        let segmentCount = 12
+        // Create individual bridge segments. Wider layouts get extra segments so
+        // growth still feels granular instead of chunky.
+        let segmentCount = max(12, Int(bridgeFullWidth / (30 * visualScale)))
         let segmentWidth = bridgeFullWidth / CGFloat(segmentCount)
-        let segmentHeight: CGFloat = 18
+        let segmentHeight: CGFloat = 18 * visualScale
 
         for i in 0..<segmentCount {
             let segment = SKShapeNode(rectOf: CGSize(width: segmentWidth - 2, height: segmentHeight))
             segment.fillColor = fillColor
             segment.strokeColor = strokeColor
             segment.lineWidth = lineWidth * 0.8
-            // Position segments from right edge extending left - segment 0 at right, segment 11 at left
-            let xPos = -CGFloat(i + 1) * segmentWidth + segmentWidth / 2
+            // Position segments from the player side extending toward the exit.
+            let xPos = CGFloat(i) * segmentWidth + segmentWidth / 2
             segment.position = CGPoint(x: xPos, y: -segmentHeight / 2)
             segment.alpha = 0
             bridgeSegments.append(segment)
@@ -363,31 +376,40 @@ final class WindBridgeScene: BaseLevelScene, SKPhysicsContactDelegate {
     }
 
     private func updateBridgePhysics() {
+        let segmentWidth = bridgeFullWidth / CGFloat(bridgeSegments.count)
+        let visibleSegments = bridgeCurrentWidth > 10 * visualScale
+            ? min(bridgeSegments.count, max(1, Int(ceil(bridgeCurrentWidth / segmentWidth))))
+            : 0
+
+        let previousVisibleSegments = lastPhysicsSegmentCount
+        guard visibleSegments != previousVisibleSegments else { return }
+        lastPhysicsSegmentCount = visibleSegments
+        if visibleSegments > previousVisibleSegments {
+            notePlayerProgress()
+        }
+
+        for (index, segment) in bridgeSegments.enumerated() {
+            segment.alpha = index < visibleSegments ? 1.0 : 0.0
+        }
+
         bridge.physicsBody = nil
 
-        if bridgeCurrentWidth > 10 {
-            // Update segment visibility
-            let visibleSegments = Int(bridgeCurrentWidth / (bridgeFullWidth / CGFloat(bridgeSegments.count)))
-            for (index, segment) in bridgeSegments.enumerated() {
-                segment.alpha = index < visibleSegments ? 1.0 : 0.0
-            }
-
+        if visibleSegments > 0 {
+            let physicsWidth = CGFloat(visibleSegments) * segmentWidth
             // Create physics body for the visible portion.
             // center.y = -8 aligns the physics top with the platform top (y=100)
             // so the character walks smoothly from platform onto bridge.
-            bridge.physicsBody = SKPhysicsBody(rectangleOf: CGSize(width: bridgeCurrentWidth, height: 16),
-                                                center: CGPoint(x: -bridgeCurrentWidth / 2, y: -8))
+            bridge.physicsBody = SKPhysicsBody(
+                rectangleOf: CGSize(width: physicsWidth, height: 16 * visualScale),
+                center: CGPoint(x: physicsWidth / 2, y: -8 * visualScale)
+            )
             bridge.physicsBody?.isDynamic = false
             bridge.physicsBody?.categoryBitMask = PhysicsCategory.ground
-        } else {
-            for segment in bridgeSegments {
-                segment.alpha = 0
-            }
         }
     }
 
     private func setupBit() {
-        spawnPoint = CGPoint(x: 70, y: groundHeight + 40)
+        spawnPoint = CGPoint(x: 70 * layoutXScale, y: groundHeight + 40)
 
         bit = BitCharacter.make()
         bit.position = spawnPoint
@@ -399,9 +421,9 @@ final class WindBridgeScene: BaseLevelScene, SKPhysicsContactDelegate {
 
     private func setupExit() {
         // Door frame
-        let doorWidth: CGFloat = 40
-        let doorHeight: CGFloat = 60
-        let doorX = size.width - 60
+        let doorWidth: CGFloat = 40 * visualScale
+        let doorHeight: CGFloat = 60 * visualScale
+        let doorX = size.width - 60 * layoutXScale
         let doorY = groundHeight + doorHeight / 2
 
         let doorFrame = SKShapeNode()
@@ -416,17 +438,17 @@ final class WindBridgeScene: BaseLevelScene, SKPhysicsContactDelegate {
         addChild(doorFrame)
 
         // Door handle
-        let handle = SKShapeNode(circleOfRadius: 4)
+        let handle = SKShapeNode(circleOfRadius: 4 * visualScale)
         handle.fillColor = fillColor
         handle.strokeColor = strokeColor
         handle.lineWidth = lineWidth * 0.6
-        handle.position = CGPoint(x: 12, y: 0)
+        handle.position = CGPoint(x: 12 * visualScale, y: 0)
         doorFrame.addChild(handle)
 
         // Door panels
         for i in 0..<2 {
             let panelY = CGFloat(i) * doorHeight / 2 - doorHeight / 4 + 5
-            let panel = SKShapeNode(rectOf: CGSize(width: doorWidth - 10, height: doorHeight / 2 - 15))
+            let panel = SKShapeNode(rectOf: CGSize(width: doorWidth - 10 * visualScale, height: doorHeight / 2 - 15 * visualScale))
             panel.fillColor = .clear
             panel.strokeColor = strokeColor
             panel.lineWidth = lineWidth * 0.5
@@ -445,7 +467,8 @@ final class WindBridgeScene: BaseLevelScene, SKPhysicsContactDelegate {
 
         // Arrow hint
         let arrow = createArrow()
-        arrow.position = CGPoint(x: doorX, y: doorY + doorHeight / 2 + 25)
+        arrow.setScale(visualScale)
+        arrow.position = CGPoint(x: doorX, y: doorY + doorHeight / 2 + 25 * visualScale)
         arrow.zPosition = 10
         arrow.run(.repeatForever(.sequence([
             .moveBy(x: 0, y: -5, duration: 0.4),
@@ -478,15 +501,15 @@ final class WindBridgeScene: BaseLevelScene, SKPhysicsContactDelegate {
         for i in 0..<8 {
             let particle = SKShapeNode()
             let path = CGMutablePath()
-            path.move(to: CGPoint(x: -15, y: 0))
-            path.addLine(to: CGPoint(x: 15, y: 0))
+            path.move(to: CGPoint(x: -15 * visualScale, y: 0))
+            path.addLine(to: CGPoint(x: 15 * visualScale, y: 0))
             particle.path = path
             particle.strokeColor = strokeColor
             particle.lineWidth = lineWidth * 0.5
             particle.alpha = 0
             particle.position = CGPoint(
-                x: chasmStartX + CGFloat(i) * 25,
-                y: groundHeight + 30 + CGFloat.random(in: -10...10)
+                x: chasmStartX + CGFloat(i) * 25 * layoutXScale,
+                y: groundHeight + 30 * visualScale + CGFloat.random(in: -10 * visualScale...10 * visualScale)
             )
             particle.zPosition = 1
             addChild(particle)
@@ -497,9 +520,10 @@ final class WindBridgeScene: BaseLevelScene, SKPhysicsContactDelegate {
     private func setupLevelTitle() {
         let title = SKLabelNode(text: "LEVEL 2")
         title.fontName = "Helvetica-Bold"
-        title.fontSize = 28
+        title.fontSize = 28 * visualScale
         title.fontColor = strokeColor
-        title.position = CGPoint(x: 80, y: topSafeY - 30)
+        let yOffset = isCompactPhoneLayout ? 205 * layoutYScale : 60 * layoutYScale
+        title.position = CGPoint(x: 80 * layoutXScale, y: topSafeAreaY(offset: yOffset))
         title.horizontalAlignmentMode = .left
         title.zPosition = 100
         addChild(title)
@@ -507,8 +531,8 @@ final class WindBridgeScene: BaseLevelScene, SKPhysicsContactDelegate {
         // Underline
         let underline = SKShapeNode()
         let underlinePath = CGMutablePath()
-        underlinePath.move(to: CGPoint(x: 0, y: -10))
-        underlinePath.addLine(to: CGPoint(x: 100, y: -10))
+        underlinePath.move(to: CGPoint(x: 0, y: -10 * visualScale))
+        underlinePath.addLine(to: CGPoint(x: 100 * visualScale, y: -10 * visualScale))
         underline.path = underlinePath
         underline.strokeColor = strokeColor
         underline.lineWidth = lineWidth
@@ -518,13 +542,96 @@ final class WindBridgeScene: BaseLevelScene, SKPhysicsContactDelegate {
     }
 
     private func setupHint() {
-        // Microphone hint icon
+        // Start with an environmental clue. The explicit microphone clue appears
+        // only after the player struggles.
         let hintContainer = SKNode()
-        hintContainer.position = CGPoint(x: size.width / 2, y: topSafeY - 20)
+        let yOffset = isCompactPhoneLayout ? 94 * layoutYScale : 50 * layoutYScale
+        hintContainer.position = CGPoint(x: size.width / 2, y: topSafeAreaY(offset: yOffset))
+        hintContainer.setScale(visualScale)
         hintContainer.zPosition = 100
         addChild(hintContainer)
 
-        // Microphone icon
+        let placard = SKShapeNode(rectOf: CGSize(width: 210, height: 54), cornerRadius: 8)
+        placard.fillColor = fillColor
+        placard.strokeColor = strokeColor
+        placard.lineWidth = lineWidth
+        hintContainer.addChild(placard)
+
+        let windIcon = SKNode()
+        windIcon.position = CGPoint(x: -62, y: 1)
+        hintContainer.addChild(windIcon)
+
+        for i in 0..<4 {
+            let gust = SKShapeNode()
+            let path = CGMutablePath()
+            let y = CGFloat(i) * 7 - 11
+            let startX: CGFloat = i.isMultiple(of: 2) ? -34 : -25
+            path.move(to: CGPoint(x: startX, y: y))
+            path.addCurve(
+                to: CGPoint(x: 26, y: y + CGFloat(i % 2 == 0 ? 1 : -1)),
+                control1: CGPoint(x: -18, y: y + 10),
+                control2: CGPoint(x: 3, y: y - 10)
+            )
+            if i == 1 || i == 3 {
+                path.move(to: CGPoint(x: 16, y: y))
+                path.addQuadCurve(to: CGPoint(x: 29, y: y + 3), control: CGPoint(x: 26, y: y - 5))
+            }
+            gust.path = path
+            gust.strokeColor = strokeColor
+            gust.lineWidth = lineWidth * (i == 0 ? 0.55 : 0.75)
+            gust.fillColor = .clear
+            windIcon.addChild(gust)
+
+            gust.run(.repeatForever(.sequence([
+                .group([
+                    .moveBy(x: 9, y: 0, duration: 0.7),
+                    .fadeAlpha(to: 0.45, duration: 0.7)
+                ]),
+                .group([
+                    .moveBy(x: -9, y: 0, duration: 0.0),
+                    .fadeAlpha(to: 1.0, duration: 0.0)
+                ])
+            ])))
+        }
+
+        for i in 0..<3 {
+            let fleck = SKShapeNode(circleOfRadius: 1.6)
+            fleck.fillColor = strokeColor
+            fleck.strokeColor = .clear
+            fleck.position = CGPoint(x: -88 + CGFloat(i) * 18, y: CGFloat(i - 1) * 7)
+            windIcon.addChild(fleck)
+            fleck.run(.repeatForever(.sequence([
+                .group([
+                    .moveBy(x: 34, y: CGFloat.random(in: -3...3), duration: 1.0),
+                    .fadeAlpha(to: 0.0, duration: 1.0)
+                ]),
+                .group([
+                    .moveBy(x: -34, y: 0, duration: 0.0),
+                    .fadeAlpha(to: 1.0, duration: 0.0)
+                ])
+            ])))
+        }
+
+        let label = SKLabelNode(text: "LOOKS WINDY")
+        label.fontName = "Menlo-Bold"
+        label.fontSize = 14
+        label.fontColor = strokeColor
+        label.horizontalAlignmentMode = .left
+        label.position = CGPoint(x: -8, y: -5)
+        hintContainer.addChild(label)
+    }
+
+    private func showMicrophoneHint() {
+        guard microphoneHint == nil else { return }
+
+        let hintContainer = SKNode()
+        hintContainer.position = CGPoint(x: size.width / 2, y: size.height - 98 * layoutYScale)
+        hintContainer.setScale(visualScale)
+        hintContainer.zPosition = 150
+        hintContainer.alpha = 0
+        microphoneHint = hintContainer
+        addChild(hintContainer)
+
         let mic = SKShapeNode()
         let micPath = CGMutablePath()
         micPath.addRoundedRect(in: CGRect(x: -8, y: -15, width: 16, height: 25), cornerWidth: 8, cornerHeight: 8)
@@ -564,12 +671,22 @@ final class WindBridgeScene: BaseLevelScene, SKPhysicsContactDelegate {
         }
 
         // Label
-        let label = SKLabelNode(text: "BLOW")
+        let label = SKLabelNode(text: "SIGNAL?")
         label.fontName = "Menlo-Bold"
         label.fontSize = 14
         label.fontColor = strokeColor
         label.position = CGPoint(x: 60, y: -5)
         hintContainer.addChild(label)
+
+        hintContainer.run(.sequence([
+            .fadeIn(withDuration: 0.25),
+            .wait(forDuration: 6.0),
+            .fadeOut(withDuration: 0.4),
+            .removeFromParent(),
+            .run { [weak self] in
+                self?.microphoneHint = nil
+            }
+        ]))
     }
 
     // MARK: - Event Handling
@@ -586,6 +703,7 @@ final class WindBridgeScene: BaseLevelScene, SKPhysicsContactDelegate {
 
             // 4th-wall commentary on first successful blow
             if power > 0.2 && !hasShownBlowCommentary {
+                notePlayerProgress()
                 hasShownBlowCommentary = true
                 showBlowCommentary()
             }
@@ -619,10 +737,11 @@ final class WindBridgeScene: BaseLevelScene, SKPhysicsContactDelegate {
 
     private func triggerOverdriveEffect() {
         // Screen shake
+        let restPosition = gameCamera.position
         let shake = SKAction.sequence([
             .moveBy(x: CGFloat.random(in: -3...3), y: CGFloat.random(in: -2...2), duration: 0.02),
             .moveBy(x: CGFloat.random(in: -3...3), y: CGFloat.random(in: -2...2), duration: 0.02),
-            .move(to: CGPoint(x: 0, y: 0), duration: 0.02)
+            .move(to: restPosition, duration: 0.02)
         ])
         if gameCamera.action(forKey: "overdrive_shake") == nil {
             gameCamera.run(shake, withKey: "overdrive_shake")
@@ -652,8 +771,8 @@ final class WindBridgeScene: BaseLevelScene, SKPhysicsContactDelegate {
                 .fadeAlpha(to: 0, duration: 0.1),
                 .run { [weak self] in
                     guard let self = self else { return }
-                    particle.position.x = self.chasmStartX + CGFloat(index) * 25
-                    particle.position.y = self.groundHeight + 30 + CGFloat.random(in: -10...10)
+                    particle.position.x = self.chasmStartX + CGFloat(index) * 25 * self.layoutXScale
+                    particle.position.y = self.groundHeight + 30 * self.visualScale + CGFloat.random(in: -10 * self.visualScale...10 * self.visualScale)
                 }
             ]))
         }
@@ -736,6 +855,7 @@ final class WindBridgeScene: BaseLevelScene, SKPhysicsContactDelegate {
 
     private func handleDeath() {
         guard GameState.shared.levelState == .playing else { return }
+        notePlayerStruggle()
         playerController.cancel()
         bit.playBufferDeath(respawnAt: spawnPoint) { [weak self] in
             self?.bit.setGrounded(true)
@@ -760,7 +880,11 @@ final class WindBridgeScene: BaseLevelScene, SKPhysicsContactDelegate {
     }
 
     override func hintText() -> String? {
-        return "???"
+        return "Try blowing into the microphone."
+    }
+
+    override func difficultyHintDidShow() {
+        showMicrophoneHint()
     }
 
     override func willMove(from view: SKView) {

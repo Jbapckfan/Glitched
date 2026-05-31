@@ -23,11 +23,11 @@ final class PlayerController {
 
     // Coyote time: brief grace period after walking off a ledge
     private var coyoteTimer: TimeInterval = 0
-    private let coyoteWindow: TimeInterval = 0.1
+    private let coyoteWindow: TimeInterval = 0.16
 
     // Jump buffer: queue a jump pressed just before landing
     private var jumpBufferTimer: TimeInterval = 0
-    private let jumpBufferWindow: TimeInterval = 0.12
+    private let jumpBufferWindow: TimeInterval = 0.18
 
     // Boundary padding
     private let boundaryPadding: CGFloat = 20
@@ -110,7 +110,7 @@ final class PlayerController {
         guard let character = character else { return }
 
         if character.isGrounded || coyoteTimer > 0 {
-            character.jump()
+            character.jump(allowGraceJump: true)
             coyoteTimer = 0
             jumpBufferTimer = 0
         } else {
@@ -132,6 +132,11 @@ final class PlayerController {
             primaryTouchBeganAt = CACurrentMediaTime()
             primaryTouchBeganPoint = point
             primaryTouchDidDrag = false
+            if shouldTreatAsJumpTap(point) {
+                attemptJump()
+                touchMoveDirection = 0
+                return
+            }
         } else {
             // Second+ finger while holding: jump
             attemptJump()
@@ -207,5 +212,15 @@ final class PlayerController {
         } else {
             touchMoveDirection = 0
         }
+    }
+
+    private func shouldTreatAsJumpTap(_ point: CGPoint) -> Bool {
+        guard let character = character, let scene = scene else { return false }
+
+        let cameraOriginY = scene.camera.map { $0.position.y - scene.size.height / 2 } ?? 0
+        let characterScreenY = character.position.y - cameraOriginY
+        let touchScreenY = point.y - cameraOriginY
+
+        return touchScreenY > characterScreenY + 48
     }
 }

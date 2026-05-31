@@ -9,7 +9,27 @@ final class StaticScene: BaseLevelScene, SKPhysicsContactDelegate {
     // MARK: - Line Art Style
     private let fillColor = VisualConstants.Colors.foreground
     private let strokeColor = VisualConstants.Colors.background
-    private let lineWidth: CGFloat = 2.5
+    private let designSize = CGSize(width: 430, height: 932)
+
+    private var layoutXScale: CGFloat { size.width / designSize.width }
+    private var layoutYScale: CGFloat { size.height / designSize.height }
+    private var visualScale: CGFloat { min(layoutXScale, layoutYScale) }
+    private var lineWidth: CGFloat { max(2.0, 2.5 * visualScale) }
+
+    // MARK: - Gameplay Course (fixed logical width, centered)
+    // Gameplay geometry is authored in a fixed `designSize.width`-point logical
+    // course so laser/platform spacing and traversal distance stay consistent
+    // across devices instead of stretching to fill an iPad. The course never
+    // overflows a narrow screen (scale clamps at 1.0), and on iPhone it stays
+    // full-bleed (output identical to the previous size.width-fraction layout).
+    // On iPad the course is centered and the surrounding space is filled by the
+    // decorative TV frame / antennas / panels, which still key off size.width.
+    private var courseScale: CGFloat { min(1.0, size.width / designSize.width) }
+    private var courseOriginX: CGFloat { (size.width - designSize.width * courseScale) / 2 }
+    /// Map a logical x (0...designSize.width) into centered course space.
+    private func courseX(_ logicalX: CGFloat) -> CGFloat { courseOriginX + logicalX * courseScale }
+    /// Scale a logical length (platform width, etc.) into course space.
+    private func courseLen(_ logical: CGFloat) -> CGFloat { logical * courseScale }
 
     // MARK: - Properties
     private var bit: BitCharacter!
@@ -68,8 +88,8 @@ final class StaticScene: BaseLevelScene, SKPhysicsContactDelegate {
         drawTVFrame()
 
         // Antenna elements
-        drawAntenna(at: CGPoint(x: 60, y: topSafeY - 50))
-        drawAntenna(at: CGPoint(x: size.width - 60, y: topSafeY - 70))
+        drawAntenna(at: CGPoint(x: 60 * layoutXScale, y: size.height - 80 * layoutYScale))
+        drawAntenna(at: CGPoint(x: size.width - 60 * layoutXScale, y: size.height - 100 * layoutYScale))
 
         // Control panels on sides
         drawControlPanels()
@@ -79,9 +99,9 @@ final class StaticScene: BaseLevelScene, SKPhysicsContactDelegate {
     }
 
     private func drawTVFrame() {
-        let frameWidth = size.width - 80
-        let frameHeight = size.height - 160
-        let frame = SKShapeNode(rectOf: CGSize(width: frameWidth, height: frameHeight), cornerRadius: 10)
+        let frameWidth = max(280 * visualScale, size.width - 80 * layoutXScale)
+        let frameHeight = max(520 * visualScale, size.height - 160 * layoutYScale)
+        let frame = SKShapeNode(rectOf: CGSize(width: frameWidth, height: frameHeight), cornerRadius: 10 * visualScale)
         frame.fillColor = .clear
         frame.strokeColor = strokeColor
         frame.lineWidth = lineWidth * 1.5
@@ -90,7 +110,7 @@ final class StaticScene: BaseLevelScene, SKPhysicsContactDelegate {
         addChild(frame)
 
         // Inner screen bezel
-        let bezel = SKShapeNode(rectOf: CGSize(width: frameWidth - 30, height: frameHeight - 30), cornerRadius: 5)
+        let bezel = SKShapeNode(rectOf: CGSize(width: frameWidth - 30 * visualScale, height: frameHeight - 30 * visualScale), cornerRadius: 5 * visualScale)
         bezel.fillColor = .clear
         bezel.strokeColor = strokeColor
         bezel.lineWidth = lineWidth
@@ -100,13 +120,13 @@ final class StaticScene: BaseLevelScene, SKPhysicsContactDelegate {
 
         // Corner screws
         let screwPositions = [
-            CGPoint(x: 55, y: topSafeY - 65),
-            CGPoint(x: size.width - 55, y: topSafeY - 65),
-            CGPoint(x: 55, y: 75),
-            CGPoint(x: size.width - 55, y: 75)
+            CGPoint(x: 55 * layoutXScale, y: size.height - 95 * layoutYScale),
+            CGPoint(x: size.width - 55 * layoutXScale, y: size.height - 95 * layoutYScale),
+            CGPoint(x: 55 * layoutXScale, y: 75 * layoutYScale),
+            CGPoint(x: size.width - 55 * layoutXScale, y: 75 * layoutYScale)
         ]
         for pos in screwPositions {
-            let screw = SKShapeNode(circleOfRadius: 6)
+            let screw = SKShapeNode(circleOfRadius: 6 * visualScale)
             screw.fillColor = fillColor
             screw.strokeColor = strokeColor
             screw.lineWidth = lineWidth * 0.6
@@ -117,7 +137,7 @@ final class StaticScene: BaseLevelScene, SKPhysicsContactDelegate {
     }
 
     private func drawAntenna(at position: CGPoint) {
-        let base = SKShapeNode(rectOf: CGSize(width: 20, height: 10))
+        let base = SKShapeNode(rectOf: CGSize(width: 20 * visualScale, height: 10 * visualScale))
         base.fillColor = fillColor
         base.strokeColor = strokeColor
         base.lineWidth = lineWidth
@@ -127,8 +147,8 @@ final class StaticScene: BaseLevelScene, SKPhysicsContactDelegate {
 
         let leftArm = SKShapeNode()
         let leftPath = CGMutablePath()
-        leftPath.move(to: CGPoint(x: -5, y: 5))
-        leftPath.addLine(to: CGPoint(x: -25, y: 50))
+        leftPath.move(to: CGPoint(x: -5 * visualScale, y: 5 * visualScale))
+        leftPath.addLine(to: CGPoint(x: -25 * visualScale, y: 50 * visualScale))
         leftArm.path = leftPath
         leftArm.strokeColor = strokeColor
         leftArm.lineWidth = lineWidth * 0.8
@@ -138,8 +158,8 @@ final class StaticScene: BaseLevelScene, SKPhysicsContactDelegate {
 
         let rightArm = SKShapeNode()
         let rightPath = CGMutablePath()
-        rightPath.move(to: CGPoint(x: 5, y: 5))
-        rightPath.addLine(to: CGPoint(x: 25, y: 50))
+        rightPath.move(to: CGPoint(x: 5 * visualScale, y: 5 * visualScale))
+        rightPath.addLine(to: CGPoint(x: 25 * visualScale, y: 50 * visualScale))
         rightArm.path = rightPath
         rightArm.strokeColor = strokeColor
         rightArm.lineWidth = lineWidth * 0.8
@@ -151,12 +171,12 @@ final class StaticScene: BaseLevelScene, SKPhysicsContactDelegate {
     private func drawControlPanels() {
         // Left control panel
         let leftPanel = createControlPanel()
-        leftPanel.position = CGPoint(x: 30, y: size.height / 2)
+        leftPanel.position = CGPoint(x: 30 * layoutXScale, y: size.height / 2)
         addChild(leftPanel)
 
         // Right control panel
         let rightPanel = createControlPanel()
-        rightPanel.position = CGPoint(x: size.width - 30, y: size.height / 2)
+        rightPanel.position = CGPoint(x: size.width - 30 * layoutXScale, y: size.height / 2)
         rightPanel.xScale = -1
         addChild(rightPanel)
     }
@@ -165,7 +185,7 @@ final class StaticScene: BaseLevelScene, SKPhysicsContactDelegate {
         let panel = SKNode()
         panel.zPosition = -15
 
-        let body = SKShapeNode(rectOf: CGSize(width: 40, height: 200))
+        let body = SKShapeNode(rectOf: CGSize(width: 40 * visualScale, height: 200 * visualScale))
         body.fillColor = fillColor
         body.strokeColor = strokeColor
         body.lineWidth = lineWidth
@@ -173,8 +193,8 @@ final class StaticScene: BaseLevelScene, SKPhysicsContactDelegate {
 
         // Indicator lights
         for i in 0..<4 {
-            let y = CGFloat(i - 2) * 40 + 20
-            let light = SKShapeNode(circleOfRadius: 8)
+            let y = (CGFloat(i - 2) * 40 + 20) * visualScale
+            let light = SKShapeNode(circleOfRadius: 8 * visualScale)
             light.fillColor = fillColor
             light.strokeColor = strokeColor
             light.lineWidth = lineWidth * 0.5
@@ -188,8 +208,8 @@ final class StaticScene: BaseLevelScene, SKPhysicsContactDelegate {
 
     private func createTVScreens() {
         let screenPositions = [
-            CGPoint(x: 100, y: topSafeY - 70),
-            CGPoint(x: size.width - 100, y: topSafeY - 70)
+            CGPoint(x: 100 * layoutXScale, y: size.height - 100 * layoutYScale),
+            CGPoint(x: size.width - 100 * layoutXScale, y: size.height - 100 * layoutYScale)
         ]
 
         for pos in screenPositions {
@@ -204,13 +224,13 @@ final class StaticScene: BaseLevelScene, SKPhysicsContactDelegate {
         let tv = SKNode()
         tv.zPosition = -5
 
-        let frame = SKShapeNode(rectOf: CGSize(width: 60, height: 45), cornerRadius: 3)
+        let frame = SKShapeNode(rectOf: CGSize(width: 60 * visualScale, height: 45 * visualScale), cornerRadius: 3 * visualScale)
         frame.fillColor = fillColor
         frame.strokeColor = strokeColor
         frame.lineWidth = lineWidth
         tv.addChild(frame)
 
-        let screen = SKShapeNode(rectOf: CGSize(width: 50, height: 35))
+        let screen = SKShapeNode(rectOf: CGSize(width: 50 * visualScale, height: 35 * visualScale))
         screen.fillColor = fillColor
         screen.strokeColor = strokeColor
         screen.lineWidth = lineWidth * 0.5
@@ -220,10 +240,10 @@ final class StaticScene: BaseLevelScene, SKPhysicsContactDelegate {
         // Mini antenna
         let ant = SKShapeNode()
         let antPath = CGMutablePath()
-        antPath.move(to: CGPoint(x: -10, y: 22))
-        antPath.addLine(to: CGPoint(x: -15, y: 35))
-        antPath.move(to: CGPoint(x: 10, y: 22))
-        antPath.addLine(to: CGPoint(x: 15, y: 35))
+        antPath.move(to: CGPoint(x: -10 * visualScale, y: 22 * visualScale))
+        antPath.addLine(to: CGPoint(x: -15 * visualScale, y: 35 * visualScale))
+        antPath.move(to: CGPoint(x: 10 * visualScale, y: 22 * visualScale))
+        antPath.addLine(to: CGPoint(x: 15 * visualScale, y: 35 * visualScale))
         ant.path = antPath
         ant.strokeColor = strokeColor
         ant.lineWidth = lineWidth * 0.4
@@ -235,17 +255,17 @@ final class StaticScene: BaseLevelScene, SKPhysicsContactDelegate {
     private func setupLevelTitle() {
         let title = SKLabelNode(text: "LEVEL 3")
         title.fontName = "Helvetica-Bold"
-        title.fontSize = 28
+        title.fontSize = 28 * visualScale
         title.fontColor = strokeColor
-        title.position = CGPoint(x: 80, y: topSafeY - 30)
+        title.position = CGPoint(x: 80 * layoutXScale, y: topSafeAreaY(offset: 60 * layoutYScale))
         title.horizontalAlignmentMode = .left
         title.zPosition = 100
         addChild(title)
 
         let underline = SKShapeNode()
         let underlinePath = CGMutablePath()
-        underlinePath.move(to: CGPoint(x: 0, y: -10))
-        underlinePath.addLine(to: CGPoint(x: 100, y: -10))
+        underlinePath.move(to: CGPoint(x: 0, y: -10 * visualScale))
+        underlinePath.addLine(to: CGPoint(x: 100 * visualScale, y: -10 * visualScale))
         underline.path = underlinePath
         underline.strokeColor = strokeColor
         underline.lineWidth = lineWidth
@@ -257,36 +277,58 @@ final class StaticScene: BaseLevelScene, SKPhysicsContactDelegate {
     // MARK: - Level Building
 
     private func buildLevel() {
-        let groundY: CGFloat = 160
+        let groundY: CGFloat = 160 * layoutYScale
+        // Gameplay widths are authored in logical course points (centered course),
+        // so platform spacing/sizes stay consistent instead of stretching on iPad.
+        let startWidth = courseLen(96)
+        let midWidth = courseLen(72)
+        let platformHeight = courseLen(24)
+        // `x` is a logical fraction of the course (0...1), mapped via courseX().
+        let platformPoints: [(x: CGFloat, yOffset: CGFloat, width: CGFloat, height: CGFloat)] = [
+            (0.13, 0, startWidth, courseLen(30)),
+            (0.29, 25, midWidth, platformHeight),
+            (0.45, 50, midWidth, platformHeight),
+            (0.61, 25, midWidth, platformHeight),
+            (0.76, 50, midWidth, platformHeight),
+            (0.90, 0, startWidth, courseLen(30))
+        ]
 
-        // Fits a 390-pt iPhone canvas with 4 laser gates between 5 platforms.
-        // Each gap ≤35 pt with rises ≤25 pt — comfortably inside the 72-pt jump.
+        // Starting platform
         _ = createPlatform(
-            at: CGPoint(x: 40, y: groundY),
-            size: CGSize(width: 60, height: 30)
+            at: CGPoint(x: courseX(platformPoints[0].x * designSize.width), y: groundY + platformPoints[0].yOffset * layoutYScale),
+            size: CGSize(width: platformPoints[0].width, height: platformPoints[0].height)
+        )
+
+        // Middle platforms (across laser gauntlet)
+        _ = createPlatform(
+            at: CGPoint(x: courseX(platformPoints[1].x * designSize.width), y: groundY + platformPoints[1].yOffset * layoutYScale),
+            size: CGSize(width: platformPoints[1].width, height: platformPoints[1].height)
         )
 
         _ = createPlatform(
-            at: CGPoint(x: 125, y: groundY + 25),
-            size: CGSize(width: 50, height: 25)
+            at: CGPoint(x: courseX(platformPoints[2].x * designSize.width), y: groundY + platformPoints[2].yOffset * layoutYScale),
+            size: CGSize(width: platformPoints[2].width, height: platformPoints[2].height)
         )
 
         _ = createPlatform(
-            at: CGPoint(x: 210, y: groundY + 35),
-            size: CGSize(width: 50, height: 25)
+            at: CGPoint(x: courseX(platformPoints[3].x * designSize.width), y: groundY + platformPoints[3].yOffset * layoutYScale),
+            size: CGSize(width: platformPoints[3].width, height: platformPoints[3].height)
         )
 
+        // Platform before the 4th (inverse) laser
         _ = createPlatform(
-            at: CGPoint(x: 295, y: groundY + 25),
-            size: CGSize(width: 50, height: 25)
+            at: CGPoint(x: courseX(platformPoints[4].x * designSize.width), y: groundY + platformPoints[4].yOffset * layoutYScale),
+            size: CGSize(width: platformPoints[4].width, height: platformPoints[4].height)
         )
 
+        // Exit platform (pushed further right for 4th laser)
         _ = createPlatform(
-            at: CGPoint(x: size.width - 25, y: groundY),
-            size: CGSize(width: 50, height: 30)
+            at: CGPoint(x: courseX(platformPoints[5].x * designSize.width), y: groundY + platformPoints[5].yOffset * layoutYScale),
+            size: CGSize(width: platformPoints[5].width, height: platformPoints[5].height)
         )
 
-        createExitDoor(at: CGPoint(x: size.width - 20, y: groundY + 50))
+        // Exit door
+        createExitDoor(at: CGPoint(x: courseX(0.92 * designSize.width), y: groundY + 50 * visualScale))
 
         // Death zone
         let deathZone = SKNode()
@@ -311,7 +353,7 @@ final class StaticScene: BaseLevelScene, SKPhysicsContactDelegate {
         container.addChild(surface)
 
         // 3D depth
-        let depth: CGFloat = 5
+        let depth: CGFloat = 5 * visualScale
         let depthLine = SKShapeNode()
         let depthPath = CGMutablePath()
         depthPath.move(to: CGPoint(x: -platformSize.width / 2, y: platformSize.height / 2))
@@ -335,14 +377,21 @@ final class StaticScene: BaseLevelScene, SKPhysicsContactDelegate {
     // MARK: - Laser System
 
     private func createLaserSystem() {
-        // Create 3 normal laser barriers + 1 inverse laser near the end.
-        // Positions match the iPhone-fit platform layout (platforms at
-        // x = 40, 125, 210, 295, size.width - 25).
+        // Create 3 normal laser barriers + 1 inverse laser near the end
+        let laserBaseY = 140 * layoutYScale
+        let laserTopLow = 280 * layoutYScale
+        let laserTopHigh = 320 * layoutYScale
+        // Laser x positions are authored in the centered logical course so they
+        // stay aligned with the platform gaps on every device.
+        let lx0 = courseX(0.21 * designSize.width)
+        let lx1 = courseX(0.37 * designSize.width)
+        let lx2 = courseX(0.53 * designSize.width)
+        let lx3 = courseX(0.68 * designSize.width)
         let laserPositions: [(start: CGPoint, end: CGPoint)] = [
-            (CGPoint(x: 82, y: 140), CGPoint(x: 82, y: 280)),
-            (CGPoint(x: 167, y: 140), CGPoint(x: 167, y: 320)),
-            (CGPoint(x: 252, y: 140), CGPoint(x: 252, y: 280)),
-            (CGPoint(x: 335, y: 140), CGPoint(x: 335, y: 280))  // 4th laser - INVERSE
+            (CGPoint(x: lx0, y: laserBaseY), CGPoint(x: lx0, y: laserTopLow)),
+            (CGPoint(x: lx1, y: laserBaseY), CGPoint(x: lx1, y: laserTopHigh)),
+            (CGPoint(x: lx2, y: laserBaseY), CGPoint(x: lx2, y: laserTopLow)),
+            (CGPoint(x: lx3, y: laserBaseY), CGPoint(x: lx3, y: laserTopLow))  // 4th laser - INVERSE
         ]
 
         for (index, positions) in laserPositions.enumerated() {
@@ -353,7 +402,7 @@ final class StaticScene: BaseLevelScene, SKPhysicsContactDelegate {
         // and set its initial state to OFF (since we start in silence and it's powered by noise)
         if inverseLaserIndex < laserBeams.count {
             let inverseBeam = laserBeams[inverseLaserIndex]
-            inverseBeam.path = inverseBeam.path?.copy(dashingWithPhase: 0, lengths: [4, 8])
+            inverseBeam.path = inverseBeam.path?.copy(dashingWithPhase: 0, lengths: [4 * visualScale, 8 * visualScale])
 
             // Inverse laser starts OFF in silence
             inverseBeam.alpha = 0.15
@@ -373,17 +422,17 @@ final class StaticScene: BaseLevelScene, SKPhysicsContactDelegate {
         laserEmitters.append(emitter)
 
         // Emitter housing
-        let housing = SKShapeNode(rectOf: CGSize(width: 30, height: 20))
+        let housing = SKShapeNode(rectOf: CGSize(width: 30 * visualScale, height: 20 * visualScale))
         housing.fillColor = fillColor
         housing.strokeColor = strokeColor
         housing.lineWidth = lineWidth
         emitter.addChild(housing)
 
         // Warning light
-        let light = SKShapeNode(circleOfRadius: 5)
+        let light = SKShapeNode(circleOfRadius: 5 * visualScale)
         light.fillColor = strokeColor
         light.strokeColor = .clear
-        light.position = CGPoint(x: 0, y: 15)
+        light.position = CGPoint(x: 0, y: 15 * visualScale)
         light.name = "warning_light"
         emitter.addChild(light)
 
@@ -394,10 +443,10 @@ final class StaticScene: BaseLevelScene, SKPhysicsContactDelegate {
         beamPath.addLine(to: end)
         beam.path = beamPath
         beam.strokeColor = strokeColor
-        beam.lineWidth = 3
+        beam.lineWidth = 3 * visualScale
         beam.zPosition = 15
         beam.name = "laser_beam_\(index)"
-        beam.path = beam.path?.copy(dashingWithPhase: 0, lengths: [8, 4])
+        beam.path = beam.path?.copy(dashingWithPhase: 0, lengths: [8 * visualScale, 4 * visualScale])
         addChild(beam)
         laserBeams.append(beam)
 
@@ -406,7 +455,7 @@ final class StaticScene: BaseLevelScene, SKPhysicsContactDelegate {
         let beamLength = hypot(end.x - start.x, end.y - start.y)
         let midPoint = CGPoint(x: (start.x + end.x) / 2, y: (start.y + end.y) / 2)
         hitZone.position = midPoint
-        hitZone.physicsBody = SKPhysicsBody(rectangleOf: CGSize(width: 10, height: beamLength))
+        hitZone.physicsBody = SKPhysicsBody(rectangleOf: CGSize(width: 10 * visualScale, height: beamLength))
         hitZone.physicsBody?.isDynamic = false
         hitZone.physicsBody?.categoryBitMask = PhysicsCategory.hazard
         hitZone.name = "laser_hitzone_\(index)"
@@ -460,6 +509,7 @@ final class StaticScene: BaseLevelScene, SKPhysicsContactDelegate {
             // Show neighbor commentary after first successful laser block
             if shouldBlock && !hasShownNeighborText {
                 hasShownNeighborText = true
+                notePlayerProgress()
                 showNeighborCommentary()
             }
 
@@ -472,9 +522,9 @@ final class StaticScene: BaseLevelScene, SKPhysicsContactDelegate {
     private func showNeighborCommentary() {
         let label = SKLabelNode(fontNamed: "Menlo-Bold")
         label.text = "THE NEIGHBORS ARE STARTING TO WORRY."
-        label.fontSize = 11
+        label.fontSize = 11 * visualScale
         label.fontColor = strokeColor
-        label.position = CGPoint(x: size.width / 2, y: size.height / 2 + 100)
+        label.position = CGPoint(x: size.width / 2, y: size.height / 2 + 100 * layoutYScale)
         label.zPosition = 300
         label.alpha = 0
         addChild(label)
@@ -504,7 +554,7 @@ final class StaticScene: BaseLevelScene, SKPhysicsContactDelegate {
             linePath.addLine(to: CGPoint(x: size.width, y: y))
             line.path = linePath
             line.strokeColor = strokeColor
-            line.lineWidth = CGFloat.random(in: 1...3)
+            line.lineWidth = CGFloat.random(in: 1...3) * visualScale
             line.alpha = 0
             staticOverlay.addChild(line)
             staticLines.append(line)
@@ -536,48 +586,53 @@ final class StaticScene: BaseLevelScene, SKPhysicsContactDelegate {
 
     private func showInstructionPanel() {
         instructionPanel = SKNode()
-        instructionPanel?.position = CGPoint(x: size.width / 2, y: topSafeY - 100)
+        instructionPanel?.position = CGPoint(x: size.width / 2, y: size.height - 130 * layoutYScale)
+        instructionPanel?.setScale(visualScale)
         instructionPanel?.zPosition = 300
         addChild(instructionPanel!)
 
-        let bg = SKShapeNode(rectOf: CGSize(width: 220, height: 80), cornerRadius: 8)
+        let bg = SKShapeNode(rectOf: CGSize(width: 230, height: 74), cornerRadius: 8)
         bg.fillColor = fillColor
         bg.strokeColor = strokeColor
         bg.lineWidth = lineWidth
         instructionPanel?.addChild(bg)
 
-        // Microphone icon
-        let mic = SKShapeNode()
-        let micPath = CGMutablePath()
-        micPath.addRoundedRect(in: CGRect(x: -8, y: -15, width: 16, height: 30), cornerWidth: 8, cornerHeight: 8)
-        mic.path = micPath
-        mic.fillColor = fillColor
-        mic.strokeColor = strokeColor
-        mic.lineWidth = lineWidth * 0.8
-        mic.position = CGPoint(x: -70, y: 0)
-        instructionPanel?.addChild(mic)
+        // TV static icon: an environmental clue before the explicit mic hint.
+        let staticBox = SKShapeNode(rectOf: CGSize(width: 46, height: 34), cornerRadius: 3)
+        staticBox.fillColor = fillColor
+        staticBox.strokeColor = strokeColor
+        staticBox.lineWidth = lineWidth * 0.8
+        staticBox.position = CGPoint(x: -76, y: 0)
+        instructionPanel?.addChild(staticBox)
 
-        // Sound waves
-        for i in 1...3 {
-            let wave = SKShapeNode()
-            let wavePath = CGMutablePath()
-            wavePath.addArc(center: .zero, radius: CGFloat(i) * 8, startAngle: -.pi / 3, endAngle: .pi / 3, clockwise: false)
-            wave.path = wavePath
-            wave.strokeColor = strokeColor
-            wave.lineWidth = lineWidth * 0.5
-            wave.position = CGPoint(x: -55, y: 0)
-            instructionPanel?.addChild(wave)
+        for i in 0..<5 {
+            let noise = SKShapeNode()
+            let noisePath = CGMutablePath()
+            let y = CGFloat(i - 2) * 6
+            noisePath.move(to: CGPoint(x: -94, y: y))
+            noisePath.addLine(to: CGPoint(x: -82, y: y + CGFloat.random(in: -2...2)))
+            noisePath.addLine(to: CGPoint(x: -70, y: y + CGFloat.random(in: -2...2)))
+            noisePath.addLine(to: CGPoint(x: -58, y: y))
+            noise.path = noisePath
+            noise.strokeColor = strokeColor
+            noise.lineWidth = lineWidth * 0.45
+            instructionPanel?.addChild(noise)
+
+            noise.run(.repeatForever(.sequence([
+                .fadeAlpha(to: 0.25, duration: 0.08),
+                .fadeAlpha(to: 1.0, duration: 0.08)
+            ])))
         }
 
         // Text
-        let label1 = SKLabelNode(text: "MAKE NOISE")
+        let label1 = SKLabelNode(text: "STATIC BLOCKS")
         label1.fontName = "Menlo-Bold"
         label1.fontSize = 14
         label1.fontColor = strokeColor
         label1.position = CGPoint(x: 25, y: 8)
         instructionPanel?.addChild(label1)
 
-        let label2 = SKLabelNode(text: "TO BLOCK LASERS")
+        let label2 = SKLabelNode(text: "THE LASERS")
         label2.fontName = "Menlo"
         label2.fontSize = 11
         label2.fontColor = strokeColor
@@ -595,8 +650,8 @@ final class StaticScene: BaseLevelScene, SKPhysicsContactDelegate {
     // MARK: - Exit Door
 
     private func createExitDoor(at position: CGPoint) {
-        let doorWidth: CGFloat = 40
-        let doorHeight: CGFloat = 60
+        let doorWidth: CGFloat = 40 * visualScale
+        let doorHeight: CGFloat = 60 * visualScale
 
         let frame = SKShapeNode(rectOf: CGSize(width: doorWidth, height: doorHeight))
         frame.fillColor = fillColor
@@ -607,8 +662,8 @@ final class StaticScene: BaseLevelScene, SKPhysicsContactDelegate {
         addChild(frame)
 
         for i in 0..<2 {
-            let panelY = CGFloat(i) * doorHeight / 2 - doorHeight / 4 + 5
-            let panel = SKShapeNode(rectOf: CGSize(width: doorWidth - 10, height: doorHeight / 2 - 15))
+            let panelY = CGFloat(i) * doorHeight / 2 - doorHeight / 4 + 5 * visualScale
+            let panel = SKShapeNode(rectOf: CGSize(width: doorWidth - 10 * visualScale, height: doorHeight / 2 - 15 * visualScale))
             panel.fillColor = .clear
             panel.strokeColor = strokeColor
             panel.lineWidth = lineWidth * 0.5
@@ -616,11 +671,11 @@ final class StaticScene: BaseLevelScene, SKPhysicsContactDelegate {
             frame.addChild(panel)
         }
 
-        let handle = SKShapeNode(circleOfRadius: 4)
+        let handle = SKShapeNode(circleOfRadius: 4 * visualScale)
         handle.fillColor = fillColor
         handle.strokeColor = strokeColor
         handle.lineWidth = lineWidth * 0.5
-        handle.position = CGPoint(x: 12, y: 0)
+        handle.position = CGPoint(x: 12 * visualScale, y: 0)
         frame.addChild(handle)
 
         let exit = SKSpriteNode(color: .clear, size: CGSize(width: doorWidth, height: doorHeight))
@@ -632,11 +687,12 @@ final class StaticScene: BaseLevelScene, SKPhysicsContactDelegate {
         addChild(exit)
 
         let arrow = createArrow()
-        arrow.position = CGPoint(x: position.x, y: position.y + doorHeight / 2 + 25)
+        arrow.position = CGPoint(x: position.x, y: position.y + doorHeight / 2 + 25 * visualScale)
+        arrow.setScale(visualScale)
         arrow.zPosition = 15
         arrow.run(.repeatForever(.sequence([
-            .moveBy(x: 0, y: -5, duration: 0.4),
-            .moveBy(x: 0, y: 5, duration: 0.4)
+            .moveBy(x: 0, y: -5 * visualScale, duration: 0.4),
+            .moveBy(x: 0, y: 5 * visualScale, duration: 0.4)
         ])))
         addChild(arrow)
     }
@@ -663,7 +719,7 @@ final class StaticScene: BaseLevelScene, SKPhysicsContactDelegate {
     // MARK: - Bit Setup
 
     private func setupBit() {
-        spawnPoint = CGPoint(x: 40, y: 200)
+        spawnPoint = CGPoint(x: courseX(0.13 * designSize.width), y: 205 * layoutYScale)
 
         bit = BitCharacter.make()
         bit.position = spawnPoint
@@ -677,6 +733,17 @@ final class StaticScene: BaseLevelScene, SKPhysicsContactDelegate {
 
     override func updatePlaying(deltaTime: TimeInterval) {
         playerController.update()
+
+        // Decay noise toward silence so the shield fades without fresh input.
+        // On-device the mic streams continuously, so sustained blowing keeps the
+        // level high; this matters for the accessibility/simulator fallback, whose
+        // wind button posts a single pulse — without decay the inverse laser (#4)
+        // would stay armed forever and the level would be uncompletable.
+        if currentNoiseLevel > 0 {
+            currentNoiseLevel = max(0, currentNoiseLevel - Float(deltaTime) * 2.5)
+            updateLaserState()
+        }
+
         updateStaticVisuals()
     }
 
@@ -687,6 +754,10 @@ final class StaticScene: BaseLevelScene, SKPhysicsContactDelegate {
         case .micLevelChanged(let power):
             currentNoiseLevel = power
             updateLaserState()
+
+            if power > noiseThresholdToBlock {
+                notePlayerProgress()
+            }
 
             // Hide instruction after first noise
             if power > noiseThresholdToBlock, let panel = instructionPanel {
@@ -757,6 +828,7 @@ final class StaticScene: BaseLevelScene, SKPhysicsContactDelegate {
     private func handleDeath() {
         guard GameState.shared.levelState == .playing else { return }
         playerController.cancel()
+        notePlayerStruggle()
         bit.playBufferDeath(respawnAt: spawnPoint) { [weak self] in
             self?.bit.setGrounded(true)
         }
@@ -780,7 +852,7 @@ final class StaticScene: BaseLevelScene, SKPhysicsContactDelegate {
     }
 
     override func hintText() -> String? {
-        return "???"
+        return "Make noise to turn static into a shield."
     }
 
     // MARK: - Cleanup

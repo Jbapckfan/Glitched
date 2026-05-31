@@ -3,7 +3,7 @@
 	archiveVersion = 1;
 	classes = {
 	};
-	objectVersion = 77;
+	objectVersion = 63;
 	objects = {
 
 /* Begin PBXBuildFile section */
@@ -155,7 +155,7 @@
 		63B3641B109025C0DDCE2B5E /* BatteryManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BatteryManager.swift; sourceTree = "<group>"; };
 		6617AC71A777BF51EA8A8908 /* Level17_AirplaneMode.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Level17_AirplaneMode.swift; sourceTree = "<group>"; };
 		6875D6C339DB4C95CE1B7F47 /* VoiceOverManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceOverManager.swift; sourceTree = "<group>"; };
-		70A98EF066BF4492F78BE95E /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
+		70A98EF066BF4492F78BE95E /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; lastKnownFileType = text.xml; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
 		711F568B1776028CC88CD672 /* Level20_MetaFinale.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Level20_MetaFinale.swift; sourceTree = "<group>"; };
 		72820D4FA4FA2EAB83F9EA7A /* Level6_Brightness.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Level6_Brightness.swift; sourceTree = "<group>"; };
 		7336C3943F02282AC5DBACF8 /* BrightnessManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BrightnessManager.swift; sourceTree = "<group>"; };
@@ -205,7 +205,7 @@
 		E1AC373A9D5EEE940CC32F48 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
 		E94A8D5694571314896A0BB3 /* Level5_Charging.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Level5_Charging.swift; sourceTree = "<group>"; };
 		E9A6300473FBBF48BA89C785 /* Level26_Locale.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Level26_Locale.swift; sourceTree = "<group>"; };
-		EF2ED4B8D969089335BDE94C /* Glitched.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = Glitched.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		EF2ED4B8D969089335BDE94C /* Glitched.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Glitched.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		F043D5C26DE91D715EB8AD27 /* Level29_TheLie.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Level29_TheLie.swift; sourceTree = "<group>"; };
 		F4A66C1B6B495950E381E8ED /* GameState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GameState.swift; sourceTree = "<group>"; };
 		F6EA61A360E8670568C1F5C8 /* Level32_MultiTouch.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Level32_MultiTouch.swift; sourceTree = "<group>"; };
@@ -475,7 +475,6 @@
 			);
 			mainGroup = BF29292DB7BD41B4EA4CBB9D;
 			minimizedProjectReferenceProxies = 1;
-			preferredProjectObjectVersion = 77;
 			projectDirPath = "";
 			projectRoot = "";
 			targets = (

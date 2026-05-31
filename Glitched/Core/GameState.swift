@@ -39,7 +39,56 @@ final class GameState: ObservableObject {
     var showPauseMenu: Bool { uiState == .paused }
     var showCutscene: Bool { uiState == .cutscene }
 
-    private init() {}
+    private init() {
+        #if DEBUG
+        if let startLevel = Self.debugStartLevel() {
+            currentLevelID = startLevel
+            levelState = .loading
+            uiState = .playing
+            appScreen = .game
+        }
+        #endif
+    }
+
+    #if DEBUG
+    private static func debugStartLevel() -> LevelID? {
+        let arguments = ProcessInfo.processInfo.arguments
+        let argumentValue = arguments.indices.dropFirst().compactMap { index -> String? in
+            guard arguments[index] == "--glitched-start-level",
+                  arguments.indices.contains(index + 1) else {
+                return nil
+            }
+            return arguments[index + 1]
+        }.first
+
+        guard let rawValue = argumentValue ?? ProcessInfo.processInfo.environment["GLITCHED_START_LEVEL"] else {
+            return nil
+        }
+
+        let trimmed = rawValue.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        if trimmed == "boot" || trimmed == "0" {
+            return .boot
+        }
+
+        if let index = Int(trimmed), (1...10).contains(index) {
+            return LevelID(world: .world1, index: index)
+        }
+
+        let parts = trimmed
+            .replacingOccurrences(of: "_", with: "-")
+            .split(separator: "-")
+
+        guard parts.count == 2,
+              let worldNumber = Int(parts[0]),
+              let levelIndex = Int(parts[1]),
+              let world = World(rawValue: worldNumber),
+              world.levels.contains(LevelID(world: world, index: levelIndex)) else {
+            return nil
+        }
+
+        return LevelID(world: world, index: levelIndex)
+    }
+    #endif
 
     func load(level id: LevelID) {
         guard StoreManager.shared.canAccess(level: id) else {

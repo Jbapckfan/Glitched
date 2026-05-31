@@ -7,15 +7,29 @@ final class HeaderScene: BaseLevelScene, SKPhysicsContactDelegate {
     private var spawnPoint: CGPoint = .zero
     private var bridgeSpawned = false
 
-    private let pitStartX: CGFloat = 140
-    private let pitEndX: CGFloat = 280
-    private let groundHeight: CGFloat = 100
-    private let platformHeight: CGFloat = 40
+    private let designSize = CGSize(width: 430, height: 932)
+
+    private var layoutXScale: CGFloat {
+        size.width / designSize.width
+    }
+
+    private var layoutYScale: CGFloat {
+        size.height / designSize.height
+    }
+
+    private var visualScale: CGFloat {
+        min(layoutXScale, layoutYScale)
+    }
+
+    private var pitStartX: CGFloat { 140 * layoutXScale }
+    private var pitEndX: CGFloat { 280 * layoutXScale }
+    private var groundHeight: CGFloat { 100 * layoutYScale }
+    private var platformHeight: CGFloat { 40 * layoutYScale }
 
     // Line art style
     private let fillColor = VisualConstants.Colors.foreground
     private let strokeColor = VisualConstants.Colors.background
-    private let lineWidth: CGFloat = 2.5
+    private var lineWidth: CGFloat { max(2.0, 2.5 * visualScale) }
 
     // MARK: - Configuration
 
@@ -45,23 +59,20 @@ final class HeaderScene: BaseLevelScene, SKPhysicsContactDelegate {
         // Industrial sci-fi background elements
 
         // Left side machinery/pillars
-        drawIndustrialPillar(at: CGPoint(x: 30, y: size.height / 2), height: size.height)
-        drawIndustrialPillar(at: CGPoint(x: 70, y: size.height / 2), height: size.height * 0.8)
+        drawIndustrialPillar(at: CGPoint(x: 30 * layoutXScale, y: size.height / 2), height: size.height)
+        drawIndustrialPillar(at: CGPoint(x: 70 * layoutXScale, y: size.height / 2), height: size.height * 0.8)
 
         // Right side machinery
-        drawIndustrialPillar(at: CGPoint(x: size.width - 30, y: size.height / 2), height: size.height)
-        drawIndustrialPillar(at: CGPoint(x: size.width - 70, y: size.height / 2), height: size.height * 0.7)
-
-        // Cables/wires at top
-        drawCables()
+        drawIndustrialPillar(at: CGPoint(x: size.width - 30 * layoutXScale, y: size.height / 2), height: size.height)
+        drawIndustrialPillar(at: CGPoint(x: size.width - 70 * layoutXScale, y: size.height / 2), height: size.height * 0.7)
 
         // Control panel on left
-        drawControlPanel(at: CGPoint(x: 50, y: groundHeight + 60))
+        drawControlPanel(at: CGPoint(x: 50 * layoutXScale, y: groundHeight + 60 * layoutYScale))
     }
 
     private func drawIndustrialPillar(at position: CGPoint, height: CGFloat) {
         // Main pillar
-        let pillarWidth: CGFloat = 25
+        let pillarWidth: CGFloat = 25 * visualScale
         let pillar = SKShapeNode(rectOf: CGSize(width: pillarWidth, height: height))
         pillar.fillColor = fillColor
         pillar.strokeColor = strokeColor
@@ -71,59 +82,65 @@ final class HeaderScene: BaseLevelScene, SKPhysicsContactDelegate {
         addChild(pillar)
 
         // Horizontal stripes/details
-        let stripeCount = Int(height / 40)
+        let stripeSpacing = 40 * layoutYScale
+        let stripeCount = Int(height / stripeSpacing)
         for i in 0..<stripeCount {
-            let stripe = SKShapeNode(rectOf: CGSize(width: pillarWidth + 8, height: 4))
+            let stripe = SKShapeNode(rectOf: CGSize(width: pillarWidth + 8 * visualScale, height: 4 * visualScale))
             stripe.fillColor = fillColor
             stripe.strokeColor = strokeColor
-            stripe.lineWidth = 1.5
-            stripe.position = CGPoint(x: 0, y: -height/2 + CGFloat(i) * 40 + 20)
+            stripe.lineWidth = 1.5 * visualScale
+            stripe.position = CGPoint(x: 0, y: -height/2 + CGFloat(i) * stripeSpacing + stripeSpacing / 2)
             pillar.addChild(stripe)
         }
 
         // Bolts/rivets
         for i in 0..<stripeCount {
-            let leftBolt = SKShapeNode(circleOfRadius: 2)
+            let leftBolt = SKShapeNode(circleOfRadius: 2 * visualScale)
             leftBolt.fillColor = strokeColor
             leftBolt.strokeColor = .clear
-            leftBolt.position = CGPoint(x: -8, y: -height/2 + CGFloat(i) * 40 + 30)
+            leftBolt.position = CGPoint(x: -8 * visualScale, y: -height/2 + CGFloat(i) * stripeSpacing + 30 * layoutYScale)
             pillar.addChild(leftBolt)
 
-            let rightBolt = SKShapeNode(circleOfRadius: 2)
+            let rightBolt = SKShapeNode(circleOfRadius: 2 * visualScale)
             rightBolt.fillColor = strokeColor
             rightBolt.strokeColor = .clear
-            rightBolt.position = CGPoint(x: 8, y: -height/2 + CGFloat(i) * 40 + 30)
+            rightBolt.position = CGPoint(x: 8 * visualScale, y: -height/2 + CGFloat(i) * stripeSpacing + 30 * layoutYScale)
             pillar.addChild(rightBolt)
         }
     }
 
     private func drawCables() {
         // Draw hanging cables at top of screen
-        let cablePositions: [CGFloat] = [80, 150, 250, size.width - 100]
+        let cablePositions: [CGFloat] = [
+            80 * layoutXScale,
+            150 * layoutXScale,
+            250 * layoutXScale,
+            size.width - 100 * layoutXScale
+        ]
 
         for xPos in cablePositions {
             let cablePath = CGMutablePath()
             let startY = size.height
-            let endY = size.height - CGFloat.random(in: 80...200)
-            let controlX = xPos + CGFloat.random(in: -30...30)
+            let endY = size.height - CGFloat.random(in: 80 * layoutYScale...200 * layoutYScale)
+            let controlX = xPos + CGFloat.random(in: -30 * layoutXScale...30 * layoutXScale)
 
             cablePath.move(to: CGPoint(x: xPos, y: startY))
-            cablePath.addQuadCurve(to: CGPoint(x: xPos + CGFloat.random(in: -20...20), y: endY),
+            cablePath.addQuadCurve(to: CGPoint(x: xPos + CGFloat.random(in: -20 * layoutXScale...20 * layoutXScale), y: endY),
                                     control: CGPoint(x: controlX, y: (startY + endY) / 2))
 
             let cable = SKShapeNode(path: cablePath)
             cable.strokeColor = strokeColor
-            cable.lineWidth = 2
+            cable.lineWidth = 2 * visualScale
             cable.fillColor = .clear
             cable.zPosition = -3
             addChild(cable)
 
             // Cable end connector
-            let connector = SKShapeNode(circleOfRadius: 5)
+            let connector = SKShapeNode(circleOfRadius: 5 * visualScale)
             connector.fillColor = fillColor
             connector.strokeColor = strokeColor
-            connector.lineWidth = 1.5
-            connector.position = CGPoint(x: xPos + CGFloat.random(in: -20...20), y: endY)
+            connector.lineWidth = 1.5 * visualScale
+            connector.position = CGPoint(x: xPos + CGFloat.random(in: -20 * layoutXScale...20 * layoutXScale), y: endY)
             connector.zPosition = -2
             addChild(connector)
         }
@@ -131,7 +148,7 @@ final class HeaderScene: BaseLevelScene, SKPhysicsContactDelegate {
 
     private func drawControlPanel(at position: CGPoint) {
         // Control panel box
-        let panel = SKShapeNode(rectOf: CGSize(width: 40, height: 50), cornerRadius: 4)
+        let panel = SKShapeNode(rectOf: CGSize(width: 40 * visualScale, height: 50 * visualScale), cornerRadius: 4 * visualScale)
         panel.fillColor = fillColor
         panel.strokeColor = strokeColor
         panel.lineWidth = lineWidth
@@ -140,20 +157,20 @@ final class HeaderScene: BaseLevelScene, SKPhysicsContactDelegate {
         addChild(panel)
 
         // Screen
-        let screen = SKShapeNode(rectOf: CGSize(width: 30, height: 20), cornerRadius: 2)
+        let screen = SKShapeNode(rectOf: CGSize(width: 30 * visualScale, height: 20 * visualScale), cornerRadius: 2 * visualScale)
         screen.fillColor = SKColor(white: 0.9, alpha: 1)
         screen.strokeColor = strokeColor
-        screen.lineWidth = 1.5
-        screen.position = CGPoint(x: 0, y: 10)
+        screen.lineWidth = 1.5 * visualScale
+        screen.position = CGPoint(x: 0, y: 10 * visualScale)
         panel.addChild(screen)
 
         // Buttons
         for i in 0..<3 {
-            let button = SKShapeNode(circleOfRadius: 4)
+            let button = SKShapeNode(circleOfRadius: 4 * visualScale)
             button.fillColor = fillColor
             button.strokeColor = strokeColor
-            button.lineWidth = 1
-            button.position = CGPoint(x: -10 + CGFloat(i) * 10, y: -12)
+            button.lineWidth = visualScale
+            button.position = CGPoint(x: (-10 + CGFloat(i) * 10) * visualScale, y: -12 * visualScale)
             panel.addChild(button)
         }
     }
@@ -168,7 +185,7 @@ final class HeaderScene: BaseLevelScene, SKPhysicsContactDelegate {
         // Add physics
         let leftPhysics = SKNode()
         leftPhysics.position = CGPoint(x: leftWidth / 2, y: groundHeight)
-        leftPhysics.physicsBody = SKPhysicsBody(rectangleOf: CGSize(width: leftWidth, height: 10))
+        leftPhysics.physicsBody = SKPhysicsBody(rectangleOf: CGSize(width: leftWidth, height: 10 * visualScale))
         leftPhysics.physicsBody?.isDynamic = false
         leftPhysics.physicsBody?.categoryBitMask = PhysicsCategory.ground
         addChild(leftPhysics)
@@ -181,7 +198,7 @@ final class HeaderScene: BaseLevelScene, SKPhysicsContactDelegate {
 
         let rightPhysics = SKNode()
         rightPhysics.position = CGPoint(x: pitEndX + rightWidth / 2, y: groundHeight)
-        rightPhysics.physicsBody = SKPhysicsBody(rectangleOf: CGSize(width: rightWidth, height: 10))
+        rightPhysics.physicsBody = SKPhysicsBody(rectangleOf: CGSize(width: rightWidth, height: 10 * visualScale))
         rightPhysics.physicsBody?.isDynamic = false
         rightPhysics.physicsBody?.categoryBitMask = PhysicsCategory.ground
         addChild(rightPhysics)
@@ -207,16 +224,17 @@ final class HeaderScene: BaseLevelScene, SKPhysicsContactDelegate {
         container.addChild(front)
 
         // Horizontal detail lines
-        let lineCount = max(0, Int(width / 30))
+        let lineSpacing = 30 * layoutXScale
+        let lineCount = max(0, Int(width / lineSpacing))
         for i in 0...lineCount {
-            let xPos = -width/2 + CGFloat(i) * 30
+            let xPos = -width/2 + CGFloat(i) * lineSpacing
             let line = SKShapeNode()
             let path = CGMutablePath()
             path.move(to: CGPoint(x: xPos, y: height/2 - 12))
             path.addLine(to: CGPoint(x: xPos, y: -height/2 + 4))
             line.path = path
             line.strokeColor = strokeColor
-            line.lineWidth = 1
+            line.lineWidth = visualScale
             container.addChild(line)
         }
 
@@ -224,7 +242,7 @@ final class HeaderScene: BaseLevelScene, SKPhysicsContactDelegate {
         let bottomEdge = SKShapeNode(rectOf: CGSize(width: width, height: 4))
         bottomEdge.fillColor = strokeColor
         bottomEdge.strokeColor = strokeColor
-        bottomEdge.lineWidth = 1
+        bottomEdge.lineWidth = visualScale
         bottomEdge.position = CGPoint(x: 0, y: -height/2 + 2)
         container.addChild(bottomEdge)
 
@@ -235,31 +253,31 @@ final class HeaderScene: BaseLevelScene, SKPhysicsContactDelegate {
         let pitWidth = pitEndX - pitStartX
         let spikeCount = 20
         let spikeWidth = pitWidth / CGFloat(spikeCount)
-        let spikeHeight: CGFloat = 30
+        let spikeHeight: CGFloat = 30 * layoutYScale
 
         // Spike pit base
-        let pitBase = SKShapeNode(rectOf: CGSize(width: pitWidth + 10, height: 20))
+        let pitBase = SKShapeNode(rectOf: CGSize(width: pitWidth + 10 * layoutXScale, height: 20 * layoutYScale))
         pitBase.fillColor = fillColor
         pitBase.strokeColor = strokeColor
         pitBase.lineWidth = lineWidth
-        pitBase.position = CGPoint(x: pitStartX + pitWidth / 2, y: 10)
+        pitBase.position = CGPoint(x: pitStartX + pitWidth / 2, y: 10 * layoutYScale)
         pitBase.zPosition = -1
         addChild(pitBase)
 
         // Individual spikes
         for i in 0..<spikeCount {
-            let spike = createSpike(width: spikeWidth - 2, height: spikeHeight)
+            let spike = createSpike(width: spikeWidth - 2 * layoutXScale, height: spikeHeight)
             spike.position = CGPoint(
                 x: pitStartX + spikeWidth / 2 + CGFloat(i) * spikeWidth,
-                y: 20 + spikeHeight / 2
+                y: 20 * layoutYScale + spikeHeight / 2
             )
             addChild(spike)
         }
 
         // Hazard physics body (invisible)
         let hazard = SKNode()
-        hazard.position = CGPoint(x: pitStartX + pitWidth / 2, y: 30)
-        hazard.physicsBody = SKPhysicsBody(rectangleOf: CGSize(width: pitWidth, height: 40))
+        hazard.position = CGPoint(x: pitStartX + pitWidth / 2, y: 30 * layoutYScale)
+        hazard.physicsBody = SKPhysicsBody(rectangleOf: CGSize(width: pitWidth, height: 40 * layoutYScale))
         hazard.physicsBody?.isDynamic = false
         hazard.physicsBody?.categoryBitMask = PhysicsCategory.hazard
         hazard.name = "spikes"
@@ -276,13 +294,13 @@ final class HeaderScene: BaseLevelScene, SKPhysicsContactDelegate {
         let spike = SKShapeNode(path: path)
         spike.fillColor = fillColor
         spike.strokeColor = strokeColor
-        spike.lineWidth = 1.5
+        spike.lineWidth = 1.5 * visualScale
         spike.zPosition = 1
         return spike
     }
 
     private func setupBit() {
-        spawnPoint = CGPoint(x: 70, y: groundHeight + 50)
+        spawnPoint = CGPoint(x: 70 * layoutXScale, y: groundHeight + 50 * layoutYScale)
 
         bit = BitCharacter.make()
         bit.position = spawnPoint
@@ -294,42 +312,42 @@ final class HeaderScene: BaseLevelScene, SKPhysicsContactDelegate {
 
     private func setupExit() {
         // Exit door frame
-        let doorFrame = SKShapeNode(rectOf: CGSize(width: 40, height: 60), cornerRadius: 4)
+        let doorFrame = SKShapeNode(rectOf: CGSize(width: 40 * visualScale, height: 60 * visualScale), cornerRadius: 4 * visualScale)
         doorFrame.fillColor = fillColor
         doorFrame.strokeColor = strokeColor
         doorFrame.lineWidth = lineWidth
-        doorFrame.position = CGPoint(x: size.width - 50, y: groundHeight + 30)
+        doorFrame.position = CGPoint(x: size.width - 50 * layoutXScale, y: groundHeight + 30 * layoutYScale)
         doorFrame.zPosition = 5
         addChild(doorFrame)
 
         // Inner door (darker)
-        let innerDoor = SKShapeNode(rectOf: CGSize(width: 30, height: 50), cornerRadius: 2)
+        let innerDoor = SKShapeNode(rectOf: CGSize(width: 30 * visualScale, height: 50 * visualScale), cornerRadius: 2 * visualScale)
         innerDoor.fillColor = SKColor(white: 0.85, alpha: 1)
         innerDoor.strokeColor = strokeColor
-        innerDoor.lineWidth = 1.5
+        innerDoor.lineWidth = 1.5 * visualScale
         doorFrame.addChild(innerDoor)
 
         // Door handle
-        let handle = SKShapeNode(circleOfRadius: 4)
+        let handle = SKShapeNode(circleOfRadius: 4 * visualScale)
         handle.fillColor = strokeColor
         handle.strokeColor = .clear
-        handle.position = CGPoint(x: 10, y: 0)
+        handle.position = CGPoint(x: 10 * visualScale, y: 0)
         innerDoor.addChild(handle)
 
         // Exit physics
         let exit = SKNode()
-        exit.position = CGPoint(x: size.width - 50, y: groundHeight + 30)
-        exit.physicsBody = SKPhysicsBody(rectangleOf: CGSize(width: 30, height: 50))
+        exit.position = CGPoint(x: size.width - 50 * layoutXScale, y: groundHeight + 30 * layoutYScale)
+        exit.physicsBody = SKPhysicsBody(rectangleOf: CGSize(width: 30 * visualScale, height: 50 * visualScale))
         exit.physicsBody?.isDynamic = false
         exit.physicsBody?.categoryBitMask = PhysicsCategory.exit
         exit.name = "exit"
         addChild(exit)
 
         // Pulsing glow effect (subtle)
-        let glow = SKShapeNode(rectOf: CGSize(width: 44, height: 64), cornerRadius: 6)
+        let glow = SKShapeNode(rectOf: CGSize(width: 44 * visualScale, height: 64 * visualScale), cornerRadius: 6 * visualScale)
         glow.fillColor = .clear
         glow.strokeColor = SKColor(white: 0.7, alpha: 0.5)
-        glow.lineWidth = 2
+        glow.lineWidth = 2 * visualScale
         glow.run(.repeatForever(.sequence([
             .fadeAlpha(to: 0.2, duration: 1.0),
             .fadeAlpha(to: 0.6, duration: 1.0)
@@ -358,14 +376,17 @@ final class HeaderScene: BaseLevelScene, SKPhysicsContactDelegate {
 
         if skPosition.x > pitStartX && skPosition.x < pitEndX {
             spawnBridge()
+        } else {
+            notePlayerStruggle()
         }
     }
 
     private func spawnBridge() {
         bridgeSpawned = true
+        notePlayerProgress()
 
-        let bridgeWidth = pitEndX - pitStartX + 60
-        let bridgeHeight: CGFloat = 12
+        let bridgeWidth = pitEndX - pitStartX + 60 * layoutXScale
+        let bridgeHeight: CGFloat = 12 * visualScale
 
         // Create line-art style bridge
         let bridge = SKShapeNode(rectOf: CGSize(width: bridgeWidth, height: bridgeHeight), cornerRadius: 2)
@@ -373,7 +394,7 @@ final class HeaderScene: BaseLevelScene, SKPhysicsContactDelegate {
         bridge.strokeColor = strokeColor
         bridge.lineWidth = lineWidth
         bridge.position = CGPoint(
-            x: pitStartX + bridgeWidth / 2 - 30,
+            x: pitStartX + bridgeWidth / 2 - 30 * layoutXScale,
             y: groundHeight - bridgeHeight / 2
         )
         bridge.zPosition = 3
@@ -382,24 +403,24 @@ final class HeaderScene: BaseLevelScene, SKPhysicsContactDelegate {
         addChild(bridge)
 
         // Bridge detail lines
-        let lineSpacing: CGFloat = 20
+        let lineSpacing: CGFloat = 20 * layoutXScale
         let lineCount = max(0, Int(bridgeWidth / lineSpacing))
         for i in 0...lineCount {
             let xPos = -bridgeWidth/2 + CGFloat(i) * lineSpacing
             let detailLine = SKShapeNode()
             let path = CGMutablePath()
-            path.move(to: CGPoint(x: xPos, y: -bridgeHeight/2 + 2))
-            path.addLine(to: CGPoint(x: xPos, y: bridgeHeight/2 - 2))
+            path.move(to: CGPoint(x: xPos, y: -bridgeHeight/2 + 2 * visualScale))
+            path.addLine(to: CGPoint(x: xPos, y: bridgeHeight/2 - 2 * visualScale))
             detailLine.path = path
             detailLine.strokeColor = strokeColor
-            detailLine.lineWidth = 1
+            detailLine.lineWidth = visualScale
             bridge.addChild(detailLine)
         }
 
         // Physics body
         let bridgePhysics = SKNode()
-        bridgePhysics.position = CGPoint(x: pitStartX + bridgeWidth / 2 - 30, y: groundHeight)
-        bridgePhysics.physicsBody = SKPhysicsBody(rectangleOf: CGSize(width: bridgeWidth, height: 10))
+        bridgePhysics.position = CGPoint(x: pitStartX + bridgeWidth / 2 - 30 * layoutXScale, y: groundHeight)
+        bridgePhysics.physicsBody = SKPhysicsBody(rectangleOf: CGSize(width: bridgeWidth, height: 10 * visualScale))
         bridgePhysics.physicsBody?.isDynamic = false
         bridgePhysics.physicsBody?.categoryBitMask = PhysicsCategory.ground
         bridgePhysics.name = "bridge"
@@ -420,9 +441,9 @@ final class HeaderScene: BaseLevelScene, SKPhysicsContactDelegate {
     private func showHeaderGlitchText() {
         let glitchLabel = SKLabelNode(fontNamed: "Menlo-Bold")
         glitchLabel.text = "HEY, I NEEDED THAT."
-        glitchLabel.fontSize = 14
+        glitchLabel.fontSize = 14 * visualScale
         glitchLabel.fontColor = strokeColor
-        glitchLabel.position = CGPoint(x: size.width / 2 + 50, y: topSafeY - 100)
+        glitchLabel.position = CGPoint(x: size.width / 2 + 50 * layoutXScale, y: size.height - 130 * layoutYScale)
         glitchLabel.zPosition = 100
         glitchLabel.alpha = 0
         addChild(glitchLabel)
@@ -503,6 +524,7 @@ final class HeaderScene: BaseLevelScene, SKPhysicsContactDelegate {
 
     private func handleDeath() {
         guard GameState.shared.levelState == .playing else { return }
+        notePlayerStruggle()
         playerController.cancel()
         bit.playBufferDeath(respawnAt: spawnPoint) { [weak self] in
             self?.bit.setGrounded(true)
@@ -526,6 +548,6 @@ override func onLevelSucceeded() {
 }
 
 override func hintText() -> String? {
-    return nil
+    return "Drag the LEVEL 1 title into the gap."
 }
 }

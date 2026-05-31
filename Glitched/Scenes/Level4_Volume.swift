@@ -8,6 +8,7 @@ final class VolumeScene: BaseLevelScene, SKPhysicsContactDelegate {
     private let fillColor = SKColor.white
     private let strokeColor = SKColor.black
     private let lineWidth: CGFloat = 2.5
+    private let designSize = CGSize(width: 430, height: 932)
 
     // MARK: - Creature States
     enum CreatureState {
@@ -37,6 +38,17 @@ final class VolumeScene: BaseLevelScene, SKPhysicsContactDelegate {
 
     private let stirThreshold: Float = 0.30
     private let wakeThreshold: Float = 0.50
+    private let wolfDetectionRadius: CGFloat = 180
+    private var visualScale: CGFloat {
+        min(1.25, max(1.0, min(size.width / designSize.width, size.height / designSize.height)))
+    }
+    private var activeGroundY: CGFloat {
+        if min(size.width, size.height) >= 700 {
+            return min(size.height * 0.34, max(160 * visualScale, size.height * 0.32))
+        }
+        return max(160, size.height * 0.18)
+    }
+    private var scaledWolfDetectionRadius: CGFloat { wolfDetectionRadius * visualScale }
 
     private var detectionZone: SKShapeNode!
     private var playerInZone = false
@@ -65,6 +77,7 @@ final class VolumeScene: BaseLevelScene, SKPhysicsContactDelegate {
     private var waterNode: SKShapeNode!
     private var waterLevel: CGFloat = 0
     private let maxWaterHeight: CGFloat = 200
+    private var scaledWaterHeight: CGFloat { maxWaterHeight * visualScale }
     private var bubbles: [SKShapeNode] = []
     private var waterHazardActive = false
 
@@ -77,6 +90,9 @@ final class VolumeScene: BaseLevelScene, SKPhysicsContactDelegate {
         physicsWorld.gravity = CGVector(dx: 0, dy: -14)
         physicsWorld.contactDelegate = self
 
+#if targetEnvironment(simulator)
+        AccessibilityManager.shared.forceHardwareFallback(for: .volume)
+#endif
         AccessibilityManager.shared.registerMechanics([.volume])
         DeviceManagerCoordinator.shared.configure(for: [.volume])
 
@@ -94,11 +110,11 @@ final class VolumeScene: BaseLevelScene, SKPhysicsContactDelegate {
 
     private func createWaterSystem() {
         // Water container (visual)
-        waterNode = SKShapeNode(rectOf: CGSize(width: size.width, height: maxWaterHeight))
+        waterNode = SKShapeNode(rectOf: CGSize(width: size.width, height: scaledWaterHeight))
         waterNode.fillColor = strokeColor.withAlphaComponent(0.15)
         waterNode.strokeColor = strokeColor
         waterNode.lineWidth = lineWidth * 0.5
-        waterNode.position = CGPoint(x: size.width / 2, y: -100) // Start below screen
+        waterNode.position = CGPoint(x: size.width / 2, y: -scaledWaterHeight / 2) // Start below screen
         waterNode.zPosition = 40
         addChild(waterNode)
 
@@ -107,9 +123,9 @@ final class VolumeScene: BaseLevelScene, SKPhysicsContactDelegate {
         let wavePath = CGMutablePath()
         for x in stride(from: -size.width / 2, to: size.width / 2, by: 20) {
             if x == -size.width / 2 {
-                wavePath.move(to: CGPoint(x: x, y: maxWaterHeight / 2))
+                wavePath.move(to: CGPoint(x: x, y: scaledWaterHeight / 2))
             } else {
-                wavePath.addLine(to: CGPoint(x: x, y: maxWaterHeight / 2 + sin(x / 20) * 5))
+                wavePath.addLine(to: CGPoint(x: x, y: scaledWaterHeight / 2 + sin(x / 20) * 5))
             }
         }
         wavePattern.path = wavePath
@@ -133,7 +149,7 @@ final class VolumeScene: BaseLevelScene, SKPhysicsContactDelegate {
             bubble.alpha = 0
             bubble.position = CGPoint(
                 x: CGFloat.random(in: -size.width / 2 + 50...size.width / 2 - 50),
-                y: CGFloat.random(in: -maxWaterHeight / 2...maxWaterHeight / 2 - 20)
+                y: CGFloat.random(in: -scaledWaterHeight / 2...scaledWaterHeight / 2 - 20)
             )
             waterNode.addChild(bubble)
             bubbles.append(bubble)
@@ -144,7 +160,7 @@ final class VolumeScene: BaseLevelScene, SKPhysicsContactDelegate {
         warningLabel.fontName = "Menlo-Bold"
         warningLabel.fontSize = 10
         warningLabel.fontColor = strokeColor
-        warningLabel.position = CGPoint(x: size.width / 2, y: 100)
+        warningLabel.position = CGPoint(x: size.width / 2, y: activeGroundY + 110 * visualScale)
         warningLabel.zPosition = 200
         warningLabel.alpha = 0.7
         warningLabel.name = "flood_warning"
@@ -163,18 +179,18 @@ final class VolumeScene: BaseLevelScene, SKPhysicsContactDelegate {
         let targetWaterY: CGFloat
 
         if currentVolume < 0.3 {
-            targetWaterY = -100 // Below screen - safe
+            targetWaterY = -scaledWaterHeight / 2 // Below screen - safe
             waterHazardActive = false
         } else if currentVolume < 0.5 {
-            targetWaterY = 80 // Ankle deep - visual only
+            targetWaterY = activeGroundY - scaledWaterHeight / 2 + 20 * visualScale // Ankle deep - visual only
             waterHazardActive = false
         } else if currentVolume < 0.7 {
-            targetWaterY = 140 // Getting dangerous
+            targetWaterY = activeGroundY - scaledWaterHeight / 2 + 80 * visualScale // Getting dangerous
             waterHazardActive = false
         } else {
             // Flood! Water rises to dangerous level
             let floodProgress = (CGFloat(currentVolume) - 0.7) / 0.3
-            targetWaterY = 140 + floodProgress * 80 // Up to head level
+            targetWaterY = activeGroundY - scaledWaterHeight / 2 + (80 + floodProgress * 80) * visualScale // Up to head level
             waterHazardActive = currentVolume > 0.85
         }
 
@@ -189,8 +205,9 @@ final class VolumeScene: BaseLevelScene, SKPhysicsContactDelegate {
                     bubble.run(.repeatForever(.sequence([
                         .moveBy(x: 0, y: 30, duration: Double.random(in: 1...2)),
                         .fadeOut(withDuration: 0.2),
-                        .run { [weak bubble] in
-                            bubble?.position.y = CGFloat.random(in: -self.maxWaterHeight / 2...0)
+                        .run { [weak self, weak bubble] in
+                            guard let self = self else { return }
+                            bubble?.position.y = CGFloat.random(in: -self.scaledWaterHeight / 2...0)
                             bubble?.position.x = CGFloat.random(in: -self.size.width / 2 + 50...self.size.width / 2 - 50)
                         },
                         .fadeIn(withDuration: 0.2)
@@ -204,7 +221,7 @@ final class VolumeScene: BaseLevelScene, SKPhysicsContactDelegate {
 
         // Check if player is drowning
         if waterHazardActive {
-            let waterTopY = waterNode.position.y + maxWaterHeight / 2 - 30
+            let waterTopY = waterNode.position.y + scaledWaterHeight / 2 - 30 * visualScale
             if bit.position.y < waterTopY {
                 handleDeath()
             }
@@ -221,7 +238,7 @@ final class VolumeScene: BaseLevelScene, SKPhysicsContactDelegate {
         drawIndustrialPipes()
 
         // Warning signs
-        drawWarningSign(at: CGPoint(x: 100, y: topSafeY - 70))
+        drawWarningSign(at: CGPoint(x: 85, y: topSafeAreaY(offset: min(size.width, size.height) < 700 ? 185 : 120)))
 
         // Sleeping creature den elements
         drawDenElements()
@@ -232,7 +249,7 @@ final class VolumeScene: BaseLevelScene, SKPhysicsContactDelegate {
             // Vertical support
             let support = SKShapeNode()
             let supportPath = CGMutablePath()
-            supportPath.move(to: CGPoint(x: x, y: topSafeY - 10))
+            supportPath.move(to: CGPoint(x: x, y: size.height - 40))
             supportPath.addLine(to: CGPoint(x: x, y: size.height))
             support.path = supportPath
             support.strokeColor = strokeColor
@@ -245,7 +262,7 @@ final class VolumeScene: BaseLevelScene, SKPhysicsContactDelegate {
             bolt.fillColor = fillColor
             bolt.strokeColor = strokeColor
             bolt.lineWidth = lineWidth * 0.5
-            bolt.position = CGPoint(x: x, y: topSafeY - 20)
+            bolt.position = CGPoint(x: x, y: topSafeAreaY(offset: 50))
             bolt.zPosition = -9
             addChild(bolt)
         }
@@ -253,8 +270,8 @@ final class VolumeScene: BaseLevelScene, SKPhysicsContactDelegate {
         // Horizontal beam
         let beam = SKShapeNode()
         let beamPath = CGMutablePath()
-        beamPath.move(to: CGPoint(x: 0, y: topSafeY - 10))
-        beamPath.addLine(to: CGPoint(x: size.width, y: topSafeY - 10))
+        beamPath.move(to: CGPoint(x: 0, y: size.height - 40))
+        beamPath.addLine(to: CGPoint(x: size.width, y: size.height - 40))
         beam.path = beamPath
         beam.strokeColor = strokeColor
         beam.lineWidth = lineWidth * 1.5
@@ -328,7 +345,7 @@ final class VolumeScene: BaseLevelScene, SKPhysicsContactDelegate {
             let rock = SKShapeNode()
             let rockPath = CGMutablePath()
             let baseX = size.width / 2 - 100 + CGFloat(i) * 50
-            let baseY: CGFloat = 160
+            let baseY = activeGroundY
 
             rockPath.move(to: CGPoint(x: baseX, y: baseY))
             rockPath.addLine(to: CGPoint(x: baseX + 20, y: baseY + CGFloat.random(in: 30...60)))
@@ -348,7 +365,7 @@ final class VolumeScene: BaseLevelScene, SKPhysicsContactDelegate {
         title.fontName = "Helvetica-Bold"
         title.fontSize = 28
         title.fontColor = strokeColor
-        title.position = CGPoint(x: 80, y: topSafeY - 30)
+        title.position = CGPoint(x: 80, y: topSafeAreaY(offset: min(size.width, size.height) < 700 ? 125 : 70))
         title.horizontalAlignmentMode = .left
         title.zPosition = 100
         addChild(title)
@@ -368,19 +385,20 @@ final class VolumeScene: BaseLevelScene, SKPhysicsContactDelegate {
     // MARK: - Level Building
 
     private func buildLevel() {
-        let groundY: CGFloat = 160
+        let groundY = activeGroundY
+        let groundHeight = 40 * visualScale
 
         // Ground with 3D effect
         let ground = createPlatform(
             width: size.width,
-            height: 40,
-            position: CGPoint(x: size.width / 2, y: groundY - 20)
+            height: groundHeight,
+            position: CGPoint(x: size.width / 2, y: groundY - groundHeight / 2)
         )
         ground.name = "ground"
         addChild(ground)
 
         // Exit door
-        createExitDoor(at: CGPoint(x: size.width - 60, y: groundY + 30))
+        createExitDoor(at: CGPoint(x: size.width - 70 * visualScale, y: groundY + 30 * visualScale))
     }
 
     private func createPlatform(width: CGFloat, height: CGFloat, position: CGPoint) -> SKNode {
@@ -417,8 +435,8 @@ final class VolumeScene: BaseLevelScene, SKPhysicsContactDelegate {
     }
 
     private func createExitDoor(at position: CGPoint) {
-        let doorWidth: CGFloat = 40
-        let doorHeight: CGFloat = 60
+        let doorWidth: CGFloat = 40 * visualScale
+        let doorHeight: CGFloat = 60 * visualScale
 
         let frame = SKShapeNode(rectOf: CGSize(width: doorWidth, height: doorHeight))
         frame.fillColor = fillColor
@@ -459,6 +477,7 @@ final class VolumeScene: BaseLevelScene, SKPhysicsContactDelegate {
         // Arrow hint
         let arrow = createArrow()
         arrow.position = CGPoint(x: position.x, y: position.y + doorHeight / 2 + 25)
+        arrow.setScale(visualScale)
         arrow.zPosition = 15
         arrow.run(.repeatForever(.sequence([
             .moveBy(x: 0, y: -5, duration: 0.4),
@@ -487,7 +506,7 @@ final class VolumeScene: BaseLevelScene, SKPhysicsContactDelegate {
     }
 
     private func setupBit() {
-        spawnPoint = CGPoint(x: 80, y: 200)
+        spawnPoint = CGPoint(x: 80 * visualScale, y: activeGroundY + 40 * visualScale)
 
         bit = BitCharacter.make()
         bit.position = spawnPoint
@@ -500,10 +519,11 @@ final class VolumeScene: BaseLevelScene, SKPhysicsContactDelegate {
     // MARK: - Creature
 
     private func createCreature() {
-        let groundY: CGFloat = 160
+        let groundY = activeGroundY
 
         creature = SKNode()
-        creature.position = CGPoint(x: size.width / 2, y: groundY + 20)
+        creature.position = CGPoint(x: size.width / 2, y: groundY + 20 * visualScale)
+        creature.setScale(visualScale)
         creature.zPosition = 50
         addChild(creature)
 
@@ -615,7 +635,7 @@ final class VolumeScene: BaseLevelScene, SKPhysicsContactDelegate {
     }
 
     private func createDetectionZone() {
-        detectionZone = SKShapeNode(circleOfRadius: 180)
+        detectionZone = SKShapeNode(circleOfRadius: scaledWolfDetectionRadius)
         detectionZone.position = creature.position
         detectionZone.strokeColor = strokeColor.withAlphaComponent(0.2)
         detectionZone.lineWidth = lineWidth * 0.5
@@ -639,7 +659,11 @@ final class VolumeScene: BaseLevelScene, SKPhysicsContactDelegate {
 
     private func createVolumeIndicator() {
         volumeIndicator = SKNode()
-        volumeIndicator.position = CGPoint(x: size.width - 70, y: topSafeY - 30)
+        volumeIndicator.position = CGPoint(
+            x: size.width - 70 * visualScale,
+            y: topSafeAreaY(offset: min(size.width, size.height) < 700 ? 170 : 70)
+        )
+        volumeIndicator.setScale(visualScale)
         volumeIndicator.zPosition = 200
         addChild(volumeIndicator)
 
@@ -696,6 +720,14 @@ final class VolumeScene: BaseLevelScene, SKPhysicsContactDelegate {
     // MARK: - Volume Observer
 
     private func setupVolumeObserver() {
+        guard AccessibilityManager.shared.usesHardware(for: .volume) else {
+            currentVolume = 0.15
+            updateCreatureState()
+            updateVolumeIndicator()
+            updateWaterLevel()
+            return
+        }
+
         let audioSession = AVAudioSession.sharedInstance()
         do {
             try audioSession.setActive(true)
@@ -835,7 +867,7 @@ final class VolumeScene: BaseLevelScene, SKPhysicsContactDelegate {
 
                 let settle = SKAction.sequence([
                     SKAction.scaleY(to: 1.0, duration: 0.3),
-                    SKAction.moveTo(y: 180, duration: 0.3)
+                    SKAction.moveTo(y: activeGroundY + 20 * visualScale, duration: 0.3)
                 ])
                 creature.run(settle)
                 animateCreatureState()
@@ -859,7 +891,7 @@ final class VolumeScene: BaseLevelScene, SKPhysicsContactDelegate {
 
         let distance = hypot(bit.position.x - creature.position.x,
                             bit.position.y - creature.position.y)
-        playerInZone = distance < 200
+        playerInZone = distance < scaledWolfDetectionRadius
 
         if playerInZone && creatureState == .awake {
             handleDeath()
@@ -873,9 +905,9 @@ final class VolumeScene: BaseLevelScene, SKPhysicsContactDelegate {
 
         let label = SKLabelNode(fontNamed: "Menlo")
         label.text = sleepTalkLines[sleepTalkIndex % sleepTalkLines.count]
-        label.fontSize = 10
+        label.fontSize = 10 * visualScale
         label.fontColor = strokeColor
-        label.position = CGPoint(x: 0, y: 100)
+        label.position = CGPoint(x: 0, y: 100 * visualScale)
         label.zPosition = 200
         label.alpha = 0
         creature.addChild(label)

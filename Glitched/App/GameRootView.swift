@@ -169,9 +169,7 @@ struct AccessibilityOverlay: View {
                     accessibilityButton(for: .shake, icon: "iphone.radiowaves.left.and.right", color: .orange) {
                         InputEventBus.shared.post(.shakeDetected)
                     }
-                    accessibilityButton(for: .volume, icon: "speaker.wave.2", color: .purple) {
-                        InputEventBus.shared.post(.volumeChanged(level: 0.8))
-                    }
+                    volumeFallbackControls
                     accessibilityButton(for: .brightness, icon: "sun.max", color: .yellow) {
                         InputEventBus.shared.post(.brightnessChanged(level: 0.8))
                     }
@@ -266,6 +264,35 @@ struct AccessibilityOverlay: View {
                     .background(Circle().fill(color.opacity(0.7)))
             }
             .accessibilityLabel(Text(mechanic.rawValue))
+        }
+    }
+
+    @ViewBuilder
+    private var volumeFallbackControls: some View {
+        if accessibility.needsFallbackUI(for: .volume) {
+            HStack(spacing: 8) {
+                Button {
+                    InputEventBus.shared.post(.volumeChanged(level: 0.15))
+                } label: {
+                    Image(systemName: "speaker.slash.fill")
+                        .font(.system(size: 24))
+                        .foregroundColor(.white)
+                        .padding(10)
+                        .background(Circle().fill(Color.purple.opacity(0.7)))
+                }
+                .accessibilityLabel(Text("Volume low"))
+
+                Button {
+                    InputEventBus.shared.post(.volumeChanged(level: 0.8))
+                } label: {
+                    Image(systemName: "speaker.wave.2.fill")
+                        .font(.system(size: 24))
+                        .foregroundColor(.white)
+                        .padding(10)
+                        .background(Circle().fill(Color.purple.opacity(0.7)))
+                }
+                .accessibilityLabel(Text("Volume high"))
+            }
         }
     }
 }

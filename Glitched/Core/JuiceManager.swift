@@ -30,7 +30,17 @@ final class JuiceManager {
     // MARK: - Screen Shake
 
     func shake(intensity: ShakeIntensity = .medium, duration: TimeInterval = 0.3) {
-        guard let scene = currentScene, let camera = scene.camera, !isShaking else { return }
+        guard let scene = currentScene else { return }
+        shake(in: scene, intensity: intensity, duration: duration)
+    }
+
+    func shake(in scene: SKScene, intensity: ShakeIntensity = .medium, duration: TimeInterval = 0.3, force: Bool = false) {
+        guard let camera = scene.camera else { return }
+        if camera.action(forKey: "screenShake") != nil {
+            guard force else { return }
+            camera.removeAction(forKey: "screenShake")
+        }
+
         isShaking = true
 
         let startPosition = camera.position  // Capture current position, not original
@@ -56,7 +66,7 @@ final class JuiceManager {
         actions.append(.move(to: startPosition, duration: 0.05))
         actions.append(.run { [weak self] in self?.isShaking = false })
 
-        camera.run(.sequence(actions))
+        camera.run(.sequence(actions), withKey: "screenShake")
     }
 
     enum ShakeIntensity {
@@ -335,8 +345,8 @@ final class JuiceManager {
     }
 
     func playSceneTransitionGlitch() {
-        guard let scene = currentScene else { return }
-        
+        guard currentScene != nil else { return }
+
         glitchEffect(duration: 0.3)
         shake(intensity: .medium, duration: 0.3)
         
