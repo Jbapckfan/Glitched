@@ -33,11 +33,22 @@ final class StorageSpaceManager: DeviceManager {
         isActive = false
         timer?.invalidate()
         timer = nil
+
+        // Remove the on-disk cache file so it isn't orphaned if the player
+        // quits without clearing it. Best-effort; don't post a cleared event.
+        if let url = cacheFileURL {
+            try? FileManager.default.removeItem(at: url)
+            cacheFileURL = nil
+        }
+
         print("StorageSpaceManager: Deactivated")
     }
 
     private func createCacheFile() {
-        let cacheDir = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first!
+        guard let cacheDir = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first else {
+            print("StorageSpaceManager: No caches directory available")
+            return
+        }
         let fileURL = cacheDir.appendingPathComponent("glitched_data_mass.cache")
         cacheFileURL = fileURL
 

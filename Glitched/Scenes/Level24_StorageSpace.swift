@@ -119,13 +119,22 @@ final class StorageSpaceScene: BaseLevelScene, SKPhysicsContactDelegate {
 
     private func createDataMass() {
         let groundY: CGFloat = 160
+
+        // Floor-to-ceiling wall so it can't be jumped. The middle platform
+        // surface sits at groundY + 15 = 175; Bit's max jump apex from there is
+        // ~247. Anchoring the wall bottom at the platform surface and extending
+        // it up to topSafeY puts the top well above the apex.
+        let wallBottom = groundY + 15
+        let wallTop = topSafeY - 110 // clear of title/instruction panel
+        let wallHeight = max(wallTop - wallBottom, 200)
+        let wallCenterY = wallBottom + wallHeight / 2
+
         let container = SKNode()
-        container.position = CGPoint(x: size.width / 2 + 60, y: groundY + 60)
+        container.position = CGPoint(x: size.width / 2 + 60, y: wallCenterY)
         container.name = "data_mass"
 
         // Create a wall of animated "data" blocks
         let wallWidth: CGFloat = 80
-        let wallHeight: CGFloat = 120
         let blockSize: CGFloat = 12
 
         let cols = Int(wallWidth / blockSize)
