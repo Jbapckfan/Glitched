@@ -9,6 +9,34 @@ final class VoiceCommandScene: BaseLevelScene, SKPhysicsContactDelegate {
     private let fillColor = SKColor.white
     private let strokeColor = SKColor.black
     private let lineWidth: CGFloat = 2.5
+    private let designSize = CGSize(width: 430, height: 932)
+
+    // MARK: - Gameplay Course (fixed logical width, centered)
+    // Gameplay geometry (spawn, platforms, chasm, bridge, doors, exit) is
+    // authored in a fixed `designSize.width`-point logical course so platform
+    // spacing, gaps, bridge/exit placement, and traversal distance stay
+    // consistent across iPhone and iPad instead of stretching to fill an iPad.
+    // The course never overflows a narrow screen (scale clamps at 1.0); on a
+    // 390 iPhone it stays full-bleed (slightly compressed at scale ~0.907) and
+    // on iPad it is centered, with the surrounding space filled by decoration
+    // (soundwaves / title / mic / instruction panel) which still key off
+    // size.width and the safe-area helpers.
+    private var courseScale: CGFloat { min(1.0, size.width / designSize.width) }
+    private var courseOriginX: CGFloat { (size.width - designSize.width * courseScale) / 2 }
+    /// Map a logical x (0...designSize.width) into centered course space.
+    private func courseX(_ logicalX: CGFloat) -> CGFloat { courseOriginX + logicalX * courseScale }
+    /// Scale a logical length (platform width, etc.) into course space.
+    private func courseLen(_ logical: CGFloat) -> CGFloat { logical * courseScale }
+
+    /// Logical (course-space) width of the bridge span. Shared by the visual
+    /// in createBridge() and the physics body in extendBridge() so the walkable
+    /// surface always matches the drawn span. Bridge center is logical 160,
+    /// width 170, so it covers logical [75, 245] — overlapping the start
+    /// platform's right edge (80) and the middle platform's left edge (240) by
+    /// 5pt each for a continuous walkable surface. The 160-pt chasm (start.right
+    /// 80 -> middle.left 240) exceeds the maximum flat horizontal jump on every
+    /// device, so the BRIDGE command is genuinely required, not skippable.
+    private let bridgeLogicalWidth: CGFloat = 170
 
     private var bit: BitCharacter!
     private var playerController: PlayerController!
@@ -101,26 +129,41 @@ final class VoiceCommandScene: BaseLevelScene, SKPhysicsContactDelegate {
         let groundY: CGFloat = 160
 
         // Fits a 390-pt iPhone canvas. Three voice commands gate progress:
-        //   BRIDGE spans a 130-pt chasm (> 115-pt max horizontal jump, so
-        //     the bridge mechanic is required and not jumpable).
+        //   BRIDGE spans a 160-pt chasm (> ~145-pt absolute max horizontal jump
+        //     on every device, so the bridge mechanic is required, not jumpable).
         //   OPEN unlocks a door blocking the middle section.
         //   FLY briefly reduces gravity so the player can clear the ~97-pt
         //     rise to the exit plateau (> 72-pt normal jump ceiling).
-        createPlatform(at: CGPoint(x: 45, y: groundY), size: CGSize(width: 70, height: 30))
+        // Gameplay X positions and widths are mapped through the centered
+        // logical course (courseX / courseLen) so spacing/gaps/exit placement
+        // stay consistent across iPhone and iPad. Y stays on its existing
+        // scaling (single-screen-height level). The logical x values below are
+        // authored in [0, designSize.width] = [0, 430].
+        // Start platform: center 45, width 70 -> logical span [10,80].
+        createPlatform(at: CGPoint(x: courseX(45), y: groundY), size: CGSize(width: courseLen(70), height: 30))
 
-        createBridge(at: CGPoint(x: 150, y: groundY), width: 140)
+        // Bridge: center 160, width 170 -> covers logical [75,245], bridging the
+        // 160-pt chasm from start.right (80) to middle.left (240).
+        createBridge(at: CGPoint(x: courseX(160), y: groundY), width: courseLen(bridgeLogicalWidth))
 
-        createPlatform(at: CGPoint(x: 240, y: groundY), size: CGSize(width: 60, height: 30))
+        // Middle platform: center 270, width 60 -> logical span [240,300].
+        createPlatform(at: CGPoint(x: courseX(270), y: groundY), size: CGSize(width: courseLen(60), height: 30))
         // Door centered at groundY+60 with a 90-pt frame spans y=175..265 —
         // higher than the player's jump-apex body bottom (247), so it can't
         // be cleared by jumping before OPEN is spoken.
-        createLockedDoor(at: CGPoint(x: 270, y: groundY + 60))
+        createLockedDoor(at: CGPoint(x: courseX(300), y: groundY + 60))
 
-        createPlatform(at: CGPoint(x: 300, y: groundY), size: CGSize(width: 40, height: 30))
+        // Small platform before the exit plateau: center 330, width 40 -> [310,350].
+        createPlatform(at: CGPoint(x: courseX(330), y: groundY), size: CGSize(width: courseLen(40), height: 30))
 
-        createPlatform(at: CGPoint(x: size.width - 40, y: groundY + 100), size: CGSize(width: 70, height: 25))
-        createExitDoor(at: CGPoint(x: size.width - 30, y: groundY + 155))
+        // Exit platform/door authored relative to the right of the logical
+        // course: previously size.width-40 / size.width-30 on a ~430 canvas, so
+        // logical x = designSize.width-40 = 390 and designSize.width-30 = 400.
+        createPlatform(at: CGPoint(x: courseX(designSize.width - 40), y: groundY + 100), size: CGSize(width: courseLen(70), height: 25))
+        createExitDoor(at: CGPoint(x: courseX(designSize.width - 30), y: groundY + 155))
 
+        // Death zone stays full-width (centered) — it only needs to catch falls,
+        // not define gameplay spacing.
         let death = SKNode()
         death.position = CGPoint(x: size.width / 2, y: -50)
         death.physicsBody = SKPhysicsBody(rectangleOf: CGSize(width: size.width * 2, height: 100))
@@ -128,9 +171,9 @@ final class VoiceCommandScene: BaseLevelScene, SKPhysicsContactDelegate {
         death.physicsBody?.categoryBitMask = PhysicsCategory.hazard
         addChild(death)
 
-        createHintLabel("SAY \"BRIDGE\"", at: CGPoint(x: 150, y: groundY + 40))
-        createHintLabel("SAY \"OPEN\"", at: CGPoint(x: 270, y: groundY + 90))
-        createHintLabel("SAY \"FLY\"", at: CGPoint(x: 320, y: groundY + 70))
+        createHintLabel("SAY \"BRIDGE\"", at: CGPoint(x: courseX(160), y: groundY + 40))
+        createHintLabel("SAY \"OPEN\"", at: CGPoint(x: courseX(300), y: groundY + 90))
+        createHintLabel("SAY \"FLY\"", at: CGPoint(x: courseX(350), y: groundY + 70))
     }
 
     private func createPlatform(at position: CGPoint, size: CGSize) {
@@ -329,7 +372,7 @@ final class VoiceCommandScene: BaseLevelScene, SKPhysicsContactDelegate {
     }
 
     private func setupBit() {
-        spawnPoint = CGPoint(x: 45, y: 200)
+        spawnPoint = CGPoint(x: courseX(45), y: 200)
         bit = BitCharacter.make()
         bit.position = spawnPoint
         addChild(bit)
@@ -345,8 +388,9 @@ final class VoiceCommandScene: BaseLevelScene, SKPhysicsContactDelegate {
 
         // Add physics to bridge. Width must match the visual span created
         // in createBridge() so the walkable surface reaches from the start
-        // platform's right edge to the middle platform's left edge.
-        bridge.physicsBody = SKPhysicsBody(rectangleOf: CGSize(width: 140, height: 12))
+        // platform's right edge to the middle platform's left edge. Uses the
+        // same course-scaled logical width as the drawn span.
+        bridge.physicsBody = SKPhysicsBody(rectangleOf: CGSize(width: courseLen(bridgeLogicalWidth), height: 12))
         bridge.physicsBody?.isDynamic = false
         bridge.physicsBody?.categoryBitMask = PhysicsCategory.ground
 
