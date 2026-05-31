@@ -86,12 +86,16 @@ final class FaceIDScene: BaseLevelScene, SKPhysicsContactDelegate {
         // Platform between doors
         createPlatform(at: CGPoint(x: size.width / 2 + 120, y: groundY), size: CGSize(width: 100, height: 30))
 
-        // Exit platform (after second door)
-        createPlatform(at: CGPoint(x: size.width - 80, y: groundY), size: CGSize(width: 120, height: 30))
-        createExitDoor(at: CGPoint(x: size.width - 60, y: groundY + 50))
-
         // Second door blocker (between middle and exit)
         createSecondDoor(at: CGPoint(x: size.width / 2 + 170, y: 230))
+
+        // Exit platform (after second door) - extends under and past door2's blocker
+        // so the exit can only be reached once door2 opens at step 2.
+        createPlatform(at: CGPoint(x: size.width - 50, y: groundY), size: CGSize(width: 120, height: 30))
+        // Exit sits BEHIND door2's blocker (x in [355,395]); door2 closed (blocker
+        // spans x in [340,400]) physically stops the player at x=340, so unreachable
+        // until secondDoorBlocker is cleared at step 2.
+        createExitDoor(at: CGPoint(x: size.width - 25, y: groundY + 50))
 
         // Death zone
         let death = SKNode()
@@ -429,7 +433,7 @@ final class FaceIDScene: BaseLevelScene, SKPhysicsContactDelegate {
             run(.sequence([
                 .wait(forDuration: 2.0),
                 .run { [weak self] in
-                    self?.statusLabel.text = "APPROACH NEXT GATE"
+                    self?.statusLabel.text = "TAP THE NEXT GATE"
                 }
             ]))
 
