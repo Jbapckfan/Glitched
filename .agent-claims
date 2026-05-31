@@ -4,19 +4,17 @@
 # RULE: shared files are RESERVED for a single serialized pass, done LAST.
 
 mac-mini (Claude Opus):
-  lane: L15, L16, L19, L20, L21, L23, L24, L30
   scope: LEVEL-INTERNAL fixes only (each level's own scene file +
          that level's dedicated manager). No shared-file edits.
   started: 2026-05-31
+  DONE (pushed): L15, L16, L19, L20, L21, L23, L24, L30
+  lane (in progress): L22, L25, L26, L29, L33
   files:
-    Glitched/Scenes/Level15_LowPower.swift
-    Glitched/Scenes/Level16_ShakeUndo.swift  + Glitched/DeviceIntegration/ShakeUndoManager.swift
-    Glitched/Scenes/Level19_FaceID.swift
-    Glitched/Scenes/Level20_MetaFinale.swift
-    Glitched/Scenes/Level21_VoiceCommand.swift
-    Glitched/Scenes/Level23_DeviceName.swift
-    Glitched/Scenes/Level24_StorageSpace.swift + Glitched/DeviceIntegration/StorageSpaceManager.swift
-    Glitched/Scenes/Level30_CreditsFinale.swift
+    Glitched/Scenes/Level22_BatteryPercent.swift
+    Glitched/Scenes/Level25_TimeOfDay.swift
+    Glitched/Scenes/Level26_Locale.swift
+    Glitched/Scenes/Level29_TheLie.swift
+    Glitched/Scenes/Level33_AppReview.swift
 
 macbook-pro (Claude + Codex):
   lane: L7, L8, L9, L10
