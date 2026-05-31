@@ -352,33 +352,57 @@ final class DarkModeScene: BaseLevelScene, SKPhysicsContactDelegate {
         // touching them. Each subsequent element steps one pitch to the right.
         let pitch = min(w * 0.18, 90)        // center-to-center spacing
         let startX = w * 0.12
-        let dark1X = startX + pitch
-        let light1X = startX + pitch * 2
-        let dark2X = startX + pitch * 3
-        let doorX  = startX + pitch * 4
+        let dark1X = startX + pitch          // col1
+        let rest1X = startX + pitch * 2      // col2
+        let light1X = startX + pitch * 3     // col3
+        let doorX  = startX + pitch * 4      // col4
 
         // Scale the dual-platform width with the pitch so adjacent platforms still
         // nearly overlap on wide canvases (continuous footing); floor at 80pt so the
         // moon/sun icon and dashed ghost outline stay legible on narrow iPhones.
         let dualW = max(80, pitch * 0.85)
 
-        // Start platform (always solid)
+        // FIVE-PLATFORM SPINE (Rest-Ledge Alternation). The single true path forces a
+        // genuine DARK -> LIGHT -> DARK mode alternation: dark1 (DARK rung) -> rest1
+        // (always-solid junction) -> light1 (LIGHT rung) -> door (always-solid).
+        // Every mode toggle is performed while STANDING on an always-solid ledge
+        // (start / rest1 / door), so a flip can only de-solidify a rung Bit is NOT on
+        // — no airborne toggling, no toggle can ever drop him. Both modes are
+        // mechanically mandatory: the dark-only skip rest1->door is a 95pt rise (> ~91
+        // apex, impossible) and skipping dark1 (start->rest1) is a 67.5pt rise (> 55
+        // ceiling, blocked), so neither pure-dark nor pure-light completes the level.
+        //
+        // Verified rises (top-surface to top-surface; step=50 on all targets):
+        //   start->dark1 +40.0, dark1->rest1 +27.5, rest1->light1 +45.0, light1->door +50.0
+        // All <= 50 < 55 ceiling; all far under the ~91 apex. Gaps are all NEGATIVE
+        // (overlapping footing) on every device.
+
+        // 1. start (col0, ALWAYS solid)
         let startPlatform = createPlatform(
             at: CGPoint(x: startX, y: groundY),
             size: CGSize(width: 160, height: 40)
         )
         startPlatform.name = "start_platform"
 
-        // GHOST PLATFORMS: Only solid in DARK mode (moon icon)
+        // 2. dark1 (col1, DARK rung — moon icon, ghost in light)
         let darkPlatform1 = createDualPlatform(
-            at: CGPoint(x: dark1X, y: groundY + step),
+            at: CGPoint(x: dark1X, y: groundY + step * 0.95),
             size: CGSize(width: dualW, height: 25),
             isDarkModeOnly: true
         )
         darkModePlatforms.append(darkPlatform1)
 
-        // REAL PLATFORMS: Only solid in LIGHT mode (sun icon)
-        let light1Y = groundY + step * 2
+        // 3. rest1 (col2, ALWAYS solid) — the new mid-ledge junction (was a dual
+        //    platform before). Every mid-route mode toggle happens here, safely.
+        let restPlatform = createPlatform(
+            at: CGPoint(x: rest1X, y: groundY + step * 1.45),
+            size: CGSize(width: 120, height: 30)
+        )
+        restPlatform.name = "rest_platform"
+
+        // 4. light1 (col3, LIGHT rung — sun icon, ghost in dark). Shadow enemy and
+        //    hidden-text anchor key off light1Point, so set it to this column center.
+        let light1Y = groundY + step * 2.40
         let lightPlatform1 = createDualPlatform(
             at: CGPoint(x: light1X, y: light1Y),
             size: CGSize(width: dualW, height: 25),
@@ -387,16 +411,8 @@ final class DarkModeScene: BaseLevelScene, SKPhysicsContactDelegate {
         lightModePlatforms.append(lightPlatform1)
         light1Point = CGPoint(x: light1X, y: light1Y)
 
-        // Another dark mode platform
-        let darkPlatform2 = createDualPlatform(
-            at: CGPoint(x: dark2X, y: groundY + step * 3),
-            size: CGSize(width: dualW, height: 25),
-            isDarkModeOnly: true
-        )
-        darkModePlatforms.append(darkPlatform2)
-
-        // Door platform (always solid) — rightmost element, at the top of the climb.
-        let doorPlatformY = groundY + step * 4
+        // 5. door (col4, ALWAYS solid) — rightmost element, at the top of the climb.
+        let doorPlatformY = groundY + step * 3.30
         let doorPlatform = createPlatform(
             at: CGPoint(x: doorX, y: doorPlatformY),
             size: CGSize(width: 140, height: 35)
