@@ -29,6 +29,13 @@ final class VoiceCommandScene: BaseLevelScene, SKPhysicsContactDelegate {
     // 4th wall
     private var hasSpokenFirst = false
 
+    // Accessibility / simulator fallback (when no mic is available)
+    private var fallbackShown = false
+    private var fallbackTimer: SKNode?
+    private var bridgeButton: SKNode?
+    private var openButton: SKNode?
+    private var flyButton: SKNode?
+
     override func configureScene() {
         levelID = LevelID(world: .world3, index: 21)
         backgroundColor = fillColor
@@ -47,6 +54,7 @@ final class VoiceCommandScene: BaseLevelScene, SKPhysicsContactDelegate {
         createMicIndicator()
         showInstructionPanel()
         setupBit()
+        armFallbackTimeout()
     }
 
     // MARK: - Setup
@@ -394,7 +402,10 @@ final class VoiceCommandScene: BaseLevelScene, SKPhysicsContactDelegate {
         // BRIDGE (chasm traversal) or OPEN (locked door). Without this,
         // saying FLY at spawn launches the player high enough to clear the
         // 130-pt BRIDGE chasm and the 90-pt OPEN door in one arc.
-        guard bridgeExtended && doorOpened else { return }
+        guard bridgeExtended && doorOpened else {
+            showCommandHint("SPEAK BRIDGE AND OPEN FIRST")
+            return
+        }
         flyActive = true
 
         // Brief reduced gravity + upward impulse
@@ -441,10 +452,98 @@ final class VoiceCommandScene: BaseLevelScene, SKPhysicsContactDelegate {
         label2.run(.sequence([.wait(forDuration: 5), .fadeOut(withDuration: 0.5), .removeFromParent()]))
     }
 
+    // MARK: - Accessibility / Simulator Fallback
+
+    /// Schedule the on-screen fallback in case no mic-denied event fires and no
+    /// command is recognized (e.g. simulator: mic yields nothing silently).
+    private func armFallbackTimeout() {
+        let timer = SKNode()
+        addChild(timer)
+        fallbackTimer = timer
+        timer.run(.sequence([
+            .wait(forDuration: 6.0),
+            .run { [weak self] in
+                guard let self = self, !self.hasSpokenFirst else { return }
+                self.presentFallbackControls()
+            }
+        ]))
+    }
+
+    /// Build three on-screen buttons (BRIDGE / OPEN / FLY) that route into the
+    /// same code paths as the spoken commands, so the level is winnable with no
+    /// mic. Guarded so it can only ever appear once.
+    private func presentFallbackControls() {
+        guard !fallbackShown else { return }
+        fallbackShown = true
+
+        fallbackTimer?.removeAllActions()
+        fallbackTimer?.removeFromParent()
+        fallbackTimer = nil
+
+        let labels = ["BRIDGE", "OPEN", "FLY"]
+        let buttonWidth: CGFloat = 100
+        let spacing: CGFloat = 8
+        let totalWidth = buttonWidth * 3 + spacing * 2
+        var x = size.width / 2 - totalWidth / 2 + buttonWidth / 2
+
+        for label in labels {
+            let button = makeFallbackButton(text: label)
+            button.position = CGPoint(x: x, y: 50)
+            addChild(button)
+            switch label {
+            case "BRIDGE": bridgeButton = button
+            case "OPEN": openButton = button
+            default: flyButton = button
+            }
+            x += buttonWidth + spacing
+        }
+    }
+
+    private func makeFallbackButton(text: String) -> SKNode {
+        let button = SKNode()
+        button.zPosition = 200
+        button.name = "fallback_\(text)"
+
+        let bg = SKShapeNode(rectOf: CGSize(width: 100, height: 30), cornerRadius: 4)
+        bg.fillColor = fillColor
+        bg.strokeColor = strokeColor
+        bg.lineWidth = 1.5
+        button.addChild(bg)
+
+        let label = SKLabelNode(text: text)
+        label.fontName = "Menlo"
+        label.fontSize = 9
+        label.fontColor = strokeColor
+        label.verticalAlignmentMode = .center
+        button.addChild(label)
+
+        return button
+    }
+
+    /// Brief, self-removing hint mirroring the showFourthWallResponse pattern.
+    private func showCommandHint(_ text: String) {
+        childNode(withName: "voiceCommandHint")?.removeFromParent()
+
+        let label = SKLabelNode(text: text)
+        label.name = "voiceCommandHint"
+        label.fontName = "Menlo-Bold"
+        label.fontSize = 11
+        label.fontColor = strokeColor
+        label.position = CGPoint(x: size.width / 2, y: topSafeY - 130)
+        label.zPosition = 300
+        addChild(label)
+
+        label.run(.sequence([.wait(forDuration: 2.0), .fadeOut(withDuration: 0.5), .removeFromParent()]))
+    }
+
     // MARK: - Game Input
 
     override func handleGameInput(_ event: GameInputEvent) {
         switch event {
+        case .voiceCommandMicDenied:
+            // No mic available — surface the in-scene fallback so all three
+            // commands remain reachable.
+            presentFallbackControls()
         case .voiceCommandRecognized(let command):
             let cmd = command.uppercased()
 
@@ -477,6 +576,25 @@ final class VoiceCommandScene: BaseLevelScene, SKPhysicsContactDelegate {
         guard let touch = touches.first else { return }
         let location = touch.location(in: self)
         if handlePermissionOverlayTouch(at: location) { return }
+
+        // Fallback command buttons route into the same paths as spoken commands.
+        // Checked before movement so a button tap never moves Bit.
+        if let button = bridgeButton, button.contains(location) {
+            showFourthWallResponse()
+            extendBridge()
+            return
+        }
+        if let button = openButton, button.contains(location) {
+            showFourthWallResponse()
+            openDoor()
+            return
+        }
+        if let button = flyButton, button.contains(location) {
+            showFourthWallResponse()
+            activateFly()
+            return
+        }
+
         playerController.touchBegan(at: location)
     }
 
@@ -545,6 +663,9 @@ final class VoiceCommandScene: BaseLevelScene, SKPhysicsContactDelegate {
 
     override func willMove(from view: SKView) {
         super.willMove(from: view)
+        fallbackTimer?.removeAllActions()
+        fallbackTimer?.removeFromParent()
+        fallbackTimer = nil
         DeviceManagerCoordinator.shared.deactivateAll()
     }
 }
