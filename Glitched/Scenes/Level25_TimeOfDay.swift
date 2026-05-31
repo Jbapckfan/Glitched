@@ -25,6 +25,9 @@ final class TimeOfDayScene: BaseLevelScene, SKPhysicsContactDelegate {
     // Enemies
     private var enemies: [SKNode] = []
     private var enemyPaths: [SKNode: (start: CGPoint, end: CGPoint)] = [:]
+    // Canonical patrol parameters captured at creation so a night->day
+    // restart reproduces the original patrol exactly (no center drift).
+    private var enemyPatrols: [SKNode: (origin: CGPoint, range: CGFloat, duration: TimeInterval)] = [:]
     private var zzzLabels: [SKNode: SKLabelNode] = [:]
     private var enemySleeping: [SKNode: Bool] = [:]
 
@@ -178,8 +181,10 @@ final class TimeOfDayScene: BaseLevelScene, SKPhysicsContactDelegate {
             let endPt = CGPoint(x: data.pos.x + data.range, y: data.pos.y)
             enemyPaths[enemy] = (start: startPt, end: endPt)
 
-            // Patrol movement
+            // Patrol movement. Store the canonical parameters (origin, range,
+            // duration) so every (re)start can reproduce this exact patrol.
             let duration: TimeInterval = 1.5 + Double(index) * 0.3
+            enemyPatrols[enemy] = (origin: data.pos, range: data.range, duration: duration)
             enemy.run(.repeatForever(.sequence([
                 .moveBy(x: data.range, y: 0, duration: duration),
                 .moveBy(x: -data.range, y: 0, duration: duration)
@@ -365,15 +370,15 @@ final class TimeOfDayScene: BaseLevelScene, SKPhysicsContactDelegate {
         modeLabel.text = "DAY"
 
         // Enemies active - restart patrol if sleeping
-        for (index, enemy) in enemies.enumerated() {
-            if enemySleeping[enemy] == true {
-                // Restart patrol action
-                let data = enemyPaths[enemy]!
-                let range = data.end.x - data.start.x
-                let duration: TimeInterval = 1.5 + Double(index) * 0.3
+        for enemy in enemies {
+            if enemySleeping[enemy] == true, let patrol = enemyPatrols[enemy] {
+                // Restart from the canonical origin so the patrol band is
+                // identical every cycle (no center/amplitude drift).
+                enemy.removeAction(forKey: "patrol")
+                enemy.position = patrol.origin
                 enemy.run(.repeatForever(.sequence([
-                    .moveBy(x: range / 2, y: 0, duration: duration),
-                    .moveBy(x: -range / 2, y: 0, duration: duration)
+                    .moveBy(x: patrol.range, y: 0, duration: patrol.duration),
+                    .moveBy(x: -patrol.range, y: 0, duration: patrol.duration)
                 ])), withKey: "patrol")
             }
             enemySleeping[enemy] = false
