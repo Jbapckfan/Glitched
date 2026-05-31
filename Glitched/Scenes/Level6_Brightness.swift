@@ -44,9 +44,29 @@ final class BrightnessScene: BaseLevelScene, SKPhysicsContactDelegate {
 
     private var sunIcon: SKNode?
     private var brightnessBar: SKNode?
+    private var brightnessUIContainer: SKNode?
     private var brightnessIndicator: SKShapeNode?
+    private var sweetSpotBand: SKShapeNode?
     private var instructionPanel: SKNode?
+    private var levelTitle: SKLabelNode?
+    private var levelTitleUnderline: SKShapeNode?
     private weak var currentGroundPlatform: SKNode?
+
+    private let brightnessBarHeight: CGFloat = 150
+
+    private var isCompactCanvas: Bool { size.width < 500 }
+    private var isTabletCanvas: Bool { size.width >= 700 }
+    private var layoutTopY: CGFloat {
+        let currentTopInset = size.height - topSafeY
+        let minimumTopInset: CGFloat = isTabletCanvas ? 24 : 0
+        return size.height - max(currentTopInset, minimumTopInset)
+    }
+    private var layoutBottomY: CGFloat {
+        max(bottomSafeY, isTabletCanvas ? 20 : 0)
+    }
+    private var layoutSideMargin: CGFloat {
+        isTabletCanvas ? 44 : 24
+    }
 
     // MARK: - Configuration
 
@@ -74,6 +94,10 @@ final class BrightnessScene: BaseLevelScene, SKPhysicsContactDelegate {
         createMaxBrightnessSun()
         updateMaxBrightnessSun()
         updateBrightnessCommentary()
+    }
+
+    override func didUpdateSafeArea() {
+        layoutHUDNodes()
     }
 
     // MARK: - Burn Zones (Too Bright = Danger)
@@ -138,10 +162,10 @@ final class BrightnessScene: BaseLevelScene, SKPhysicsContactDelegate {
         burnWarning?.fontName = "Menlo-Bold"
         burnWarning?.fontSize = 18
         burnWarning?.fontColor = strokeColor
-        burnWarning?.position = CGPoint(x: size.width / 2, y: topSafeY - 120)
         burnWarning?.zPosition = 300
         burnWarning?.alpha = 0
         addChild(burnWarning!)
+        layoutHUDNodes()
     }
 
     private func updateBurnZones() {
@@ -213,9 +237,10 @@ final class BrightnessScene: BaseLevelScene, SKPhysicsContactDelegate {
             ]
         }
 
-        let candidateFrames = generatedPlatformFrames.suffix(6)
-        let selectedFrames = candidateFrames.enumerated().compactMap { index, frame -> CGRect? in
-            index.isMultiple(of: 2) ? frame : nil
+        let candidateFrames = Array(generatedPlatformFrames.suffix(6))
+        let selectedIndexes = [0, 3, 5]
+        let selectedFrames = selectedIndexes.compactMap { index -> CGRect? in
+            candidateFrames.indices.contains(index) ? candidateFrames[index] : nil
         }
 
         return Array(selectedFrames.prefix(3)).map { frame in
@@ -246,7 +271,7 @@ final class BrightnessScene: BaseLevelScene, SKPhysicsContactDelegate {
         label.fontName = "Menlo-Bold"
         label.fontSize = 14
         label.fontColor = strokeColor
-        label.position = CGPoint(x: size.width / 2, y: size.height / 2 + 80)
+        label.position = commentaryPosition()
         label.zPosition = 400
         label.alpha = 0
         label.name = "commentary_text"
@@ -260,11 +285,14 @@ final class BrightnessScene: BaseLevelScene, SKPhysicsContactDelegate {
         ]))
     }
 
+    private func commentaryPosition() -> CGPoint {
+        CGPoint(x: size.width / 2, y: layoutBottomY + (isCompactCanvas ? 52 : 82))
+    }
+
     // MARK: - Max Brightness Sun Hazard
 
     private func createMaxBrightnessSun() {
         maxBrightnessSun = SKNode()
-        maxBrightnessSun?.position = CGPoint(x: size.width / 2, y: topSafeY - 30)
         maxBrightnessSun?.zPosition = 35
         maxBrightnessSun?.alpha = 0
         addChild(maxBrightnessSun!)
@@ -298,8 +326,9 @@ final class BrightnessScene: BaseLevelScene, SKPhysicsContactDelegate {
         }
 
         // Animated ray lines that shoot downward
+        let raySpacing: CGFloat = isCompactCanvas ? 30 : 60
         for i in 0..<5 {
-            let xOffset = CGFloat(i - 2) * 60
+            let xOffset = CGFloat(i - 2) * raySpacing
             let rayLine = SKShapeNode()
             let rayPath = CGMutablePath()
             rayPath.move(to: CGPoint(x: xOffset, y: -30))
@@ -315,12 +344,13 @@ final class BrightnessScene: BaseLevelScene, SKPhysicsContactDelegate {
 
         // Hazard physics body (initially disabled)
         let hazardNode = SKNode()
-        hazardNode.position = CGPoint(x: 0, y: -115)
         hazardNode.physicsBody = SKPhysicsBody(rectangleOf: CGSize(width: 280, height: 50))
         hazardNode.physicsBody?.isDynamic = false
         hazardNode.physicsBody?.categoryBitMask = 0
         hazardNode.name = "sun_hazard_body"
         maxBrightnessSun?.addChild(hazardNode)
+
+        layoutMaxBrightnessSun()
     }
 
     private func updateMaxBrightnessSun() {
@@ -348,9 +378,6 @@ final class BrightnessScene: BaseLevelScene, SKPhysicsContactDelegate {
                 if let hazard = maxBrightnessSun?.childNode(withName: "sun_hazard_body") {
                     hazard.physicsBody?.categoryBitMask = PhysicsCategory.hazard
                 }
-
-                // Spin the sun slowly
-                maxBrightnessSun?.run(.repeatForever(.rotate(byAngle: .pi * 2, duration: 8.0)), withKey: "sun_spin")
             } else {
                 maxBrightnessSun?.run(.fadeOut(withDuration: 0.3))
 
@@ -362,9 +389,65 @@ final class BrightnessScene: BaseLevelScene, SKPhysicsContactDelegate {
                 if let hazard = maxBrightnessSun?.childNode(withName: "sun_hazard_body") {
                     hazard.physicsBody?.categoryBitMask = 0
                 }
-
-                maxBrightnessSun?.removeAction(forKey: "sun_spin")
             }
+        }
+    }
+
+    private func layoutHUDNodes() {
+        levelTitle?.position = CGPoint(x: layoutSideMargin, y: layoutTopY - 30)
+        levelTitleUnderline?.position = levelTitle?.position ?? .zero
+
+        if let warning = burnWarning {
+            warning.position = CGPoint(
+                x: isCompactCanvas ? layoutSideMargin + 68 : size.width / 2,
+                y: layoutTopY - (isCompactCanvas ? 90 : 55)
+            )
+        }
+
+        if let uiContainer = brightnessUIContainer {
+            let targetY = (layoutTopY + layoutBottomY) / 2 - (isCompactCanvas ? 20 : 0)
+            let minY = layoutBottomY + 190
+            let maxY = layoutTopY - 260
+            uiContainer.position = CGPoint(
+                x: size.width - (isCompactCanvas ? 60 : layoutSideMargin),
+                y: clamp(targetY, lower: minY, upper: maxY)
+            )
+        }
+
+        if let panel = instructionPanel {
+            let panelWidth: CGFloat = isCompactCanvas ? 132 : 160
+            panel.position = CGPoint(
+                x: layoutSideMargin + panelWidth / 2,
+                y: layoutTopY - (isCompactCanvas ? 175 : 130)
+            )
+        }
+
+        for node in children where node.name == "commentary_text" {
+            node.position = commentaryPosition()
+        }
+
+        layoutMaxBrightnessSun()
+    }
+
+    private func clamp(_ value: CGFloat, lower: CGFloat, upper: CGFloat) -> CGFloat {
+        min(max(value, lower), upper)
+    }
+
+    private func layoutMaxBrightnessSun() {
+        guard let sun = maxBrightnessSun, climbExitPoint != .zero else { return }
+
+        // Anchor the invisible 50pt hazard band to the climb rather than to
+        // topSafeY. It now brackets the last platform / exit threshold on every
+        // canvas, while the visible sun is kept below the top HUD.
+        let hazardCenter = CGPoint(x: climbExitPoint.x, y: climbExitPoint.y - 30)
+        let sunY = min(hazardCenter.y + 115, layoutTopY - 36)
+        sun.position = CGPoint(x: climbExitPoint.x, y: sunY)
+
+        if let hazard = sun.childNode(withName: "sun_hazard_body") {
+            hazard.position = CGPoint(
+                x: hazardCenter.x - sun.position.x,
+                y: hazardCenter.y - sun.position.y
+            )
         }
     }
 
@@ -381,8 +464,12 @@ final class BrightnessScene: BaseLevelScene, SKPhysicsContactDelegate {
         drawWindowFrame(at: CGPoint(x: size.width - 80, y: topSafeY - 150))
 
         // Light fixtures hanging from ceiling
-        drawLightFixture(at: CGPoint(x: size.width * 0.3, y: topSafeY - 20))
-        drawLightFixture(at: CGPoint(x: size.width * 0.7, y: topSafeY - 20))
+        let fixtureXs = isCompactCanvas
+            ? [size.width * 0.5, size.width * 0.82]
+            : [size.width * 0.3, size.width * 0.7]
+        for fixtureX in fixtureXs {
+            drawLightFixture(at: CGPoint(x: fixtureX, y: topSafeY - 20))
+        }
 
         // Ceiling beams
         drawCeilingBeams()
@@ -579,10 +666,10 @@ final class BrightnessScene: BaseLevelScene, SKPhysicsContactDelegate {
         title.fontName = "Helvetica-Bold"
         title.fontSize = 28
         title.fontColor = strokeColor
-        title.position = CGPoint(x: 80, y: topSafeY - 30)
         title.horizontalAlignmentMode = .left
         title.zPosition = 100
         addChild(title)
+        levelTitle = title
 
         let underline = SKShapeNode()
         let underlinePath = CGMutablePath()
@@ -591,9 +678,10 @@ final class BrightnessScene: BaseLevelScene, SKPhysicsContactDelegate {
         underline.path = underlinePath
         underline.strokeColor = strokeColor
         underline.lineWidth = lineWidth
-        underline.position = title.position
         underline.zPosition = 100
         addChild(underline)
+        levelTitleUnderline = underline
+        layoutHUDNodes()
     }
 
     // MARK: - Level Building
@@ -606,30 +694,36 @@ final class BrightnessScene: BaseLevelScene, SKPhysicsContactDelegate {
         // most of a modern phone (and nearly all of an iPad) empty. Here we build
         // a centered zig-zag column sized to the device's safe-area span.
         //
-        // Rises stay <= the ~72-pt jump ceiling (BitCharacter caps jump velocity
-        // at 550 → ~72-pt apex under the -14 (×150 pt/m) gravity). We target ~50.
-        let usableBottom = bottomSafeY + 70
-        let usableTop = topSafeY - 110
+        // Rises stay under the corrected ~91-pt jump apex from BitCharacter's
+        // 620 velocity cap. Phones keep the original compact cadence; tall
+        // canvases get more steps instead of unreachable vertical gaps.
+        let usableBottom = layoutBottomY + (isCompactCanvas ? 70 : 90)
+        let usableTop = layoutTopY - (isCompactCanvas ? 170 : 190)
         let fullClimb = max(260, usableTop - usableBottom)
 
-        // Cap the climb so very tall canvases (iPad) get a tall *centered* column
-        // rather than an endless ladder, then center whatever we don't use.
-        let climb = min(fullClimb, 470)
-        let maxRise: CGFloat = 50
-        let stepCount = max(6, min(10, Int((climb / maxRise).rounded())))
+        // Cap by canvas height, not a fixed phone-sized number. iPad gets a
+        // much taller column, while phones stay near the existing 470pt climb.
+        let climbCap = isCompactCanvas ? CGFloat(470) : max(520, size.height * 0.68)
+        let climb = min(fullClimb, climbCap)
+        let maxRise: CGFloat = isCompactCanvas ? 58 : 76
+        let stepCount = max(6, min(16, Int(ceil(climb / maxRise))))
         let rise = climb / CGFloat(stepCount)
         let baseY = usableBottom + (fullClimb - climb) / 2
 
-        // Gentle alternating stagger around center keeps edge-to-edge gaps small
-        // (~16 pt) while reading as a climb; the column stays centered on all sizes.
-        let stagger: CGFloat = 40
-        let uvSize = CGSize(width: 64, height: 26)
+        // Scale both stagger and platform width. Widening stagger alone makes
+        // iPad's alternating horizontal gaps impossible at Bit's 245 pt/s speed.
+        let stagger = isCompactCanvas ? CGFloat(40) : min(max(40, size.width * 0.12), 130)
+        let uvSize = CGSize(
+            width: isCompactCanvas ? 64 : min(max(76, size.width * 0.155), 168),
+            height: isCompactCanvas ? 26 : 30
+        )
+        let startPlatformSize = CGSize(width: max(92, uvSize.width + 28), height: 34)
 
         // Starting platform (always visible) at the base, just left of center.
         playerSpawnPoint = CGPoint(x: centerX - stagger, y: baseY + 60)
         let startPlatform = createPlatform(
             at: CGPoint(x: centerX - stagger, y: baseY),
-            size: CGSize(width: 92, height: 34),
+            size: startPlatformSize,
             isUV: false
         )
         startPlatform.name = "start_platform"
@@ -651,6 +745,7 @@ final class BrightnessScene: BaseLevelScene, SKPhysicsContactDelegate {
         // Exit door above the final platform.
         climbExitPoint = CGPoint(x: lastCenter.x, y: lastCenter.y + 48)
         createExitDoor(at: climbExitPoint)
+        layoutMaxBrightnessSun()
 
         // Death zone
         let deathZone = SKNode()
@@ -665,6 +760,7 @@ final class BrightnessScene: BaseLevelScene, SKPhysicsContactDelegate {
     private func createPlatform(at position: CGPoint, size platformSize: CGSize, isUV: Bool) -> SKNode {
         let container = SKNode()
         container.position = position
+        container.userData = NSMutableDictionary(dictionary: ["platformSize": NSValue(cgSize: platformSize)])
         addChild(container)
 
         // Main surface
@@ -703,6 +799,7 @@ final class BrightnessScene: BaseLevelScene, SKPhysicsContactDelegate {
         let container = SKNode()
         container.position = position
         container.name = "uv_platform"
+        container.userData = NSMutableDictionary(dictionary: ["platformSize": NSValue(cgSize: platformSize)])
         addChild(container)
 
         // Main surface with dashed outline (UV reactive)
@@ -881,9 +978,9 @@ final class BrightnessScene: BaseLevelScene, SKPhysicsContactDelegate {
     private func createBrightnessUI() {
         // Sun icon with brightness bar
         let uiContainer = SKNode()
-        uiContainer.position = CGPoint(x: size.width - 60, y: size.height / 2)
         uiContainer.zPosition = 200
         addChild(uiContainer)
+        brightnessUIContainer = uiContainer
 
         // Sun icon
         sunIcon = SKNode()
@@ -904,23 +1001,34 @@ final class BrightnessScene: BaseLevelScene, SKPhysicsContactDelegate {
             ray.lineWidth = lineWidth * 0.6
             sunIcon?.addChild(ray)
         }
-        sunIcon?.position = CGPoint(x: 0, y: 100)
+        sunIcon?.position = CGPoint(x: 0, y: 108)
         uiContainer.addChild(sunIcon!)
 
         // Brightness bar background
-        let barHeight: CGFloat = 150
         brightnessBar = SKNode()
         brightnessBar?.position = CGPoint(x: 0, y: -30)
 
-        let barBG = SKShapeNode(rectOf: CGSize(width: 20, height: barHeight))
+        let barBG = SKShapeNode(rectOf: CGSize(width: 20, height: brightnessBarHeight))
         barBG.fillColor = fillColor
         barBG.strokeColor = strokeColor
         barBG.lineWidth = lineWidth
         brightnessBar?.addChild(barBG)
 
+        // Mark the target 0.8-0.95 band: solid platforms without max-brightness burn.
+        let sweetSpotHeight = (burnThreshold - solidThreshold) * brightnessBarHeight
+        let sweetSpotCenterY = ((burnThreshold + solidThreshold) / 2) * brightnessBarHeight - brightnessBarHeight / 2
+        let sweetSpot = SKShapeNode(rectOf: CGSize(width: 14, height: sweetSpotHeight))
+        sweetSpot.fillColor = .clear
+        sweetSpot.strokeColor = strokeColor
+        sweetSpot.lineWidth = lineWidth * 0.35
+        sweetSpot.alpha = 0.45
+        sweetSpot.position = CGPoint(x: 0, y: sweetSpotCenterY)
+        brightnessBar?.addChild(sweetSpot)
+        sweetSpotBand = sweetSpot
+
         // Tick marks
         for i in 0...4 {
-            let tickY = CGFloat(i) * (barHeight / 4) - barHeight / 2
+            let tickY = CGFloat(i) * (brightnessBarHeight / 4) - brightnessBarHeight / 2
             let tick = SKShapeNode()
             let tickPath = CGMutablePath()
             tickPath.move(to: CGPoint(x: -15, y: tickY))
@@ -946,26 +1054,24 @@ final class BrightnessScene: BaseLevelScene, SKPhysicsContactDelegate {
         label.fontName = "Menlo-Bold"
         label.fontSize = 12
         label.fontColor = strokeColor
-        label.position = CGPoint(x: 0, y: -120)
+        label.position = CGPoint(x: 0, y: -134)
         uiContainer.addChild(label)
+        layoutHUDNodes()
     }
 
     private func updateBrightnessUI() {
         guard let indicator = brightnessIndicator else { return }
-        let barHeight: CGFloat = 150
-        let normalizedY = currentBrightness * barHeight - barHeight / 2
+        let normalizedY = currentBrightness * brightnessBarHeight - brightnessBarHeight / 2
         indicator.position = CGPoint(x: 0, y: normalizedY)
     }
 
     // MARK: - Instruction Panel
 
     private func showInstructionPanel() {
-        let isCompactPhone = size.width < 500
+        let isCompactPhone = isCompactCanvas
         let panelWidth: CGFloat = isCompactPhone ? 132 : 160
-        let panelX: CGFloat = isCompactPhone ? 84 : 140
 
         instructionPanel = SKNode()
-        instructionPanel?.position = CGPoint(x: panelX, y: topSafeY - 120)
         instructionPanel?.zPosition = 200
         addChild(instructionPanel!)
 
@@ -1019,6 +1125,7 @@ final class BrightnessScene: BaseLevelScene, SKPhysicsContactDelegate {
         label.fontColor = strokeColor
         label.position = CGPoint(x: 0, y: -35)
         instructionPanel?.addChild(label)
+        layoutHUDNodes()
     }
 
     // MARK: - Platform Visibility
@@ -1107,7 +1214,37 @@ final class BrightnessScene: BaseLevelScene, SKPhysicsContactDelegate {
            currentGroundPlatform === platform {
             currentGroundPlatform = nil
             bit?.setGrounded(false)
+        } else if !wasSolid,
+                  platform.physicsBody?.categoryBitMask == PhysicsCategory.ground,
+                  isBitResting(on: platform) {
+            currentGroundPlatform = platform
+            bit?.setGrounded(true)
         }
+    }
+
+    private func isBitResting(on platform: SKNode) -> Bool {
+        guard let bit = bit else { return false }
+        let platformFrame = physicsFrame(for: platform)
+        let bodyHalfWidth = bit.size.width * 0.25 + 6
+        let bodyHalfHeight = bit.size.height * 0.425
+        let footY = bit.position.y - bodyHalfHeight
+        let horizontalOverlap = bit.position.x >= platformFrame.minX - bodyHalfWidth
+            && bit.position.x <= platformFrame.maxX + bodyHalfWidth
+        let nearSurface = abs(footY - platformFrame.maxY) <= 10
+        let fallingOrResting = (bit.physicsBody?.velocity.dy ?? 0) <= 60
+        return horizontalOverlap && nearSurface && fallingOrResting
+    }
+
+    private func physicsFrame(for platform: SKNode) -> CGRect {
+        if let platformSize = (platform.userData?["platformSize"] as? NSValue)?.cgSizeValue {
+            return CGRect(
+                x: platform.position.x - platformSize.width / 2,
+                y: platform.position.y - platformSize.height / 2,
+                width: platformSize.width,
+                height: platformSize.height
+            )
+        }
+        return platform.calculateAccumulatedFrame()
     }
 
     // MARK: - Bit Setup
@@ -1201,7 +1338,10 @@ final class BrightnessScene: BaseLevelScene, SKPhysicsContactDelegate {
             run(.sequence([
                 .wait(forDuration: 0.05),
                 .run { [weak self] in
-                    self?.bit.setGrounded(false)
+                    guard let self = self else { return }
+                    if self.currentGroundPlatform == nil {
+                        self.bit.setGrounded(false)
+                    }
                 }
             ]))
         }
@@ -1230,6 +1370,7 @@ final class BrightnessScene: BaseLevelScene, SKPhysicsContactDelegate {
     }
 
     private func handleExit() {
+        guard GameState.shared.levelState == .playing else { return }
         succeedLevel()
 
         bit.removeAllActions()
