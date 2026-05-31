@@ -25,8 +25,37 @@ final class OrientationScene: BaseLevelScene, SKPhysicsContactDelegate {
     private let portraitGap: CGFloat = 18   // Clearly impossible (player is 22pts wide)
     private let landscapeGap: CGFloat = 100  // Comfortable passage in landscape
 
+    // PlayerController clamps character.position.x (worldNode-LOCAL here) to
+    // [halfWidth+pad, (worldWidth ?? scene.size.width)-halfWidth-pad] with a
+    // hardcoded minX (~42). The original layout used negative local X for the
+    // spawn/crusher, which the clamp teleported away, and never set worldWidth,
+    // so maxX collapsed to a SCREEN-space value (~348pt) far short of the exit
+    // (local x=450) -> uncompletable on phones. We rebase all gameplay geometry
+    // into positive local X (spawn above minX) via this offset and publish the
+    // matching worldWidth so the exit stays reachable on every device.
+    private let worldOffsetX: CGFloat = 290
+    private let playerWorldWidth: CGFloat = 800
+
+    // Layout baseline so the fixed playfield fills both phone and iPad canvases.
+    private let designWidth: CGFloat = 800
+    private let designHeight: CGFloat = 420
+    private var portraitFitScale: CGFloat = 1.0
+
+    // Center of the rebased gameplay extents (deathzone .. exit) in worldNode
+    // local space; backdrop layers center on this so they track the playfield.
+    private var playfieldCenterX: CGFloat { ((-280) + 450) / 2 + worldOffsetX }
+
     private var instructionPanel: SKNode?
     private var lineElements: [SKNode] = []
+
+    // Held for safe-area / rotation re-layout
+    private var titleLabel: SKLabelNode?
+    private var titleUnderline: SKShapeNode?
+
+    // Grounded-contact refcount: this level has THREE overlapping ground bodies
+    // (floor + both corridor walls), so a boolean toggle would mark Bit airborne
+    // when leaving one body while still resting on another.
+    private var groundContacts = 0
 
     // Rapid rotation detection (4th-wall dizzy text)
     private var rotationTimestamps: [TimeInterval] = []
@@ -52,6 +81,11 @@ final class OrientationScene: BaseLevelScene, SKPhysicsContactDelegate {
         worldNode.position = CGPoint(x: size.width / 2, y: size.height / 2)
         addChild(worldNode)
 
+        // Portrait baseline scale so the fixed ~800x420 playfield fills the
+        // available canvas instead of being a tiny island (iPad) or overflowing
+        // (small phones). Landscape multiplies its stretch by this baseline.
+        portraitFitScale = min(size.width / designWidth, size.height / designHeight)
+
         setupBackground()
         setupLevelTitle()
         buildLevel()
@@ -59,6 +93,13 @@ final class OrientationScene: BaseLevelScene, SKPhysicsContactDelegate {
         setupBit()
 
         updateWorldScale(animated: false)
+
+        // Re-layout safe-area HUD now that worldNode's scale is final, so the
+        // title/hint sit correctly on the very first frame (before any resize).
+        layoutLevelTitle()
+        if let panel = instructionPanel {
+            panel.position = CGPoint(x: 0, y: instructionPanelLocalY())
+        }
     }
 
     // MARK: - Background
@@ -76,11 +117,16 @@ final class OrientationScene: BaseLevelScene, SKPhysicsContactDelegate {
 
     private func drawAspectGrid() {
         let gridSpacing: CGFloat = 50
-        let halfW = size.width / 2
-        let halfH = size.height / 2
+        // Backdrop is locked to the fixed design playfield (NOT raw `size`) so it
+        // stretches WITH the world in landscape and stays aligned to the gameplay
+        // geometry, instead of being drawn at full screen width then stretched
+        // 1.4x off-screen. Centered on the rebased playfield center.
+        let halfW = designWidth / 2
+        let halfH = designHeight / 2
+        let cx = playfieldCenterX
 
         // Vertical lines
-        for x in stride(from: -halfW, through: halfW, by: gridSpacing) {
+        for x in stride(from: cx - halfW, through: cx + halfW, by: gridSpacing) {
             let line = SKShapeNode()
             let path = CGMutablePath()
             path.move(to: CGPoint(x: x, y: -halfH + 50))
@@ -98,8 +144,8 @@ final class OrientationScene: BaseLevelScene, SKPhysicsContactDelegate {
         for y in stride(from: -halfH + 50, through: halfH - 50, by: gridSpacing) {
             let line = SKShapeNode()
             let path = CGMutablePath()
-            path.move(to: CGPoint(x: -halfW, y: y))
-            path.addLine(to: CGPoint(x: halfW, y: y))
+            path.move(to: CGPoint(x: cx - halfW, y: y))
+            path.addLine(to: CGPoint(x: cx + halfW, y: y))
             line.path = path
             line.strokeColor = strokeColor
             line.lineWidth = lineWidth * 0.2
@@ -111,19 +157,20 @@ final class OrientationScene: BaseLevelScene, SKPhysicsContactDelegate {
     }
 
     private func drawOrientationArrows() {
-        // Horizontal stretch arrows at top
+        // Horizontal stretch arrows at top, centered over the rebased playfield.
         let arrowY: CGFloat = 180
+        let cx = playfieldCenterX
 
         // Left arrow
         let leftArrow = createHorizontalArrow(pointing: .left)
-        leftArrow.position = CGPoint(x: -120, y: arrowY)
+        leftArrow.position = CGPoint(x: cx - 120, y: arrowY)
         leftArrow.alpha = 0.3
         worldNode.addChild(leftArrow)
         lineElements.append(leftArrow)
 
         // Right arrow
         let rightArrow = createHorizontalArrow(pointing: .right)
-        rightArrow.position = CGPoint(x: 120, y: arrowY)
+        rightArrow.position = CGPoint(x: cx + 120, y: arrowY)
         rightArrow.alpha = 0.3
         worldNode.addChild(rightArrow)
         lineElements.append(rightArrow)
@@ -152,14 +199,18 @@ final class OrientationScene: BaseLevelScene, SKPhysicsContactDelegate {
     }
 
     private func drawCeilingBeams() {
-        let halfW = size.width / 2
+        // Locked to the design playfield width (centered on the playfield) so the
+        // beams stretch with the world instead of being drawn at screen width.
+        let halfW = designWidth / 2
+        let cx = playfieldCenterX
+        let beamY = designHeight / 2 - 35
 
-        for x in stride(from: -halfW + 50, through: halfW - 50, by: 80) {
+        for x in stride(from: cx - halfW + 50, through: cx + halfW - 50, by: 80) {
             let beam = SKShapeNode(rectOf: CGSize(width: 10, height: 30))
             beam.fillColor = fillColor
             beam.strokeColor = strokeColor
             beam.lineWidth = lineWidth * 0.4
-            beam.position = CGPoint(x: x, y: size.height / 2 - 35)
+            beam.position = CGPoint(x: x, y: beamY)
             beam.zPosition = -25
             worldNode.addChild(beam)
             lineElements.append(beam)
@@ -171,11 +222,11 @@ final class OrientationScene: BaseLevelScene, SKPhysicsContactDelegate {
         title.fontName = "Helvetica-Bold"
         title.fontSize = 28
         title.fontColor = strokeColor
-        title.position = CGPoint(x: -size.width / 2 + 80, y: size.height / 2 - 60)
         title.horizontalAlignmentMode = .left
         title.zPosition = 100
         worldNode.addChild(title)
         lineElements.append(title)
+        titleLabel = title
 
         let underline = SKShapeNode()
         let underlinePath = CGMutablePath()
@@ -184,10 +235,31 @@ final class OrientationScene: BaseLevelScene, SKPhysicsContactDelegate {
         underline.path = underlinePath
         underline.strokeColor = strokeColor
         underline.lineWidth = lineWidth
-        underline.position = title.position
         underline.zPosition = 100
         worldNode.addChild(underline)
         lineElements.append(underline)
+        titleUnderline = underline
+
+        layoutLevelTitle()
+    }
+
+    /// Positions the title/underline against the safe-area top so the glyphs
+    /// clear the Dynamic Island / status bar, re-runnable on rotation. worldNode
+    /// is centered and scaled, so we map the desired scene-space top into local
+    /// space by subtracting the scene midpoint and dividing out the node scale.
+    private func layoutLevelTitle() {
+        guard let title = titleLabel, let underline = titleUnderline else { return }
+
+        let yScale = worldNode.yScale == 0 ? 1 : worldNode.yScale
+        let xScale = worldNode.xScale == 0 ? 1 : worldNode.xScale
+
+        // Sit the title's anchor just below the safe inset (title is 28pt tall).
+        let titleLocalY = ((topSafeY - size.height / 2) / yScale) - 28
+        // Keep the left margin clear of the safe area too, mapped to local space.
+        let titleLocalX = ((-size.width / 2) / xScale) + 40
+
+        title.position = CGPoint(x: titleLocalX, y: titleLocalY)
+        underline.position = title.position
     }
 
     // MARK: - Level Building
@@ -207,7 +279,7 @@ final class OrientationScene: BaseLevelScene, SKPhysicsContactDelegate {
 
         // Death zone behind crusher
         let deathZone = SKNode()
-        deathZone.position = CGPoint(x: -280, y: 0)
+        deathZone.position = CGPoint(x: -280 + worldOffsetX, y: 0)
         deathZone.physicsBody = SKPhysicsBody(rectangleOf: CGSize(width: 50, height: 400))
         deathZone.physicsBody?.isDynamic = false
         deathZone.physicsBody?.categoryBitMask = PhysicsCategory.hazard
@@ -217,17 +289,26 @@ final class OrientationScene: BaseLevelScene, SKPhysicsContactDelegate {
 
     private func createCrusher() {
         crusherWall = SKNode()
-        crusherWall.position = CGPoint(x: -220, y: 0)
+        crusherWall.position = CGPoint(x: -220 + worldOffsetX, y: 0)
         crusherWall.zPosition = 10
         worldNode.addChild(crusherWall)
         crusherBaseX = crusherWall.position.x
+
+        // Visual container that carries the rumble animation. crusherWall.position
+        // itself is driven solely by the manual creep in updatePlaying; if the
+        // rumble's moveBy ran on crusherWall it would re-write .position every
+        // frame and stomp the creep increment, making the hazard advance
+        // unreliably. Shaking this child instead keeps the kill-check coordinate
+        // (crusherWall.position.x) authoritative.
+        let visuals = SKNode()
+        crusherWall.addChild(visuals)
 
         // Main crusher body - BIGGER and more menacing
         let body = SKShapeNode(rectOf: CGSize(width: 150, height: 320))
         body.fillColor = fillColor
         body.strokeColor = strokeColor
         body.lineWidth = lineWidth * 2.0
-        crusherWall.addChild(body)
+        visuals.addChild(body)
         lineElements.append(body)
 
         // Industrial hazard stripes (diagonal warning pattern)
@@ -240,7 +321,7 @@ final class OrientationScene: BaseLevelScene, SKPhysicsContactDelegate {
             stripe.path = stripePath
             stripe.strokeColor = strokeColor
             stripe.lineWidth = lineWidth * 0.8
-            crusherWall.addChild(stripe)
+            visuals.addChild(stripe)
             lineElements.append(stripe)
         }
 
@@ -248,7 +329,7 @@ final class OrientationScene: BaseLevelScene, SKPhysicsContactDelegate {
         let warning = createDangerSkull()
         warning.position = CGPoint(x: 0, y: 50)
         warning.setScale(1.8)
-        crusherWall.addChild(warning)
+        visuals.addChild(warning)
         lineElements.append(warning)
 
         // Hydraulic pistons on sides
@@ -258,7 +339,7 @@ final class OrientationScene: BaseLevelScene, SKPhysicsContactDelegate {
             piston.strokeColor = strokeColor
             piston.lineWidth = lineWidth
             piston.position = CGPoint(x: CGFloat(side) * 85, y: -60)
-            crusherWall.addChild(piston)
+            visuals.addChild(piston)
             lineElements.append(piston)
 
             // Piston rod
@@ -266,7 +347,7 @@ final class OrientationScene: BaseLevelScene, SKPhysicsContactDelegate {
             rod.fillColor = strokeColor
             rod.strokeColor = strokeColor
             rod.position = CGPoint(x: CGFloat(side) * 85, y: -110)
-            crusherWall.addChild(rod)
+            visuals.addChild(rod)
             lineElements.append(rod)
         }
 
@@ -282,7 +363,7 @@ final class OrientationScene: BaseLevelScene, SKPhysicsContactDelegate {
             tooth.fillColor = fillColor
             tooth.strokeColor = strokeColor
             tooth.lineWidth = lineWidth
-            crusherWall.addChild(tooth)
+            visuals.addChild(tooth)
             lineElements.append(tooth)
         }
 
@@ -298,7 +379,7 @@ final class OrientationScene: BaseLevelScene, SKPhysicsContactDelegate {
             speedLine.strokeColor = strokeColor
             speedLine.lineWidth = lineWidth * 0.5
             speedLine.alpha = CGFloat.random(in: 0.4...0.8)
-            crusherWall.addChild(speedLine)
+            visuals.addChild(speedLine)
             lineElements.append(speedLine)
 
             // Aggressive flicker animation
@@ -308,8 +389,9 @@ final class OrientationScene: BaseLevelScene, SKPhysicsContactDelegate {
             ])))
         }
 
-        // Ominous rumble animation
-        crusherWall.run(.repeatForever(.sequence([
+        // Ominous rumble animation - on the visuals child only, NOT crusherWall,
+        // so it never overwrites the creep-controlled crusherWall.position.
+        visuals.run(.repeatForever(.sequence([
             .moveBy(x: 0, y: 2, duration: 0.1),
             .moveBy(x: 0, y: -4, duration: 0.1),
             .moveBy(x: 0, y: 2, duration: 0.1)
@@ -367,7 +449,7 @@ final class OrientationScene: BaseLevelScene, SKPhysicsContactDelegate {
         floor.fillColor = fillColor
         floor.strokeColor = strokeColor
         floor.lineWidth = lineWidth
-        floor.position = CGPoint(x: 100, y: -120)
+        floor.position = CGPoint(x: 100 + worldOffsetX, y: -120)
         worldNode.addChild(floor)
         lineElements.append(floor)
 
@@ -382,13 +464,13 @@ final class OrientationScene: BaseLevelScene, SKPhysicsContactDelegate {
         depthLine.path = depthPath
         depthLine.strokeColor = strokeColor
         depthLine.lineWidth = lineWidth * 0.5
-        depthLine.position = CGPoint(x: 100, y: -120)
+        depthLine.position = CGPoint(x: 100 + worldOffsetX, y: -120)
         worldNode.addChild(depthLine)
         lineElements.append(depthLine)
 
         // Physics
         let floorPhysics = SKNode()
-        floorPhysics.position = CGPoint(x: 100, y: -120)
+        floorPhysics.position = CGPoint(x: 100 + worldOffsetX, y: -120)
         floorPhysics.physicsBody = SKPhysicsBody(rectangleOf: CGSize(width: 700, height: 25))
         floorPhysics.physicsBody?.isDynamic = false
         floorPhysics.physicsBody?.categoryBitMask = PhysicsCategory.ground
@@ -398,7 +480,7 @@ final class OrientationScene: BaseLevelScene, SKPhysicsContactDelegate {
 
     private func createCorridor() {
         corridor = SKNode()
-        corridor.position = CGPoint(x: 50, y: -60)
+        corridor.position = CGPoint(x: 50 + worldOffsetX, y: -60)
         worldNode.addChild(corridor)
 
         // Top wall of corridor
@@ -484,7 +566,7 @@ final class OrientationScene: BaseLevelScene, SKPhysicsContactDelegate {
     }
 
     private func createExit() {
-        let exitPos = CGPoint(x: 450, y: -60)
+        let exitPos = CGPoint(x: 450 + worldOffsetX, y: -60)
 
         // Door frame
         let doorFrame = SKShapeNode(rectOf: CGSize(width: 40, height: 60))
@@ -558,9 +640,19 @@ final class OrientationScene: BaseLevelScene, SKPhysicsContactDelegate {
 
     // MARK: - Instruction Panel
 
+    /// Local Y for the instruction panel: keep the original +130 on tall
+    /// canvases, but on short/landscape ones tuck the 100pt panel under the
+    /// safe inset so it doesn't overlap the title or corridor. worldNode is
+    /// centered+scaled, so map the scene-space safe top into local space.
+    private func instructionPanelLocalY() -> CGFloat {
+        let yScale = worldNode.yScale == 0 ? 1 : worldNode.yScale
+        let safeTopLocal = ((topSafeY - size.height / 2) / yScale) - 70
+        return min(130, safeTopLocal)
+    }
+
     private func showInstructionPanel() {
         instructionPanel = SKNode()
-        instructionPanel?.position = CGPoint(x: 0, y: 130)
+        instructionPanel?.position = CGPoint(x: 0, y: instructionPanelLocalY())
         instructionPanel?.zPosition = 200
         worldNode.addChild(instructionPanel!)
 
@@ -644,7 +736,9 @@ final class OrientationScene: BaseLevelScene, SKPhysicsContactDelegate {
     // MARK: - Setup
 
     private func setupBit() {
-        spawnPoint = CGPoint(x: -120, y: -60)
+        // Rebased into positive local X so PlayerController's hardcoded minX
+        // (~42) no longer teleports the spawn. -120 + offset(290) = 170.
+        spawnPoint = CGPoint(x: -120 + worldOffsetX, y: -60)
 
         bit = BitCharacter.make()
         bit.position = spawnPoint
@@ -652,6 +746,10 @@ final class OrientationScene: BaseLevelScene, SKPhysicsContactDelegate {
         registerPlayer(bit)
 
         playerController = PlayerController(character: bit, scene: self)
+
+        // Publish the world-local right bound so the clamp's maxX sits just past
+        // the exit (450 + offset = 740) instead of collapsing to screen width.
+        playerController.worldWidth = playerWorldWidth
     }
 
     // MARK: - Orientation Change
@@ -659,50 +757,38 @@ final class OrientationScene: BaseLevelScene, SKPhysicsContactDelegate {
     private func updateWorldScale(animated: Bool) {
         let duration = animated ? 0.5 : 0
 
+        // Bare stretch factors are relative to the portrait baseline fit so the
+        // playfield fills the canvas in both orientations and on every device.
+        let targetScaleX: CGFloat
+        let targetScaleY: CGFloat
+
         if isLandscape {
             // Stretch world horizontally
-            let scaleX: CGFloat = 1.4
-            let scaleY: CGFloat = 0.85
-
+            targetScaleX = 1.4 * portraitFitScale
+            targetScaleY = 0.85 * portraitFitScale
             corridorGap = landscapeGap
-
-            if animated {
-                let scale = SKAction.scaleX(to: scaleX, y: scaleY, duration: duration)
-                scale.timingMode = .easeInEaseOut
-                worldNode.run(scale)
-
-                // Animate corridor walls apart
-                if let topWall = corridor.childNode(withName: "corridor_top") {
-                    topWall.run(.moveTo(y: corridorGap / 2 + 12.5, duration: duration))
-                }
-                if let bottomWall = corridor.childNode(withName: "corridor_bottom") {
-                    bottomWall.run(.moveTo(y: -corridorGap / 2 - 12.5, duration: duration))
-                }
-            } else {
-                worldNode.xScale = scaleX
-                worldNode.yScale = scaleY
-            }
-
         } else {
             // Normal portrait
+            targetScaleX = portraitFitScale
+            targetScaleY = portraitFitScale
             corridorGap = portraitGap
+        }
 
-            if animated {
-                let scale = SKAction.scaleX(to: 1.0, y: 1.0, duration: duration)
-                scale.timingMode = .easeInEaseOut
-                worldNode.run(scale)
+        if animated {
+            let scale = SKAction.scaleX(to: targetScaleX, y: targetScaleY, duration: duration)
+            scale.timingMode = .easeInEaseOut
+            worldNode.run(scale)
 
-                // Animate corridor walls together
-                if let topWall = corridor.childNode(withName: "corridor_top") {
-                    topWall.run(.moveTo(y: corridorGap / 2 + 12.5, duration: duration))
-                }
-                if let bottomWall = corridor.childNode(withName: "corridor_bottom") {
-                    bottomWall.run(.moveTo(y: -corridorGap / 2 - 12.5, duration: duration))
-                }
-            } else {
-                worldNode.xScale = 1.0
-                worldNode.yScale = 1.0
+            // Animate corridor walls to the new gap
+            if let topWall = corridor.childNode(withName: "corridor_top") {
+                topWall.run(.moveTo(y: corridorGap / 2 + 12.5, duration: duration))
             }
+            if let bottomWall = corridor.childNode(withName: "corridor_bottom") {
+                bottomWall.run(.moveTo(y: -corridorGap / 2 - 12.5, duration: duration))
+            }
+        } else {
+            worldNode.xScale = targetScaleX
+            worldNode.yScale = targetScaleY
         }
 
         // Update physics after animation
@@ -710,14 +796,59 @@ final class OrientationScene: BaseLevelScene, SKPhysicsContactDelegate {
             self?.updateCorridorPhysics()
         }
 
-        // Hide hint after first landscape rotation
-        if isLandscape && animated {
-            instructionPanel?.run(.sequence([
-                .fadeOut(withDuration: 0.3),
-                .removeFromParent()
-            ]))
+        // Orientation-derived hazard state, set in ONE place so every entry path
+        // (initial non-animated poll AND animated rotation) stays consistent.
+        // Landscape => crusher disarmed; portrait => armed. This guarantees a
+        // later rotate-to-portrait re-arms the crusher from a known state and a
+        // launch-in-landscape doesn't leave a stale armed crusher / hint.
+        isCrusherActive = !isLandscape
+
+        // Hide the ROTATE hint whenever we are in landscape, regardless of how we
+        // got here (initial poll or rotation). Use the fade only when animated.
+        if isLandscape, let panel = instructionPanel {
+            if animated {
+                panel.run(.sequence([
+                    .fadeOut(withDuration: 0.3),
+                    .removeFromParent()
+                ]))
+            } else {
+                panel.removeFromParent()
+            }
             instructionPanel = nil
-            isCrusherActive = false
+        }
+    }
+
+    // MARK: - Resize / Safe Area
+
+    override func didChangeSize(_ oldSize: CGSize) {
+        super.didChangeSize(oldSize)
+        // The base class recenters only gameCamera; worldNode would otherwise
+        // stay anchored at the original PORTRAIT center and maroon the whole
+        // playfield off-screen after rotation (the level FORCES landscape).
+        // Guard on corridor too: updateWorldScale dereferences it, and an early
+        // resize before buildLevel() must be a no-op.
+        guard worldNode != nil, corridor != nil else { return }
+        worldNode.position = CGPoint(x: size.width / 2, y: size.height / 2)
+
+        // Recompute the fit baseline for the new canvas and re-apply the scale
+        // so the playfield keeps filling the screen in the new orientation.
+        portraitFitScale = min(size.width / designWidth, size.height / designHeight)
+        updateWorldScale(animated: false)
+
+        // Reposition safe-area-anchored HUD for the new geometry/scale.
+        layoutLevelTitle()
+        if let panel = instructionPanel {
+            panel.position = CGPoint(x: 0, y: instructionPanelLocalY())
+        }
+    }
+
+    override func didUpdateSafeArea() {
+        super.didUpdateSafeArea()
+        // Keep the title and any visible hint clear of the Dynamic Island /
+        // status bar as insets change (rotation, presentation).
+        layoutLevelTitle()
+        if let panel = instructionPanel {
+            panel.position = CGPoint(x: 0, y: instructionPanelLocalY())
         }
     }
 
@@ -779,11 +910,15 @@ final class OrientationScene: BaseLevelScene, SKPhysicsContactDelegate {
     }
 
     private func showDizzyCommentary() {
+        // Sit the commentary in the cleared top region (just under the safe
+        // inset, below where the title sits) so it doesn't stack on HUD text.
+        let topLocalY = min(60, instructionPanelLocalY() - 20)
+
         let label = SKLabelNode(text: "I'M GETTING DIZZY.")
         label.fontName = "Menlo-Bold"
         label.fontSize = 14
         label.fontColor = strokeColor
-        label.position = CGPoint(x: 0, y: 60)
+        label.position = CGPoint(x: 0, y: topLocalY)
         label.zPosition = 400
         label.alpha = 0
         worldNode.addChild(label)
@@ -792,7 +927,7 @@ final class OrientationScene: BaseLevelScene, SKPhysicsContactDelegate {
         label2.fontName = "Menlo-Bold"
         label2.fontSize = 12
         label2.fontColor = strokeColor
-        label2.position = CGPoint(x: 0, y: 40)
+        label2.position = CGPoint(x: 0, y: topLocalY - 20)
         label2.zPosition = 400
         label2.alpha = 0
         worldNode.addChild(label2)
@@ -838,6 +973,8 @@ final class OrientationScene: BaseLevelScene, SKPhysicsContactDelegate {
         } else if collision == PhysicsCategory.player | PhysicsCategory.exit {
             handleExit()
         } else if collision == PhysicsCategory.player | PhysicsCategory.ground {
+            // Refcount overlapping ground bodies (floor + both corridor walls)
+            groundContacts += 1
             bit.setGrounded(true)
         }
     }
@@ -846,10 +983,16 @@ final class OrientationScene: BaseLevelScene, SKPhysicsContactDelegate {
         let collision = contact.bodyA.categoryBitMask | contact.bodyB.categoryBitMask
 
         if collision == PhysicsCategory.player | PhysicsCategory.ground {
+            groundContacts = max(0, groundContacts - 1)
+            // Only go airborne once we've left EVERY ground body, so walking off
+            // one corridor wall while still on the floor doesn't flicker airborne.
             run(.sequence([
                 .wait(forDuration: 0.05),
                 .run { [weak self] in
-                    self?.bit.setGrounded(false)
+                    guard let self else { return }
+                    if self.groundContacts <= 0 {
+                        self.bit.setGrounded(false)
+                    }
                 }
             ]))
         }
@@ -865,7 +1008,11 @@ final class OrientationScene: BaseLevelScene, SKPhysicsContactDelegate {
         crusherWall.position.x = crusherBaseX
         isCrusherActive = true
 
+        // Respawn lands on the floor; reset the ground refcount so a stale
+        // didEnd from the death teleport can't strand Bit airborne.
+        groundContacts = 0
         bit.playBufferDeath(respawnAt: spawnPoint) { [weak self] in
+            self?.groundContacts = 1
             self?.bit.setGrounded(true)
         }
     }
