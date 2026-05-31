@@ -26,6 +26,7 @@ final class FaceIDScene: BaseLevelScene, SKPhysicsContactDelegate {
     private var secondDoor: SKNode?
     private var secondDoorBlocker: SKNode?
     private var hasShownFourthWall = false
+    private var isShowingExitNudge = false
 
     private var scanAnimation: SKAction?
 
@@ -605,8 +606,30 @@ final class FaceIDScene: BaseLevelScene, SKPhysicsContactDelegate {
     }
 
     private func handleExit() {
+        // Final scan (step 3) sets isUnlocked. Reaching the exit body before that
+        // does nothing but nudge the player back to the gate for the last scan.
+        guard isUnlocked else {
+            showExitNudge()
+            return
+        }
         succeedLevel()
         bit.run(.sequence([.fadeOut(withDuration: 0.5), .run { [weak self] in self?.transitionToNextLevel() }]))
+    }
+
+    private func showExitNudge() {
+        // Throttle: exit contact can fire repeatedly while the player rests on the body.
+        guard !isShowingExitNudge else { return }
+        isShowingExitNudge = true
+
+        statusLabel.text = "ONE MORE SCAN"
+        run(.sequence([
+            .wait(forDuration: 1.5),
+            .run { [weak self] in
+                guard let self = self, !self.isUnlocked else { return }
+                self.statusLabel.text = "TAP THE NEXT GATE"
+                self.isShowingExitNudge = false
+            }
+        ]))
     }
 
     override func onLevelSucceeded() {
