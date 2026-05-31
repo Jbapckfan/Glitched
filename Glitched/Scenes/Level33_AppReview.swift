@@ -618,8 +618,10 @@ final class AppReviewScene: BaseLevelScene, SKPhysicsContactDelegate {
         finalTerminal = createLargeTerminal(at: CGPoint(x: exitDoorNode.position.x - 80,
                                                          y: exitDoorNode.position.y + 80))
 
-        // The monologue - building up to the ask
-        let lines: [(String, TimeInterval)] = [
+        // The monologue - building up to the ask. Split into beats; the panel is
+        // cleared between beats so lines paginate instead of spilling past the floor.
+        // (delay is nil to mark a clear between beats.)
+        let lines: [(String?, TimeInterval?)] = [
             ("ONE LAST THING.", 0.0),
             ("...", 1.2),
             ("YOU'VE PLAYED THROUGH 32 LEVELS.", 2.0),
@@ -627,18 +629,26 @@ final class AppReviewScene: BaseLevelScene, SKPhysicsContactDelegate {
             ("YOU'VE DELETED AND REINSTALLED AN APP.", 4.4),
             ("YOU'VE HELD YOUR PHONE LIKE A", 5.6),
             ("  FLASHLIGHT IN A CAVE.", 6.2),
-            ("YOU'VE SCREAMED AT YOUR SCREEN.", 6.8),
-            ("YOU'VE CHANGED YOUR DEVICE'S NAME.", 7.8),
-            ("...", 9.0),
-            ("ALL I ASK...", 9.8),
-            ("IS ONE LITTLE REVIEW.", 10.8),
+            (nil, 7.4),
+            ("YOU'VE SCREAMED AT YOUR SCREEN.", 7.6),
+            ("YOU'VE CHANGED YOUR DEVICE'S NAME.", 8.6),
+            ("...", 9.8),
+            ("ALL I ASK...", 10.6),
+            ("IS ONE LITTLE REVIEW.", 11.6),
         ]
 
         for (text, delay) in lines {
+            guard let delay = delay else { continue }
             run(.sequence([
                 .wait(forDuration: delay),
                 .run { [weak self] in
-                    self?.appendLargeTerminalLine(text, to: self?.finalTerminal)
+                    guard let self = self else { return }
+                    guard let text = text else {
+                        // Beat boundary — clear the panel before the next beat.
+                        self.clearLargeTerminal()
+                        return
+                    }
+                    self.appendLargeTerminalLine(text, to: self.finalTerminal)
                     // Sound for dramatic lines
                     if text == "ONE LAST THING." {
                         AudioManager.shared.playBeep(frequency: 500, duration: 0.15, volume: 0.3)
@@ -657,7 +667,7 @@ final class AppReviewScene: BaseLevelScene, SKPhysicsContactDelegate {
 
         // Show the review button after the monologue
         run(.sequence([
-            .wait(forDuration: 12.0),
+            .wait(forDuration: 12.6),
             .run { [weak self] in
                 self?.showReviewButton()
                 self?.appendLargeTerminalLine("PURELY OPTIONAL. TEN SECONDS OF DRAMA REMAIN.", to: self?.finalTerminal)
@@ -665,12 +675,30 @@ final class AppReviewScene: BaseLevelScene, SKPhysicsContactDelegate {
         ]))
     }
 
+    // Panel geometry — clamped to fit on-screen (SE 320 .. iPad) and reused for layout.
+    private var largeTerminalTextLeft: CGFloat = -125
+    // Body runs from y=80 down to the panel floor; cap lines so they can't overflow.
+    private let largeTerminalLineSpacing: CGFloat = 13
+    private let largeTerminalMaxLines = 8
+
     private func createLargeTerminal(at position: CGPoint) -> SKNode {
+        // Clamp width so both edges stay on-screen even on a 320pt iPhone SE.
+        let panelWidth = min(size.width - 32, 280)
+        // Text inset from the left edge of the panel.
+        largeTerminalTextLeft = -panelWidth / 2 + 15
+
+        // Center the panel within the safe area so it can't run off either edge
+        // (SE 320) or end up marooned at the far right (iPad).
+        let halfWidth = panelWidth / 2
+        let minCenterX = halfWidth + 16
+        let maxCenterX = size.width - halfWidth - 16
+        let clampedX = min(max(position.x, minCenterX), maxCenterX)
+
         let panel = SKNode()
-        panel.position = position
+        panel.position = CGPoint(x: clampedX, y: position.y)
         panel.zPosition = 200
 
-        let bg = SKShapeNode(rectOf: CGSize(width: 280, height: 220), cornerRadius: 8)
+        let bg = SKShapeNode(rectOf: CGSize(width: panelWidth, height: 220), cornerRadius: 8)
         bg.fillColor = strokeColor
         bg.strokeColor = fillColor
         bg.lineWidth = 2
@@ -678,7 +706,7 @@ final class AppReviewScene: BaseLevelScene, SKPhysicsContactDelegate {
         panel.addChild(bg)
 
         // Terminal header
-        let header = SKShapeNode(rectOf: CGSize(width: 280, height: 18))
+        let header = SKShapeNode(rectOf: CGSize(width: panelWidth, height: 18))
         header.fillColor = fillColor.withAlphaComponent(0.12)
         header.strokeColor = .clear
         header.position = CGPoint(x: 0, y: 101)
@@ -688,7 +716,7 @@ final class AppReviewScene: BaseLevelScene, SKPhysicsContactDelegate {
         headerLabel.fontName = "Menlo"
         headerLabel.fontSize = 7
         headerLabel.fontColor = fillColor.withAlphaComponent(0.5)
-        headerLabel.position = CGPoint(x: -125, y: 98)
+        headerLabel.position = CGPoint(x: largeTerminalTextLeft, y: 98)
         headerLabel.horizontalAlignmentMode = .left
         panel.addChild(headerLabel)
 
@@ -696,7 +724,7 @@ final class AppReviewScene: BaseLevelScene, SKPhysicsContactDelegate {
         let cursor = SKShapeNode(rectOf: CGSize(width: 6, height: 10))
         cursor.fillColor = fillColor
         cursor.strokeColor = .clear
-        cursor.position = CGPoint(x: -125, y: 80)
+        cursor.position = CGPoint(x: largeTerminalTextLeft, y: 80)
         cursor.name = "cursor"
         panel.addChild(cursor)
         cursor.run(.repeatForever(.sequence([
@@ -716,12 +744,18 @@ final class AppReviewScene: BaseLevelScene, SKPhysicsContactDelegate {
     private func appendLargeTerminalLine(_ text: String, to terminal: SKNode?) {
         guard let terminal = terminal, !text.isEmpty else { return }
 
+        // Paginate: clear the panel once it's full so lines never spill past the floor.
+        if largeTerminalLineCount >= largeTerminalMaxLines {
+            clearLargeTerminal()
+        }
+
         let label = SKLabelNode(text: "")
         label.fontName = "Menlo"
         label.fontSize = 8
         label.fontColor = fillColor
         label.horizontalAlignmentMode = .left
-        label.position = CGPoint(x: -125, y: 80 - CGFloat(largeTerminalLineCount) * 13)
+        label.position = CGPoint(x: largeTerminalTextLeft,
+                                 y: 80 - CGFloat(largeTerminalLineCount) * largeTerminalLineSpacing)
         label.name = "largeLine_\(largeTerminalLineCount)"
         label.zPosition = 1
         terminal.addChild(label)
@@ -730,7 +764,7 @@ final class AppReviewScene: BaseLevelScene, SKPhysicsContactDelegate {
 
         // Move cursor down
         if let cursor = terminal.childNode(withName: "cursor") {
-            cursor.position.y = 80 - CGFloat(largeTerminalLineCount) * 13
+            cursor.position.y = 80 - CGFloat(largeTerminalLineCount) * largeTerminalLineSpacing
         }
 
         typewriterAnimate(label: label, fullText: text)
