@@ -19,9 +19,12 @@ mac-mini (Claude Opus):
     Glitched/Scenes/Level30_CreditsFinale.swift
 
 macbook-pro (Claude + Codex):
-  lane: L6 (+ MBP team's other levels — fill in)
+  lane: L7, L8, L9, L10
   files:
-    Glitched/Scenes/Level6_Brightness.swift
+    Glitched/Scenes/Level7_Screenshot.swift
+    Glitched/Scenes/Level8_DarkMode.swift
+    Glitched/Scenes/Level9_Orientation.swift
+    Glitched/Scenes/Level10_TimeTravel.swift
 
 RESERVED — single serialized pass, LAST, one agent only:
   Glitched/App/GameRootView.swift            # fallback overlay buttons
