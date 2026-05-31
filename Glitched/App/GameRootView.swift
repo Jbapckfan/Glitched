@@ -28,12 +28,20 @@ struct GameRootView: View {
                 .opacity(0)
 
             // SpriteKit game with HUD layered via .overlay to guarantee
-            // it renders above the Metal-backed SKView
-            SpriteKitContainer(levelID: gameState.currentLevelID, uiState: gameState.uiState)
-                .ignoresSafeArea()
-                .overlay {
-                    HUDLayer(levelID: gameState.currentLevelID)
-                }
+            // it renders above the Metal-backed SKView. GeometryReader exposes
+            // the device safe-area insets so SpriteKit scenes can position HUDs
+            // and clue text clear of the status bar / Dynamic Island.
+            GeometryReader { geo in
+                SpriteKitContainer(
+                    levelID: gameState.currentLevelID,
+                    uiState: gameState.uiState,
+                    safeAreaInsets: geo.safeAreaInsets
+                )
+            }
+            .ignoresSafeArea()
+            .overlay {
+                HUDLayer(levelID: gameState.currentLevelID)
+            }
 
             // Accessibility fallback buttons
             if accessibility.showsFallbackOverlay {
@@ -77,6 +85,7 @@ struct VolumeHUDSuppressor: UIViewRepresentable {
 struct SpriteKitContainer: UIViewRepresentable {
     let levelID: LevelID
     let uiState: UIState
+    let safeAreaInsets: EdgeInsets
 
     func makeUIView(context: Context) -> SKView {
         let view = SKView()
@@ -93,6 +102,7 @@ struct SpriteKitContainer: UIViewRepresentable {
         // SwiftUI will resize the view to its final frame during layout.
         view.frame = UIScreen.main.bounds
         let scene = LevelFactory.makeScene(for: levelID, size: view.bounds.size)
+        applySafeArea(to: scene)
         view.presentScene(scene)
 
         return view
@@ -108,12 +118,26 @@ struct SpriteKitContainer: UIViewRepresentable {
 
             let nextSize = uiView.bounds.size.width > 0 ? uiView.bounds.size : UIScreen.main.bounds.size
             let newScene = LevelFactory.makeScene(for: levelID, size: nextSize)
+            applySafeArea(to: newScene)
             if uiView.scene != nil {
                 uiView.presentScene(newScene, transition: .crossFade(withDuration: 0.4))
             } else {
                 uiView.presentScene(newScene)
             }
+        } else if let scene = uiView.scene {
+            applySafeArea(to: scene)
         }
+    }
+
+    private func applySafeArea(to scene: SKScene) {
+        guard let level = scene as? BaseLevelScene else { return }
+        let insets = UIEdgeInsets(
+            top: safeAreaInsets.top,
+            left: safeAreaInsets.leading,
+            bottom: safeAreaInsets.bottom,
+            right: safeAreaInsets.trailing
+        )
+        level.updateSafeAreaInsets(insets)
     }
 }
 

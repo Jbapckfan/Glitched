@@ -12,6 +12,19 @@ class BaseLevelScene: SKScene {
     private var hasConfigured = false
     private var lastUpdateTime: TimeInterval = 0
 
+    /// Device safe-area insets, propagated from the hosting SwiftUI container.
+    /// Scenes should use `topSafeY` / `bottomSafeY` instead of raw `size` extents
+    /// so HUDs and clue text don't get hidden by the status bar / Dynamic Island.
+    private(set) var safeAreaInsets: UIEdgeInsets = .zero
+
+    /// The largest Y coordinate that is fully visible above the top safe-area
+    /// inset (status bar / Dynamic Island).
+    var topSafeY: CGFloat { max(0, size.height - safeAreaInsets.top) }
+
+    /// The smallest Y coordinate that is fully visible above the bottom safe-area
+    /// inset (home indicator).
+    var bottomSafeY: CGFloat { safeAreaInsets.bottom }
+
     // Juice system references
     private(set) var gameCamera: SKCameraNode!
     private var scanlineOverlay: SKSpriteNode?
@@ -169,6 +182,18 @@ class BaseLevelScene: SKScene {
         // Update camera to new center when scene size changes
         gameCamera?.position = CGPoint(x: size.width / 2, y: size.height / 2)
     }
+
+    /// Called by the hosting `SpriteKitContainer` whenever the SwiftUI safe-area
+    /// insets change (rotation, presentation, etc). Subclasses can override
+    /// `didUpdateSafeArea` to reposition HUD elements.
+    func updateSafeAreaInsets(_ insets: UIEdgeInsets) {
+        guard insets != safeAreaInsets else { return }
+        safeAreaInsets = insets
+        didUpdateSafeArea()
+    }
+
+    /// Override in subclasses to reposition HUD elements when the safe area changes.
+    func didUpdateSafeArea() {}
 
     // MARK: - Override Points
 

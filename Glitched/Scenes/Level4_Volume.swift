@@ -221,7 +221,7 @@ final class VolumeScene: BaseLevelScene, SKPhysicsContactDelegate {
         drawIndustrialPipes()
 
         // Warning signs
-        drawWarningSign(at: CGPoint(x: 100, y: size.height - 100))
+        drawWarningSign(at: CGPoint(x: 100, y: topSafeY - 70))
 
         // Sleeping creature den elements
         drawDenElements()
@@ -232,7 +232,7 @@ final class VolumeScene: BaseLevelScene, SKPhysicsContactDelegate {
             // Vertical support
             let support = SKShapeNode()
             let supportPath = CGMutablePath()
-            supportPath.move(to: CGPoint(x: x, y: size.height - 40))
+            supportPath.move(to: CGPoint(x: x, y: topSafeY - 10))
             supportPath.addLine(to: CGPoint(x: x, y: size.height))
             support.path = supportPath
             support.strokeColor = strokeColor
@@ -245,7 +245,7 @@ final class VolumeScene: BaseLevelScene, SKPhysicsContactDelegate {
             bolt.fillColor = fillColor
             bolt.strokeColor = strokeColor
             bolt.lineWidth = lineWidth * 0.5
-            bolt.position = CGPoint(x: x, y: size.height - 50)
+            bolt.position = CGPoint(x: x, y: topSafeY - 20)
             bolt.zPosition = -9
             addChild(bolt)
         }
@@ -253,8 +253,8 @@ final class VolumeScene: BaseLevelScene, SKPhysicsContactDelegate {
         // Horizontal beam
         let beam = SKShapeNode()
         let beamPath = CGMutablePath()
-        beamPath.move(to: CGPoint(x: 0, y: size.height - 40))
-        beamPath.addLine(to: CGPoint(x: size.width, y: size.height - 40))
+        beamPath.move(to: CGPoint(x: 0, y: topSafeY - 10))
+        beamPath.addLine(to: CGPoint(x: size.width, y: topSafeY - 10))
         beam.path = beamPath
         beam.strokeColor = strokeColor
         beam.lineWidth = lineWidth * 1.5
@@ -348,7 +348,7 @@ final class VolumeScene: BaseLevelScene, SKPhysicsContactDelegate {
         title.fontName = "Helvetica-Bold"
         title.fontSize = 28
         title.fontColor = strokeColor
-        title.position = CGPoint(x: 80, y: size.height - 60)
+        title.position = CGPoint(x: 80, y: topSafeY - 30)
         title.horizontalAlignmentMode = .left
         title.zPosition = 100
         addChild(title)
@@ -639,7 +639,7 @@ final class VolumeScene: BaseLevelScene, SKPhysicsContactDelegate {
 
     private func createVolumeIndicator() {
         volumeIndicator = SKNode()
-        volumeIndicator.position = CGPoint(x: size.width - 70, y: size.height - 60)
+        volumeIndicator.position = CGPoint(x: size.width - 70, y: topSafeY - 30)
         volumeIndicator.zPosition = 200
         addChild(volumeIndicator)
 

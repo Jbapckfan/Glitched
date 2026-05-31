@@ -71,11 +71,12 @@ final class BrightnessScene: BaseLevelScene, SKPhysicsContactDelegate {
     // MARK: - Burn Zones (Too Bright = Danger)
 
     private func createBurnZones() {
-        // Create sun-focused danger zones that activate at max brightness
+        // Sun-focused danger zones that activate at max brightness.
+        // Placed over the open air above the UV staircase.
         let burnPositions: [CGPoint] = [
-            CGPoint(x: 280, y: 280),
-            CGPoint(x: 420, y: 320),
-            CGPoint(x: 540, y: 280)
+            CGPoint(x: 175, y: 280),
+            CGPoint(x: 250, y: 320),
+            CGPoint(x: 320, y: 290)
         ]
 
         for (index, pos) in burnPositions.enumerated() {
@@ -133,7 +134,7 @@ final class BrightnessScene: BaseLevelScene, SKPhysicsContactDelegate {
         burnWarning?.fontName = "Menlo-Bold"
         burnWarning?.fontSize = 18
         burnWarning?.fontColor = strokeColor
-        burnWarning?.position = CGPoint(x: size.width / 2, y: size.height - 150)
+        burnWarning?.position = CGPoint(x: size.width / 2, y: topSafeY - 120)
         burnWarning?.zPosition = 300
         burnWarning?.alpha = 0
         addChild(burnWarning!)
@@ -240,7 +241,7 @@ final class BrightnessScene: BaseLevelScene, SKPhysicsContactDelegate {
 
     private func createMaxBrightnessSun() {
         maxBrightnessSun = SKNode()
-        maxBrightnessSun?.position = CGPoint(x: size.width / 2, y: size.height - 60)
+        maxBrightnessSun?.position = CGPoint(x: size.width / 2, y: topSafeY - 30)
         maxBrightnessSun?.zPosition = 35
         maxBrightnessSun?.alpha = 0
         addChild(maxBrightnessSun!)
@@ -351,12 +352,12 @@ final class BrightnessScene: BaseLevelScene, SKPhysicsContactDelegate {
         drawSunRays()
 
         // Window frames
-        drawWindowFrame(at: CGPoint(x: 80, y: size.height - 200))
-        drawWindowFrame(at: CGPoint(x: size.width - 80, y: size.height - 180))
+        drawWindowFrame(at: CGPoint(x: 80, y: topSafeY - 170))
+        drawWindowFrame(at: CGPoint(x: size.width - 80, y: topSafeY - 150))
 
         // Light fixtures hanging from ceiling
-        drawLightFixture(at: CGPoint(x: size.width * 0.3, y: size.height - 50))
-        drawLightFixture(at: CGPoint(x: size.width * 0.7, y: size.height - 50))
+        drawLightFixture(at: CGPoint(x: size.width * 0.3, y: topSafeY - 20))
+        drawLightFixture(at: CGPoint(x: size.width * 0.7, y: topSafeY - 20))
 
         // Ceiling beams
         drawCeilingBeams()
@@ -366,7 +367,7 @@ final class BrightnessScene: BaseLevelScene, SKPhysicsContactDelegate {
     }
 
     private func drawSunRays() {
-        let sunCenter = CGPoint(x: size.width - 100, y: size.height - 80)
+        let sunCenter = CGPoint(x: size.width - 100, y: topSafeY - 50)
 
         // Sun circle
         let sun = SKShapeNode(circleOfRadius: 25)
@@ -553,7 +554,7 @@ final class BrightnessScene: BaseLevelScene, SKPhysicsContactDelegate {
         title.fontName = "Helvetica-Bold"
         title.fontSize = 28
         title.fontColor = strokeColor
-        title.position = CGPoint(x: 80, y: size.height - 60)
+        title.position = CGPoint(x: 80, y: topSafeY - 30)
         title.horizontalAlignmentMode = .left
         title.zPosition = 100
         addChild(title)
@@ -577,19 +578,19 @@ final class BrightnessScene: BaseLevelScene, SKPhysicsContactDelegate {
 
         // Starting platform (always visible)
         let startPlatform = createPlatform(
-            at: CGPoint(x: 100, y: groundY),
-            size: CGSize(width: 140, height: 40),
+            at: CGPoint(x: 50, y: groundY),
+            size: CGSize(width: 80, height: 40),
             isUV: false
         )
         startPlatform.name = "start_platform"
 
-        // UV-reactive staircase platforms
+        // UV-reactive staircase. Fits a 390-pt iPhone canvas; each rise
+        // is 40 pt (< 72-pt max jump) with edge-to-edge gaps ≤20 pt.
         let platformData: [(CGPoint, CGSize)] = [
-            (CGPoint(x: 220, y: groundY + 50), CGSize(width: 90, height: 25)),
-            (CGPoint(x: 340, y: groundY + 110), CGSize(width: 90, height: 25)),
-            (CGPoint(x: 460, y: groundY + 170), CGSize(width: 90, height: 25)),
-            (CGPoint(x: 580, y: groundY + 230), CGSize(width: 90, height: 25)),
-            (CGPoint(x: 680, y: groundY + 290), CGSize(width: 120, height: 35)),
+            (CGPoint(x: 135, y: groundY + 40), CGSize(width: 55, height: 25)),
+            (CGPoint(x: 210, y: groundY + 80), CGSize(width: 55, height: 25)),
+            (CGPoint(x: 285, y: groundY + 120), CGSize(width: 55, height: 25)),
+            (CGPoint(x: 345, y: groundY + 160), CGSize(width: 65, height: 35)),
         ]
 
         for (position, pSize) in platformData {
@@ -598,7 +599,7 @@ final class BrightnessScene: BaseLevelScene, SKPhysicsContactDelegate {
         }
 
         // Exit door on final platform
-        createExitDoor(at: CGPoint(x: 660, y: groundY + 330))
+        createExitDoor(at: CGPoint(x: 345, y: groundY + 210))
 
         // Death zone
         let deathZone = SKNode()
@@ -909,7 +910,7 @@ final class BrightnessScene: BaseLevelScene, SKPhysicsContactDelegate {
 
     private func showInstructionPanel() {
         instructionPanel = SKNode()
-        instructionPanel?.position = CGPoint(x: 140, y: size.height - 150)
+        instructionPanel?.position = CGPoint(x: 140, y: topSafeY - 120)
         instructionPanel?.zPosition = 200
         addChild(instructionPanel!)
 
@@ -1048,7 +1049,7 @@ final class BrightnessScene: BaseLevelScene, SKPhysicsContactDelegate {
     // MARK: - Bit Setup
 
     private func setupBit() {
-        spawnPoint = CGPoint(x: 90, y: 200)
+        spawnPoint = CGPoint(x: 50, y: 200)
 
         bit = BitCharacter.make()
         bit.position = spawnPoint

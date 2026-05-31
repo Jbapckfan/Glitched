@@ -70,7 +70,7 @@ final class StorageSpaceScene: BaseLevelScene, SKPhysicsContactDelegate {
         title.fontName = "Helvetica-Bold"
         title.fontSize = 28
         title.fontColor = strokeColor
-        title.position = CGPoint(x: 80, y: size.height - 60)
+        title.position = CGPoint(x: 80, y: topSafeY - 30)
         title.horizontalAlignmentMode = .left
         title.zPosition = 100
         addChild(title)
@@ -214,7 +214,7 @@ final class StorageSpaceScene: BaseLevelScene, SKPhysicsContactDelegate {
         storageLabel.fontName = "Menlo-Bold"
         storageLabel.fontSize = 12
         storageLabel.fontColor = strokeColor
-        storageLabel.position = CGPoint(x: size.width / 2, y: size.height - 40)
+        storageLabel.position = CGPoint(x: size.width / 2, y: topSafeY - 10)
         storageLabel.zPosition = 200
         addChild(storageLabel)
 
@@ -263,7 +263,7 @@ final class StorageSpaceScene: BaseLevelScene, SKPhysicsContactDelegate {
 
     private func showInstructionPanel() {
         let panel = SKNode()
-        panel.position = CGPoint(x: size.width / 2, y: size.height - 120)
+        panel.position = CGPoint(x: size.width / 2, y: topSafeY - 90)
         panel.zPosition = 300
         addChild(panel)
 

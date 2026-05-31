@@ -121,7 +121,7 @@ final class FlashlightScene: BaseLevelScene, SKPhysicsContactDelegate {
 
         // Cave ceiling line — a long irregular path across the top
         let ceilingPath = CGMutablePath()
-        ceilingPath.move(to: CGPoint(x: -50, y: size.height - 40))
+        ceilingPath.move(to: CGPoint(x: -50, y: topSafeY - 10))
         var x: CGFloat = 0
         while x <= levelWidth + 50 {
             let y = size.height - 40 + CGFloat.random(in: -15...15)
@@ -177,7 +177,7 @@ final class FlashlightScene: BaseLevelScene, SKPhysicsContactDelegate {
         title.fontName = "Helvetica-Bold"
         title.fontSize = 28
         title.fontColor = strokeColor
-        title.position = CGPoint(x: 80, y: size.height - 60)
+        title.position = CGPoint(x: 80, y: topSafeY - 30)
         title.horizontalAlignmentMode = .left
         title.zPosition = 100
         levelContainer.addChild(title)
@@ -198,7 +198,7 @@ final class FlashlightScene: BaseLevelScene, SKPhysicsContactDelegate {
         subtitle.fontSize = 10
         subtitle.fontColor = strokeColor
         subtitle.alpha = 0.6
-        subtitle.position = CGPoint(x: 80, y: size.height - 82)
+        subtitle.position = CGPoint(x: 80, y: topSafeY - 52)
         subtitle.horizontalAlignmentMode = .left
         subtitle.zPosition = 100
         levelContainer.addChild(subtitle)
@@ -258,8 +258,8 @@ final class FlashlightScene: BaseLevelScene, SKPhysicsContactDelegate {
         }
 
         // Small stalactite decoration above start
-        createDecorativeStalactite(at: CGPoint(x: 100, y: size.height - 50), length: 30)
-        createDecorativeStalactite(at: CGPoint(x: 200, y: size.height - 45), length: 40)
+        createDecorativeStalactite(at: CGPoint(x: 100, y: topSafeY - 20), length: 30)
+        createDecorativeStalactite(at: CGPoint(x: 200, y: topSafeY - 15), length: 40)
     }
 
     // MARK: Section 2 — Stalactite Gauntlet
@@ -282,7 +282,7 @@ final class FlashlightScene: BaseLevelScene, SKPhysicsContactDelegate {
 
         for data in stalactitePositions {
             createStalactiteHazard(
-                at: CGPoint(x: data.x, y: size.height - 45),
+                at: CGPoint(x: data.x, y: topSafeY - 15),
                 length: data.length,
                 gapFromFloor: data.gap
             )
@@ -336,9 +336,9 @@ final class FlashlightScene: BaseLevelScene, SKPhysicsContactDelegate {
         }
 
         // A few small stalactites to keep players on their toes
-        createDecorativeStalactite(at: CGPoint(x: 1100, y: size.height - 50), length: 50)
-        createDecorativeStalactite(at: CGPoint(x: 1400, y: size.height - 40), length: 60)
-        createDecorativeStalactite(at: CGPoint(x: 1650, y: size.height - 55), length: 45)
+        createDecorativeStalactite(at: CGPoint(x: 1100, y: topSafeY - 20), length: 50)
+        createDecorativeStalactite(at: CGPoint(x: 1400, y: topSafeY - 10), length: 60)
+        createDecorativeStalactite(at: CGPoint(x: 1650, y: topSafeY - 25), length: 45)
 
         // Creature hiding in a pit
         createCaveCreature(at: CGPoint(x: 1380, y: groundY - 30))
@@ -372,7 +372,7 @@ final class FlashlightScene: BaseLevelScene, SKPhysicsContactDelegate {
 
         for data in stalactites {
             createStalactiteHazard(
-                at: CGPoint(x: data.x, y: size.height - 45),
+                at: CGPoint(x: data.x, y: topSafeY - 15),
                 length: data.length,
                 gapFromFloor: 70
             )
@@ -405,7 +405,7 @@ final class FlashlightScene: BaseLevelScene, SKPhysicsContactDelegate {
 
         // Cave creatures
         createCaveCreature(at: CGPoint(x: 2200, y: groundY + 35))
-        createCaveCreature(at: CGPoint(x: 2450, y: size.height - 130))
+        createCaveCreature(at: CGPoint(x: 2450, y: topSafeY - 100))
     }
 
     // MARK: Section 5 — Exit Area

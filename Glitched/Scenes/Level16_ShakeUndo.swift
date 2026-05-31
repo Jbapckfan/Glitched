@@ -50,7 +50,7 @@ final class ShakeUndoScene: BaseLevelScene, SKPhysicsContactDelegate {
         // Clock/time motif
         for i in 0..<3 {
             let clock = createClockIcon(size: 30)
-            clock.position = CGPoint(x: CGFloat(i + 1) * size.width / 4, y: size.height - 80)
+            clock.position = CGPoint(x: CGFloat(i + 1) * size.width / 4, y: topSafeY - 50)
             clock.alpha = 0.15
             addChild(clock)
         }
@@ -93,7 +93,7 @@ final class ShakeUndoScene: BaseLevelScene, SKPhysicsContactDelegate {
         title.fontName = "Helvetica-Bold"
         title.fontSize = 28
         title.fontColor = strokeColor
-        title.position = CGPoint(x: 80, y: size.height - 60)
+        title.position = CGPoint(x: 80, y: topSafeY - 30)
         title.horizontalAlignmentMode = .left
         title.zPosition = 100
         addChild(title)
@@ -102,19 +102,18 @@ final class ShakeUndoScene: BaseLevelScene, SKPhysicsContactDelegate {
     private func buildLevel() {
         let groundY: CGFloat = 160
 
-        // Start
-        createPlatform(at: CGPoint(x: 80, y: groundY), size: CGSize(width: 100, height: 30))
+        // Fits a 390-pt iPhone canvas. The moving platform oscillates ±40 pt
+        // around y=240 (low point 200 → top 210). Every gap ≤30 pt and
+        // every rise ≤45 pt fits inside the 72-pt max jump.
+        createPlatform(at: CGPoint(x: 45, y: groundY), size: CGSize(width: 80, height: 30))
 
-        // Gap with moving platform
-        movingPlatform = createPlatform(at: CGPoint(x: 280, y: groundY + 80), size: CGSize(width: 60, height: 20))
+        movingPlatform = createPlatform(at: CGPoint(x: 160, y: groundY + 80), size: CGSize(width: 55, height: 20))
         movingPlatform.name = "moving"
 
-        // Tricky jump
-        createPlatform(at: CGPoint(x: 450, y: groundY + 40), size: CGSize(width: 80, height: 25))
+        createPlatform(at: CGPoint(x: 260, y: groundY + 40), size: CGSize(width: 60, height: 25))
 
-        // Exit
-        createPlatform(at: CGPoint(x: size.width - 80, y: groundY), size: CGSize(width: 100, height: 30))
-        createExitDoor(at: CGPoint(x: size.width - 60, y: groundY + 50))
+        createPlatform(at: CGPoint(x: size.width - 45, y: groundY), size: CGSize(width: 70, height: 30))
+        createExitDoor(at: CGPoint(x: size.width - 35, y: groundY + 50))
 
         // Death zone
         let death = SKNode()
@@ -145,7 +144,7 @@ final class ShakeUndoScene: BaseLevelScene, SKPhysicsContactDelegate {
 
     private func createUndoIndicator() {
         undoIcon = SKNode()
-        undoIcon.position = CGPoint(x: size.width - 60, y: size.height - 50)
+        undoIcon.position = CGPoint(x: size.width - 60, y: topSafeY - 20)
         undoIcon.zPosition = 200
         addChild(undoIcon)
 
@@ -198,7 +197,7 @@ final class ShakeUndoScene: BaseLevelScene, SKPhysicsContactDelegate {
 
     private func showInstructionPanel() {
         let panel = SKNode()
-        panel.position = CGPoint(x: size.width / 2, y: size.height - 120)
+        panel.position = CGPoint(x: size.width / 2, y: topSafeY - 90)
         panel.zPosition = 300
         addChild(panel)
 
@@ -225,7 +224,7 @@ final class ShakeUndoScene: BaseLevelScene, SKPhysicsContactDelegate {
     }
 
     private func setupBit() {
-        spawnPoint = CGPoint(x: 80, y: 200)
+        spawnPoint = CGPoint(x: 45, y: 200)
         bit = BitCharacter.make()
         bit.position = spawnPoint
         addChild(bit)

@@ -57,7 +57,7 @@ final class BatteryPercentScene: BaseLevelScene, SKPhysicsContactDelegate {
         // Battery outline decoration
         for i in 0..<4 {
             let batteryIcon = createBatteryIcon(size: 20)
-            batteryIcon.position = CGPoint(x: CGFloat(i) * 150 + 100, y: size.height - 80)
+            batteryIcon.position = CGPoint(x: CGFloat(i) * 150 + 100, y: topSafeY - 50)
             batteryIcon.alpha = 0.1
             batteryIcon.zPosition = -10
             addChild(batteryIcon)
@@ -87,7 +87,7 @@ final class BatteryPercentScene: BaseLevelScene, SKPhysicsContactDelegate {
         title.fontName = "Helvetica-Bold"
         title.fontSize = 28
         title.fontColor = strokeColor
-        title.position = CGPoint(x: 80, y: size.height - 60)
+        title.position = CGPoint(x: 80, y: topSafeY - 30)
         title.horizontalAlignmentMode = .left
         title.zPosition = 100
         addChild(title)
@@ -241,7 +241,7 @@ final class BatteryPercentScene: BaseLevelScene, SKPhysicsContactDelegate {
         batteryLabel.fontName = "Menlo-Bold"
         batteryLabel.fontSize = 14
         batteryLabel.fontColor = strokeColor
-        batteryLabel.position = CGPoint(x: size.width / 2, y: size.height - 40)
+        batteryLabel.position = CGPoint(x: size.width / 2, y: topSafeY - 10)
         batteryLabel.zPosition = 200
         addChild(batteryLabel)
     }
@@ -271,7 +271,7 @@ final class BatteryPercentScene: BaseLevelScene, SKPhysicsContactDelegate {
 
     private func showInstructionPanel() {
         let panel = SKNode()
-        panel.position = CGPoint(x: size.width / 2, y: size.height - 120)
+        panel.position = CGPoint(x: size.width / 2, y: topSafeY - 90)
         panel.zPosition = 300
         addChild(panel)
 

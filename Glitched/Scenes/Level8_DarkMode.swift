@@ -115,7 +115,7 @@ final class DarkModeScene: BaseLevelScene, SKPhysicsContactDelegate {
 
     private func drawMoonDecoration() {
         // Large moon in background
-        let moonPos = CGPoint(x: size.width - 100, y: size.height - 120)
+        let moonPos = CGPoint(x: size.width - 100, y: topSafeY - 90)
 
         // Moon crescent
         let moonOuter = SKShapeNode(circleOfRadius: 40)
@@ -160,12 +160,12 @@ final class DarkModeScene: BaseLevelScene, SKPhysicsContactDelegate {
     private func drawStars() {
         // Small stars scattered
         let starPositions = [
-            CGPoint(x: 80, y: size.height - 100),
-            CGPoint(x: 150, y: size.height - 150),
-            CGPoint(x: 200, y: size.height - 80),
-            CGPoint(x: 300, y: size.height - 130),
-            CGPoint(x: 450, y: size.height - 90),
-            CGPoint(x: 520, y: size.height - 160)
+            CGPoint(x: 80, y: topSafeY - 70),
+            CGPoint(x: 150, y: topSafeY - 120),
+            CGPoint(x: 200, y: topSafeY - 50),
+            CGPoint(x: 300, y: topSafeY - 100),
+            CGPoint(x: 450, y: topSafeY - 60),
+            CGPoint(x: 520, y: topSafeY - 130)
         ]
 
         for (i, pos) in starPositions.enumerated() {
@@ -219,7 +219,7 @@ final class DarkModeScene: BaseLevelScene, SKPhysicsContactDelegate {
             beam.fillColor = fillColor
             beam.strokeColor = strokeColor
             beam.lineWidth = lineWidth * 0.5
-            beam.position = CGPoint(x: x, y: size.height - 17)
+            beam.position = CGPoint(x: x, y: topSafeY - 0)
             beam.zPosition = -30
             beam.name = "beam_\(Int(x))"
             addChild(beam)
@@ -266,7 +266,7 @@ final class DarkModeScene: BaseLevelScene, SKPhysicsContactDelegate {
         title.fontName = "Helvetica-Bold"
         title.fontSize = 28
         title.fontColor = strokeColor
-        title.position = CGPoint(x: 80, y: size.height - 60)
+        title.position = CGPoint(x: 80, y: topSafeY - 30)
         title.horizontalAlignmentMode = .left
         title.zPosition = 100
         title.name = "level_title"
@@ -679,7 +679,7 @@ final class DarkModeScene: BaseLevelScene, SKPhysicsContactDelegate {
 
     private func showInstructionPanel() {
         instructionPanel = SKNode()
-        instructionPanel?.position = CGPoint(x: 160, y: size.height - 150)
+        instructionPanel?.position = CGPoint(x: 160, y: topSafeY - 120)
         instructionPanel?.zPosition = 200
         addChild(instructionPanel!)
 

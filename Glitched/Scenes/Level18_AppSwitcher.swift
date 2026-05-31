@@ -67,7 +67,7 @@ final class AppSwitcherScene: BaseLevelScene, SKPhysicsContactDelegate {
         title.fontName = "Helvetica-Bold"
         title.fontSize = 28
         title.fontColor = strokeColor
-        title.position = CGPoint(x: 80, y: size.height - 60)
+        title.position = CGPoint(x: 80, y: topSafeY - 30)
         title.horizontalAlignmentMode = .left
         title.zPosition = 100
         addChild(title)
@@ -76,17 +76,16 @@ final class AppSwitcherScene: BaseLevelScene, SKPhysicsContactDelegate {
     private func buildLevel() {
         let groundY: CGFloat = 160
 
-        // Start
-        createPlatform(at: CGPoint(x: 80, y: groundY), size: CGSize(width: 100, height: 30))
+        // Fits a 390-pt iPhone canvas. Stepping stones are ≤ 25 pt apart
+        // with 30-pt rise/drop — well inside the 72-pt jump height.
+        createPlatform(at: CGPoint(x: 45, y: groundY), size: CGSize(width: 80, height: 30))
 
-        // Stepping stones through hazard gauntlet
-        createPlatform(at: CGPoint(x: 200, y: groundY + 30), size: CGSize(width: 60, height: 20))
-        createPlatform(at: CGPoint(x: 320, y: groundY + 60), size: CGSize(width: 60, height: 20))
-        createPlatform(at: CGPoint(x: 440, y: groundY + 30), size: CGSize(width: 60, height: 20))
+        createPlatform(at: CGPoint(x: 125, y: groundY + 30), size: CGSize(width: 55, height: 20))
+        createPlatform(at: CGPoint(x: 200, y: groundY + 60), size: CGSize(width: 55, height: 20))
+        createPlatform(at: CGPoint(x: 275, y: groundY + 30), size: CGSize(width: 55, height: 20))
 
-        // Exit
-        createPlatform(at: CGPoint(x: size.width - 80, y: groundY), size: CGSize(width: 100, height: 30))
-        createExitDoor(at: CGPoint(x: size.width - 60, y: groundY + 50))
+        createPlatform(at: CGPoint(x: size.width - 45, y: groundY), size: CGSize(width: 80, height: 30))
+        createExitDoor(at: CGPoint(x: size.width - 35, y: groundY + 50))
 
         // Death zone
         let death = SKNode()
@@ -115,12 +114,13 @@ final class AppSwitcherScene: BaseLevelScene, SKPhysicsContactDelegate {
     }
 
     private func createHazards() {
-        // Multiple fast-moving spikes that are hard to time without peeking
+        // Multiple fast-moving spikes that are hard to time without peeking.
+        // Positions and oscillation ranges fit a 390-pt iPhone canvas and
+        // are kept clear of the exit plateau on narrow iPhones (≥375 pt).
         let hazardData: [(pos: CGPoint, range: CGFloat, speed: TimeInterval)] = [
-            (CGPoint(x: 150, y: 280), 80, 0.8),
-            (CGPoint(x: 260, y: 240), 100, 0.6),
-            (CGPoint(x: 380, y: 300), 90, 0.7),
-            (CGPoint(x: 500, y: 250), 70, 0.5)
+            (CGPoint(x: 130, y: 235), 40, 0.8),
+            (CGPoint(x: 200, y: 265), 50, 0.6),
+            (CGPoint(x: 275, y: 240), 45, 0.7)
         ]
 
         for (index, data) in hazardData.enumerated() {
@@ -203,7 +203,7 @@ final class AppSwitcherScene: BaseLevelScene, SKPhysicsContactDelegate {
 
     private func showInstructionPanel() {
         let panel = SKNode()
-        panel.position = CGPoint(x: size.width / 2, y: size.height - 120)
+        panel.position = CGPoint(x: size.width / 2, y: topSafeY - 90)
         panel.zPosition = 300
         addChild(panel)
 
@@ -230,7 +230,7 @@ final class AppSwitcherScene: BaseLevelScene, SKPhysicsContactDelegate {
     }
 
     private func setupBit() {
-        spawnPoint = CGPoint(x: 80, y: 200)
+        spawnPoint = CGPoint(x: 45, y: 200)
         bit = BitCharacter.make()
         bit.position = spawnPoint
         addChild(bit)

@@ -70,7 +70,7 @@ final class TimeOfDayScene: BaseLevelScene, SKPhysicsContactDelegate {
         // Clock face decorations
         for i in 0..<5 {
             let clock = createClockIcon(radius: 12)
-            clock.position = CGPoint(x: CGFloat(i) * 120 + 80, y: size.height - 80)
+            clock.position = CGPoint(x: CGFloat(i) * 120 + 80, y: topSafeY - 50)
             clock.alpha = 0.1
             clock.zPosition = -10
             addChild(clock)
@@ -110,7 +110,7 @@ final class TimeOfDayScene: BaseLevelScene, SKPhysicsContactDelegate {
         title.fontName = "Helvetica-Bold"
         title.fontSize = 28
         title.fontColor = strokeColor
-        title.position = CGPoint(x: 80, y: size.height - 60)
+        title.position = CGPoint(x: 80, y: topSafeY - 30)
         title.horizontalAlignmentMode = .left
         title.zPosition = 100
         addChild(title)
@@ -119,17 +119,16 @@ final class TimeOfDayScene: BaseLevelScene, SKPhysicsContactDelegate {
     private func buildLevel() {
         let groundY: CGFloat = 160
 
-        // Start platform
-        createPlatform(at: CGPoint(x: 80, y: groundY), size: CGSize(width: 120, height: 30))
+        // Fits a 390-pt iPhone canvas. Each gap ≤ 17.5 pt with rises ≤ 20 pt —
+        // well under the 72-pt max jump height.
+        createPlatform(at: CGPoint(x: 45, y: groundY), size: CGSize(width: 80, height: 30))
 
-        // Platforming section with enemy patrol areas
-        createPlatform(at: CGPoint(x: 220, y: groundY + 20), size: CGSize(width: 100, height: 25))
-        createPlatform(at: CGPoint(x: 370, y: groundY + 50), size: CGSize(width: 120, height: 25))
-        createPlatform(at: CGPoint(x: 500, y: groundY + 30), size: CGSize(width: 80, height: 25))
+        createPlatform(at: CGPoint(x: 130, y: groundY + 20), size: CGSize(width: 65, height: 25))
+        createPlatform(at: CGPoint(x: 215, y: groundY + 40), size: CGSize(width: 70, height: 25))
+        createPlatform(at: CGPoint(x: 290, y: groundY + 25), size: CGSize(width: 50, height: 25))
 
-        // Exit platform
-        createPlatform(at: CGPoint(x: size.width - 80, y: groundY), size: CGSize(width: 120, height: 30))
-        createExitDoor(at: CGPoint(x: size.width - 60, y: groundY + 50))
+        createPlatform(at: CGPoint(x: size.width - 40, y: groundY), size: CGSize(width: 70, height: 30))
+        createExitDoor(at: CGPoint(x: size.width - 30, y: groundY + 50))
 
         // Death zone
         let death = SKNode()
@@ -160,11 +159,12 @@ final class TimeOfDayScene: BaseLevelScene, SKPhysicsContactDelegate {
     private func createEnemies() {
         let groundY: CGFloat = 160
 
-        // Enemy patrol data: position, patrol range
+        // Enemy patrol data: position, patrol range. Positions match the
+        // new iPhone-fit platform layout (platforms at x = 130, 215, 290).
         let enemyData: [(pos: CGPoint, range: CGFloat)] = [
-            (CGPoint(x: 220, y: groundY + 55), 40),
-            (CGPoint(x: 370, y: groundY + 85), 50),
-            (CGPoint(x: 500, y: groundY + 65), 30),
+            (CGPoint(x: 130, y: groundY + 55), 25),
+            (CGPoint(x: 215, y: groundY + 75), 30),
+            (CGPoint(x: 290, y: groundY + 60), 20),
         ]
 
         for (index, data) in enemyData.enumerated() {
@@ -260,7 +260,7 @@ final class TimeOfDayScene: BaseLevelScene, SKPhysicsContactDelegate {
         timeLabel.fontName = "Menlo-Bold"
         timeLabel.fontSize = 16
         timeLabel.fontColor = strokeColor
-        timeLabel.position = CGPoint(x: size.width / 2, y: size.height - 40)
+        timeLabel.position = CGPoint(x: size.width / 2, y: topSafeY - 10)
         timeLabel.zPosition = 200
         addChild(timeLabel)
 
@@ -268,7 +268,7 @@ final class TimeOfDayScene: BaseLevelScene, SKPhysicsContactDelegate {
         modeLabel.fontName = "Menlo"
         modeLabel.fontSize = 10
         modeLabel.fontColor = strokeColor
-        modeLabel.position = CGPoint(x: size.width / 2, y: size.height - 55)
+        modeLabel.position = CGPoint(x: size.width / 2, y: topSafeY - 25)
         modeLabel.zPosition = 200
         addChild(modeLabel)
     }
@@ -298,7 +298,7 @@ final class TimeOfDayScene: BaseLevelScene, SKPhysicsContactDelegate {
 
     private func showInstructionPanel() {
         let panel = SKNode()
-        panel.position = CGPoint(x: size.width / 2, y: size.height - 120)
+        panel.position = CGPoint(x: size.width / 2, y: topSafeY - 90)
         panel.zPosition = 300
         addChild(panel)
 
@@ -325,7 +325,7 @@ final class TimeOfDayScene: BaseLevelScene, SKPhysicsContactDelegate {
     }
 
     private func setupBit() {
-        spawnPoint = CGPoint(x: 80, y: 200)
+        spawnPoint = CGPoint(x: 45, y: 200)
         bit = BitCharacter.make()
         bit.position = spawnPoint
         addChild(bit)

@@ -45,7 +45,7 @@ final class AirplaneModeScene: BaseLevelScene, SKPhysicsContactDelegate {
         for i in 0..<4 {
             let cloud = createCloud()
             cloud.position = CGPoint(x: CGFloat(i + 1) * size.width / 5,
-                                     y: size.height - 100 - CGFloat(i % 2) * 50)
+                                     y: topSafeY - 70 - CGFloat(i % 2) * 50)
             cloud.alpha = 0.15
             cloud.zPosition = -10
             addChild(cloud)
@@ -83,7 +83,7 @@ final class AirplaneModeScene: BaseLevelScene, SKPhysicsContactDelegate {
         title.fontName = "Helvetica-Bold"
         title.fontSize = 28
         title.fontColor = strokeColor
-        title.position = CGPoint(x: 80, y: size.height - 60)
+        title.position = CGPoint(x: 80, y: topSafeY - 30)
         title.horizontalAlignmentMode = .left
         title.zPosition = 100
         addChild(title)
@@ -92,20 +92,27 @@ final class AirplaneModeScene: BaseLevelScene, SKPhysicsContactDelegate {
     private func buildLevel() {
         let groundY: CGFloat = 160
 
-        // Start platform (solid)
-        createPlatform(at: CGPoint(x: 80, y: groundY), size: CGSize(width: 100, height: 30), isFlying: false)
+        // Fits a 390-pt iPhone canvas. When airplane mode is OFF the flying
+        // platforms sit below ground (unusable). When ON they rise to
+        // cascading heights: rises between consecutive platforms stay at
+        // 60 pt (< 72-pt max jump) so the upward path is reachable.
+        createPlatform(at: CGPoint(x: 45, y: groundY), size: CGSize(width: 70, height: 30), isFlying: false)
 
-        // Flying platforms - store both landed and flying positions
+        // Landed y sits inside the death plane (y = -100...0), so if
+        // Airplane Mode is OFF the platforms aren't usable: dropping off
+        // the start platform to reach them lands the player in the death
+        // zone before they can touch a platform top. Toggling the mode ON
+        // is the only way to raise the platforms into a walkable position.
         let flyingData: [(landed: CGPoint, flying: CGPoint, size: CGSize)] = [
-            (landed: CGPoint(x: 220, y: groundY - 20),
-             flying: CGPoint(x: 220, y: groundY + 100),
-             size: CGSize(width: 70, height: 25)),
-            (landed: CGPoint(x: 380, y: groundY - 20),
-             flying: CGPoint(x: 380, y: groundY + 180),
-             size: CGSize(width: 70, height: 25)),
-            (landed: CGPoint(x: 520, y: groundY - 20),
-             flying: CGPoint(x: 520, y: groundY + 80),
-             size: CGSize(width: 70, height: 25))
+            (landed: CGPoint(x: 130, y: -60),
+             flying: CGPoint(x: 130, y: groundY + 60),
+             size: CGSize(width: 55, height: 25)),
+            (landed: CGPoint(x: 205, y: -60),
+             flying: CGPoint(x: 205, y: groundY + 120),
+             size: CGSize(width: 55, height: 25)),
+            (landed: CGPoint(x: 280, y: -60),
+             flying: CGPoint(x: 280, y: groundY + 80),
+             size: CGSize(width: 55, height: 25))
         ]
 
         for data in flyingData {
@@ -115,9 +122,8 @@ final class AirplaneModeScene: BaseLevelScene, SKPhysicsContactDelegate {
             flyingPlatforms.append(platform)
         }
 
-        // Exit platform (solid, but high up)
-        createPlatform(at: CGPoint(x: size.width - 80, y: groundY + 200), size: CGSize(width: 100, height: 30), isFlying: false)
-        createExitDoor(at: CGPoint(x: size.width - 60, y: groundY + 250))
+        createPlatform(at: CGPoint(x: size.width - 45, y: groundY + 140), size: CGSize(width: 70, height: 30), isFlying: false)
+        createExitDoor(at: CGPoint(x: size.width - 35, y: groundY + 190))
 
         // Death zone
         let death = SKNode()
@@ -189,7 +195,7 @@ final class AirplaneModeScene: BaseLevelScene, SKPhysicsContactDelegate {
 
     private func createAirplaneIndicator() {
         airplaneIcon = SKNode()
-        airplaneIcon.position = CGPoint(x: size.width - 60, y: size.height - 50)
+        airplaneIcon.position = CGPoint(x: size.width - 60, y: topSafeY - 20)
         airplaneIcon.zPosition = 200
         addChild(airplaneIcon)
 
@@ -236,7 +242,7 @@ final class AirplaneModeScene: BaseLevelScene, SKPhysicsContactDelegate {
 
     private func showInstructionPanel() {
         let panel = SKNode()
-        panel.position = CGPoint(x: size.width / 2, y: size.height - 120)
+        panel.position = CGPoint(x: size.width / 2, y: topSafeY - 90)
         panel.zPosition = 300
         addChild(panel)
 
@@ -263,7 +269,7 @@ final class AirplaneModeScene: BaseLevelScene, SKPhysicsContactDelegate {
     }
 
     private func setupBit() {
-        spawnPoint = CGPoint(x: 80, y: 200)
+        spawnPoint = CGPoint(x: 45, y: 200)
         bit = BitCharacter.make()
         bit.position = spawnPoint
         addChild(bit)

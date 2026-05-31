@@ -141,8 +141,8 @@ final class ScreenshotScene: BaseLevelScene, SKPhysicsContactDelegate {
     private func drawFlashBulbs() {
         // Flash bulb icons
         let positions = [
-            CGPoint(x: 100, y: size.height - 120),
-            CGPoint(x: size.width - 100, y: size.height - 100)
+            CGPoint(x: 100, y: topSafeY - 90),
+            CGPoint(x: size.width - 100, y: topSafeY - 70)
         ]
 
         for pos in positions {
@@ -189,7 +189,7 @@ final class ScreenshotScene: BaseLevelScene, SKPhysicsContactDelegate {
             beam.fillColor = fillColor
             beam.strokeColor = strokeColor
             beam.lineWidth = lineWidth * 0.5
-            beam.position = CGPoint(x: x, y: size.height - 17)
+            beam.position = CGPoint(x: x, y: topSafeY - 0)
             beam.zPosition = -25
             addChild(beam)
 
@@ -203,7 +203,7 @@ final class ScreenshotScene: BaseLevelScene, SKPhysicsContactDelegate {
             bracket.path = bracketPath
             bracket.strokeColor = strokeColor
             bracket.lineWidth = lineWidth * 0.4
-            bracket.position = CGPoint(x: x, y: size.height - 17)
+            bracket.position = CGPoint(x: x, y: topSafeY - 0)
             bracket.zPosition = -24
             addChild(bracket)
         }
@@ -214,7 +214,7 @@ final class ScreenshotScene: BaseLevelScene, SKPhysicsContactDelegate {
         title.fontName = "Helvetica-Bold"
         title.fontSize = 28
         title.fontColor = strokeColor
-        title.position = CGPoint(x: 80, y: size.height - 60)
+        title.position = CGPoint(x: 80, y: topSafeY - 30)
         title.horizontalAlignmentMode = .left
         title.zPosition = 100
         addChild(title)
@@ -520,7 +520,7 @@ final class ScreenshotScene: BaseLevelScene, SKPhysicsContactDelegate {
 
     private func showInstructionPanel() {
         instructionPanel = SKNode()
-        instructionPanel?.position = CGPoint(x: size.width / 2, y: size.height - 130)
+        instructionPanel?.position = CGPoint(x: size.width / 2, y: topSafeY - 100)
         instructionPanel?.zPosition = 200
         addChild(instructionPanel!)
 
@@ -575,7 +575,7 @@ final class ScreenshotScene: BaseLevelScene, SKPhysicsContactDelegate {
 
     private func showTimer() {
         timerDisplay = SKNode()
-        timerDisplay?.position = CGPoint(x: size.width / 2, y: size.height - 80)
+        timerDisplay?.position = CGPoint(x: size.width / 2, y: topSafeY - 50)
         timerDisplay?.zPosition = 200
         addChild(timerDisplay!)
 

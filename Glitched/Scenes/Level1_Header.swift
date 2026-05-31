@@ -422,7 +422,7 @@ final class HeaderScene: BaseLevelScene, SKPhysicsContactDelegate {
         glitchLabel.text = "HEY, I NEEDED THAT."
         glitchLabel.fontSize = 14
         glitchLabel.fontColor = strokeColor
-        glitchLabel.position = CGPoint(x: size.width / 2 + 50, y: size.height - 130)
+        glitchLabel.position = CGPoint(x: size.width / 2 + 50, y: topSafeY - 100)
         glitchLabel.zPosition = 100
         glitchLabel.alpha = 0
         addChild(glitchLabel)

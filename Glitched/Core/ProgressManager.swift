@@ -71,16 +71,25 @@ final class ProgressManager {
     #if DEBUG
     /// Isolated instance for unit tests to avoid wiping real player data
     static var testInstance: ProgressManager {
-        ProgressManager(localStore: MockProgressStorage(), cloudStore: MockProgressStorage())
+        ProgressManager(
+            localStore: MockProgressStorage(),
+            cloudStore: MockProgressStorage(),
+            unlockAllOverride: false
+        )
     }
     #endif
 
     private let storageKey = "PlayerProgress_v1"
     private let defaults: ProgressStorage
     private let ubiquitousStore: ProgressStorage?
+    private let unlockAllOverride: Bool?
     private var cached: PlayerProgress?
 
     private var isTestUnlockEnabled: Bool {
+        if let unlockAllOverride {
+            return unlockAllOverride
+        }
+
         if let override = Bundle.main.object(forInfoDictionaryKey: "GLITCHED_UNLOCK_ALL_LEVELS") as? NSNumber {
             return override.boolValue
         }
@@ -92,9 +101,10 @@ final class ProgressManager {
         #endif
     }
 
-    init(localStore: ProgressStorage, cloudStore: ProgressStorage?) {
+    init(localStore: ProgressStorage, cloudStore: ProgressStorage?, unlockAllOverride: Bool? = nil) {
         self.defaults = localStore
         self.ubiquitousStore = cloudStore
+        self.unlockAllOverride = unlockAllOverride
     }
 
     func load() -> PlayerProgress {

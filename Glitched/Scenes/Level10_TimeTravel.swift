@@ -71,7 +71,7 @@ final class TimeTravelScene: BaseLevelScene, SKPhysicsContactDelegate {
     }
 
     private func drawClockFace() {
-        let clockCenter = CGPoint(x: 100, y: size.height - 150)
+        let clockCenter = CGPoint(x: 100, y: topSafeY - 120)
         let clockRadius: CGFloat = 50
 
         // Clock circle
@@ -169,23 +169,26 @@ final class TimeTravelScene: BaseLevelScene, SKPhysicsContactDelegate {
             beam.fillColor = fillColor
             beam.strokeColor = strokeColor
             beam.lineWidth = lineWidth * 0.5
-            beam.position = CGPoint(x: x, y: size.height - 17)
+            beam.position = CGPoint(x: x, y: topSafeY - 0)
             beam.zPosition = -25
             addChild(beam)
             lineElements.append(beam)
         }
     }
 
+    private var titleNode: SKLabelNode?
+    private var titleUnderline: SKShapeNode?
+
     private func setupLevelTitle() {
         let title = SKLabelNode(text: "LEVEL 10")
         title.fontName = "Helvetica-Bold"
         title.fontSize = 28
         title.fontColor = strokeColor
-        title.position = CGPoint(x: 80, y: size.height - 60)
         title.horizontalAlignmentMode = .left
         title.zPosition = 100
         addChild(title)
         lineElements.append(title)
+        titleNode = title
 
         let underline = SKShapeNode()
         let underlinePath = CGMutablePath()
@@ -194,10 +197,33 @@ final class TimeTravelScene: BaseLevelScene, SKPhysicsContactDelegate {
         underline.path = underlinePath
         underline.strokeColor = strokeColor
         underline.lineWidth = lineWidth
-        underline.position = title.position
         underline.zPosition = 100
         addChild(underline)
         lineElements.append(underline)
+        titleUnderline = underline
+
+        repositionTopHUD()
+    }
+
+    private func repositionTopHUD() {
+        guard size.width > 1, size.height > 1 else { return }
+        // Anchor the title 32pt below the safe-area top so the Dynamic Island
+        // / status bar can never clip it on iPhone, and so the iPad's larger
+        // canvas doesn't push it absurdly far down.
+        let titleY = topSafeY - 32
+        titleNode?.position = CGPoint(x: 80, y: titleY)
+        titleUnderline?.position = CGPoint(x: 80, y: titleY)
+
+        // Center the instruction panel below the title with breathing room.
+        // Panel is 100pt tall, so center at titleY - 76 puts the top at
+        // titleY - 26 (just below the title baseline) and the bottom at
+        // titleY - 126 — fully inside the visible area.
+        instructionPanel?.position = CGPoint(x: size.width / 2, y: titleY - 76)
+    }
+
+    override func didUpdateSafeArea() {
+        super.didUpdateSafeArea()
+        repositionTopHUD()
     }
 
     // MARK: - Level Building
@@ -582,7 +608,9 @@ final class TimeTravelScene: BaseLevelScene, SKPhysicsContactDelegate {
 
     private func showInstructionPanel() {
         instructionPanel = SKNode()
-        instructionPanel?.position = CGPoint(x: size.width / 2, y: size.height - 130)
+        // Initial position; repositioned by repositionTopHUD once safe-area
+        // insets and title geometry are known.
+        instructionPanel?.position = CGPoint(x: size.width / 2, y: topSafeY - 108)
         instructionPanel?.zPosition = 200
         addChild(instructionPanel!)
 

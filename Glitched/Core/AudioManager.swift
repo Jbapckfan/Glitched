@@ -22,6 +22,13 @@ final class AudioManager {
     private var musicVolume: Float = 0.7
 
     private init() {
+        #if DEBUG
+        if ProcessInfo.processInfo.arguments.contains("--glitched-disable-audio") {
+            isMuted = true
+            return
+        }
+        #endif
+
         setupAudioSession()
         setupAudioEngine()
         applySettings(ProgressManager.shared.load().settings)
@@ -369,19 +376,25 @@ final class AudioManager {
     }
 
     func pauseAmbientBed() {
-        guard !isAmbientPaused else { return }
+        guard !isMuted, !isAmbientPaused, ambientPlayers.indices.contains(activeAmbientIndex) else { return }
         ambientPlayers[activeAmbientIndex].pause()
         isAmbientPaused = true
     }
 
     func resumeAmbientBed() {
-        guard isAmbientPaused else { return }
+        guard !isMuted, isAmbientPaused, ambientPlayers.indices.contains(activeAmbientIndex) else { return }
         ambientPlayers[activeAmbientIndex].play()
         applyAmbientVolume()
         isAmbientPaused = false
     }
 
     func stopAmbientBed(fadeDuration: TimeInterval = 0.4) {
+        guard !ambientPlayers.isEmpty else {
+            currentAmbientWorld = nil
+            isAmbientPaused = false
+            return
+        }
+
         for player in ambientPlayers {
             rampVolume(for: player, to: 0, duration: fadeDuration) { [weak player] in
                 player?.stop()
@@ -463,6 +476,7 @@ final class AudioManager {
     }
 
     private func applyAmbientVolume() {
+        guard ambientPlayers.indices.contains(activeAmbientIndex) else { return }
         ambientPlayers[activeAmbientIndex].volume = musicVolume
     }
 

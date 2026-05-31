@@ -63,7 +63,7 @@ final class AirDropScene: BaseLevelScene, SKPhysicsContactDelegate {
             let arc = SKShapeNode()
             let path = CGMutablePath()
             let radius = CGFloat(20 + i * 12)
-            path.addArc(center: CGPoint(x: size.width / 2, y: size.height - 40),
+            path.addArc(center: CGPoint(x: size.width / 2, y: topSafeY - 10),
                         radius: radius,
                         startAngle: .pi * 0.7,
                         endAngle: .pi * 0.3,
@@ -82,7 +82,7 @@ final class AirDropScene: BaseLevelScene, SKPhysicsContactDelegate {
         title.fontName = "Helvetica-Bold"
         title.fontSize = 28
         title.fontColor = strokeColor
-        title.position = CGPoint(x: 80, y: size.height - 60)
+        title.position = CGPoint(x: 80, y: topSafeY - 30)
         title.horizontalAlignmentMode = .left
         title.zPosition = 100
         addChild(title)
@@ -250,7 +250,7 @@ final class AirDropScene: BaseLevelScene, SKPhysicsContactDelegate {
 
     private func showInstructionPanel() {
         let panel = SKNode()
-        panel.position = CGPoint(x: size.width / 2, y: size.height - 120)
+        panel.position = CGPoint(x: size.width / 2, y: topSafeY - 90)
         panel.zPosition = 300
         addChild(panel)
 

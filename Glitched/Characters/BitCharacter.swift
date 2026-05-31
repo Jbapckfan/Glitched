@@ -677,9 +677,11 @@ final class BitCharacter: SKSpriteNode {
     }
 
     func jump() {
-        guard let body = physicsBody, isGrounded else { return }
+        guard let body = physicsBody else { return }
 
-        // Cap existing upward velocity to prevent stacking jumps
+        // Cap existing upward velocity to prevent stacking jumps.
+        // (Grounded/coyote gating happens in PlayerController; guarding
+        // on isGrounded here breaks coyote time.)
         body.velocity.dy = min(body.velocity.dy, 0)
 
         // Apply jump impulse

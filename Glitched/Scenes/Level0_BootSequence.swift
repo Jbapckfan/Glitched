@@ -63,7 +63,7 @@ final class BootSequenceScene: BaseLevelScene {
     private func setupBootSequence() {
         bootTextContainer = SKNode()
         // Position at top-left relative to scene center
-        bootTextContainer.position = CGPoint(x: 40, y: size.height - 100)
+        bootTextContainer.position = CGPoint(x: 40, y: topSafeY - 70)
         addChild(bootTextContainer)
 
         // Add digital rain in background

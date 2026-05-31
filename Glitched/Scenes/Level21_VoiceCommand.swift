@@ -55,7 +55,7 @@ final class VoiceCommandScene: BaseLevelScene, SKPhysicsContactDelegate {
         // Soundwave pattern decoration
         for i in 0..<8 {
             let wave = createSoundwave(width: 30, height: CGFloat.random(in: 8...25))
-            wave.position = CGPoint(x: CGFloat(i) * 80 + 40, y: size.height - 80)
+            wave.position = CGPoint(x: CGFloat(i) * 80 + 40, y: topSafeY - 50)
             wave.alpha = 0.1
             wave.zPosition = -10
             addChild(wave)
@@ -83,7 +83,7 @@ final class VoiceCommandScene: BaseLevelScene, SKPhysicsContactDelegate {
         title.fontName = "Helvetica-Bold"
         title.fontSize = 28
         title.fontColor = strokeColor
-        title.position = CGPoint(x: 80, y: size.height - 60)
+        title.position = CGPoint(x: 80, y: topSafeY - 30)
         title.horizontalAlignmentMode = .left
         title.zPosition = 100
         addChild(title)
@@ -92,27 +92,27 @@ final class VoiceCommandScene: BaseLevelScene, SKPhysicsContactDelegate {
     private func buildLevel() {
         let groundY: CGFloat = 160
 
-        // Start platform
-        createPlatform(at: CGPoint(x: 80, y: groundY), size: CGSize(width: 140, height: 30))
+        // Fits a 390-pt iPhone canvas. Three voice commands gate progress:
+        //   BRIDGE spans a 130-pt chasm (> 115-pt max horizontal jump, so
+        //     the bridge mechanic is required and not jumpable).
+        //   OPEN unlocks a door blocking the middle section.
+        //   FLY briefly reduces gravity so the player can clear the ~97-pt
+        //     rise to the exit plateau (> 72-pt normal jump ceiling).
+        createPlatform(at: CGPoint(x: 45, y: groundY), size: CGSize(width: 70, height: 30))
 
-        // Gap - needs bridge (say "BRIDGE")
-        createBridge(at: CGPoint(x: 220, y: groundY), width: 120)
+        createBridge(at: CGPoint(x: 150, y: groundY), width: 140)
 
-        // Middle platform with locked door
-        createPlatform(at: CGPoint(x: 340, y: groundY), size: CGSize(width: 100, height: 30))
-        createLockedDoor(at: CGPoint(x: 390, y: groundY + 45))
+        createPlatform(at: CGPoint(x: 240, y: groundY), size: CGSize(width: 60, height: 30))
+        // Door centered at groundY+60 with a 90-pt frame spans y=175..265 —
+        // higher than the player's jump-apex body bottom (247), so it can't
+        // be cleared by jumping before OPEN is spoken.
+        createLockedDoor(at: CGPoint(x: 270, y: groundY + 60))
 
-        // Platform after door
-        createPlatform(at: CGPoint(x: 460, y: groundY), size: CGSize(width: 80, height: 30))
+        createPlatform(at: CGPoint(x: 300, y: groundY), size: CGSize(width: 40, height: 30))
 
-        // High platform (say "FLY" to reach)
-        createPlatform(at: CGPoint(x: 540, y: groundY + 100), size: CGSize(width: 100, height: 25))
+        createPlatform(at: CGPoint(x: size.width - 40, y: groundY + 100), size: CGSize(width: 70, height: 25))
+        createExitDoor(at: CGPoint(x: size.width - 30, y: groundY + 155))
 
-        // Exit platform
-        createPlatform(at: CGPoint(x: size.width - 80, y: groundY + 100), size: CGSize(width: 100, height: 25))
-        createExitDoor(at: CGPoint(x: size.width - 60, y: groundY + 155))
-
-        // Death zone
         let death = SKNode()
         death.position = CGPoint(x: size.width / 2, y: -50)
         death.physicsBody = SKPhysicsBody(rectangleOf: CGSize(width: size.width * 2, height: 100))
@@ -120,10 +120,9 @@ final class VoiceCommandScene: BaseLevelScene, SKPhysicsContactDelegate {
         death.physicsBody?.categoryBitMask = PhysicsCategory.hazard
         addChild(death)
 
-        // Command hint labels near puzzles
-        createHintLabel("SAY \"BRIDGE\"", at: CGPoint(x: 220, y: groundY + 40))
-        createHintLabel("SAY \"OPEN\"", at: CGPoint(x: 390, y: groundY + 90))
-        createHintLabel("SAY \"FLY\"", at: CGPoint(x: 500, y: groundY + 60))
+        createHintLabel("SAY \"BRIDGE\"", at: CGPoint(x: 150, y: groundY + 40))
+        createHintLabel("SAY \"OPEN\"", at: CGPoint(x: 270, y: groundY + 90))
+        createHintLabel("SAY \"FLY\"", at: CGPoint(x: 320, y: groundY + 70))
     }
 
     private func createPlatform(at position: CGPoint, size: CGSize) {
@@ -165,8 +164,10 @@ final class VoiceCommandScene: BaseLevelScene, SKPhysicsContactDelegate {
         door.position = position
         door.name = "locked_door"
 
-        // Door frame
-        let frame = SKShapeNode(rectOf: CGSize(width: 10, height: 60))
+        // Door frame — 90 pt tall so the top (y=265 at door center y=220)
+        // sits above the player's jump-apex body bottom (~247), preventing
+        // a skip-over before OPEN unlocks it.
+        let frame = SKShapeNode(rectOf: CGSize(width: 10, height: 90))
         frame.fillColor = strokeColor
         frame.strokeColor = strokeColor
         frame.lineWidth = lineWidth
@@ -189,7 +190,7 @@ final class VoiceCommandScene: BaseLevelScene, SKPhysicsContactDelegate {
 
         // Physical blocker
         doorBlocker = SKNode()
-        doorBlocker?.physicsBody = SKPhysicsBody(rectangleOf: CGSize(width: 10, height: 60))
+        doorBlocker?.physicsBody = SKPhysicsBody(rectangleOf: CGSize(width: 10, height: 90))
         doorBlocker?.physicsBody?.isDynamic = false
         doorBlocker?.physicsBody?.categoryBitMask = PhysicsCategory.ground
         door.addChild(doorBlocker!)
@@ -243,7 +244,7 @@ final class VoiceCommandScene: BaseLevelScene, SKPhysicsContactDelegate {
 
     private func createMicIndicator() {
         let container = SKNode()
-        container.position = CGPoint(x: size.width - 50, y: size.height - 50)
+        container.position = CGPoint(x: size.width - 50, y: topSafeY - 20)
         container.zPosition = 200
 
         // Mic body
@@ -293,7 +294,7 @@ final class VoiceCommandScene: BaseLevelScene, SKPhysicsContactDelegate {
 
     private func showInstructionPanel() {
         let panel = SKNode()
-        panel.position = CGPoint(x: size.width / 2, y: size.height - 120)
+        panel.position = CGPoint(x: size.width / 2, y: topSafeY - 90)
         panel.zPosition = 300
         addChild(panel)
 
@@ -320,7 +321,7 @@ final class VoiceCommandScene: BaseLevelScene, SKPhysicsContactDelegate {
     }
 
     private func setupBit() {
-        spawnPoint = CGPoint(x: 80, y: 200)
+        spawnPoint = CGPoint(x: 45, y: 200)
         bit = BitCharacter.make()
         bit.position = spawnPoint
         addChild(bit)
@@ -334,8 +335,10 @@ final class VoiceCommandScene: BaseLevelScene, SKPhysicsContactDelegate {
         guard !bridgeExtended, let bridge = bridgeNode else { return }
         bridgeExtended = true
 
-        // Add physics to bridge
-        bridge.physicsBody = SKPhysicsBody(rectangleOf: CGSize(width: 120, height: 12))
+        // Add physics to bridge. Width must match the visual span created
+        // in createBridge() so the walkable surface reaches from the start
+        // platform's right edge to the middle platform's left edge.
+        bridge.physicsBody = SKPhysicsBody(rectangleOf: CGSize(width: 140, height: 12))
         bridge.physicsBody?.isDynamic = false
         bridge.physicsBody?.categoryBitMask = PhysicsCategory.ground
 
@@ -387,6 +390,11 @@ final class VoiceCommandScene: BaseLevelScene, SKPhysicsContactDelegate {
 
     private func activateFly() {
         guard !flyActive else { return }
+        // Gate FLY behind the earlier commands so it can't be used to skip
+        // BRIDGE (chasm traversal) or OPEN (locked door). Without this,
+        // saying FLY at spawn launches the player high enough to clear the
+        // 130-pt BRIDGE chasm and the 90-pt OPEN door in one arc.
+        guard bridgeExtended && doorOpened else { return }
         flyActive = true
 
         // Brief reduced gravity + upward impulse
@@ -414,7 +422,7 @@ final class VoiceCommandScene: BaseLevelScene, SKPhysicsContactDelegate {
         label.fontName = "Menlo-Bold"
         label.fontSize = 10
         label.fontColor = strokeColor
-        label.position = CGPoint(x: size.width / 2, y: size.height - 160)
+        label.position = CGPoint(x: size.width / 2, y: topSafeY - 130)
         label.zPosition = 300
         addChild(label)
 
@@ -422,7 +430,7 @@ final class VoiceCommandScene: BaseLevelScene, SKPhysicsContactDelegate {
         label2.fontName = "Menlo"
         label2.fontSize = 10
         label2.fontColor = strokeColor
-        label2.position = CGPoint(x: size.width / 2, y: size.height - 175)
+        label2.position = CGPoint(x: size.width / 2, y: topSafeY - 145)
         label2.zPosition = 300
         label2.alpha = 0
         addChild(label2)

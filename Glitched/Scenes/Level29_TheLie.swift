@@ -72,7 +72,7 @@ final class TheLieScene: BaseLevelScene, SKPhysicsContactDelegate {
         title.fontName = "Helvetica-Bold"
         title.fontSize = 28
         title.fontColor = strokeColor
-        title.position = CGPoint(x: 80, y: size.height - 60)
+        title.position = CGPoint(x: 80, y: topSafeY - 30)
         title.horizontalAlignmentMode = .left
         title.zPosition = 100
         addChild(title)
@@ -83,7 +83,7 @@ final class TheLieScene: BaseLevelScene, SKPhysicsContactDelegate {
         subtitle.fontSize = 10
         subtitle.fontColor = strokeColor
         subtitle.alpha = 0.6
-        subtitle.position = CGPoint(x: 80, y: size.height - 82)
+        subtitle.position = CGPoint(x: 80, y: topSafeY - 52)
         subtitle.horizontalAlignmentMode = .left
         subtitle.zPosition = 100
         addChild(subtitle)
@@ -255,7 +255,7 @@ final class TheLieScene: BaseLevelScene, SKPhysicsContactDelegate {
 
     private func showInstructionPanel() {
         let panel = SKNode()
-        panel.position = CGPoint(x: size.width / 2, y: size.height - 120)
+        panel.position = CGPoint(x: size.width / 2, y: topSafeY - 90)
         panel.zPosition = 300
         addChild(panel)
 

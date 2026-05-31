@@ -86,7 +86,7 @@ final class AppReviewScene: BaseLevelScene, SKPhysicsContactDelegate {
         title.fontName = "Helvetica-Bold"
         title.fontSize = 28
         title.fontColor = strokeColor
-        title.position = CGPoint(x: 80, y: size.height - 60)
+        title.position = CGPoint(x: 80, y: topSafeY - 30)
         title.horizontalAlignmentMode = .left
         title.zPosition = 100
         addChild(title)
@@ -95,7 +95,7 @@ final class AppReviewScene: BaseLevelScene, SKPhysicsContactDelegate {
         subtitle.fontName = "Menlo-Bold"
         subtitle.fontSize = 12
         subtitle.fontColor = strokeColor
-        subtitle.position = CGPoint(x: 80, y: size.height - 85)
+        subtitle.position = CGPoint(x: 80, y: topSafeY - 55)
         subtitle.horizontalAlignmentMode = .left
         subtitle.zPosition = 100
         addChild(subtitle)
@@ -335,7 +335,7 @@ final class AppReviewScene: BaseLevelScene, SKPhysicsContactDelegate {
 
     private func showIntroPanel() {
         let panel = SKNode()
-        panel.position = CGPoint(x: size.width / 2, y: size.height - 130)
+        panel.position = CGPoint(x: size.width / 2, y: topSafeY - 100)
         panel.zPosition = 300
         addChild(panel)
         introSign = panel

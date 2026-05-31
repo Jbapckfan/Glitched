@@ -75,9 +75,9 @@ final class NotificationScene: BaseLevelScene, SKPhysicsContactDelegate {
 
     private func drawNotificationBubbles() {
         let bubblePositions = [
-            CGPoint(x: 80, y: size.height - 100),
-            CGPoint(x: size.width - 100, y: size.height - 80),
-            CGPoint(x: 150, y: size.height - 150),
+            CGPoint(x: 80, y: topSafeY - 70),
+            CGPoint(x: size.width - 100, y: topSafeY - 50),
+            CGPoint(x: 150, y: topSafeY - 120),
         ]
 
         for pos in bubblePositions {
@@ -111,8 +111,8 @@ final class NotificationScene: BaseLevelScene, SKPhysicsContactDelegate {
 
     private func drawBellDecorations() {
         let positions = [
-            CGPoint(x: size.width / 2 - 100, y: size.height - 60),
-            CGPoint(x: size.width / 2 + 100, y: size.height - 60)
+            CGPoint(x: size.width / 2 - 100, y: topSafeY - 30),
+            CGPoint(x: size.width / 2 + 100, y: topSafeY - 30)
         ]
 
         for pos in positions {
@@ -174,7 +174,7 @@ final class NotificationScene: BaseLevelScene, SKPhysicsContactDelegate {
         title.fontName = "Helvetica-Bold"
         title.fontSize = 28
         title.fontColor = strokeColor
-        title.position = CGPoint(x: 80, y: size.height - 60)
+        title.position = CGPoint(x: 80, y: topSafeY - 30)
         title.horizontalAlignmentMode = .left
         title.zPosition = 100
         addChild(title)
@@ -196,20 +196,20 @@ final class NotificationScene: BaseLevelScene, SKPhysicsContactDelegate {
     private func buildLevel() {
         let groundY: CGFloat = 160
 
-        // Start platform
-        createPlatform(at: CGPoint(x: 80, y: groundY), size: CGSize(width: 120, height: 30))
+        // Layout fits a 390-pt iPhone canvas. Gaps between platforms stay
+        // under the 115-pt max jump range; locked doors (65-pt tall) block
+        // forward travel because the player's 72-pt jump peak can't clear
+        // them even with the gap open.
+        createPlatform(at: CGPoint(x: 50, y: groundY), size: CGSize(width: 80, height: 30))
 
-        // First door platform
-        createPlatform(at: CGPoint(x: 250, y: groundY), size: CGSize(width: 100, height: 30))
-        doors.append(createLockedDoor(at: CGPoint(x: 300, y: groundY + 50), index: 0))
+        createPlatform(at: CGPoint(x: 160, y: groundY), size: CGSize(width: 60, height: 30))
+        doors.append(createLockedDoor(at: CGPoint(x: 190, y: groundY + 50), index: 0))
 
-        // Second door platform
-        createPlatform(at: CGPoint(x: 450, y: groundY), size: CGSize(width: 100, height: 30))
-        doors.append(createLockedDoor(at: CGPoint(x: 500, y: groundY + 50), index: 1))
+        createPlatform(at: CGPoint(x: 260, y: groundY), size: CGSize(width: 60, height: 30))
+        doors.append(createLockedDoor(at: CGPoint(x: 290, y: groundY + 50), index: 1))
 
-        // Exit platform
-        createPlatform(at: CGPoint(x: size.width - 80, y: groundY), size: CGSize(width: 100, height: 30))
-        createExitDoor(at: CGPoint(x: size.width - 60, y: groundY + 50))
+        createPlatform(at: CGPoint(x: size.width - 45, y: groundY), size: CGSize(width: 70, height: 30))
+        createExitDoor(at: CGPoint(x: size.width - 35, y: groundY + 50))
 
         // Death zone
         let deathZone = SKNode()
@@ -243,8 +243,10 @@ final class NotificationScene: BaseLevelScene, SKPhysicsContactDelegate {
         door.name = "locked_door_\(index)"
         addChild(door)
 
-        // Door frame
-        let frame = SKShapeNode(rectOf: CGSize(width: 45, height: 65))
+        // Door frame — 85 pt tall so the top (y ≈ 252 above a plat at y=160)
+        // sits above the player's jump-apex body bottom (~247), guaranteeing
+        // the door cannot be cleared with a running jump before it unlocks.
+        let frame = SKShapeNode(rectOf: CGSize(width: 45, height: 85))
         frame.fillColor = fillColor
         frame.strokeColor = strokeColor
         frame.lineWidth = lineWidth * 1.2
@@ -270,9 +272,9 @@ final class NotificationScene: BaseLevelScene, SKPhysicsContactDelegate {
         shackle.name = "lock_shackle"
         door.addChild(shackle)
 
-        // Blocking physics
+        // Blocking physics — must match frame height.
         let blocker = SKNode()
-        blocker.physicsBody = SKPhysicsBody(rectangleOf: CGSize(width: 45, height: 65))
+        blocker.physicsBody = SKPhysicsBody(rectangleOf: CGSize(width: 45, height: 85))
         blocker.physicsBody?.isDynamic = false
         blocker.physicsBody?.categoryBitMask = PhysicsCategory.ground
         blocker.name = "door_blocker"
@@ -284,7 +286,7 @@ final class NotificationScene: BaseLevelScene, SKPhysicsContactDelegate {
     private func createNotificationUI() {
         // Request notification button
         notificationButton = SKNode()
-        notificationButton.position = CGPoint(x: size.width / 2, y: size.height - 100)
+        notificationButton.position = CGPoint(x: size.width / 2, y: topSafeY - 70)
         notificationButton.zPosition = 200
         addChild(notificationButton)
 
@@ -377,7 +379,7 @@ final class NotificationScene: BaseLevelScene, SKPhysicsContactDelegate {
     // MARK: - Setup
 
     private func setupBit() {
-        spawnPoint = CGPoint(x: 80, y: 200)
+        spawnPoint = CGPoint(x: 50, y: 200)
         bit = BitCharacter.make()
         bit.position = spawnPoint
         addChild(bit)
@@ -470,7 +472,7 @@ final class NotificationScene: BaseLevelScene, SKPhysicsContactDelegate {
         fauxNotificationNode?.removeFromParent()
 
         let notif = SKNode()
-        notif.position = CGPoint(x: size.width / 2, y: size.height - 180)
+        notif.position = CGPoint(x: size.width / 2, y: topSafeY - 150)
         notif.zPosition = 600
         notif.name = "fauxNotification"
 
@@ -514,7 +516,7 @@ final class NotificationScene: BaseLevelScene, SKPhysicsContactDelegate {
 
     private func showWaitingIndicator() {
         waitingIndicator = SKNode()
-        waitingIndicator?.position = CGPoint(x: size.width / 2, y: size.height - 160)
+        waitingIndicator?.position = CGPoint(x: size.width / 2, y: topSafeY - 130)
         waitingIndicator?.zPosition = 200
         addChild(waitingIndicator!)
 

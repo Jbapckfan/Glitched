@@ -54,7 +54,7 @@ final class DeviceNameScene: BaseLevelScene, SKPhysicsContactDelegate {
         // Name tag decorations
         for i in 0..<5 {
             let tag = createNameTag(width: 40, height: 20)
-            tag.position = CGPoint(x: CGFloat(i) * 120 + 80, y: size.height - 80)
+            tag.position = CGPoint(x: CGFloat(i) * 120 + 80, y: topSafeY - 50)
             tag.alpha = 0.1
             tag.zPosition = -10
             addChild(tag)
@@ -84,7 +84,7 @@ final class DeviceNameScene: BaseLevelScene, SKPhysicsContactDelegate {
         title.fontName = "Helvetica-Bold"
         title.fontSize = 28
         title.fontColor = strokeColor
-        title.position = CGPoint(x: 80, y: size.height - 60)
+        title.position = CGPoint(x: 80, y: topSafeY - 30)
         title.horizontalAlignmentMode = .left
         title.zPosition = 100
         addChild(title)
@@ -93,24 +93,20 @@ final class DeviceNameScene: BaseLevelScene, SKPhysicsContactDelegate {
     private func buildLevel() {
         let groundY: CGFloat = 160
 
-        // Start platform
-        createPlatform(at: CGPoint(x: 80, y: groundY), size: CGSize(width: 140, height: 30))
+        // Layout fits a 390-pt iPhone canvas with ≤ 20-pt gaps and a
+        // single 30-pt rise — all inside the 72-pt max jump.
+        createPlatform(at: CGPoint(x: 45, y: groundY), size: CGSize(width: 80, height: 30))
 
-        // Corridor platform
-        createPlatform(at: CGPoint(x: 250, y: groundY), size: CGSize(width: 120, height: 30))
+        createPlatform(at: CGPoint(x: 145, y: groundY), size: CGSize(width: 80, height: 30))
 
-        // Name-labeled door
-        createNameDoor(at: CGPoint(x: 310, y: groundY + 45))
+        createNameDoor(at: CGPoint(x: 185, y: groundY + 45))
 
-        // Middle platforms
-        createPlatform(at: CGPoint(x: 400, y: groundY), size: CGSize(width: 100, height: 30))
-        createPlatform(at: CGPoint(x: 520, y: groundY + 30), size: CGSize(width: 80, height: 25))
+        createPlatform(at: CGPoint(x: 230, y: groundY), size: CGSize(width: 50, height: 30))
+        createPlatform(at: CGPoint(x: 285, y: groundY + 30), size: CGSize(width: 40, height: 25))
 
-        // Exit platform
-        createPlatform(at: CGPoint(x: size.width - 80, y: groundY), size: CGSize(width: 120, height: 30))
+        createPlatform(at: CGPoint(x: size.width - 40, y: groundY), size: CGSize(width: 70, height: 30))
 
-        // Exit door - only opens for real player
-        createExitDoor(at: CGPoint(x: size.width - 60, y: groundY + 50))
+        createExitDoor(at: CGPoint(x: size.width - 30, y: groundY + 50))
 
         // Death zone
         let death = SKNode()
@@ -275,7 +271,7 @@ final class DeviceNameScene: BaseLevelScene, SKPhysicsContactDelegate {
         label.position = CGPoint(x: 0, y: 45)
         doppel.addChild(label)
 
-        doppel.position = CGPoint(x: 120, y: 200)
+        doppel.position = CGPoint(x: 90, y: 200)
         doppel.alpha = 0 // Hidden until triggered
 
         doppelganger = doppel
@@ -292,10 +288,10 @@ final class DeviceNameScene: BaseLevelScene, SKPhysicsContactDelegate {
         // It races along platforms but arrives and "fails" at the door
         let groundY: CGFloat = 160
         let path = CGMutablePath()
-        path.move(to: CGPoint(x: 250, y: groundY + 40))
-        path.addLine(to: CGPoint(x: 400, y: groundY + 40))
-        path.addLine(to: CGPoint(x: 520, y: groundY + 70))
-        path.addLine(to: CGPoint(x: size.width - 120, y: groundY + 40))
+        path.move(to: CGPoint(x: 145, y: groundY + 40))
+        path.addLine(to: CGPoint(x: 230, y: groundY + 40))
+        path.addLine(to: CGPoint(x: 285, y: groundY + 55))
+        path.addLine(to: CGPoint(x: size.width - 80, y: groundY + 40))
 
         let followPath = SKAction.follow(path, asOffset: false, orientToPath: false, duration: 4.0)
 
@@ -364,7 +360,7 @@ final class DeviceNameScene: BaseLevelScene, SKPhysicsContactDelegate {
 
     private func showInstructionPanel() {
         let panel = SKNode()
-        panel.position = CGPoint(x: size.width / 2, y: size.height - 120)
+        panel.position = CGPoint(x: size.width / 2, y: topSafeY - 90)
         panel.zPosition = 300
         addChild(panel)
 
@@ -391,7 +387,7 @@ final class DeviceNameScene: BaseLevelScene, SKPhysicsContactDelegate {
     }
 
     private func setupBit() {
-        spawnPoint = CGPoint(x: 80, y: 200)
+        spawnPoint = CGPoint(x: 45, y: 200)
         bit = BitCharacter.make()
         bit.position = spawnPoint
         addChild(bit)
@@ -428,7 +424,7 @@ final class DeviceNameScene: BaseLevelScene, SKPhysicsContactDelegate {
         greeting.fontName = "Menlo-Bold"
         greeting.fontSize = 10
         greeting.fontColor = strokeColor
-        greeting.position = CGPoint(x: size.width / 2, y: size.height - 160)
+        greeting.position = CGPoint(x: size.width / 2, y: topSafeY - 130)
         greeting.zPosition = 300
         addChild(greeting)
 
@@ -436,7 +432,7 @@ final class DeviceNameScene: BaseLevelScene, SKPhysicsContactDelegate {
         followUp.fontName = "Menlo"
         followUp.fontSize = 9
         followUp.fontColor = strokeColor
-        followUp.position = CGPoint(x: size.width / 2, y: size.height - 175)
+        followUp.position = CGPoint(x: size.width / 2, y: topSafeY - 145)
         followUp.zPosition = 300
         followUp.alpha = 0
         addChild(followUp)

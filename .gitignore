@@ -39,3 +39,6 @@ LEVEL_BACKUP_BEFORE_REDESIGN.md
 
 # Build logs
 *.log
+
+# Serena MCP tool cache
+.serena/

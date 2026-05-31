@@ -37,6 +37,22 @@ struct GlitchedApp: App {
     private let notificationDelegate = NotificationDelegate()
 
     init() {
+        #if DEBUG
+        if let debugStartLevel = Self.debugStartLevelFromLaunchContext() {
+            UserDefaults.standard.set(true, forKey: "hasSeenPreflight")
+            Task { @MainActor in
+                GameState.shared.load(level: debugStartLevel)
+            }
+        }
+
+        if Self.hasDebugLaunchArgument("--glitched-auto-plug-in") {
+            Task { @MainActor in
+                try? await Task.sleep(nanoseconds: 1_000_000_000)
+                InputEventBus.shared.post(.deviceCharging(isPlugged: true))
+            }
+        }
+        #endif
+
         UNUserNotificationCenter.current().delegate = notificationDelegate
 
         // FIX #15: Authenticate with Game Center on launch
@@ -70,4 +86,41 @@ struct GlitchedApp: App {
             }
         }
     }
+
+    #if DEBUG
+    private static func debugStartLevelFromLaunchContext() -> LevelID? {
+        let processInfo = ProcessInfo.processInfo
+
+        if let rawLevel = processInfo.environment["GLITCHED_START_LEVEL"],
+           let levelID = levelID(forDebugStartLevel: rawLevel) {
+            return levelID
+        }
+
+        let arguments = processInfo.arguments
+        if let flagIndex = arguments.firstIndex(of: "--glitched-start-level"),
+           arguments.indices.contains(arguments.index(after: flagIndex)) {
+            let valueIndex = arguments.index(after: flagIndex)
+            return levelID(forDebugStartLevel: arguments[valueIndex])
+        }
+
+        let assignmentPrefix = "--glitched-start-level="
+        if let rawLevel = arguments.compactMap({ argument -> String? in
+            guard argument.hasPrefix(assignmentPrefix) else { return nil }
+            return String(argument.dropFirst(assignmentPrefix.count))
+        }).first {
+            return levelID(forDebugStartLevel: rawLevel)
+        }
+
+        return nil
+    }
+
+    private static func hasDebugLaunchArgument(_ argument: String) -> Bool {
+        ProcessInfo.processInfo.arguments.contains(argument)
+    }
+
+    private static func levelID(forDebugStartLevel rawLevel: String) -> LevelID? {
+        guard let levelIndex = Int(rawLevel) else { return nil }
+        return LevelID.allLevels.first { $0.index == levelIndex }
+    }
+    #endif
 }

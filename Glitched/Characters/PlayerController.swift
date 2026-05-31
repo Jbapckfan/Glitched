@@ -13,6 +13,14 @@ final class PlayerController {
     // while a second finger taps to jump
     private var activeTouchCount = 0
 
+    // Single-finger tap-to-jump: a quick touch with little movement
+    // also fires a jump on touch-up, so jump works without a second finger.
+    private var primaryTouchBeganAt: TimeInterval = 0
+    private var primaryTouchBeganPoint: CGPoint = .zero
+    private var primaryTouchDidDrag: Bool = false
+    private let tapJumpMaxDuration: TimeInterval = 0.25
+    private let tapJumpMaxMovement: CGFloat = 14
+
     // Coyote time: brief grace period after walking off a ledge
     private var coyoteTimer: TimeInterval = 0
     private let coyoteWindow: TimeInterval = 0.1
@@ -49,6 +57,15 @@ final class PlayerController {
         // Handle keyboard jump (edge-triggered)
         if KeyboardState.shared.jumpJustPressed {
             attemptJump()
+        }
+
+        // Hold-to-move: if a primary touch has been held past the tap window
+        // without dragging, treat it as a sustained move toward its position.
+        if activeTouchCount >= 1 && !primaryTouchDidDrag {
+            let held = CACurrentMediaTime() - primaryTouchBeganAt
+            if held >= tapJumpMaxDuration {
+                updateTouchMoveDirection(from: lastMoveLocation)
+            }
         }
 
         // Apply movement
@@ -108,9 +125,13 @@ final class PlayerController {
         activeTouchCount += 1
 
         if activeTouchCount == 1 {
-            // First finger: start movement
+            // First finger: arm tap-to-jump and remember start. Don't move yet —
+            // movement only kicks in if the touch is held past the tap window
+            // or dragged, so a quick tap is a clean jump with no slide.
             lastMoveLocation = point
-            updateTouchMoveDirection(from: point)
+            primaryTouchBeganAt = CACurrentMediaTime()
+            primaryTouchBeganPoint = point
+            primaryTouchDidDrag = false
         } else {
             // Second+ finger while holding: jump
             attemptJump()
@@ -118,17 +139,31 @@ final class PlayerController {
     }
 
     func touchMoved(at point: CGPoint) {
-        // Only update movement direction (ignore jump-finger drags
-        // since they're usually stationary taps)
+        let dx = point.x - primaryTouchBeganPoint.x
+        let dy = point.y - primaryTouchBeganPoint.y
+        if hypot(dx, dy) > tapJumpMaxMovement {
+            primaryTouchDidDrag = true
+        }
+
         lastMoveLocation = point
-        updateTouchMoveDirection(from: point)
+        if primaryTouchDidDrag {
+            updateTouchMoveDirection(from: point)
+        }
     }
 
     func touchEnded(at point: CGPoint) {
+        let wasPrimary = activeTouchCount == 1
         activeTouchCount = max(0, activeTouchCount - 1)
 
         if activeTouchCount == 0 {
-            // All fingers lifted — stop movement
+            // Quick stationary tap on the primary finger fires a jump.
+            // Holding/dragging falls through to "stop movement" only.
+            if wasPrimary && !primaryTouchDidDrag {
+                let duration = CACurrentMediaTime() - primaryTouchBeganAt
+                if duration < tapJumpMaxDuration {
+                    attemptJump()
+                }
+            }
             touchMoveDirection = 0
         }
         // If only the jump finger lifted, movement continues
@@ -138,6 +173,7 @@ final class PlayerController {
         touchMoveDirection = 0
         activeTouchCount = 0
         jumpBufferTimer = 0
+        primaryTouchDidDrag = false
     }
 
     // MARK: - Direction Calculation

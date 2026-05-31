@@ -47,7 +47,7 @@ final class FocusModeScene: BaseLevelScene, SKPhysicsContactDelegate {
         for i in 0..<6 {
             let moon = createMoonIcon(size: 15)
             moon.name = "moon_decoration"
-            moon.position = CGPoint(x: CGFloat(i) * 100 + 80, y: size.height - 80)
+            moon.position = CGPoint(x: CGFloat(i) * 100 + 80, y: topSafeY - 50)
             moon.alpha = 0.15
             moon.zPosition = -10
             addChild(moon)
@@ -71,7 +71,7 @@ final class FocusModeScene: BaseLevelScene, SKPhysicsContactDelegate {
         title.fontName = "Helvetica-Bold"
         title.fontSize = 28
         title.fontColor = strokeColor
-        title.position = CGPoint(x: 80, y: size.height - 60)
+        title.position = CGPoint(x: 80, y: topSafeY - 30)
         title.horizontalAlignmentMode = .left
         title.zPosition = 100
         addChild(title)
@@ -80,12 +80,14 @@ final class FocusModeScene: BaseLevelScene, SKPhysicsContactDelegate {
     private func buildLevel() {
         let groundY: CGFloat = 160
 
-        createPlatform(at: CGPoint(x: 80, y: groundY), size: CGSize(width: 120, height: 30))
-        createPlatform(at: CGPoint(x: 280, y: groundY + 50), size: CGSize(width: 100, height: 25))
-        createPlatform(at: CGPoint(x: 480, y: groundY + 50), size: CGSize(width: 100, height: 25))
-        createPlatform(at: CGPoint(x: size.width - 80, y: groundY), size: CGSize(width: 120, height: 30))
+        // Fits a 390-pt iPhone canvas. Each gap ≤ 30 pt; the rise/drop of
+        // 50 pt is inside the 72-pt max jump height.
+        createPlatform(at: CGPoint(x: 50, y: groundY), size: CGSize(width: 80, height: 30))
+        createPlatform(at: CGPoint(x: 145, y: groundY + 50), size: CGSize(width: 70, height: 25))
+        createPlatform(at: CGPoint(x: 245, y: groundY + 50), size: CGSize(width: 70, height: 25))
+        createPlatform(at: CGPoint(x: size.width - 50, y: groundY), size: CGSize(width: 80, height: 30))
 
-        createExitDoor(at: CGPoint(x: size.width - 60, y: groundY + 50))
+        createExitDoor(at: CGPoint(x: size.width - 40, y: groundY + 50))
 
         let death = SKNode()
         death.position = CGPoint(x: size.width / 2, y: -50)
@@ -113,42 +115,44 @@ final class FocusModeScene: BaseLevelScene, SKPhysicsContactDelegate {
     }
 
     private func createHazards() {
-        // Hazard 0: Horizontal oscillation (slow)
+        // Hazard 0: Horizontal oscillation (slow). y=260 keeps it well above
+        // platform 2's surface (top y ≈ 222.5) so it threatens high jumps
+        // rather than sitting on the landing spot.
         let h0 = createSpike()
-        h0.position = CGPoint(x: 160, y: 220)
+        h0.position = CGPoint(x: 120, y: 260)
         h0.name = "hazard_0"
         addChild(h0)
         hazards.append(h0)
         h0.run(.repeatForever(.sequence([
-            .moveBy(x: 80, y: 0, duration: 2.0),
-            .moveBy(x: -80, y: 0, duration: 2.0)
+            .moveBy(x: 40, y: 0, duration: 2.0),
+            .moveBy(x: -40, y: 0, duration: 2.0)
         ])), withKey: "movement")
 
         // Hazard 1: Horizontal oscillation (fast)
         let h1 = createSpike()
-        h1.position = CGPoint(x: 350, y: 260)
+        h1.position = CGPoint(x: 210, y: 260)
         h1.name = "hazard_1"
         addChild(h1)
         hazards.append(h1)
         h1.run(.repeatForever(.sequence([
-            .moveBy(x: 100, y: 0, duration: 1.0),
-            .moveBy(x: -100, y: 0, duration: 1.0)
+            .moveBy(x: 70, y: 0, duration: 1.0),
+            .moveBy(x: -70, y: 0, duration: 1.0)
         ])), withKey: "movement")
 
         // Hazard 2: Vertical oscillation
         let h2 = createSpike()
-        h2.position = CGPoint(x: 230, y: 200)
+        h2.position = CGPoint(x: 160, y: 275)
         h2.name = "hazard_2"
         addChild(h2)
         hazards.append(h2)
         h2.run(.repeatForever(.sequence([
-            .moveBy(x: 0, y: 80, duration: 1.4),
-            .moveBy(x: 0, y: -80, duration: 1.4)
+            .moveBy(x: 0, y: 70, duration: 1.4),
+            .moveBy(x: 0, y: -70, duration: 1.4)
         ])), withKey: "movement")
 
         // Hazard 3: Vertical oscillation (offset)
         let h3 = createSpike()
-        h3.position = CGPoint(x: 430, y: 300)
+        h3.position = CGPoint(x: 260, y: 310)
         h3.name = "hazard_3"
         addChild(h3)
         hazards.append(h3)
@@ -159,20 +163,20 @@ final class FocusModeScene: BaseLevelScene, SKPhysicsContactDelegate {
 
         // Hazard 4: Orbital/circular movement
         let h4 = createSpike()
-        h4.position = CGPoint(x: 300, y: 240)
+        h4.position = CGPoint(x: 180, y: 290)
         h4.name = "hazard_4"
         addChild(h4)
         hazards.append(h4)
-        orbitalCenters[4] = CGPoint(x: 300, y: 240)
+        orbitalCenters[4] = CGPoint(x: 180, y: 290)
         orbitalAngles[4] = 0
 
         // Hazard 5: Orbital/circular movement (opposite phase)
         let h5 = createSpike()
-        h5.position = CGPoint(x: 500, y: 250)
+        h5.position = CGPoint(x: 285, y: 290)
         h5.name = "hazard_5"
         addChild(h5)
         hazards.append(h5)
-        orbitalCenters[5] = CGPoint(x: 500, y: 250)
+        orbitalCenters[5] = CGPoint(x: 285, y: 290)
         orbitalAngles[5] = .pi
     }
 
@@ -200,7 +204,7 @@ final class FocusModeScene: BaseLevelScene, SKPhysicsContactDelegate {
 
     private func createFocusIndicator() {
         moonIcon = createMoonIcon(size: 25)
-        moonIcon.position = CGPoint(x: size.width - 50, y: size.height - 50)
+        moonIcon.position = CGPoint(x: size.width - 50, y: topSafeY - 20)
         moonIcon.zPosition = 200
         addChild(moonIcon)
 
@@ -221,7 +225,7 @@ final class FocusModeScene: BaseLevelScene, SKPhysicsContactDelegate {
 
     private func createDNDToggleButton() {
         let button = SKNode()
-        button.position = CGPoint(x: 60, y: size.height - 50)
+        button.position = CGPoint(x: 60, y: topSafeY - 20)
         button.zPosition = 200
         button.name = "dndToggle"
 
@@ -285,7 +289,7 @@ final class FocusModeScene: BaseLevelScene, SKPhysicsContactDelegate {
 
     private func showInstructionPanel() {
         let panel = SKNode()
-        panel.position = CGPoint(x: size.width / 2, y: size.height - 120)
+        panel.position = CGPoint(x: size.width / 2, y: topSafeY - 90)
         panel.zPosition = 300
         addChild(panel)
 
@@ -312,7 +316,7 @@ final class FocusModeScene: BaseLevelScene, SKPhysicsContactDelegate {
     }
 
     private func setupBit() {
-        spawnPoint = CGPoint(x: 80, y: 200)
+        spawnPoint = CGPoint(x: 50, y: 200)
         bit = BitCharacter.make()
         bit.position = spawnPoint
         addChild(bit)

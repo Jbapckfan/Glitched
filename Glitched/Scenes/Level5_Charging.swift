@@ -57,6 +57,7 @@ final class ChargingScene: BaseLevelScene, SKPhysicsContactDelegate {
         setupBit()
 
         if UIDevice.current.batteryState == .charging || UIDevice.current.batteryState == .full {
+            isCurrentlyCharging = true
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
                 self?.triggerPlugAnimation()
             }
@@ -70,12 +71,12 @@ final class ChargingScene: BaseLevelScene, SKPhysicsContactDelegate {
         drawPowerLines()
 
         // Electrical panels
-        drawElectricalPanel(at: CGPoint(x: 50, y: size.height - 150))
-        drawElectricalPanel(at: CGPoint(x: size.width - 50, y: size.height - 150))
+        drawElectricalPanel(at: CGPoint(x: 50, y: topSafeY - 120))
+        drawElectricalPanel(at: CGPoint(x: size.width - 50, y: topSafeY - 120))
 
         // Lightning bolt decorations
-        drawLightningBolt(at: CGPoint(x: 80, y: size.height - 80))
-        drawLightningBolt(at: CGPoint(x: size.width - 80, y: size.height - 100))
+        drawLightningBolt(at: CGPoint(x: 80, y: topSafeY - 50))
+        drawLightningBolt(at: CGPoint(x: size.width - 80, y: topSafeY - 70))
     }
 
     private func drawPowerLines() {
@@ -174,7 +175,7 @@ final class ChargingScene: BaseLevelScene, SKPhysicsContactDelegate {
         title.fontName = "Helvetica-Bold"
         title.fontSize = 28
         title.fontColor = strokeColor
-        title.position = CGPoint(x: 80, y: size.height - 60)
+        title.position = CGPoint(x: 80, y: topSafeY - 30)
         title.horizontalAlignmentMode = .left
         title.zPosition = 100
         addChild(title)
@@ -220,13 +221,13 @@ final class ChargingScene: BaseLevelScene, SKPhysicsContactDelegate {
         let exitPlatform = createPlatform(
             width: 120,
             height: 20,
-            position: CGPoint(x: centerX - 60, y: size.height - 140)
+            position: CGPoint(x: centerX - 60, y: topSafeY - 110)
         )
         exitPlatform.name = "ground"
         addChild(exitPlatform)
 
         // Exit door
-        createExitDoor(at: CGPoint(x: centerX - 80, y: size.height - 100))
+        createExitDoor(at: CGPoint(x: centerX - 80, y: topSafeY - 70))
 
         // Death zone
         let deathZone = SKNode()
@@ -566,7 +567,7 @@ final class ChargingScene: BaseLevelScene, SKPhysicsContactDelegate {
 
         let pause = SKAction.wait(forDuration: 0.3)
 
-        let riseToTop = SKAction.moveTo(y: size.height - 200, duration: 2.0)
+        let riseToTop = SKAction.moveTo(y: topSafeY - 170, duration: 2.0)
         riseToTop.timingMode = .easeInEaseOut
 
         setPlugCollisionEnabled(true)
@@ -578,7 +579,12 @@ final class ChargingScene: BaseLevelScene, SKPhysicsContactDelegate {
             self.isPlugAnimating = false
             self.plugPlatformBaseY = self.giantPlug.position.y
             self.plugPlatformCurrentY = self.giantPlug.position.y
-            self.isCurrentlyCharging = (UIDevice.current.batteryState == .charging || UIDevice.current.batteryState == .full)
+            // Preserve the event-driven charging state (set via .deviceCharging or the
+            // initial battery poll in configureScene) rather than re-reading hardware here.
+            // Re-polling UIDevice would clobber a simulator / accessibility "plug in" back
+            // to unplugged at arrival, and would also swallow an unplug that happened during
+            // the entry cinematic. Keeping the event value lets that unplug start the sink
+            // the moment the cinematic finishes.
         }
 
         let riseShake = createShakeAction(duration: 2.5, amplitudeX: 2, amplitudeY: 2)

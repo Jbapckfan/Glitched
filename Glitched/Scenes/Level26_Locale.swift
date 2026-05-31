@@ -74,7 +74,7 @@ final class LocaleScene: BaseLevelScene, SKPhysicsContactDelegate {
         title.fontName = "Helvetica-Bold"
         title.fontSize = 28
         title.fontColor = strokeColor
-        title.position = CGPoint(x: 80, y: size.height - 60)
+        title.position = CGPoint(x: 80, y: topSafeY - 30)
         title.horizontalAlignmentMode = .left
         title.zPosition = 100
         addChild(title)
@@ -83,34 +83,38 @@ final class LocaleScene: BaseLevelScene, SKPhysicsContactDelegate {
     private func buildLevel() {
         let groundY: CGFloat = 160
 
-        // Start platform
-        createPlatform(at: CGPoint(x: 80, y: groundY), size: CGSize(width: 120, height: 30))
+        // Fits a 390-pt iPhone canvas. Two overlapping zigzag routes share
+        // the same narrow column: the scrambled "wrong" route leads nowhere,
+        // the unscrambled "correct" route connects start → exit with rises ≤40 pt.
+        createPlatform(at: CGPoint(x: 45, y: groundY), size: CGSize(width: 80, height: 30))
 
-        // Zigzag wrong-position platforms (visible when scrambled, disappear on unscramble)
+        // The "wrong" zigzag dead-ends well short of the exit plateau.
+        // The last wrong platform's right edge (177.5) is 137.5 pt from the
+        // exit plateau's left edge on a 390-pt canvas — beyond the 115-pt
+        // horizontal jump — so completing the level requires unscrambling.
         let wrongPositions: [CGPoint] = [
-            CGPoint(x: 220, y: groundY + 30),
-            CGPoint(x: 360, y: groundY + 80),
-            CGPoint(x: 220, y: groundY + 140),
-            CGPoint(x: 400, y: groundY + 180)
+            CGPoint(x: 130, y: groundY + 30),
+            CGPoint(x: 220, y: groundY + 80),
+            CGPoint(x: 130, y: groundY + 140),
+            CGPoint(x: 150, y: groundY + 180)
         ]
 
         for pos in wrongPositions {
-            let p = createPlatformNode(at: pos, size: CGSize(width: 90, height: 25))
+            let p = createPlatformNode(at: pos, size: CGSize(width: 55, height: 25))
             wrongPlatforms.append(p)
             wrongPlatformOrigins.append(pos)
             addChild(p)
         }
 
-        // Correct route hidden platforms (appear on unscramble)
         let correctPositions: [CGPoint] = [
-            CGPoint(x: 230, y: groundY + 50),
-            CGPoint(x: 370, y: groundY + 100),
-            CGPoint(x: 250, y: groundY + 160),
-            CGPoint(x: 430, y: groundY + 210)
+            CGPoint(x: 140, y: groundY + 50),
+            CGPoint(x: 220, y: groundY + 100),
+            CGPoint(x: 150, y: groundY + 160),
+            CGPoint(x: 245, y: groundY + 210)
         ]
 
         for pos in correctPositions {
-            let p = createPlatformNode(at: pos, size: CGSize(width: 90, height: 25))
+            let p = createPlatformNode(at: pos, size: CGSize(width: 55, height: 25))
             p.alpha = 0
             p.physicsBody?.categoryBitMask = PhysicsCategory.none
             hiddenPlatforms.append(p)
@@ -118,21 +122,19 @@ final class LocaleScene: BaseLevelScene, SKPhysicsContactDelegate {
             addChild(p)
         }
 
-        // Sign posts with scrambled text
         let signPositions: [CGPoint] = [
-            CGPoint(x: 80, y: groundY + 60),
-            CGPoint(x: 230, y: groundY + 110),
-            CGPoint(x: 370, y: groundY + 160),
-            CGPoint(x: 250, y: groundY + 220)
+            CGPoint(x: 60, y: groundY + 60),
+            CGPoint(x: 140, y: groundY + 110),
+            CGPoint(x: 230, y: groundY + 160),
+            CGPoint(x: 150, y: groundY + 220)
         ]
 
         for (i, pos) in signPositions.enumerated() {
             createSignPost(at: pos, hintIndex: i)
         }
 
-        // Exit platform
-        createPlatform(at: CGPoint(x: size.width - 80, y: groundY + 240), size: CGSize(width: 120, height: 30))
-        createExitDoor(at: CGPoint(x: size.width - 60, y: groundY + 300))
+        createPlatform(at: CGPoint(x: size.width - 40, y: groundY + 240), size: CGSize(width: 70, height: 30))
+        createExitDoor(at: CGPoint(x: size.width - 30, y: groundY + 295))
 
         // Death zone
         let death = SKNode()
@@ -244,7 +246,7 @@ final class LocaleScene: BaseLevelScene, SKPhysicsContactDelegate {
         let button = SKShapeNode(rectOf: CGSize(width: 100, height: 30), cornerRadius: 6)
         button.fillColor = strokeColor
         button.strokeColor = strokeColor
-        button.position = CGPoint(x: size.width - 70, y: size.height - 50)
+        button.position = CGPoint(x: size.width - 70, y: topSafeY - 20)
         button.zPosition = 500
         button.name = "testLocaleButton"
         addChild(button)
@@ -263,7 +265,7 @@ final class LocaleScene: BaseLevelScene, SKPhysicsContactDelegate {
 
     private func showInstructionPanel() {
         let panel = SKNode()
-        panel.position = CGPoint(x: size.width / 2, y: size.height - 120)
+        panel.position = CGPoint(x: size.width / 2, y: topSafeY - 90)
         panel.zPosition = 300
         addChild(panel)
 
@@ -315,7 +317,7 @@ final class LocaleScene: BaseLevelScene, SKPhysicsContactDelegate {
     }
 
     private func setupBit() {
-        spawnPoint = CGPoint(x: 80, y: 200)
+        spawnPoint = CGPoint(x: 45, y: 200)
         bit = BitCharacter.make()
         bit.position = spawnPoint
         addChild(bit)

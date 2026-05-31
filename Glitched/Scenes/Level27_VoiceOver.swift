@@ -63,7 +63,7 @@ final class VoiceOverScene: BaseLevelScene, SKPhysicsContactDelegate {
         title.fontName = "Helvetica-Bold"
         title.fontSize = 28
         title.fontColor = strokeColor
-        title.position = CGPoint(x: 80, y: size.height - 60)
+        title.position = CGPoint(x: 80, y: topSafeY - 30)
         title.horizontalAlignmentMode = .left
         title.zPosition = 100
         addChild(title)
@@ -215,7 +215,7 @@ final class VoiceOverScene: BaseLevelScene, SKPhysicsContactDelegate {
         let button = SKShapeNode(rectOf: CGSize(width: 110, height: 30), cornerRadius: 6)
         button.fillColor = strokeColor
         button.strokeColor = strokeColor
-        button.position = CGPoint(x: size.width - 75, y: size.height - 50)
+        button.position = CGPoint(x: size.width - 75, y: topSafeY - 20)
         button.zPosition = 500
         button.name = "testVOButton"
         addChild(button)
@@ -234,7 +234,7 @@ final class VoiceOverScene: BaseLevelScene, SKPhysicsContactDelegate {
 
     private func showInstructionPanel() {
         let panel = SKNode()
-        panel.position = CGPoint(x: size.width / 2, y: size.height - 120)
+        panel.position = CGPoint(x: size.width / 2, y: topSafeY - 90)
         panel.zPosition = 300
         addChild(panel)
 

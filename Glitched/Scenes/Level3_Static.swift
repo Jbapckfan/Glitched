@@ -68,8 +68,8 @@ final class StaticScene: BaseLevelScene, SKPhysicsContactDelegate {
         drawTVFrame()
 
         // Antenna elements
-        drawAntenna(at: CGPoint(x: 60, y: size.height - 80))
-        drawAntenna(at: CGPoint(x: size.width - 60, y: size.height - 100))
+        drawAntenna(at: CGPoint(x: 60, y: topSafeY - 50))
+        drawAntenna(at: CGPoint(x: size.width - 60, y: topSafeY - 70))
 
         // Control panels on sides
         drawControlPanels()
@@ -100,8 +100,8 @@ final class StaticScene: BaseLevelScene, SKPhysicsContactDelegate {
 
         // Corner screws
         let screwPositions = [
-            CGPoint(x: 55, y: size.height - 95),
-            CGPoint(x: size.width - 55, y: size.height - 95),
+            CGPoint(x: 55, y: topSafeY - 65),
+            CGPoint(x: size.width - 55, y: topSafeY - 65),
             CGPoint(x: 55, y: 75),
             CGPoint(x: size.width - 55, y: 75)
         ]
@@ -188,8 +188,8 @@ final class StaticScene: BaseLevelScene, SKPhysicsContactDelegate {
 
     private func createTVScreens() {
         let screenPositions = [
-            CGPoint(x: 100, y: size.height - 100),
-            CGPoint(x: size.width - 100, y: size.height - 100)
+            CGPoint(x: 100, y: topSafeY - 70),
+            CGPoint(x: size.width - 100, y: topSafeY - 70)
         ]
 
         for pos in screenPositions {
@@ -237,7 +237,7 @@ final class StaticScene: BaseLevelScene, SKPhysicsContactDelegate {
         title.fontName = "Helvetica-Bold"
         title.fontSize = 28
         title.fontColor = strokeColor
-        title.position = CGPoint(x: 80, y: size.height - 60)
+        title.position = CGPoint(x: 80, y: topSafeY - 30)
         title.horizontalAlignmentMode = .left
         title.zPosition = 100
         addChild(title)
@@ -259,42 +259,34 @@ final class StaticScene: BaseLevelScene, SKPhysicsContactDelegate {
     private func buildLevel() {
         let groundY: CGFloat = 160
 
-        // Starting platform
+        // Fits a 390-pt iPhone canvas with 4 laser gates between 5 platforms.
+        // Each gap ≤35 pt with rises ≤25 pt — comfortably inside the 72-pt jump.
         _ = createPlatform(
-            at: CGPoint(x: 80, y: groundY),
-            size: CGSize(width: 100, height: 30)
-        )
-
-        // Middle platforms (across laser gauntlet)
-        _ = createPlatform(
-            at: CGPoint(x: 220, y: groundY + 25),
-            size: CGSize(width: 70, height: 25)
+            at: CGPoint(x: 40, y: groundY),
+            size: CGSize(width: 60, height: 30)
         )
 
         _ = createPlatform(
-            at: CGPoint(x: 360, y: groundY + 50),
-            size: CGSize(width: 70, height: 25)
+            at: CGPoint(x: 125, y: groundY + 25),
+            size: CGSize(width: 50, height: 25)
         )
 
         _ = createPlatform(
-            at: CGPoint(x: 500, y: groundY + 25),
-            size: CGSize(width: 70, height: 25)
+            at: CGPoint(x: 210, y: groundY + 35),
+            size: CGSize(width: 50, height: 25)
         )
 
-        // Platform before the 4th (inverse) laser
         _ = createPlatform(
-            at: CGPoint(x: 630, y: groundY + 50),
-            size: CGSize(width: 70, height: 25)
+            at: CGPoint(x: 295, y: groundY + 25),
+            size: CGSize(width: 50, height: 25)
         )
 
-        // Exit platform (pushed further right for 4th laser)
         _ = createPlatform(
-            at: CGPoint(x: size.width - 60, y: groundY),
-            size: CGSize(width: 100, height: 30)
+            at: CGPoint(x: size.width - 25, y: groundY),
+            size: CGSize(width: 50, height: 30)
         )
 
-        // Exit door
-        createExitDoor(at: CGPoint(x: size.width - 40, y: groundY + 50))
+        createExitDoor(at: CGPoint(x: size.width - 20, y: groundY + 50))
 
         // Death zone
         let deathZone = SKNode()
@@ -343,12 +335,14 @@ final class StaticScene: BaseLevelScene, SKPhysicsContactDelegate {
     // MARK: - Laser System
 
     private func createLaserSystem() {
-        // Create 3 normal laser barriers + 1 inverse laser near the end
+        // Create 3 normal laser barriers + 1 inverse laser near the end.
+        // Positions match the iPhone-fit platform layout (platforms at
+        // x = 40, 125, 210, 295, size.width - 25).
         let laserPositions: [(start: CGPoint, end: CGPoint)] = [
-            (CGPoint(x: 155, y: 140), CGPoint(x: 155, y: 280)),
-            (CGPoint(x: 295, y: 140), CGPoint(x: 295, y: 320)),
-            (CGPoint(x: 435, y: 140), CGPoint(x: 435, y: 280)),
-            (CGPoint(x: 560, y: 140), CGPoint(x: 560, y: 280))  // 4th laser - INVERSE
+            (CGPoint(x: 82, y: 140), CGPoint(x: 82, y: 280)),
+            (CGPoint(x: 167, y: 140), CGPoint(x: 167, y: 320)),
+            (CGPoint(x: 252, y: 140), CGPoint(x: 252, y: 280)),
+            (CGPoint(x: 335, y: 140), CGPoint(x: 335, y: 280))  // 4th laser - INVERSE
         ]
 
         for (index, positions) in laserPositions.enumerated() {
@@ -542,7 +536,7 @@ final class StaticScene: BaseLevelScene, SKPhysicsContactDelegate {
 
     private func showInstructionPanel() {
         instructionPanel = SKNode()
-        instructionPanel?.position = CGPoint(x: size.width / 2, y: size.height - 130)
+        instructionPanel?.position = CGPoint(x: size.width / 2, y: topSafeY - 100)
         instructionPanel?.zPosition = 300
         addChild(instructionPanel!)
 
@@ -669,7 +663,7 @@ final class StaticScene: BaseLevelScene, SKPhysicsContactDelegate {
     // MARK: - Bit Setup
 
     private func setupBit() {
-        spawnPoint = CGPoint(x: 80, y: 200)
+        spawnPoint = CGPoint(x: 40, y: 200)
 
         bit = BitCharacter.make()
         bit.position = spawnPoint

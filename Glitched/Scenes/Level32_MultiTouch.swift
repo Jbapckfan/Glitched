@@ -122,8 +122,8 @@ final class MultiTouchScene: BaseLevelScene, SKPhysicsContactDelegate {
 
     private func drawChipModules() {
         let chipPositions: [CGPoint] = [
-            CGPoint(x: 60, y: size.height - 80),
-            CGPoint(x: size.width - 80, y: size.height - 100),
+            CGPoint(x: 60, y: topSafeY - 50),
+            CGPoint(x: size.width - 80, y: topSafeY - 70),
         ]
         for pos in chipPositions {
             let chip = SKShapeNode(rectOf: CGSize(width: 28, height: 16), cornerRadius: 2)
@@ -166,7 +166,7 @@ final class MultiTouchScene: BaseLevelScene, SKPhysicsContactDelegate {
         title.fontName = "Helvetica-Bold"
         title.fontSize = 28
         title.fontColor = strokeColor
-        title.position = CGPoint(x: 80, y: size.height - 50)
+        title.position = CGPoint(x: 80, y: topSafeY - 20)
         title.horizontalAlignmentMode = .left
         title.zPosition = 100
         addChild(title)
@@ -175,7 +175,7 @@ final class MultiTouchScene: BaseLevelScene, SKPhysicsContactDelegate {
         subtitle.fontName = VisualConstants.Fonts.secondary
         subtitle.fontSize = 11
         subtitle.fontColor = strokeColor.withAlphaComponent(0.5)
-        subtitle.position = CGPoint(x: 80, y: size.height - 68)
+        subtitle.position = CGPoint(x: 80, y: topSafeY - 38)
         subtitle.horizontalAlignmentMode = .left
         subtitle.zPosition = 100
         addChild(subtitle)

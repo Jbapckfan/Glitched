@@ -69,7 +69,7 @@ final class WiFiScene: BaseLevelScene, SKPhysicsContactDelegate {
         title.fontName = "Helvetica-Bold"
         title.fontSize = 28
         title.fontColor = strokeColor
-        title.position = CGPoint(x: 80, y: size.height - 60)
+        title.position = CGPoint(x: 80, y: topSafeY - 30)
         title.horizontalAlignmentMode = .left
         title.zPosition = 100
         addChild(title)
@@ -78,20 +78,18 @@ final class WiFiScene: BaseLevelScene, SKPhysicsContactDelegate {
     private func buildLevel() {
         let groundY: CGFloat = 160
 
-        // Solid platforms (always exist)
-        createPlatform(at: CGPoint(x: 80, y: groundY), size: CGSize(width: 120, height: 30), isWifiDependent: false)
-        createPlatform(at: CGPoint(x: size.width - 80, y: groundY), size: CGSize(width: 120, height: 30), isWifiDependent: false)
+        // Fits a 390-pt iPhone canvas. Solid end platforms bookend three
+        // WiFi-dependent stepping stones with a WiFi wall between stones 2 and 3.
+        createPlatform(at: CGPoint(x: 50, y: groundY), size: CGSize(width: 80, height: 30), isWifiDependent: false)
+        createPlatform(at: CGPoint(x: size.width - 40, y: groundY), size: CGSize(width: 70, height: 30), isWifiDependent: false)
 
-        // WiFi-dependent platforms (phase out when WiFi off)
-        createPlatform(at: CGPoint(x: 230, y: groundY + 40), size: CGSize(width: 80, height: 25), isWifiDependent: true)
-        createPlatform(at: CGPoint(x: 380, y: groundY + 80), size: CGSize(width: 80, height: 25), isWifiDependent: true)
-        createPlatform(at: CGPoint(x: 530, y: groundY + 40), size: CGSize(width: 80, height: 25), isWifiDependent: true)
+        createPlatform(at: CGPoint(x: 135, y: groundY + 30), size: CGSize(width: 55, height: 25), isWifiDependent: true)
+        createPlatform(at: CGPoint(x: 215, y: groundY + 60), size: CGSize(width: 55, height: 25), isWifiDependent: true)
+        createPlatform(at: CGPoint(x: 290, y: groundY + 30), size: CGSize(width: 55, height: 25), isWifiDependent: true)
 
-        // WiFi wall (blocks path when WiFi on, passable when off)
-        createWiFiWall(at: CGPoint(x: 450, y: groundY + 80))
+        createWiFiWall(at: CGPoint(x: 255, y: groundY + 85))
 
-        // Exit door
-        createExitDoor(at: CGPoint(x: size.width - 60, y: groundY + 50))
+        createExitDoor(at: CGPoint(x: size.width - 30, y: groundY + 50))
 
         // Death zone
         let death = SKNode()
@@ -138,7 +136,11 @@ final class WiFiScene: BaseLevelScene, SKPhysicsContactDelegate {
         wall.position = position
         wall.name = "wifi_wall"
 
-        let wallShape = SKShapeNode(rectOf: CGSize(width: 20, height: 100))
+        // Wall is 130 pt tall so its top (y ≈ 310 at wall center y=245) is
+        // above the player's jump-apex body bottom (~304.5 when taking off
+        // from stone 2 at y-top 232.5), preventing a skip-over jump while
+        // Wi-Fi is on.
+        let wallShape = SKShapeNode(rectOf: CGSize(width: 20, height: 130))
         wallShape.fillColor = strokeColor.withAlphaComponent(0.3)
         wallShape.strokeColor = strokeColor
         wallShape.lineWidth = lineWidth
@@ -153,7 +155,7 @@ final class WiFiScene: BaseLevelScene, SKPhysicsContactDelegate {
             wall.addChild(bar)
         }
 
-        wall.physicsBody = SKPhysicsBody(rectangleOf: CGSize(width: 20, height: 100))
+        wall.physicsBody = SKPhysicsBody(rectangleOf: CGSize(width: 20, height: 130))
         wall.physicsBody?.isDynamic = false
         wall.physicsBody?.categoryBitMask = PhysicsCategory.ground
 
@@ -185,7 +187,7 @@ final class WiFiScene: BaseLevelScene, SKPhysicsContactDelegate {
 
     private func createWiFiIndicator() {
         let indicator = SKNode()
-        indicator.position = CGPoint(x: size.width - 60, y: size.height - 60)
+        indicator.position = CGPoint(x: size.width - 60, y: topSafeY - 30)
         indicator.zPosition = 200
         addChild(indicator)
 
@@ -202,7 +204,7 @@ final class WiFiScene: BaseLevelScene, SKPhysicsContactDelegate {
 
     private func createDownloadBar() {
         let barContainer = SKNode()
-        barContainer.position = CGPoint(x: size.width / 2, y: size.height - 100)
+        barContainer.position = CGPoint(x: size.width / 2, y: topSafeY - 70)
         barContainer.zPosition = 200
         addChild(barContainer)
 
@@ -252,7 +254,7 @@ final class WiFiScene: BaseLevelScene, SKPhysicsContactDelegate {
             confetti.fillColor = strokeColor
             confetti.strokeColor = strokeColor
             confetti.lineWidth = lineWidth * 0.3
-            confetti.position = CGPoint(x: size.width / 2, y: size.height - 100)
+            confetti.position = CGPoint(x: size.width / 2, y: topSafeY - 70)
             confetti.zPosition = 300
             addChild(confetti)
 
@@ -318,7 +320,7 @@ final class WiFiScene: BaseLevelScene, SKPhysicsContactDelegate {
 
     private func showInstructionPanel() {
         let panel = SKNode()
-        panel.position = CGPoint(x: size.width / 2, y: size.height - 100)
+        panel.position = CGPoint(x: size.width / 2, y: topSafeY - 70)
         panel.zPosition = 300
         addChild(panel)
 
@@ -337,7 +339,7 @@ final class WiFiScene: BaseLevelScene, SKPhysicsContactDelegate {
     }
 
     private func setupBit() {
-        spawnPoint = CGPoint(x: 80, y: 200)
+        spawnPoint = CGPoint(x: 50, y: 200)
         bit = BitCharacter.make()
         bit.position = spawnPoint
         addChild(bit)

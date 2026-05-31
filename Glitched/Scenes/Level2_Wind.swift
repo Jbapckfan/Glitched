@@ -18,8 +18,12 @@ final class WindBridgeScene: BaseLevelScene, SKPhysicsContactDelegate {
     private var bridgeTargetWidth: CGFloat = 0
 
     private let groundHeight: CGFloat = 100
-    private let chasmStartX: CGFloat = 140
-    private let chasmEndX: CGFloat = 340
+    // Chasm width must stay > 115 pt (max horizontal jump range) so the
+    // bridge mechanic is required. Edges are chosen so the right platform
+    // is still ≥120 pt wide on a 390-pt iPhone canvas, leaving solid
+    // ground under the exit door.
+    private let chasmStartX: CGFloat = 120
+    private let chasmEndX: CGFloat = 260
 
     private var windParticles: [SKShapeNode] = []
     private var lastMicLevel: Float = 0
@@ -58,12 +62,12 @@ final class WindBridgeScene: BaseLevelScene, SKPhysicsContactDelegate {
 
     private func setupBackground() {
         // Industrial fans/vents on walls
-        drawVent(at: CGPoint(x: 60, y: size.height - 100), size: 60)
-        drawVent(at: CGPoint(x: size.width - 60, y: size.height - 100), size: 60)
+        drawVent(at: CGPoint(x: 60, y: topSafeY - 70), size: 60)
+        drawVent(at: CGPoint(x: size.width - 60, y: topSafeY - 70), size: 60)
 
         // Hanging sensors
-        drawHangingVibrationPickup(at: CGPoint(x: size.width / 2 - 80, y: size.height - 40))
-        drawHangingVibrationPickup(at: CGPoint(x: size.width / 2 + 80, y: size.height - 60))
+        drawHangingVibrationPickup(at: CGPoint(x: size.width / 2 - 80, y: topSafeY - 10))
+        drawHangingVibrationPickup(at: CGPoint(x: size.width / 2 + 80, y: topSafeY - 30))
 
         // Wind turbines in background
         drawWindTurbine(at: CGPoint(x: 100, y: groundHeight + 200))
@@ -190,8 +194,8 @@ final class WindBridgeScene: BaseLevelScene, SKPhysicsContactDelegate {
         // Horizontal pipes across top
         let pipe1 = SKShapeNode()
         let pipe1Path = CGMutablePath()
-        pipe1Path.move(to: CGPoint(x: 0, y: size.height - 150))
-        pipe1Path.addLine(to: CGPoint(x: size.width, y: size.height - 150))
+        pipe1Path.move(to: CGPoint(x: 0, y: topSafeY - 120))
+        pipe1Path.addLine(to: CGPoint(x: size.width, y: topSafeY - 120))
         pipe1.path = pipe1Path
         pipe1.strokeColor = strokeColor
         pipe1.lineWidth = lineWidth
@@ -204,7 +208,7 @@ final class WindBridgeScene: BaseLevelScene, SKPhysicsContactDelegate {
             joint.fillColor = fillColor
             joint.strokeColor = strokeColor
             joint.lineWidth = lineWidth * 0.6
-            joint.position = CGPoint(x: x, y: size.height - 150)
+            joint.position = CGPoint(x: x, y: topSafeY - 120)
             joint.zPosition = -14
             addChild(joint)
         }
@@ -495,7 +499,7 @@ final class WindBridgeScene: BaseLevelScene, SKPhysicsContactDelegate {
         title.fontName = "Helvetica-Bold"
         title.fontSize = 28
         title.fontColor = strokeColor
-        title.position = CGPoint(x: 80, y: size.height - 60)
+        title.position = CGPoint(x: 80, y: topSafeY - 30)
         title.horizontalAlignmentMode = .left
         title.zPosition = 100
         addChild(title)
@@ -516,7 +520,7 @@ final class WindBridgeScene: BaseLevelScene, SKPhysicsContactDelegate {
     private func setupHint() {
         // Microphone hint icon
         let hintContainer = SKNode()
-        hintContainer.position = CGPoint(x: size.width / 2, y: size.height - 50)
+        hintContainer.position = CGPoint(x: size.width / 2, y: topSafeY - 20)
         hintContainer.zPosition = 100
         addChild(hintContainer)
 
