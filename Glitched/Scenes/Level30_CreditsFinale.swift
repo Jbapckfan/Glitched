@@ -102,7 +102,10 @@ final class CreditsFinaleScene: BaseLevelScene, SKPhysicsContactDelegate {
         // Build from bottom up, player climbs
 
         let startY: CGFloat = 100
-        let verticalSpacing: CGFloat = 120
+        // Center-to-center == top-to-top rise (all platforms 25pt thick).
+        // Bit's jump peak ≈ maxJumpVelocity² / (2·g) ≈ 620² / 4200 ≈ 91pt.
+        // 76pt leaves ~15pt (~16%) margin for imperfect apex timing.
+        let verticalSpacing: CGFloat = 76
 
         // Starting platform
         createCreditPlatform(
@@ -579,6 +582,16 @@ final class CreditsFinaleScene: BaseLevelScene, SKPhysicsContactDelegate {
     private func handleDeath() {
         guard GameState.shared.levelState == .playing else { return }
         playerController.cancel()
+
+        // Snap the camera (and its tracked death zone) back to the spawn level so the
+        // descending death zone can't sit at/above the respawn point and re-kill Bit.
+        if let camera = gameCamera {
+            camera.position.y = max(size.height / 2, spawnPoint.y + 50)
+            if let deathZone = childNode(withName: "deathZone") {
+                deathZone.position.y = camera.position.y - size.height / 2 - 80
+            }
+        }
+
         bit.playBufferDeath(respawnAt: spawnPoint) { [weak self] in self?.bit.setGrounded(true) }
     }
 
