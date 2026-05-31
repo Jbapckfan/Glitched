@@ -26,6 +26,15 @@ final class DarkModeScene: BaseLevelScene, SKPhysicsContactDelegate {
     private var doorPlatformTopY: CGFloat = 0            // top surface Y of the door platform
     private var light1Point: CGPoint = .zero            // center of the light-mode platform (shadow enemy patrols here)
 
+    // Uniform horizontal centering offset for the playable course. Computed once in
+    // buildLevel() and re-added to every course x-reference (the 5 columns, the spawn,
+    // the hidden-text anchor) so the whole spine is centered on WIDE canvases (iPad)
+    // instead of left-anchoring at w*0.12. Mirrors the L11+ courseOriginX pattern: it
+    // is 0 on narrow iPhone canvases (full-bleed, layout identical to before) and only
+    // grows positive when the canvas is wider than the course content — a single
+    // additive shift, so all rises/gaps/relative pitch spacing are preserved exactly.
+    private var courseOffsetX: CGFloat = 0
+
     // Visual elements
     private var backgroundNode: SKShapeNode!
     private var doorNode: SKNode?
@@ -122,6 +131,10 @@ final class DarkModeScene: BaseLevelScene, SKPhysicsContactDelegate {
         updateDoorState()
         updateHiddenDarkText()
         updateShadowEnemy()
+
+        // Discovery-first t=0 atmospheric line (added after all geometry). The explicit
+        // clue lives in hintText() at the 18s no-progress mark.
+        showDiscoveryPanel()
     }
 
     // MARK: - Background
@@ -348,10 +361,30 @@ final class DarkModeScene: BaseLevelScene, SKPhysicsContactDelegate {
         // ~95pt for a <=+50pt rise, regardless of canvas width.
         //
         // Anchor the start at the same w*0.12 the spawn (setupBit) and easter-egg
-        // text (createHiddenDarkText) already key off, so those stay aligned without
-        // touching them. Each subsequent element steps one pitch to the right.
+        // text (createHiddenDarkText) key off, then add a UNIFORM centering offset
+        // (courseOffsetX) so the whole spine is centered on wide canvases. Each
+        // subsequent element steps one pitch to the right of the (offset) start.
         let pitch = min(w * 0.18, 90)        // center-to-center spacing
-        let startX = w * 0.12
+
+        // CENTERED COURSE (L11+ pattern). The 5-platform spine was left-anchored at
+        // w*0.12, leaving the right ~half of an iPad empty. Compute the course's
+        // occupied span (left edge of the 160-wide start platform to the right edge
+        // of the door platform / door visual) and, when the canvas is WIDER than that
+        // span, shift the entire course right so it is centered. On iPhone the span
+        // already fills (and slightly overflows) the width, so the offset clamps to 0
+        // and the layout is byte-for-byte identical to before. Because this is one
+        // additive horizontal shift applied to EVERY course x-reference, the verified
+        // rises (40/27.5/45/50), the negative (overlapping) edge gaps, and the blocked
+        // single-mode skips (rest1->door +95, start->rest1 +67.5) are all preserved.
+        let rawStartX = w * 0.12
+        let doorXUnshifted = rawStartX + pitch * 4
+        let courseLeftEdge = rawStartX - 160 / 2                 // start platform (w=160) left edge
+        let doorRightEdge = max(doorXUnshifted + 140 / 2,        // door platform (w=140) right edge
+                                doorXUnshifted + 20 + 45 / 2)    // door visual (offset +20, w=45) right edge
+        let contentWidth = doorRightEdge - courseLeftEdge
+        courseOffsetX = max(0, (w - contentWidth) / 2 - courseLeftEdge)
+
+        let startX = rawStartX + courseOffsetX
         let dark1X = startX + pitch          // col1
         let rest1X = startX + pitch * 2      // col2
         let light1X = startX + pitch * 3     // col3
@@ -870,12 +903,43 @@ final class DarkModeScene: BaseLevelScene, SKPhysicsContactDelegate {
         lineElements.append(subLabel)
     }
 
+    // MARK: - Discovery Panel (t=0 atmospheric, non-spoiler)
+
+    /// Discovery-first opening line shown at t=0 (L11+ pattern). It sets the mood
+    /// WITHOUT naming the device feature; the explicit "Toggle Dark Mode in Control
+    /// Center" clue lives in hintText(), which the base class surfaces at the 18s
+    /// no-progress mark if the player is stuck. Auto-dismisses after 5s. Not added to
+    /// lineElements — it removes itself before any appearance toggle, and using the
+    /// current strokeColor at spawn keeps it legible against the t=0 background.
+    private func showDiscoveryPanel() {
+        let panel = SKNode()
+        panel.position = CGPoint(x: size.width / 2, y: topSafeY - 70)
+        panel.zPosition = 300
+        addChild(panel)
+
+        let bg = SKShapeNode(rectOf: CGSize(width: 280, height: 60), cornerRadius: 8)
+        bg.fillColor = fillColor
+        bg.strokeColor = strokeColor
+        bg.lineWidth = lineWidth
+        panel.addChild(bg)
+
+        let text = SKLabelNode(text: "WHAT ONE LIGHT HIDES, ANOTHER SHOWS...")
+        text.fontName = "Menlo-Bold"
+        text.fontSize = 11
+        text.fontColor = strokeColor
+        panel.addChild(text)
+
+        panel.run(.sequence([.wait(forDuration: 5), .fadeOut(withDuration: 0.5), .removeFromParent()]))
+    }
+
     // MARK: - Hidden Dark Mode Text
 
     private func createHiddenDarkText() {
         // Easter-egg text sits on the floor near the start area; anchor to the
         // bottom-derived groundY (was hardcoded y=130/115 for an old short canvas).
-        let textX = size.width * 0.12 + 30
+        // Add courseOffsetX (set in buildLevel, which runs first) so the text tracks
+        // the centered start platform on wide canvases instead of staying left-anchored.
+        let textX = size.width * 0.12 + courseOffsetX + 30
         hiddenDarkText = SKLabelNode(text: "PSST. BETWEEN YOU AND ME...")
         hiddenDarkText?.fontName = "Menlo-Bold"
         hiddenDarkText?.fontSize = 10
@@ -982,10 +1046,12 @@ final class DarkModeScene: BaseLevelScene, SKPhysicsContactDelegate {
     // MARK: - Setup
 
     private func setupBit() {
-        // Spawn on the start platform (derived in buildLevel): start is at x = size.width*0.12,
+        // Spawn on the start platform (derived in buildLevel): start is at
+        // x = size.width*0.12 + courseOffsetX (the same centered anchor the spine uses),
         // groundY anchored to the bottom safe area. Keep ~40pt above ground center so Bit
-        // lands cleanly on the start platform on every canvas.
-        spawnPoint = CGPoint(x: size.width * 0.12, y: groundY + 40)
+        // lands cleanly on the start platform on every canvas. courseOffsetX is set in
+        // buildLevel(), which runs before setupBit() in configureScene.
+        spawnPoint = CGPoint(x: size.width * 0.12 + courseOffsetX, y: groundY + 40)
 
         bit = BitCharacter.make()
         bit.position = spawnPoint
