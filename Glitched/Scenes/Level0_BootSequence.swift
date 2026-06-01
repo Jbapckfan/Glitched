@@ -261,7 +261,7 @@ final class BootSequenceScene: BaseLevelScene {
 
     private func setupTitle() {
         // Main title - big and bold
-        let title = SKLabelNode(fontNamed: "Helvetica-Bold")
+        let title = SKLabelNode(fontNamed: VisualConstants.Fonts.display)
         title.text = "GLITCHED"
         title.fontSize = 56
         title.fontColor = .black
@@ -276,7 +276,7 @@ final class BootSequenceScene: BaseLevelScene {
         contentNode.addChild(underline)
 
         // Subtitle
-        let subtitle = SKLabelNode(fontNamed: "Helvetica")
+        let subtitle = SKLabelNode(fontNamed: VisualConstants.Fonts.secondary)
         subtitle.text = "A puzzle platformer"
         subtitle.fontSize = 16
         subtitle.fontColor = SKColor(white: 0.4, alpha: 1)
@@ -288,7 +288,7 @@ final class BootSequenceScene: BaseLevelScene {
         let barY: CGFloat = 0
 
         // "Loading" label above bar
-        let loadingLabel = SKLabelNode(fontNamed: "Helvetica")
+        let loadingLabel = SKLabelNode(fontNamed: VisualConstants.Fonts.secondary)
         loadingLabel.text = "Loading..."
         loadingLabel.fontSize = 14
         loadingLabel.fontColor = SKColor(white: 0.5, alpha: 1)
@@ -322,7 +322,7 @@ final class BootSequenceScene: BaseLevelScene {
         contentNode.addChild(progressHandle)
 
         // Percent label
-        percentLabel = SKLabelNode(fontNamed: "Helvetica-Bold")
+        percentLabel = SKLabelNode(fontNamed: VisualConstants.Fonts.display)
         percentLabel.text = "99%"
         percentLabel.fontSize = 18
         percentLabel.fontColor = .black
@@ -330,7 +330,7 @@ final class BootSequenceScene: BaseLevelScene {
         contentNode.addChild(percentLabel)
 
         // Hint text with arrow
-        let hint = SKLabelNode(fontNamed: "Helvetica")
+        let hint = SKLabelNode(fontNamed: VisualConstants.Fonts.secondary)
         hint.text = "drag to complete →"
         hint.fontSize = 13
         hint.fontColor = SKColor(white: 0.6, alpha: 1)
@@ -363,7 +363,7 @@ final class BootSequenceScene: BaseLevelScene {
         contentNode.addChild(bit)
 
         // Small label below
-        let label = SKLabelNode(fontNamed: "Helvetica")
+        let label = SKLabelNode(fontNamed: VisualConstants.Fonts.secondary)
         label.text = "Bit"
         label.fontSize = 12
         label.fontColor = SKColor(white: 0.5, alpha: 1)

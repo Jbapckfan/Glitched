@@ -174,7 +174,7 @@ final class FlashlightScene: BaseLevelScene, SKPhysicsContactDelegate {
     private func setupLevelTitle() {
         // Title lives in the crop node so it's only visible in light
         let title = SKLabelNode(text: "LEVEL 31")
-        title.fontName = "Helvetica-Bold"
+        title.fontName = VisualConstants.Fonts.display
         title.fontSize = 28
         title.fontColor = strokeColor
         title.position = CGPoint(x: 80, y: topSafeY - 30)

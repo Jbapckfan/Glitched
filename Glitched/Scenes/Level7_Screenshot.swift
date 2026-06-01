@@ -300,7 +300,7 @@ final class ScreenshotScene: BaseLevelScene, SKPhysicsContactDelegate {
 
     private func setupLevelTitle() {
         let title = SKLabelNode(text: "LEVEL 7")
-        title.fontName = "Helvetica-Bold"
+        title.fontName = VisualConstants.Fonts.display
         title.fontSize = 28
         title.fontColor = strokeColor
         // topSafeY-44 (not -30): clears the drawCeilingStructure beams whose bottom
@@ -729,7 +729,7 @@ final class ScreenshotScene: BaseLevelScene, SKPhysicsContactDelegate {
 
         // Timer label
         timerLabel = SKLabelNode(text: "\(max(0, Int(ceil(frozenTimeRemaining))))")
-        timerLabel?.fontName = "Helvetica-Bold"
+        timerLabel?.fontName = VisualConstants.Fonts.display
         timerLabel?.fontSize = 32
         timerLabel?.fontColor = strokeColor
         timerLabel?.verticalAlignmentMode = .center
