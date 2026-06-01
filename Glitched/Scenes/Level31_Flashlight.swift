@@ -371,11 +371,22 @@ final class FlashlightScene: BaseLevelScene, SKPhysicsContactDelegate {
             (x: 2420, length: 160),
         ]
 
+        // SOFTLOCK FIX: Every Section 4 stalactite x (1880/2040/2160/2300/2420)
+        // sits within a mandatory gap's ±40pt range, and at gapFromFloor 70 the
+        // tip was at y = platformTop(180)+70 = 250 — below Bit's jumped head apex,
+        // so a mandatory jump over each gap drove Bit's head into a hazard
+        // (not-completable). Raise gapFromFloor so the tip clears the worst-case
+        // head apex. Worst case head top = iPad-scaled body top (180 + 64*0.85*1.25
+        // = 248) + larger assumed apex (~91pt at the 620 cap) = ~339pt. With
+        // gapFromFloor 175 the tip sits at 180 + 175 = 355 (>= ~340), clearing
+        // the head with comfortable margin on every device and under both apex
+        // assumptions (worst-case iPad/620 margin ~16pt; real clamp-500 margins
+        // ~48-62pt).
         for data in stalactites {
             createStalactiteHazard(
                 at: CGPoint(x: data.x, y: topSafeY - 15),
                 length: data.length,
-                gapFromFloor: 70,
+                gapFromFloor: 175,
                 floorY: groundY
             )
         }

@@ -16,6 +16,7 @@ final class FocusModeScene: BaseLevelScene, SKPhysicsContactDelegate {
     private var hazards: [SKNode] = []
     private var moonIcon: SKNode!
     private var isFocusEnabled = false
+    private var hasFocusedOnce = false
     private var exitDoorLocked = true
     private var exitBlocker: SKNode?
     private var calmOverlay: SKShapeNode?
@@ -335,6 +336,9 @@ final class FocusModeScene: BaseLevelScene, SKPhysicsContactDelegate {
     private func updateFocusState(_ enabled: Bool) {
         isFocusEnabled = enabled
 
+        // Latch: once Focus has ever been active, the exit stays unlocked.
+        if enabled { hasFocusedOnce = true }
+
         // Freeze/unfreeze hazards
         for hazard in hazards {
             if enabled {
@@ -349,14 +353,11 @@ final class FocusModeScene: BaseLevelScene, SKPhysicsContactDelegate {
         // Update moon icon
         moonIcon.alpha = enabled ? 1.0 : 0.3
 
-        // Exit door - only passable when Focus is OFF
-        if enabled {
-            exitDoorLocked = true
-            exitBlocker?.physicsBody?.categoryBitMask = PhysicsCategory.ground
-        } else {
-            exitDoorLocked = false
-            exitBlocker?.physicsBody?.categoryBitMask = 0
-        }
+        // Exit door - unlocks only after Focus has been active (LEVEL-GUIDE l.146).
+        // Turn Focus ON -> hazards freeze AND the latch opens the gate, so the
+        // player walks out through the frozen hazards.
+        exitDoorLocked = !hasFocusedOnce
+        exitBlocker?.physicsBody?.categoryBitMask = exitDoorLocked ? PhysicsCategory.ground : 0
 
         // 4th-wall text
         if enabled {
