@@ -112,6 +112,12 @@ final class OrientationScene: BaseLevelScene, SKPhysicsContactDelegate {
         if let panel = instructionPanel {
             panel.position = CGPoint(x: 0, y: instructionPanelLocalY())
         }
+
+        // Discovery-first atmospheric line (t=0). Added to the SCENE (not the
+        // scaled worldNode) so it stays a fixed-size HUD overlay, matching the
+        // L11+ convention. Non-spoiler: it does NOT name the device feature; the
+        // explicit clue lives in hintText() (shown at 18s if the player stalls).
+        showDiscoveryPanel()
     }
 
     // MARK: - Background
@@ -743,6 +749,33 @@ final class OrientationScene: BaseLevelScene, SKPhysicsContactDelegate {
         subLabel.position = CGPoint(x: 30, y: -10)
         instructionPanel?.addChild(subLabel)
         lineElements.append(subLabel)
+    }
+
+    // MARK: - Discovery Panel
+
+    /// Discovery-first t=0 atmospheric line (L11+ convention; ref Level 13's
+    /// "THE SIGNAL COMES AND GOES..." panel). Lives on the SCENE in scene-space
+    /// (NOT the scaled worldNode), so it stays a fixed-size HUD overlay anchored
+    /// just below the safe-area top. The line is evocative and NON-SPOILER — it
+    /// never says "rotate"; the explicit clue is reserved for hintText() at 18s.
+    private func showDiscoveryPanel() {
+        let panel = SKNode()
+        panel.position = CGPoint(x: size.width / 2, y: topSafeY - 70)
+        panel.zPosition = 300
+        addChild(panel)
+
+        let bg = SKShapeNode(rectOf: CGSize(width: 280, height: 60), cornerRadius: 8)
+        bg.fillColor = fillColor
+        bg.strokeColor = strokeColor
+        panel.addChild(bg)
+
+        let text = SKLabelNode(text: "UP IS A MATTER OF OPINION...")
+        text.fontName = "Menlo-Bold"
+        text.fontSize = 11
+        text.fontColor = strokeColor
+        panel.addChild(text)
+
+        panel.run(.sequence([.wait(forDuration: 5), .fadeOut(withDuration: 0.5), .removeFromParent()]))
     }
 
     // MARK: - Setup

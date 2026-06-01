@@ -20,6 +20,20 @@ final class JuiceManager {
         ProgressManager.shared.load().settings.reduceFlashEffects
     }
 
+    /// System-level Reduce Motion (Settings > Accessibility > Motion). When on we
+    /// suppress shake/slow-mo/freeze-frame and other heavy camera motion outright,
+    /// independent of the in-game `reduceScreenShake` toggle (which only dampens).
+    private var systemReduceMotion: Bool {
+        UIAccessibility.isReduceMotionEnabled
+    }
+
+    /// Screen-space effects (flash/text/vignette/glitch bars) historically rendered
+    /// at `scene.size/2`, but `gameCamera` can be panned elsewhere — so they played
+    /// off-screen. Anchor full-screen juice to the camera's current center instead.
+    private func screenCenter(in scene: SKScene) -> CGPoint {
+        scene.camera?.position ?? CGPoint(x: scene.size.width / 2, y: scene.size.height / 2)
+    }
+
     func setScene(_ scene: SKScene) {
         currentScene = scene
         if let camera = scene.camera {
@@ -35,6 +49,9 @@ final class JuiceManager {
     }
 
     func shake(in scene: SKScene, intensity: ShakeIntensity = .medium, duration: TimeInterval = 0.3, force: Bool = false) {
+        // A11Y: skip shake entirely when the system Reduce Motion switch is on.
+        // (The in-game `reduceScreenShake` toggle below only dampens, it doesn't skip.)
+        guard !systemReduceMotion else { return }
         guard let camera = scene.camera else { return }
         if camera.action(forKey: "screenShake") != nil {
             guard force else { return }
@@ -93,7 +110,8 @@ final class JuiceManager {
         flash.strokeColor = .clear
         flash.alpha = 0
         flash.zPosition = 10000
-        flash.position = CGPoint(x: scene.size.width / 2, y: scene.size.height / 2)
+        // Follow the camera so the flash always covers the visible viewport.
+        flash.position = screenCenter(in: scene)
 
         scene.addChild(flash)
 
@@ -108,6 +126,16 @@ final class JuiceManager {
 
     func slowMotion(factor: CGFloat = 0.3, duration: TimeInterval = 0.5, then: (() -> Void)? = nil) {
         guard let scene = currentScene else { return }
+
+        // A11Y: time dilation is heavy motion — skip it under Reduce Motion, but
+        // still fire the completion after the intended delay so callers proceed.
+        guard !systemReduceMotion else {
+            scene.run(.sequence([
+                .wait(forDuration: duration),
+                .run { then?() }
+            ]), withKey: "slowMotion")
+            return
+        }
 
         scene.physicsWorld.speed = factor
         scene.speed = factor
@@ -128,6 +156,12 @@ final class JuiceManager {
     func freezeFrame(duration: TimeInterval = 0.1, then: (() -> Void)? = nil) {
         guard let scene = currentScene else { return }
 
+        // A11Y: skip the frame freeze under Reduce Motion; run the continuation now.
+        guard !systemReduceMotion else {
+            then?()
+            return
+        }
+
         scene.isPaused = true
 
         // Use a RunLoop timer since SKActions don't run when paused
@@ -140,6 +174,8 @@ final class JuiceManager {
     // MARK: - Dramatic Zoom
 
     func punchZoom(scale: CGFloat = 1.1, duration: TimeInterval = 0.15) {
+        // A11Y: camera scale punches are heavy motion — skip under Reduce Motion.
+        guard !systemReduceMotion else { return }
         guard let scene = currentScene, let camera = scene.camera else { return }
 
         let originalScale = camera.xScale
@@ -159,14 +195,16 @@ final class JuiceManager {
         let colors: [UIColor] = [.red, .cyan]
         let offsets: [CGFloat] = [-5, 5]
 
+        let center = screenCenter(in: scene)
         for (color, offset) in zip(colors, offsets) {
-            let glitchLayer = SKShapeNode(rectOf: scene.size)
+            let glitchLayer = SKShapeNode(rectOf: CGSize(width: scene.size.width * 2, height: scene.size.height * 2))
             glitchLayer.fillColor = color
             glitchLayer.strokeColor = .clear
             glitchLayer.alpha = 0.15
             glitchLayer.blendMode = .add
             glitchLayer.zPosition = 9999
-            glitchLayer.position = CGPoint(x: scene.size.width / 2 + offset, y: scene.size.height / 2)
+            // Anchor to camera center so glitch bars cover the visible viewport.
+            glitchLayer.position = CGPoint(x: center.x + offset, y: center.y)
 
             scene.addChild(glitchLayer)
 
@@ -194,7 +232,8 @@ final class JuiceManager {
         vignette.lineWidth = 200
         vignette.alpha = 0
         vignette.zPosition = 9998
-        vignette.position = CGPoint(x: scene.size.width / 2, y: scene.size.height / 2)
+        // Anchor to camera center so the vignette frames the visible viewport.
+        vignette.position = screenCenter(in: scene)
 
         scene.addChild(vignette)
 
@@ -253,13 +292,13 @@ final class JuiceManager {
         // 3. Red flash
         flash(color: .red, duration: 0.15)
 
-        // 4. Brief static overlay
+        // 4. Brief static overlay (anchored to camera center so it covers the view)
         let staticOverlay = SKShapeNode(rectOf: CGSize(width: scene.size.width * 2, height: scene.size.height * 2))
         staticOverlay.fillColor = .white
         staticOverlay.strokeColor = .clear
         staticOverlay.alpha = 0
         staticOverlay.zPosition = 10001
-        staticOverlay.position = CGPoint(x: scene.size.width / 2, y: scene.size.height / 2)
+        staticOverlay.position = screenCenter(in: scene)
         scene.addChild(staticOverlay)
 
         // Static noise lines
