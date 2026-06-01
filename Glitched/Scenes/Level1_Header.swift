@@ -459,31 +459,11 @@ final class HeaderScene: BaseLevelScene, SKPhysicsContactDelegate {
     }
 
     private func showHeaderGlitchText() {
-        let glitchLabel = SKLabelNode(fontNamed: "Menlo-Bold")
-        glitchLabel.text = "HEY, I NEEDED THAT."
-        glitchLabel.fontSize = 14 * visualScale
-        glitchLabel.fontColor = strokeColor
-        glitchLabel.position = CGPoint(x: size.width / 2 + 50 * layoutXScale, y: size.height - 130 * layoutYScale)
-        glitchLabel.zPosition = 100
-        glitchLabel.alpha = 0
-        addChild(glitchLabel)
-
-        // Glitch-in effect: flicker then fade out
-        glitchLabel.run(.sequence([
-            .fadeIn(withDuration: 0.05),
-            .wait(forDuration: 0.05),
-            .fadeAlpha(to: 0.3, duration: 0.03),
-            .fadeAlpha(to: 1.0, duration: 0.03),
-            .wait(forDuration: 0.1),
-            .moveBy(x: CGFloat.random(in: -4...4), y: 0, duration: 0.02),
-            .moveBy(x: 0, y: 0, duration: 0.02),
-            .wait(forDuration: 2.0),
-            .group([
-                .fadeOut(withDuration: 0.5),
-                .moveBy(x: CGFloat.random(in: -8...8), y: 0, duration: 0.5)
-            ]),
-            .removeFromParent()
-        ]))
+        // 4th-wall narrator aside: the OS reacts to having its own title stolen
+        // for the bridge. Migrated to the shared GlitchedNarrator (lower-center
+        // safe band, full opacity, reduce-motion aware) from the old ad-hoc
+        // SKLabelNode. Fired at the same trigger point (bridge spawn).
+        GlitchedNarrator.present("HEY, I NEEDED THAT.", in: self, style: .whisper)
     }
 
     // MARK: - Update

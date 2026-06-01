@@ -49,6 +49,11 @@ final class VoiceCommandScene: BaseLevelScene, SKPhysicsContactDelegate {
     private var doorBlocker: SKNode?
     private var doorOpened = false
     private var flyActive = false
+    /// Persistent record that FLY has been used at least once. `flyActive` is a
+    /// transient 2-second window that resets afterward, so the no-mic fallback
+    /// gate keys off this instead (otherwise the fallback would needlessly
+    /// re-arm after a successful, completed FLY).
+    private var flyUsed = false
 
     // Mic indicator
     private var micIcon: SKNode!
@@ -467,6 +472,7 @@ final class VoiceCommandScene: BaseLevelScene, SKPhysicsContactDelegate {
             return
         }
         flyActive = true
+        flyUsed = true
 
         // Brief reduced gravity + upward impulse
         physicsWorld.gravity = CGVector(dx: 0, dy: -5)
@@ -489,53 +495,79 @@ final class VoiceCommandScene: BaseLevelScene, SKPhysicsContactDelegate {
         guard !hasSpokenFirst else { return }
         hasSpokenFirst = true
 
-        let label = SKLabelNode(text: "YOU'RE TALKING TO YOUR PHONE NOW.")
-        label.fontName = "Menlo-Bold"
-        label.fontSize = 10
-        label.fontColor = strokeColor
-        label.position = CGPoint(x: size.width / 2, y: topSafeY - 130)
-        label.zPosition = 300
-        addChild(label)
-
-        let label2 = SKLabelNode(text: "THIS IS YOUR LIFE.")
-        label2.fontName = "Menlo"
-        label2.fontSize = 10
-        label2.fontColor = strokeColor
-        label2.position = CGPoint(x: size.width / 2, y: topSafeY - 145)
-        label2.zPosition = 300
-        label2.alpha = 0
-        addChild(label2)
-
-        label2.run(.sequence([.wait(forDuration: 1.5), .fadeIn(withDuration: 0.5)]))
-
-        label.run(.sequence([.wait(forDuration: 5), .fadeOut(withDuration: 0.5), .removeFromParent()]))
-        label2.run(.sequence([.wait(forDuration: 5), .fadeOut(withDuration: 0.5), .removeFromParent()]))
+        // In-character 4th-wall aside — the OS noticing you're literally
+        // talking to your phone. Migrated to the shared narrator presenter
+        // (consistent typewriter + RGB-split reveal, lower-center safe band,
+        // full opacity, reduce-motion aware) from the prior ad-hoc two-label
+        // stack. WORDING preserved; only presentation moves. Fires at the same
+        // trigger (first recognized/fallback command). The second beat is
+        // re-presented after the first reveal so the narrator never stacks.
+        GlitchedNarrator.present("YOU'RE TALKING TO YOUR PHONE NOW.", in: self, style: .whisper)
+        run(.sequence([
+            .wait(forDuration: 2.2),
+            .run { [weak self] in
+                guard let self = self else { return }
+                GlitchedNarrator.present("THIS IS YOUR LIFE.", in: self, style: .whisper)
+            }
+        ]))
     }
 
     // MARK: - Accessibility / Simulator Fallback
 
-    /// Schedule the on-screen fallback in case no mic-denied event fires and no
-    /// command is recognized (e.g. simulator: mic yields nothing silently).
+    /// True once every progress-gating command has been satisfied, i.e. the
+    /// player has done everything speaking is required for and only has to walk
+    /// to the exit. Used to decide whether the no-mic fallback is still needed.
+    private var allCommandsSatisfied: Bool { bridgeExtended && doorOpened && flyUsed }
+
+    /// Schedule the on-screen fallback ONLY when the mic path is actually
+    /// failing — not on a blanket timeout. Two failure signals gate the reveal:
+    ///   1. `VoiceCommandManager.shared.micDenied` — permission was refused, so
+    ///      the spoken path is impossible. (The .voiceCommandMicDenied event
+    ///      already reveals immediately; this is the polling backstop.)
+    ///   2. No command recognized by the tick (`!hasSpokenFirst`) — the mic is
+    ///      either silent (simulator) or not picking the player up. Until a
+    ///      first command lands, treat the mic as not (yet) working and offer
+    ///      the buttons after the 6 s grace window.
     ///
-    /// The reveal is gated on actual progress (bridgeExtended), NOT on
-    /// hasSpokenFirst. BRIDGE is the first required command, so a player who
-    /// hasn't extended the bridge by the timeout is stuck regardless of how
-    /// many commands were "recognized". This matters because the shared
-    /// accessibility OPEN button posts a .voiceCommandRecognized("open") event,
-    /// which would otherwise flip hasSpokenFirst and suppress the in-scene
-    /// controls forever — leaving BRIDGE/FLY unreachable. A working mic that
-    /// recognized BRIDGE has bridgeExtended == true, so controls stay hidden.
+    /// COSMETIC FIX: previously this revealed the buttons on EVERY 6 s tick until
+    /// `allCommandsSatisfied`, so a slow player on a perfectly working mic — who
+    /// HAD already spoken (hasSpokenFirst true) but hadn't yet finished all three
+    /// commands — still got the in-scene BRIDGE/OPEN/FLY buttons shoved on screen,
+    /// undercutting "speaking is required." Now, once any command is recognized
+    /// (mic demonstrably works), the in-scene reveal is suppressed; such players
+    /// finish by speaking, and still have the always-on universal fallback hatch
+    /// (GameRootView "CAN'T DO THIS?") if they get stuck.
+    ///
+    /// The reveal stays gated on REMAINING progress too: if the mic IS failing,
+    /// keep the buttons reachable until the level is walk-to-exit completable.
+    /// (The shared accessibility OPEN button posts .voiceCommandRecognized("open")
+    /// and so flips hasSpokenFirst, but it only exists after a reveal has already
+    /// happened — so a true mic recognition is the only way to set hasSpokenFirst
+    /// before the first reveal.) The timer re-checks on an interval rather than
+    /// firing once, so a mic-denied state that surfaces late still gets caught.
     private func armFallbackTimeout() {
         let timer = SKNode()
         addChild(timer)
         fallbackTimer = timer
-        timer.run(.sequence([
+        timer.run(.repeatForever(.sequence([
             .wait(forDuration: 6.0),
             .run { [weak self] in
-                guard let self = self, !self.bridgeExtended else { return }
+                guard let self = self else { return }
+                guard !self.allCommandsSatisfied else {
+                    // Real mechanic cleared everything — retire the timer.
+                    self.fallbackTimer?.removeAllActions()
+                    self.fallbackTimer?.removeFromParent()
+                    self.fallbackTimer = nil
+                    return
+                }
+                // Only reveal when the mic path is failing: permission denied,
+                // OR no command recognized yet by this tick. A working mic that
+                // has landed at least one command suppresses the in-scene reveal.
+                let micPathFailing = VoiceCommandManager.shared.micDenied || !self.hasSpokenFirst
+                guard micPathFailing else { return }
                 self.presentFallbackControls()
             }
-        ]))
+        ])))
     }
 
     /// Build three on-screen buttons (BRIDGE / OPEN / FLY) that route into the
@@ -611,7 +643,13 @@ final class VoiceCommandScene: BaseLevelScene, SKPhysicsContactDelegate {
         switch event {
         case .voiceCommandMicDenied:
             // No mic available — surface the in-scene fallback so all three
-            // commands remain reachable.
+            // commands remain reachable, AND register the voice-command
+            // hardware fallback so the canonical release affordances (the
+            // GameRootView voiceCommandFallbackControls + the "CAN'T DO THIS?"
+            // overlay) also light up. VoiceCommandManager posts this event but
+            // does not itself force the fallback, so without this a denied-mic
+            // release player would only have the in-scene buttons.
+            AccessibilityManager.shared.forceHardwareFallback(for: .voiceCommand)
             presentFallbackControls()
         case .voiceCommandRecognized(let command):
             let cmd = command.uppercased()

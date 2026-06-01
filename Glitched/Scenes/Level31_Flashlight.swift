@@ -1207,7 +1207,7 @@ final class FlashlightScene: BaseLevelScene, SKPhysicsContactDelegate {
                 // Fourth-wall commentary
                 if !flashlightOnCommentShown {
                     flashlightOnCommentShown = true
-                    showCommentaryText("CREATIVE USE OF HARDWARE.")
+                    GlitchedNarrator.present("CREATIVE USE OF HARDWARE.", in: self, style: .whisper)
                 }
             }
 
@@ -1218,57 +1218,12 @@ final class FlashlightScene: BaseLevelScene, SKPhysicsContactDelegate {
             // Fourth-wall commentary when held vertical for the first time
             if pitch < -1.2 && oldPitch >= -1.2 && !verticalCommentShown && isFlashlightOn {
                 verticalCommentShown = true
-                showCommentaryText("NOW YOU LOOK LIKE YOU'RE TAKING A SELFIE IN A CAVE.")
+                GlitchedNarrator.present("NOW YOU LOOK LIKE YOU'RE TAKING A SELFIE IN A CAVE.", in: self, style: .whisper)
             }
 
         default:
             break
         }
-    }
-
-    // MARK: - Fourth-Wall Commentary
-
-    private func showCommentaryText(_ text: String) {
-        // Attach to camera so it's always visible regardless of scrolling.
-        // HUD-OVERLAP FIX: The old local y (size.height/2 - 60) placed this 30pt-tall
-        // banner near screen-top (screen-y ~45-75 on iPhone 390/402, ~40-70 on iPad),
-        // where its wide box (up to 50 chars -> ~430pt) overlapped BOTH the level
-        // title (top-left, screen-y ~61-115) and the screen-pinned pause button
-        // (top-right ~88x88). The "CREATIVE USE OF HARDWARE." comment fires the moment
-        // the flashlight turns on — which can be at t=0 with Bit still at spawn and the
-        // title fully visible — so the collision is real, not just transient.
-        // Anchor the banner ~130pt below the safe-top so its top edge (center-15)
-        // sits below both reserved top zones on every device:
-        //   iPhone 390/402: scene-y topSafeY-130 = 655 -> screen-top ~174 (title ends ~115, pause ~111)
-        //   iPad 1024x1366: scene-y topSafeY-130 = 1212 -> screen-top ~139 (title ends ~83, pause ~76)
-        // Expressed in camera-local space (camera centered at size.height/2 at t=0).
-        let commentaryLocalY = (topSafeY - 130) - size.height / 2
-        let container = SKNode()
-        container.position = CGPoint(x: 0, y: commentaryLocalY)
-        container.zPosition = 9500
-        container.alpha = 0
-
-        let bg = SKShapeNode(rectOf: CGSize(width: CGFloat(text.count) * 8 + 30, height: 30), cornerRadius: 6)
-        bg.fillColor = SKColor.black.withAlphaComponent(0.8)
-        bg.strokeColor = VisualConstants.Colors.accent.withAlphaComponent(0.6)
-        bg.lineWidth = 1
-        container.addChild(bg)
-
-        let label = SKLabelNode(text: text)
-        label.fontName = "Menlo-Bold"
-        label.fontSize = 12
-        label.fontColor = VisualConstants.Colors.accent
-        label.verticalAlignmentMode = .center
-        container.addChild(label)
-
-        gameCamera?.addChild(container)
-
-        container.run(.sequence([
-            .fadeIn(withDuration: 0.3),
-            .wait(forDuration: 3.0),
-            .fadeOut(withDuration: 0.5),
-            .removeFromParent()
-        ]))
     }
 
     // MARK: - Touch Handling
@@ -1341,7 +1296,7 @@ final class FlashlightScene: BaseLevelScene, SKPhysicsContactDelegate {
         // Exit commentary
         if !exitCommentShown {
             exitCommentShown = true
-            showCommentaryText("NOT BAD FOR PLAYING IN THE DARK.")
+            GlitchedNarrator.present("NOT BAD FOR PLAYING IN THE DARK.", in: self, style: .whisper)
         }
 
         // Unlock animation

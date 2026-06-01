@@ -31,6 +31,7 @@ final class WiFiScene: BaseLevelScene, SKPhysicsContactDelegate {
     private var spawnPoint: CGPoint = .zero
 
     private var wifiPlatforms: [SKNode] = []
+    private var wifiOffPlatforms: [SKNode] = []
     private var wifiWalls: [SKNode] = []
     private var signalBars: [SKShapeNode] = []
     private var isWifiEnabled = true
@@ -42,9 +43,6 @@ final class WiFiScene: BaseLevelScene, SKPhysicsContactDelegate {
     private var downloadLabel: SKLabelNode!
     private var downloadCompleted = false
     private let downloadBarWidth: CGFloat = 160
-
-    // 4th-wall text
-    private var wifiStatusLabel: SKLabelNode?
 
     override func configureScene() {
         levelID = LevelID(world: .world2, index: 13)
@@ -95,46 +93,89 @@ final class WiFiScene: BaseLevelScene, SKPhysicsContactDelegate {
     private func buildLevel() {
         let groundY: CGFloat = 160
 
-        // Fits a 390-pt iPhone canvas. The puzzle is split into two disjoint
-        // segments so the two opposing WiFi rules never apply to the same
-        // standing surface (the old layout put the wall *between* two stepping
-        // stones, so toggling WiFi off to pass it deleted the stone under Bit ->
-        // guaranteed fall/softlock):
-        //   Segment A — WiFi ON: cross the WiFi-dependent stepping stones.
-        //   Segment B — WiFi OFF: from the solid landing floor, walk through the
-        //               WiFi wall (which stands ON that floor) to the exit.
-        // Because the level starts WiFi-on (stones solid by default) and needs
-        // exactly one OFF toggle, the one-directional `.wifi` accessibility
-        // fallback (which only posts isEnabled:false) is sufficient to win.
-
+        // Fits a 390-pt iPhone canvas. Round-2 tightening: WiFi toggling is now
+        // GENUINELY REQUIRED in BOTH states — the path is split into two disjoint
+        // segments that are each only crossable in one WiFi state, and neither gap
+        // is single-jumpable:
+        //
+        //   Segment A — requires WiFi ON. A 175-logical chasm between the spawn
+        //     bookend and the solid REST ledge is bridged ONLY by the WiFi-ON
+        //     stepping stones. With WiFi OFF the stones vanish and the chasm
+        //     (175 logical ≈ 159pt screen on iPhone, 175 on iPad) exceeds Bit's
+        //     ~144pt flat-jump reach on every device (the bookend and rest ledge
+        //     share the same height, so no downhill jump extends the reach), so it
+        //     cannot be jumped.
+        //
+        //   Segment B — requires WiFi OFF. From the solid REST ledge, a TALL WiFi
+        //     wall (solid when ON) blocks the way forward and is too tall to jump
+        //     over (top ≈ 305 vs jump-apex ≈ 266 from the rest floor). The exit
+        //     sits on a HIGH ledge whose top is ~100pt above the rest floor —
+        //     beyond Bit's ~91pt apex — so it can NOT be reached by a direct jump
+        //     even once the wall opens. Crossing requires the WiFi-OFF step (solid
+        //     ONLY when OFF), which at +55pt makes a two-hop stair: rest→step
+        //     (+55) then step→exit (+45), both inside apex. So OFF is mandatory.
+        //
+        // The player therefore MUST be ON to cross A and OFF to cross B. The
+        // intended/fallback solution is the monotonic sequence: start ON (default)
+        // → cross stones onto the solid rest ledge → toggle OFF once → climb the
+        // OFF-step to the exit. Because winning needs exactly ONE OFF toggle (never
+        // a toggle back ON), the one-directional `.wifi` accessibility fallback
+        // (which only posts isEnabled:false) is still sufficient to complete.
+        //
+        // The toggle always happens while Bit stands on the WiFi-INDEPENDENT rest
+        // ledge, so no surface ever de-solidifies under the player on the intended
+        // path; clearGroundedIfStandingOn covers the off-path case where a hardware
+        // player toggles back ON while standing on a now-vanishing platform.
+        //
         // Gameplay geometry is authored in fixed logical course space (0...430)
-        // and centered via courseX/courseLen so the gap spacing, WiFi wall, and
-        // exit jump stay identical on iPhone and iPad. The landing floor / wall /
-        // exit no longer stretch to size.width.
+        // and centered via courseX/courseLen so the chasm spacing, wall, OFF-step
+        // and exit-jump stay identical on iPhone and iPad (no stretch to size.width).
 
-        // Left bookend (WiFi-independent) — spawn footing.
+        let restTopY = groundY + 15   // rest-ledge surface top (height 30)
+
+        // --- Segment A: spawn bookend + WiFi-ON stepping stones + rest ledge ---
+
+        // Left bookend (WiFi-independent) — spawn footing. Right edge ≈ logical 80.
         createPlatform(at: CGPoint(x: courseX(45), y: groundY),
-                       size: CGSize(width: courseLen(70), height: 30), isWifiDependent: false)
+                       size: CGSize(width: courseLen(70), height: 30), solidity: .always)
 
-        // Wide solid landing floor on the right. The WiFi wall and the exit both
-        // sit on this floor, so the player is always on solid ground when they
-        // toggle WiFi off to pass the wall. Authored as the rightmost 140 logical
-        // points of the course: center at logical x = 430 - 70 = 360.
-        let landingWidth: CGFloat = 140
-        createPlatform(at: CGPoint(x: courseX(designSize.width - landingWidth / 2), y: groundY),
-                       size: CGSize(width: courseLen(landingWidth), height: 30), isWifiDependent: false)
+        // Wide solid REST ledge (WiFi-independent). Logical span [255, 335]: its
+        // left edge at 255 is 175 logical past the bookend's right edge (80) — the
+        // un-jumpable chasm A. This ledge is the safe spot from which the player
+        // toggles WiFi OFF, and the WiFi wall stands on it.
+        createPlatform(at: CGPoint(x: courseX(295), y: groundY),
+                       size: CGSize(width: courseLen(80), height: 30), solidity: .always)
 
-        // WiFi-dependent stepping stones across the gap (solid only when WiFi ON).
-        createPlatform(at: CGPoint(x: courseX(120), y: groundY + 26), size: CGSize(width: courseLen(50), height: 24), isWifiDependent: true)
-        createPlatform(at: CGPoint(x: courseX(175), y: groundY + 46), size: CGSize(width: courseLen(50), height: 24), isWifiDependent: true)
-        createPlatform(at: CGPoint(x: courseX(225), y: groundY + 26), size: CGSize(width: courseLen(46), height: 24), isWifiDependent: true)
+        // WiFi-ON stepping stones across chasm A (solid only when WiFi ON). Each
+        // sub-hop is small; they only exist to make the 175-logical chasm crossable
+        // while WiFi is ON. Right edge of the last stone ≈ 238, a short hop to the
+        // rest ledge's left edge (255).
+        createPlatform(at: CGPoint(x: courseX(120), y: groundY + 26), size: CGSize(width: courseLen(46), height: 24), solidity: .wifiOn)
+        createPlatform(at: CGPoint(x: courseX(168), y: groundY + 46), size: CGSize(width: courseLen(46), height: 24), solidity: .wifiOn)
+        createPlatform(at: CGPoint(x: courseX(215), y: groundY + 26), size: CGSize(width: courseLen(46), height: 24), solidity: .wifiOn)
 
-        // WiFi wall stands on the left side of the landing floor (passable when
-        // OFF). Logical x = 430 - 140 + 25 = 315, which lies inside the landing
-        // floor's logical span [290, 430], so the wall is always on solid ground.
-        createWiFiWall(at: CGPoint(x: courseX(designSize.width - landingWidth + 25), y: groundY + 80))
+        // --- Segment B: WiFi wall + WiFi-OFF step + elevated exit ledge ---
 
-        createExitDoor(at: CGPoint(x: courseX(designSize.width - 30), y: groundY + 50))
+        // Tall WiFi wall (solid when ON, passable when OFF) standing on the rest
+        // ledge at logical x = 300 (inside rest span [255, 335]). Too tall to jump
+        // over while ON, so forward progress demands toggling OFF.
+        createWiFiWall(at: CGPoint(x: courseX(300), y: restTopY + 65))
+
+        // WiFi-OFF step (solid ONLY when WiFi OFF). Logical span ≈ [327.5, 382.5],
+        // top at restTopY + 55. It bridges the void past the rest ledge (right edge
+        // 335) and forms the middle stair to the elevated exit. With WiFi ON it is
+        // intangible, so it can't be used to climb until the player goes OFF.
+        createWiFiOffPlatform(at: CGPoint(x: courseX(355), y: restTopY + 55 - 12),
+                              size: CGSize(width: courseLen(55), height: 24))
+
+        // Elevated exit ledge (WiFi-independent, always solid so the door always
+        // has footing). Top at restTopY + 100 — beyond Bit's ~91pt apex from the
+        // rest floor, so it is unreachable without first standing on the OFF-step.
+        let exitLedgeTopY = restTopY + 100
+        createPlatform(at: CGPoint(x: courseX(400), y: exitLedgeTopY - 15),
+                       size: CGSize(width: courseLen(60), height: 30), solidity: .always)
+
+        createExitDoor(at: CGPoint(x: courseX(400), y: exitLedgeTopY + 30))
 
         // Death zone
         let death = SKNode()
@@ -145,10 +186,24 @@ final class WiFiScene: BaseLevelScene, SKPhysicsContactDelegate {
         addChild(death)
     }
 
-    private func createPlatform(at position: CGPoint, size: CGSize, isWifiDependent: Bool) {
+    /// When a platform is solid relative to the WiFi state.
+    private enum Solidity {
+        /// Always solid (WiFi-independent footing).
+        case always
+        /// Solid only when WiFi is ON (the stepping stones of Segment A).
+        case wifiOn
+        /// Solid only when WiFi is OFF (the climb step of Segment B).
+        case wifiOff
+    }
+
+    private func createPlatform(at position: CGPoint, size: CGSize, solidity: Solidity) {
         let platform = SKNode()
         platform.position = position
-        platform.name = isWifiDependent ? "wifi_platform" : "solid_platform"
+        switch solidity {
+        case .always: platform.name = "solid_platform"
+        case .wifiOn: platform.name = "wifi_platform"
+        case .wifiOff: platform.name = "wifi_off_platform"
+        }
 
         let surface = SKShapeNode(rectOf: size)
         surface.fillColor = fillColor
@@ -157,11 +212,17 @@ final class WiFiScene: BaseLevelScene, SKPhysicsContactDelegate {
         surface.name = "surface"
         platform.addChild(surface)
 
-        // WiFi icon on dependent platforms
-        if isWifiDependent {
+        // WiFi icon on state-dependent platforms (a small "antenna" cue). A solid
+        // dot in the center of the icon marks a WiFi-OFF platform (present when the
+        // signal is gone) vs the open arcs of a WiFi-ON platform.
+        if solidity == .wifiOn {
             let icon = createWiFiIcon(small: true)
             icon.position = CGPoint(x: 0, y: size.height / 2 + 15)
             icon.setScale(0.5)
+            platform.addChild(icon)
+        } else if solidity == .wifiOff {
+            let icon = createWiFiOffIcon()
+            icon.position = CGPoint(x: 0, y: size.height / 2 + 15)
             platform.addChild(icon)
         }
 
@@ -171,9 +232,22 @@ final class WiFiScene: BaseLevelScene, SKPhysicsContactDelegate {
 
         addChild(platform)
 
-        if isWifiDependent {
-            wifiPlatforms.append(platform)
+        switch solidity {
+        case .always: break
+        case .wifiOn: wifiPlatforms.append(platform)
+        case .wifiOff:
+            // Starts intangible (level begins WiFi ON), so it is hidden until the
+            // player drops the signal.
+            platform.alpha = 0.3
+            platform.physicsBody?.categoryBitMask = 0
+            wifiOffPlatforms.append(platform)
         }
+    }
+
+    /// Convenience wrapper for a WiFi-OFF-dependent platform (solid only when the
+    /// signal is OFF). Kept separate from the always-solid call sites for clarity.
+    private func createWiFiOffPlatform(at position: CGPoint, size: CGSize) {
+        createPlatform(at: position, size: size, solidity: .wifiOff)
     }
 
     private func createWiFiWall(at position: CGPoint) {
@@ -181,11 +255,13 @@ final class WiFiScene: BaseLevelScene, SKPhysicsContactDelegate {
         wall.position = position
         wall.name = "wifi_wall"
 
-        // Wall is 130 pt tall so its top (y ≈ 310 at wall center y=240) is
-        // above the player's jump-apex body bottom (~304.5 when taking off
-        // from stone 2 at y-top 232.5), preventing a skip-over jump while
-        // Wi-Fi is on. Height stays in screen units (vertical, jump-math driven);
-        // width is course-scaled so the wall keeps its logical footprint.
+        // Wall is 130 pt tall and its bottom sits on the rest-ledge surface
+        // (passed-in center y = restTopY + 65), so its top ≈ restTopY + 130 ≈ 305.
+        // Bit's jump-apex from the rest floor (top 175) is ≈ 266 — well below the
+        // wall top — so while WiFi is ON the wall cannot be jumped over and forward
+        // progress is blocked until the player toggles WiFi OFF (the wall opens).
+        // Height stays in screen units (vertical, jump-math driven); width is
+        // course-scaled so the wall keeps its logical footprint.
         let wallWidth = courseLen(20)
         let wallShape = SKShapeNode(rectOf: CGSize(width: wallWidth, height: 130))
         wallShape.fillColor = strokeColor.withAlphaComponent(0.3)
@@ -228,6 +304,24 @@ final class WiFiScene: BaseLevelScene, SKPhysicsContactDelegate {
         let dot = SKShapeNode(circleOfRadius: 3 * scale)
         dot.fillColor = strokeColor
         icon.addChild(dot)
+
+        return icon
+    }
+
+    /// A small "WiFi off" cue (the WiFi glyph with a slash) marking platforms that
+    /// only exist while the signal is gone.
+    private func createWiFiOffIcon() -> SKNode {
+        let icon = createWiFiIcon(small: true)
+        icon.setScale(0.5)
+
+        let slash = SKShapeNode()
+        let path = CGMutablePath()
+        path.move(to: CGPoint(x: -10, y: -10))
+        path.addLine(to: CGPoint(x: 10, y: 12))
+        slash.path = path
+        slash.strokeColor = strokeColor
+        slash.lineWidth = lineWidth * 0.6
+        icon.addChild(slash)
 
         return icon
     }
@@ -336,27 +430,6 @@ final class WiFiScene: BaseLevelScene, SKPhysicsContactDelegate {
         JuiceManager.shared.shake(intensity: .light, duration: 0.2)
     }
 
-    private func showWiFiStatusText(_ text: String) {
-        wifiStatusLabel?.removeFromParent()
-
-        let label = SKLabelNode(text: text)
-        label.fontName = "Menlo-Bold"
-        label.fontSize = 11
-        label.fontColor = strokeColor
-        label.position = CGPoint(x: size.width / 2, y: size.height / 2 + 60)
-        label.zPosition = 500
-        label.alpha = 0
-        addChild(label)
-        wifiStatusLabel = label
-
-        label.run(.sequence([
-            .fadeIn(withDuration: 0.3),
-            .wait(forDuration: 2.5),
-            .fadeOut(withDuration: 0.5),
-            .removeFromParent()
-        ]))
-    }
-
     private func createExitDoor(at position: CGPoint) {
         // Width is course-scaled (horizontal gameplay footprint); height stays in
         // screen units like the platforms.
@@ -416,7 +489,7 @@ final class WiFiScene: BaseLevelScene, SKPhysicsContactDelegate {
     private func updateWiFiState(_ enabled: Bool) {
         isWifiEnabled = enabled
 
-        // Update platforms
+        // WiFi-ON platforms (Segment A stepping stones): solid only when ON.
         for platform in wifiPlatforms {
             if enabled {
                 platform.alpha = 1.0
@@ -425,6 +498,22 @@ final class WiFiScene: BaseLevelScene, SKPhysicsContactDelegate {
                 platform.alpha = 0.3
                 platform.physicsBody?.categoryBitMask = 0
             }
+            // Safety net: if this platform just stopped being solid out from under
+            // the player (e.g. a hardware player toggles back ON->OFF while on a
+            // stone), clear grounded state so they fall instead of phantom-standing.
+            clearGroundedIfStandingOn(platform)
+        }
+
+        // WiFi-OFF platforms (Segment B climb step): solid only when OFF.
+        for platform in wifiOffPlatforms {
+            if enabled {
+                platform.alpha = 0.3
+                platform.physicsBody?.categoryBitMask = 0
+            } else {
+                platform.alpha = 1.0
+                platform.physicsBody?.categoryBitMask = PhysicsCategory.ground
+            }
+            clearGroundedIfStandingOn(platform)
         }
 
         // Update walls (inverse - passable when WiFi off)
@@ -443,11 +532,14 @@ final class WiFiScene: BaseLevelScene, SKPhysicsContactDelegate {
             bar.alpha = enabled ? 1.0 : (index == 0 ? 0.3 : 0.1)
         }
 
-        // 4th-wall WiFi text
+        // 4th-wall WiFi narrator aside (same trigger point, same wording) — now
+        // routed through the shared GlitchedNarrator in the reserved lower-center
+        // band instead of an ad-hoc upper-center label. A dry whisper when data is
+        // flowing; an alert when the connection drops.
         if enabled {
-            showWiFiStatusText("SWEET, SWEET DATA.")
+            GlitchedNarrator.present("SWEET, SWEET DATA.", in: self, style: .whisper)
         } else {
-            showWiFiStatusText("NO INTERNET? HOW AM I SUPPOSED TO PHONE HOME?")
+            GlitchedNarrator.present("NO INTERNET? HOW AM I SUPPOSED TO PHONE HOME?", in: self, style: .alert)
         }
 
         let generator = UIImpactFeedbackGenerator(style: .light)
@@ -504,6 +596,9 @@ final class WiFiScene: BaseLevelScene, SKPhysicsContactDelegate {
         } else if collision == PhysicsCategory.player | PhysicsCategory.exit {
             handleExit()
         } else if collision == PhysicsCategory.player | PhysicsCategory.ground {
+            // Track WHICH surface is underfoot so clearGroundedIfStandingOn can
+            // detect when a WiFi-toggled platform de-solidifies out from under Bit.
+            sharedGroundPlatform = groundNode(fromContact: contact)
             bit.setGrounded(true)
         }
     }
@@ -511,6 +606,9 @@ final class WiFiScene: BaseLevelScene, SKPhysicsContactDelegate {
     func didEnd(_ contact: SKPhysicsContact) {
         let collision = contact.bodyA.categoryBitMask | contact.bodyB.categoryBitMask
         if collision == PhysicsCategory.player | PhysicsCategory.ground {
+            if sharedGroundPlatform === groundNode(fromContact: contact) {
+                sharedGroundPlatform = nil
+            }
             run(.sequence([.wait(forDuration: 0.05), .run { [weak self] in self?.bit.setGrounded(false) }]))
         }
     }
@@ -522,6 +620,7 @@ final class WiFiScene: BaseLevelScene, SKPhysicsContactDelegate {
     }
 
     private func handleExit() {
+        GlitchedNarrator.dismiss(in: self)
         succeedLevel()
         bit.run(.sequence([.fadeOut(withDuration: 0.5), .run { [weak self] in self?.transitionToNextLevel() }]))
     }

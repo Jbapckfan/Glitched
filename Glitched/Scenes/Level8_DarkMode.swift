@@ -44,8 +44,12 @@ final class DarkModeScene: BaseLevelScene, SKPhysicsContactDelegate {
     private var darkModePlatforms: [SKNode] = []  // Only solid in dark mode
     private var lightModePlatforms: [SKNode] = [] // Only solid in light mode
 
-    // Hidden dark mode text
-    private var hiddenDarkText: SKLabelNode?
+    // Hidden dark mode narrator aside is now presented via GlitchedNarrator
+    // (the shared 4th-wall voice) rather than hand-placed floor labels.
+    // Tracks whether the dark-mode aside is currently on screen so we only
+    // present it on the light->dark transition and dismiss it on dark->light,
+    // matching the old fade-in/fade-out trigger semantics.
+    private var darkAsideShown = false
 
     // Shadow enemy (dark mode only)
     private var shadowEnemy: SKNode?
@@ -117,7 +121,6 @@ final class DarkModeScene: BaseLevelScene, SKPhysicsContactDelegate {
         showInstructionPanel()
         createFallbackToggle()
         setupBit()
-        createHiddenDarkText()
         createShadowEnemy()
 
         updateDoorState()
@@ -883,37 +886,25 @@ final class DarkModeScene: BaseLevelScene, SKPhysicsContactDelegate {
         lineElements.append(subLabel)
     }
 
-    // MARK: - Hidden Dark Mode Text
+    // MARK: - Hidden Dark Mode Aside (narrator)
 
-    private func createHiddenDarkText() {
-        // Easter-egg text sits on the floor; centered so it clears the bottom-LEFT
-        // hardware-fallback pill (was left-anchored at ~x77 on iPhone, overlapping it).
-        let textX = size.width / 2
-        hiddenDarkText = SKLabelNode(text: "PSST. BETWEEN YOU AND ME...")
-        hiddenDarkText?.fontName = "Menlo-Bold"
-        hiddenDarkText?.fontSize = 10
-        hiddenDarkText?.fontColor = .white
-        hiddenDarkText?.position = CGPoint(x: textX, y: groundY - 30)
-        hiddenDarkText?.zPosition = 50
-        hiddenDarkText?.alpha = 0
-        addChild(hiddenDarkText!)
-
-        let hiddenDarkText2 = SKLabelNode(text: "LIGHT MODE USERS ARE SUS.")
-        hiddenDarkText2.fontName = "Menlo-Bold"
-        hiddenDarkText2.fontSize = 10
-        hiddenDarkText2.fontColor = .white
-        hiddenDarkText2.position = CGPoint(x: textX, y: groundY - 45)
-        hiddenDarkText2.zPosition = 50
-        hiddenDarkText2.alpha = 0
-        hiddenDarkText2.name = "hidden_dark_text_2"
-        addChild(hiddenDarkText2)
-    }
-
+    /// The dark-mode-only easter-egg aside, now spoken in the OS's 4th-wall voice
+    /// via the shared GlitchedNarrator instead of hand-placed floor labels. Fires
+    /// at the same trigger as before (on entering dark mode); dismissed on
+    /// returning to light mode. The aside's wording is preserved verbatim.
     private func updateHiddenDarkText() {
-        let targetAlpha: CGFloat = isDarkMode ? 0.7 : 0
-        hiddenDarkText?.run(.fadeAlpha(to: targetAlpha, duration: 0.5))
-        if let text2 = childNode(withName: "hidden_dark_text_2") as? SKLabelNode {
-            text2.run(.fadeAlpha(to: targetAlpha, duration: 0.5))
+        if isDarkMode {
+            guard !darkAsideShown else { return }
+            darkAsideShown = true
+            GlitchedNarrator.present(
+                "PSST. BETWEEN YOU AND ME... LIGHT MODE USERS ARE SUS.",
+                in: self,
+                style: .whisper
+            )
+        } else {
+            guard darkAsideShown else { return }
+            darkAsideShown = false
+            GlitchedNarrator.dismiss(in: self)
         }
     }
 

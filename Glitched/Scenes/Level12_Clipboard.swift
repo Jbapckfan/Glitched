@@ -300,26 +300,8 @@ final class ClipboardScene: BaseLevelScene, SKPhysicsContactDelegate {
         let generator = UINotificationFeedbackGenerator()
         generator.notificationOccurred(.success)
 
-        // 4th-wall clipboard consumed message
-        showClipboardConsumedText()
-    }
-
-    private func showClipboardConsumedText() {
-        let label = SKLabelNode(text: "BUFFER CONSUMED. DATA IS MINE.")
-        label.fontName = "Menlo-Bold"
-        label.fontSize = 10
-        label.fontColor = strokeColor
-        label.position = CGPoint(x: size.width / 2, y: size.height / 2 + 80)
-        label.zPosition = 500
-        label.alpha = 0
-        addChild(label)
-
-        label.run(.sequence([
-            .fadeIn(withDuration: 0.3),
-            .wait(forDuration: 3.0),
-            .fadeOut(withDuration: 0.5),
-            .removeFromParent()
-        ]))
+        // 4th-wall clipboard consumed taunt — the OS asserting it owns your data.
+        GlitchedNarrator.present("BUFFER CONSUMED. DATA IS MINE.", in: self, style: .boss)
     }
 
     override func handleGameInput(_ event: GameInputEvent) {

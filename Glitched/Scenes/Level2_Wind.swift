@@ -721,11 +721,14 @@ final class WindBridgeScene: BaseLevelScene, SKPhysicsContactDelegate {
             bridgeTargetWidth = bridgeFullWidth * CGFloat(boostedPower)
             animateWind(intensity: power)
 
-            // 4th-wall commentary on first successful blow
+            // 4th-wall commentary on first successful blow — the OS noticing
+            // your physical breath. Now routed through the shared narrator
+            // (lower-center safe band, full opacity, typewriter reveal) instead
+            // of an ad-hoc center-screen label.
             if power > 0.2 && !hasShownBlowCommentary {
                 notePlayerProgress()
                 hasShownBlowCommentary = true
-                showBlowCommentary()
+                GlitchedNarrator.present("DID YOU JUST... BLOW ON YOUR PHONE?", in: self, style: .whisper)
             }
 
             // Overdrive effect at max power
@@ -735,24 +738,6 @@ final class WindBridgeScene: BaseLevelScene, SKPhysicsContactDelegate {
         default:
             break
         }
-    }
-
-    private func showBlowCommentary() {
-        let label = SKLabelNode(fontNamed: "Menlo-Bold")
-        label.text = "DID YOU JUST... BLOW ON YOUR PHONE?"
-        label.fontSize = 12
-        label.fontColor = strokeColor
-        label.position = CGPoint(x: size.width / 2, y: size.height / 2 + 80)
-        label.zPosition = 200
-        label.alpha = 0
-        addChild(label)
-
-        label.run(.sequence([
-            .fadeIn(withDuration: 0.2),
-            .wait(forDuration: 3.0),
-            .fadeOut(withDuration: 0.5),
-            .removeFromParent()
-        ]))
     }
 
     private func triggerOverdriveEffect() {

@@ -30,6 +30,7 @@
 		2ED14A726B4B63F41EABBED4 /* DebugInputPanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5798D022CBE41ACAB6B2D311 /* DebugInputPanel.swift */; };
 		309F7347B618CB9D379145D9 /* Level25_TimeOfDay.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9B6E8A08233E5AA54B079AF3 /* Level25_TimeOfDay.swift */; };
 		385F0F50B0DB94B3CF60370E /* AudioManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = D294E1604AB728538A52B49F /* AudioManager.swift */; };
+		A0A0A0A0B1B1B1B1C3C3C3C3 /* GlitchedNarrator.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0A0A0A0B1B1B1B1C2C2C2C2 /* GlitchedNarrator.swift */; };
 		3E0151C1311936BF50BAE0DE /* AppearanceManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3EBEED942CAA63CA601034EE /* AppearanceManager.swift */; };
 		3EDDD33EC2F11770CFF82E33 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 8D156C013CB319A0385F7506 /* Assets.xcassets */; };
 		3F54EC52F8E9F681A0252439 /* JuiceManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5A30BF53F0063D721F60765 /* JuiceManager.swift */; };
@@ -198,6 +199,7 @@
 		CFEF9968DDA1EDE5D9706C75 /* LevelID.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LevelID.swift; sourceTree = "<group>"; };
 		D065F33B8182B5289FC24557 /* ClipboardManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClipboardManager.swift; sourceTree = "<group>"; };
 		D294E1604AB728538A52B49F /* AudioManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioManager.swift; sourceTree = "<group>"; };
+		A0A0A0A0B1B1B1B1C2C2C2C2 /* GlitchedNarrator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GlitchedNarrator.swift; sourceTree = "<group>"; };
 		D4FF082F955DAD96BB2F013E /* Level15_LowPower.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Level15_LowPower.swift; sourceTree = "<group>"; };
 		D6134308C7C2DA13566C0225 /* ParticleFactory.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ParticleFactory.swift; sourceTree = "<group>"; };
 		E0ADDCE606E466C484DC5D4C /* Level1_Header.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Level1_Header.swift; sourceTree = "<group>"; };
@@ -256,6 +258,7 @@
 			children = (
 				37D78919A88F0739FEF71400 /* AccessibilityManager.swift */,
 				D294E1604AB728538A52B49F /* AudioManager.swift */,
+				A0A0A0A0B1B1B1B1C2C2C2C2 /* GlitchedNarrator.swift */,
 				FB219CE3DAB59797B8904520 /* GameCenterManager.swift */,
 				25D202F0092C63598685BF39 /* GameInputEvent.swift */,
 				F4A66C1B6B495950E381E8ED /* GameState.swift */,
@@ -515,6 +518,7 @@
 				D6095FBCCD80D0B5FE109D88 /* AppSwitcherManager.swift in Sources */,
 				3E0151C1311936BF50BAE0DE /* AppearanceManager.swift in Sources */,
 				385F0F50B0DB94B3CF60370E /* AudioManager.swift in Sources */,
+				A0A0A0A0B1B1B1B1C3C3C3C3 /* GlitchedNarrator.swift in Sources */,
 				5FD1CF9FC1FAE4E8D9ECB6AC /* AuthenticationManager.swift in Sources */,
 				8E08BDD841FD28D80A0764B3 /* BackgroundTimeManager.swift in Sources */,
 				63AEF1BD01913DD4F57F016B /* BaseLevelScene.swift in Sources */,

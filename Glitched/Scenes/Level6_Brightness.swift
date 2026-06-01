@@ -253,46 +253,19 @@ final class BrightnessScene: BaseLevelScene, SKPhysicsContactDelegate {
     private func updateBrightnessCommentary() {
         if currentBrightness < 0.1 && !darkCommentaryShown {
             darkCommentaryShown = true
-            showCommentaryText("I CAN'T SEE EITHER, YOU KNOW.")
+            // Dry 4th-wall aside — the OS noting it can't see in the dark either.
+            GlitchedNarrator.present("I CAN'T SEE EITHER, YOU KNOW.", in: self, style: .whisper)
         } else if currentBrightness >= 0.1 {
             darkCommentaryShown = false
         }
 
         if currentBrightness >= 0.95 && !brightCommentaryShown {
             brightCommentaryShown = true
-            showCommentaryText("MY EYES! THE GOGGLES DO NOTHING!")
+            // Reactive taunt at the dangerous max-brightness state.
+            GlitchedNarrator.present("MY EYES! THE GOGGLES DO NOTHING!", in: self, style: .alert)
         } else if currentBrightness < 0.95 {
             brightCommentaryShown = false
         }
-    }
-
-    private func showCommentaryText(_ text: String) {
-        let label = SKLabelNode(text: text)
-        label.fontName = "Menlo-Bold"
-        label.fontSize = 14
-        label.fontColor = strokeColor
-        label.position = commentaryPosition()
-        label.zPosition = 400
-        label.alpha = 0
-        label.name = "commentary_text"
-        addChild(label)
-
-        label.run(.sequence([
-            .fadeIn(withDuration: 0.3),
-            .wait(forDuration: 3.0),
-            .fadeOut(withDuration: 0.5),
-            .removeFromParent()
-        ]))
-    }
-
-    private func commentaryPosition() -> CGPoint {
-        // Bottom-center, but raised clear of the SwiftUI "CAN'T DO THIS?" fallback
-        // affordance (HardwareFallbackEscapeHatch), which is bottom-centered with
-        // padding(.bottom, 96) and auto-surfaces on this hardware-gated brightness
-        // level. The old +52/+82 offsets put this transient easter-egg line directly
-        // under / abutting that pill (overlapping it on iPad). Lift it above the
-        // fallback's reserved zone while staying below the right-edge brightness HUD.
-        CGPoint(x: size.width / 2, y: layoutBottomY + (isCompactCanvas ? 130 : 150))
     }
 
     // MARK: - Max Brightness Sun Hazard
@@ -426,10 +399,6 @@ final class BrightnessScene: BaseLevelScene, SKPhysicsContactDelegate {
                 x: layoutSideMargin + panelWidth / 2,
                 y: layoutTopY - (isCompactCanvas ? 175 : 130)
             )
-        }
-
-        for node in children where node.name == "commentary_text" {
-            node.position = commentaryPosition()
         }
 
         layoutMaxBrightnessSun()

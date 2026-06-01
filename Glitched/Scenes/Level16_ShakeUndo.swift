@@ -45,6 +45,36 @@ final class ShakeUndoScene: BaseLevelScene, SKPhysicsContactDelegate {
     private var movingPlatform: SKNode!
     private var platformPhase: CGFloat = 0
 
+    // MARK: - Rotten-platform trap (makes shake-to-undo genuinely REQUIRED)
+    // The exit's final platform starts "rotten": the first time the player lands
+    // on it, it arms a short fuse and then de-solidifies and drops away, leaving
+    // the player stranded on a non-lethal catch ledge from which the exit is
+    // unreachable (>91pt above). There is NO forward progress and the player is
+    // not killed (so the rewind buffer is never wiped by a death respawn) — the
+    // ONLY escapes are (a) shaking to undo, which rewinds to the safe approach AND
+    // permanently repairs the platform ("the mistake is unmade"), or (b) the
+    // release-build "CAN'T DO THIS?" fallback, which routes the same shakeUndo
+    // event through handleGameInput -> performUndo. After one undo the platform is
+    // disarmed and stays solid, so the level is completable. See completability
+    // trace in buildLevel().
+    private var finalPlatform: SKNode!
+    private var finalPlatformSurface: SKShapeNode!
+    private var finalPlatformSize: CGSize = .zero
+    private var exitBody: SKSpriteNode!
+    private var exitFrame: SKShapeNode!
+    private var trapArmed = false
+    private var trapCollapsed = false
+    /// Set true once an undo repairs the trap; the platform then stays solid.
+    private var trapDisarmed = false
+    private let trapFuse: TimeInterval = 0.6
+    /// Guaranteed-safe landing spot (top of the platform BEFORE the final one) that
+    /// a trap-repair undo rewinds the player to, regardless of how long they waited
+    /// before undoing. This decouples trap completability from the time-windowed
+    /// rewind buffer: a late undo (whose ~3s-ago target may itself be on the
+    /// unreachable catch ledge) still lands the player back on solid ground with a
+    /// clear path to the now-repaired final platform.
+    private var preTrapAnchor: CGPoint = .zero
+
     override func configureScene() {
         levelID = LevelID(world: .world2, index: 16)
         backgroundColor = fillColor
@@ -132,9 +162,33 @@ final class ShakeUndoScene: BaseLevelScene, SKPhysicsContactDelegate {
         movingPlatform.name = "moving"
 
         _ = createPlatform(at: CGPoint(x: courseX(260), y: groundY + 40), size: CGSize(width: courseLen(60), height: 25))
+        // Safe rewind anchor for trap-repair undos: just above P3's top surface
+        // (groundY+40 + 12.5 half-height + 16 clearance). From here the final
+        // platform (courseX 385, top groundY+15=175) is one normal hop away.
+        preTrapAnchor = CGPoint(x: courseX(260), y: groundY + 40 + 12.5 + 16)
 
-        _ = createPlatform(at: CGPoint(x: courseX(designSize.width - 45), y: groundY), size: CGSize(width: courseLen(70), height: 30))
+        // FINAL (exit) platform — starts ROTTEN. Geometry unchanged from before, but
+        // we keep a reference + surface so the trap can de-solidify and glitch it away
+        // on first landing (see armTrap / collapseTrap / repairTrap). This is the sole
+        // landing pad for the exit, so the player is FORCED onto it — which is what
+        // makes shake-to-undo required rather than cosmetic.
+        finalPlatformSize = CGSize(width: courseLen(70), height: 30)
+        finalPlatform = createPlatform(at: CGPoint(x: courseX(designSize.width - 45), y: groundY), size: finalPlatformSize)
+        finalPlatform.name = "final"
+        finalPlatformSurface = finalPlatform.children.first as? SKShapeNode
         createExitDoor(at: CGPoint(x: courseX(designSize.width - 35), y: groundY + 50))
+
+        // CATCH LEDGE — a non-lethal solid shelf directly under the final platform.
+        // When the rotten final platform collapses, the player drops onto this shelf
+        // instead of into the death zone, so a death-respawn never wipes the rewind
+        // buffer out from under an un-undone trap. From the catch-ledge top (~y52) the
+        // exit body bottom (y180) is ~128pt up — far above Bit's ~91pt jump apex (620
+        // cap, no clampVelocity here) — so the exit is UNREACHABLE from here: the
+        // player is stranded with no forward progress and must undo (or use the
+        // "CAN'T DO THIS?" fallback). Wider than the final platform (90 vs 70 logical)
+        // so a collapsing player always lands on it, but kept inside the course so it
+        // doesn't overhang the screen edge on the narrowest (390-pt) device.
+        _ = createPlatform(at: CGPoint(x: courseX(designSize.width - 45), y: 40), size: CGSize(width: courseLen(90), height: 24))
 
         // Death zone — stays full-width so it always catches falls regardless of
         // course centering (decorative-scope geometry, intentionally not course-mapped).
@@ -210,15 +264,25 @@ final class ShakeUndoScene: BaseLevelScene, SKPhysicsContactDelegate {
         frame.strokeColor = strokeColor
         frame.lineWidth = lineWidth
         frame.position = position
+        // The locked exit reads as glitched/dim until the rotten platform is repaired.
+        frame.alpha = 0.35
+        exitFrame = frame
         addChild(frame)
 
         let exit = SKSpriteNode(color: .clear, size: CGSize(width: 40, height: 60))
         exit.position = position
         exit.physicsBody = SKPhysicsBody(rectangleOf: exit.size)
         exit.physicsBody?.isDynamic = false
-        exit.physicsBody?.categoryBitMask = PhysicsCategory.exit
+        // Exit starts INERT (category .none). The exit body overlaps the standing
+        // position on the final platform, so an active exit would let the player win
+        // the instant they first land — skipping the trap and making undo cosmetic
+        // again. Gating the exit behind the trap-repair (activated in repairTrap)
+        // forces the player THROUGH the rotten-platform trap and its undo before the
+        // door will accept them.
+        exit.physicsBody?.categoryBitMask = PhysicsCategory.none
         exit.physicsBody?.collisionBitMask = 0
         exit.name = "exit"
+        exitBody = exit
         addChild(exit)
     }
 
@@ -268,6 +332,63 @@ final class ShakeUndoScene: BaseLevelScene, SKPhysicsContactDelegate {
         addChild(bit)
         registerPlayer(bit)
         playerController = PlayerController(character: bit, scene: self)
+    }
+
+    // MARK: - Rotten-platform trap lifecycle
+
+    /// Begin the collapse fuse on first landing on the final platform. Disarmed
+    /// (no-op) once an undo has repaired the platform, and one-shot otherwise.
+    private func armTrap() {
+        guard !trapDisarmed, !trapArmed, !trapCollapsed else { return }
+        trapArmed = true
+
+        // Telegraph: the platform glitches/shudders so the player sees it's rotten
+        // before it gives way.
+        finalPlatformSurface?.run(.repeatForever(.sequence([
+            .group([.fadeAlpha(to: 0.4, duration: 0.08), .scaleX(to: 1.04, duration: 0.08)]),
+            .group([.fadeAlpha(to: 1.0, duration: 0.08), .scaleX(to: 1.0, duration: 0.08)])
+        ])), withKey: "rot")
+        AudioManager.shared.playGlitch()
+        JuiceManager.shared.shake(intensity: .light, duration: 0.15)
+
+        run(.sequence([
+            .wait(forDuration: trapFuse),
+            .run { [weak self] in self?.collapseTrap() }
+        ]), withKey: "trapFuse")
+    }
+
+    /// De-solidify the rotten platform and drop it away. The player falls onto the
+    /// catch ledge below — stranded, exit unreachable — until they undo.
+    private func collapseTrap() {
+        guard trapArmed, !trapCollapsed, !trapDisarmed else { return }
+        trapCollapsed = true
+
+        // De-solidify, then clear grounded state so Bit doesn't keep reporting
+        // grounded (and keep jumping) while the platform vanishes under it.
+        finalPlatform.physicsBody?.categoryBitMask = PhysicsCategory.none
+        clearGroundedIfStandingOn(finalPlatform)
+
+        finalPlatformSurface?.removeAction(forKey: "rot")
+        finalPlatform.run(.sequence([
+            .group([.moveBy(x: 0, y: -120, duration: 0.45), .fadeAlpha(to: 0.0, duration: 0.45)])
+        ]))
+        AudioManager.shared.playDanger()
+        JuiceManager.shared.popText("PLATFORM CORRUPTED", at: CGPoint(x: size.width / 2, y: size.height / 2), color: strokeColor, fontSize: 16)
+    }
+
+    /// Undo "unmakes the mistake": the rotten platform is restored solid and
+    /// PERMANENTLY disarmed, and the previously-inert exit is activated, so the
+    /// rewound player can cross to the exit. Called from performUndo on a
+    /// successful rewind that involved the trap.
+    private func repairTrap() {
+        resetTrap()
+        trapDisarmed = true
+
+        // Activate the previously-inert exit now that the trap is unmade. The player
+        // can re-cross the repaired platform and the door will accept them.
+        exitBody.physicsBody?.categoryBitMask = PhysicsCategory.exit
+        exitFrame.run(.fadeAlpha(to: 1.0, duration: 0.3))
+        JuiceManager.shared.flash(color: .white, duration: 0.2)
     }
 
     private func recordPosition() {
@@ -322,44 +443,37 @@ final class ShakeUndoScene: BaseLevelScene, SKPhysicsContactDelegate {
     // MARK: - 4th Wall Text
 
     private func showFourthWallText() {
-        let panel = SKNode()
-        panel.position = CGPoint(x: size.width / 2, y: size.height / 2 + 80)
-        panel.zPosition = 500
-        panel.alpha = 0
-        addChild(panel)
-
-        let bg = SKShapeNode(rectOf: CGSize(width: 340, height: 50), cornerRadius: 6)
-        bg.fillColor = fillColor
-        bg.strokeColor = strokeColor
-        bg.lineWidth = lineWidth
-        panel.addChild(bg)
-
-        let line1 = SKLabelNode(text: "SHAKING ME WON'T FIX YOUR")
-        line1.fontName = "Menlo-Bold"
-        line1.fontSize = 10
-        line1.fontColor = strokeColor
-        line1.position = CGPoint(x: 0, y: 6)
-        panel.addChild(line1)
-
-        let line2 = SKLabelNode(text: "MISTAKES IN REAL LIFE. BUT HERE? SURE.")
-        line2.fontName = "Menlo-Bold"
-        line2.fontSize = 10
-        line2.fontColor = strokeColor
-        line2.position = CGPoint(x: 0, y: -10)
-        panel.addChild(line2)
-
-        panel.run(.sequence([
-            .fadeIn(withDuration: 0.2),
-            .wait(forDuration: 3.5),
-            .fadeOut(withDuration: 0.5),
-            .removeFromParent()
-        ]))
+        // In-character narrator aside (the OS taunting the player). Migrated from a
+        // hand-placed two-line SKLabelNode panel to the shared GlitchedNarrator, which
+        // renders this in the reserved lower-center safe band at full opacity (clear of
+        // the title / pause / instruction panels) and owns its own auto-fade. Wording
+        // preserved verbatim; only the presentation moved. .alert register fits the
+        // dry system taunt. Fires at the same trigger point (first undo) as before.
+        GlitchedNarrator.present(
+            "SHAKING ME WON'T FIX YOUR MISTAKES IN REAL LIFE. BUT HERE? SURE.",
+            in: self,
+            style: .alert
+        )
     }
 
     private func performUndo() {
+        // SOFTLOCK GUARD: the trap-repair undo must ALWAYS be available, even if the
+        // player already spent all 3 charges on ordinary traversal undos. The forced
+        // rotten-platform trap is the sole route to the exit; if undoCount hit 0
+        // before the trap (and a death respawn never resets it), the trap would be
+        // permanently unwinnable. So when the rotten platform is armed/collapsed,
+        // guarantee a charge exists for THIS repair. The 3-charge economy is still
+        // enforced for ordinary traversal undos below (the trap-repair undo is free).
+        let repairingTrap = trapArmed || trapCollapsed
+        if repairingTrap {
+            undoCount = max(undoCount, 1)
+            undoLabel.text = "x\(undoCount)"
+        }
+
         // Need an undo available AND a real entry to rewind to. The history is
         // time-windowed, so the oldest entry is the closest point we have to
-        // gameTime - historyDuration.
+        // gameTime - historyDuration. (For a trap-repair, undoCount was just floored
+        // to >= 1, so this guard only blocks ordinary undos once charges are spent.)
         guard undoCount > 0, let target = rewindTarget() else {
             // Feedback when undo fails
             JuiceManager.shared.shake(intensity: .light, duration: 0.2)
@@ -368,9 +482,21 @@ final class ShakeUndoScene: BaseLevelScene, SKPhysicsContactDelegate {
             return
         }
 
-        // Only consume an undo once we know a valid rewind will happen.
-        undoCount -= 1
-        undoLabel.text = "x\(undoCount)"
+        // Consume a charge for ordinary traversal undos only; the trap-repair undo is
+        // free (it does not draw down the 3-charge economy), so a player who exhausted
+        // their undos can still escape the forced trap.
+        if !repairingTrap {
+            undoCount -= 1
+            undoLabel.text = "x\(undoCount)"
+        }
+
+        // "Unmake the mistake": if the rotten final platform was armed/collapsed,
+        // repair it (solid + permanently disarmed) so the rewound player can now
+        // cross to the exit. This is what makes shake-to-undo genuinely required:
+        // the exit is otherwise unreachable past the rotten platform / catch ledge.
+        if repairingTrap {
+            repairTrap()
+        }
 
         // 4th wall text on first undo
         if !hasUsedUndo {
@@ -378,7 +504,11 @@ final class ShakeUndoScene: BaseLevelScene, SKPhysicsContactDelegate {
             showFourthWallText()
         }
 
-        let targetPosition = target.position
+        // A trap-repair undo lands the player on the guaranteed-safe pre-trap anchor
+        // (top of P3) rather than the time-windowed rewind target, which — for a late
+        // undo — could itself sit on the unreachable catch ledge. For ordinary undos
+        // (no trap involved) the normal ~3s-ago rewind target is used unchanged.
+        let targetPosition = repairingTrap ? preTrapAnchor : target.position
         let targetPlatformPos = target.platformPos
 
         // Ghost trail effect before teleporting
@@ -477,12 +607,28 @@ final class ShakeUndoScene: BaseLevelScene, SKPhysicsContactDelegate {
             handleExit()
         } else if collision == PhysicsCategory.player | PhysicsCategory.ground {
             bit.setGrounded(true)
+            // Track which platform Bit is standing on so the shared de-solidify helper
+            // (clearGroundedIfStandingOn) can clear grounded state when the rotten
+            // platform vanishes out from under it.
+            let landed = groundNode(fromContact: contact)
+            sharedGroundPlatform = landed
+            // Landing on the rotten final platform arms the collapse fuse — unless a
+            // prior undo already repaired it. This is the forced "mistake".
+            if landed === finalPlatform {
+                armTrap()
+            }
         }
     }
 
     func didEnd(_ contact: SKPhysicsContact) {
         let collision = contact.bodyA.categoryBitMask | contact.bodyB.categoryBitMask
         if collision == PhysicsCategory.player | PhysicsCategory.ground {
+            // Release the tracked ground platform if we just left the one we recorded
+            // (SpriteKit DOES fire didEnd on a normal walk-off, just not on a category
+            // flip — which clearGroundedIfStandingOn handles instead).
+            if sharedGroundPlatform === groundNode(fromContact: contact) {
+                sharedGroundPlatform = nil
+            }
             run(.sequence([.wait(forDuration: 0.05), .run { [weak self] in self?.bit.setGrounded(false) }]))
         }
     }
@@ -490,10 +636,33 @@ final class ShakeUndoScene: BaseLevelScene, SKPhysicsContactDelegate {
     private func handleDeath() {
         guard GameState.shared.levelState == .playing else { return }
         playerController.cancel()
+        // If the player fell during the trap's fuse (before disarming it), reset the
+        // rotten platform to its pristine, solid state so the respawned run re-meets
+        // an intact trap — never a collapsed-but-not-disarmed platform that the
+        // respawned player can no longer land on. A disarmed trap stays disarmed.
+        if !trapDisarmed {
+            resetTrap()
+        }
         bit.playBufferDeath(respawnAt: spawnPoint) { [weak self] in
             self?.bit.setGrounded(true)
             self?.positionHistory.removeAll()
         }
+    }
+
+    /// Restore the rotten platform to its pristine solid state (cancel a pending
+    /// fuse, re-solidify, clear the glitch telegraph) WITHOUT disarming it, so it
+    /// can be re-triggered. Used on a death respawn mid-fuse.
+    private func resetTrap() {
+        trapArmed = false
+        trapCollapsed = false
+        removeAction(forKey: "trapFuse")
+        finalPlatform.removeAllActions()
+        finalPlatformSurface?.removeAction(forKey: "rot")
+        finalPlatform.position = CGPoint(x: courseX(designSize.width - 45), y: 160)
+        finalPlatform.alpha = 1.0
+        finalPlatformSurface?.alpha = 1.0
+        finalPlatformSurface?.xScale = 1.0
+        finalPlatform.physicsBody?.categoryBitMask = PhysicsCategory.ground
     }
 
     private func handleExit() {
