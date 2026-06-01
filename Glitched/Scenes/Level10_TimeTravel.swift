@@ -8,6 +8,25 @@ final class TimeTravelScene: BaseLevelScene, SKPhysicsContactDelegate {
     private let strokeColor = SKColor.black
     private let lineWidth: CGFloat = 2.5
 
+    // MARK: - Gameplay Course (fixed logical width, centered)
+    // The climbable cluster (spawn footing, sapling/tree, time sign, clock, cliff
+    // and exit) is authored in a fixed `designWidth`-point logical course and
+    // centered via courseX so the spawn→tree→cliff spacing stays a rigid unit
+    // instead of the spawn sticking to the far left while the cliff/exit tracks
+    // the right edge — which on iPad left a ~684-pt dead walk between Bit's
+    // landing and the first foothold. The design width is the narrower verified
+    // iPhone (390) so courseScale clamps at 1.0 on every supported device
+    // (390/402/iPad); iPhone-390 output is therefore byte-identical to the old
+    // size.width-anchored layout (scale 1.0, originX 0), iPhone-402 shifts the
+    // whole cluster +6pt uniformly (gap/clearance unchanged), and on iPad the
+    // cluster is centered. Because scale is always 1.0, the verified branch
+    // ladder — authored in unscaled tree-local points — is never re-scaled.
+    private let designWidth: CGFloat = 390
+    private var courseScale: CGFloat { min(1.0, size.width / designWidth) }
+    private var courseOriginX: CGFloat { (size.width - designWidth * courseScale) / 2 }
+    /// Map a logical x (0...designWidth) into centered course space.
+    private func courseX(_ logicalX: CGFloat) -> CGFloat { courseOriginX + logicalX * courseScale }
+
     // MARK: - Tree Growth States
     enum TreeState: Int {
         case sapling = 0
@@ -234,11 +253,11 @@ final class TimeTravelScene: BaseLevelScene, SKPhysicsContactDelegate {
         titleNode?.position = CGPoint(x: 80, y: titleY)
         titleUnderline?.position = CGPoint(x: 80, y: titleY)
 
-        // Center the instruction panel below the title with breathing room.
-        // Panel is 100pt tall, so center at titleY - 76 puts the top at
-        // titleY - 26 (just below the title baseline) and the bottom at
-        // titleY - 126 — fully inside the visible area.
-        instructionPanel?.position = CGPoint(x: size.width / 2, y: titleY - 76)
+        // Keep the discovery panel pinned to the L13/L12 anchor (topSafeY - 70)
+        // so it reads as the same convention across the World 1/2 levels. It is
+        // only 60pt tall and self-removes after 5s; centering it horizontally
+        // keeps it clear of the left-anchored title.
+        instructionPanel?.position = CGPoint(x: size.width / 2, y: topSafeY - 70)
     }
 
     override func didUpdateSafeArea() {
@@ -273,9 +292,13 @@ final class TimeTravelScene: BaseLevelScene, SKPhysicsContactDelegate {
         // The exit door sits 30pt above the cliff top.
         exitDoorY = groundY + cliffHeight + 30
 
-        // Anchor the cliff (and therefore the whole climbable cluster) so the
-        // tree always reads as a bridge toward the exit at any width.
-        cliffX = size.width - 40
+        // Anchor the cliff (and therefore the whole climbable cluster) in the
+        // centered logical course so the tree always reads as a bridge toward the
+        // exit and the spawn→tree→cliff spacing stays a rigid unit at any width
+        // (was size.width - 40, which glued the cliff to the right edge and left
+        // a wide dead gap on iPad). Logical x = designWidth - 40 = 350, so on
+        // iPhone-390 this resolves to exactly 350, matching the old layout.
+        cliffX = courseX(designWidth - 40)
 
         // Main floor
         let floor = createPlatform(
@@ -677,92 +700,56 @@ final class TimeTravelScene: BaseLevelScene, SKPhysicsContactDelegate {
 
     // MARK: - Instruction Panel
 
+    // Discovery-first t=0 atmospheric panel, matching the L11+ convention
+    // (L13 "THE SIGNAL COMES AND GOES...", L12 "EXTRACT & RETURN"): one terse,
+    // evocative, non-spoiler line that sets the theme without naming the device
+    // feature. The explicit clue ("Leave the app for a while — time passes")
+    // lives in hintText(), which the base class surfaces at noProgressHintDelay
+    // (18s) only if the player is stuck. The panel self-removes after 5s and is
+    // also torn down early once the tree grows (see growTreeToStage). It is
+    // still assigned to `instructionPanel` so that teardown and repositionTopHUD
+    // keep working.
     private func showInstructionPanel() {
         instructionPanel = SKNode()
         // Initial position; repositioned by repositionTopHUD once safe-area
-        // insets and title geometry are known.
-        instructionPanel?.position = CGPoint(x: size.width / 2, y: topSafeY - 108)
-        instructionPanel?.zPosition = 200
+        // insets are known. Matches the L13/L12 discovery panel anchor.
+        instructionPanel?.position = CGPoint(x: size.width / 2, y: topSafeY - 70)
+        instructionPanel?.zPosition = 300
         addChild(instructionPanel!)
 
         // Panel background
-        let panelBG = SKShapeNode(rectOf: CGSize(width: 200, height: 100), cornerRadius: 8)
+        let panelBG = SKShapeNode(rectOf: CGSize(width: 280, height: 60), cornerRadius: 8)
         panelBG.fillColor = fillColor
         panelBG.strokeColor = strokeColor
         panelBG.lineWidth = lineWidth
         instructionPanel?.addChild(panelBG)
         lineElements.append(panelBG)
 
-        // Home button icon
-        let homeButton = SKShapeNode(circleOfRadius: 12)
-        homeButton.fillColor = fillColor
-        homeButton.strokeColor = strokeColor
-        homeButton.lineWidth = lineWidth * 0.6
-        homeButton.position = CGPoint(x: -60, y: 10)
-        instructionPanel?.addChild(homeButton)
-        lineElements.append(homeButton)
+        // Non-spoiler atmospheric line.
+        let text = SKLabelNode(text: "ALL THINGS TAKE THEIR TIME...")
+        text.fontName = "Menlo-Bold"
+        text.fontSize = 11
+        text.fontColor = strokeColor
+        instructionPanel?.addChild(text)
+        lineElements.append(text)
 
-        // Square inside (home button symbol)
-        let homeSquare = SKShapeNode(rectOf: CGSize(width: 8, height: 8), cornerRadius: 1)
-        homeSquare.fillColor = .clear
-        homeSquare.strokeColor = strokeColor
-        homeSquare.lineWidth = lineWidth * 0.4
-        homeSquare.position = CGPoint(x: -60, y: 10)
-        instructionPanel?.addChild(homeSquare)
-        lineElements.append(homeSquare)
-
-        // Press animation
-        homeButton.run(.repeatForever(.sequence([
-            .scale(to: 0.9, duration: 0.5),
-            .scale(to: 1.0, duration: 0.5)
-        ])))
-
-        // Arrow pointing away
-        let awayArrow = SKShapeNode()
-        let arrowPath = CGMutablePath()
-        arrowPath.move(to: CGPoint(x: -30, y: 10))
-        arrowPath.addLine(to: CGPoint(x: -10, y: 10))
-        arrowPath.move(to: CGPoint(x: -15, y: 15))
-        arrowPath.addLine(to: CGPoint(x: -10, y: 10))
-        arrowPath.addLine(to: CGPoint(x: -15, y: 5))
-        awayArrow.path = arrowPath
-        awayArrow.strokeColor = strokeColor
-        awayArrow.lineWidth = lineWidth * 0.6
-        instructionPanel?.addChild(awayArrow)
-        lineElements.append(awayArrow)
-
-        // Text
-        let label = SKLabelNode(text: "GO HOME")
-        label.fontName = "Menlo-Bold"
-        label.fontSize = 14
-        label.fontColor = strokeColor
-        label.position = CGPoint(x: 30, y: 15)
-        instructionPanel?.addChild(label)
-        lineElements.append(label)
-
-        let subLabel = SKLabelNode(text: "WAIT 5 SEC")
-        subLabel.fontName = "Menlo"
-        subLabel.fontSize = 12
-        subLabel.fontColor = strokeColor
-        subLabel.position = CGPoint(x: 30, y: -5)
-        instructionPanel?.addChild(subLabel)
-        lineElements.append(subLabel)
-
-        let subLabel2 = SKLabelNode(text: "RETURN")
-        subLabel2.fontName = "Menlo"
-        subLabel2.fontSize = 12
-        subLabel2.fontColor = strokeColor
-        subLabel2.position = CGPoint(x: 30, y: -22)
-        instructionPanel?.addChild(subLabel2)
-        lineElements.append(subLabel2)
+        instructionPanel?.run(.sequence([
+            .wait(forDuration: 5),
+            .fadeOut(withDuration: 0.5),
+            .removeFromParent()
+        ]))
     }
 
     // MARK: - Setup
 
     private func setupBit() {
         // Spawn relative to the derived ground so Bit lands on the floor on
-        // any canvas (was a hardcoded y=200 tuned for groundY=160).
-        spawnPoint = CGPoint(x: 100, y: groundY + 40)
+        // any canvas (was a hardcoded y=200 tuned for groundY=160). The x is
+        // mapped through the centered course (logical 100) so it shifts with the
+        // tree cluster — preserving the spawn→first-foothold gap (and therefore
+        // the verified first-branch clearance over Bit) on every device while
+        // killing the iPad dead-walk. On iPhone-390 courseX(100) == 100.
+        spawnPoint = CGPoint(x: courseX(100), y: groundY + 40)
 
         bit = BitCharacter.make()
         bit.position = spawnPoint

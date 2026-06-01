@@ -92,6 +92,34 @@ final class ScreenshotScene: BaseLevelScene, SKPhysicsContactDelegate {
         createGhostBridge()
         showInstructionPanel()
         setupBit()
+        showDiscoveryPanel()
+    }
+
+    // MARK: - Discovery-First Panel
+    // Terse, non-spoiler atmospheric line shown at t=0 (matches the L11+ "the
+    // signal comes and goes..." convention). It hints at the theme — a moment
+    // held still — WITHOUT naming the device feature; the explicit clue lives in
+    // hintText(), which the base class surfaces at noProgressHintDelay = 18s if
+    // the player is stuck. Self-removes after 5.5s so it never crowds the HUD.
+    private func showDiscoveryPanel() {
+        let panel = SKNode()
+        panel.position = CGPoint(x: size.width / 2, y: topSafeY - 70)
+        panel.zPosition = 300
+        addChild(panel)
+
+        let bg = SKShapeNode(rectOf: CGSize(width: 280, height: 60), cornerRadius: 8)
+        bg.fillColor = fillColor
+        bg.strokeColor = strokeColor
+        bg.lineWidth = lineWidth
+        panel.addChild(bg)
+
+        let text = SKLabelNode(text: "SOME MOMENTS REFUSE TO MOVE...")
+        text.fontName = "Menlo-Bold"
+        text.fontSize = 11
+        text.fontColor = strokeColor
+        panel.addChild(text)
+
+        panel.run(.sequence([.wait(forDuration: 5), .fadeOut(withDuration: 0.5), .removeFromParent()]))
     }
 
     // MARK: - Background
@@ -600,7 +628,12 @@ final class ScreenshotScene: BaseLevelScene, SKPhysicsContactDelegate {
 
     private func showInstructionPanel() {
         instructionPanel = SKNode()
-        instructionPanel?.position = CGPoint(x: size.width / 2, y: topSafeY - 100)
+        // Sits below the t=0 discovery panel (which occupies topSafeY-40...-100):
+        // dropped from topSafeY-100 to topSafeY-175 so the 100pt-tall detailed
+        // panel (top edge topSafeY-125) clears the discovery panel with a ~25pt
+        // gap. Still well above the play zone, which lifts no higher than
+        // groundY+70 (exit) — far below the HUD band on every canvas.
+        instructionPanel?.position = CGPoint(x: size.width / 2, y: topSafeY - 175)
         instructionPanel?.zPosition = 200
         addChild(instructionPanel!)
 
