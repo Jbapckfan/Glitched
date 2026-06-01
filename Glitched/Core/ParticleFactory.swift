@@ -8,46 +8,77 @@ final class ParticleFactory {
 
     private init() {}
 
+    // MARK: - Batched-texture cache
+    // Premium bursts (death/victory) used to spawn dozens of SKShapeNodes, each with its
+    // own draw call + physics body — the cause of the death/victory frame hitch. We rasterize
+    // each primitive once into a shared SKTexture and spawn cheap, batchable SKSpriteNodes that
+    // animate via SKActions instead of the physics solver. Same visual feel, no per-frame cost.
+
+    private var squareTextureCache: [String: SKTexture] = [:]
+
+    /// A 1x white square texture, tinted at spawn via `color`. Cached & reused so every
+    /// fragment shares one texture (SpriteKit can batch identically-textured sprites).
+    private func whiteSquareTexture() -> SKTexture {
+        let key = "whiteSquare"
+        if let cached = squareTextureCache[key] { return cached }
+
+        let dimension: CGFloat = 8
+        let renderer = UIGraphicsImageRenderer(size: CGSize(width: dimension, height: dimension))
+        let image = renderer.image { ctx in
+            UIColor.white.setFill()
+            ctx.fill(CGRect(x: 0, y: 0, width: dimension, height: dimension))
+        }
+        let texture = SKTexture(image: image)
+        texture.filteringMode = .nearest // keep the crisp pixel-art edge
+        squareTextureCache[key] = texture
+        return texture
+    }
+
     // MARK: - Death/Destruction Effects
 
-    /// Pixel explosion when player dies - bits scatter everywhere
+    /// Pixel explosion when player dies - bits scatter everywhere.
+    /// Batched: shared tinted texture + SKAction motion (no physics solver, no per-node draw).
     func createDeathExplosion(at position: CGPoint, color: UIColor = .white) -> SKNode {
         let container = SKNode()
         container.position = position
 
-        // Create 20-30 pixel fragments
-        let fragmentCount = Int.random(in: 20...30)
+        // Capped, batched fragments — visually dense, cheap to render.
+        let fragmentCount = 16
+        let texture = whiteSquareTexture()
 
         for _ in 0..<fragmentCount {
             let size = CGFloat.random(in: 3...8)
-            let fragment = SKShapeNode(rectOf: CGSize(width: size, height: size))
-            fragment.fillColor = color
-            fragment.strokeColor = .clear
+            let fragment = SKSpriteNode(texture: texture, size: CGSize(width: size, height: size))
+            fragment.color = color
+            fragment.colorBlendFactor = 1.0
 
-            // Random velocity
+            // Random ballistic-feeling trajectory, faked with SKActions instead of physics.
             let angle = CGFloat.random(in: 0...(2 * .pi))
             let speed = CGFloat.random(in: 100...300)
-            let velocity = CGVector(dx: cos(angle) * speed, dy: sin(angle) * speed)
+            let lifetime = Double.random(in: 0.5...0.9)
+            let drift = CGVector(dx: cos(angle) * speed * CGFloat(lifetime),
+                                 dy: sin(angle) * speed * CGFloat(lifetime))
+            let gravityDrop: CGFloat = -120 * CGFloat(lifetime * lifetime)
+            let rotation = CGFloat.random(in: -10...10) * CGFloat(lifetime)
 
-            // Random rotation
-            let rotationSpeed = CGFloat.random(in: -10...10)
-
-            // Physics
-            fragment.physicsBody = SKPhysicsBody(rectangleOf: CGSize(width: size, height: size))
-            fragment.physicsBody?.categoryBitMask = 0
-            fragment.physicsBody?.collisionBitMask = 0
-            fragment.physicsBody?.velocity = velocity
-            fragment.physicsBody?.angularVelocity = rotationSpeed
-            fragment.physicsBody?.linearDamping = 0.5
-            fragment.physicsBody?.affectedByGravity = true
+            fragment.run(.sequence([
+                .group([
+                    .moveBy(x: drift.dx, y: drift.dy + gravityDrop, duration: lifetime),
+                    .rotate(byAngle: rotation, duration: lifetime),
+                    .sequence([
+                        .wait(forDuration: lifetime * 0.6),
+                        .fadeOut(withDuration: lifetime * 0.4)
+                    ])
+                ]),
+                .removeFromParent()
+            ]))
 
             container.addChild(fragment)
         }
 
         // Auto-cleanup
         container.run(.sequence([
-            .wait(forDuration: 2.0),
-            .fadeOut(withDuration: 0.3),
+            .wait(forDuration: 1.2),
             .removeFromParent()
         ]))
 
@@ -61,32 +92,36 @@ final class ParticleFactory {
 
         let colors: [UIColor] = [.cyan, .magenta, .yellow, .white]
 
-        for i in 0..<15 {
+        // Batched: shared tinted texture for the corruption bars; finite jitter (not
+        // repeatForever) so the bars stop costing once they've faded out.
+        let barCount = 10
+        let texture = whiteSquareTexture()
+
+        for i in 0..<barCount {
             let width = CGFloat.random(in: 10...50)
             let height = CGFloat.random(in: 2...6)
-            let bar = SKShapeNode(rectOf: CGSize(width: width, height: height))
-            bar.fillColor = colors.randomElement()!
-            bar.strokeColor = .clear
+            let bar = SKSpriteNode(texture: texture, size: CGSize(width: width, height: height))
+            bar.color = colors.randomElement()!
+            bar.colorBlendFactor = 1.0
             bar.position = CGPoint(
                 x: CGFloat.random(in: -30...30),
                 y: CGFloat.random(in: -30...30)
             )
             bar.zPosition = CGFloat(i)
 
-            // Jitter and fade
-            bar.run(.sequence([
-                .group([
-                    .repeatForever(.sequence([
-                        .moveBy(x: CGFloat.random(in: -20...20), y: 0, duration: 0.03),
-                        .moveBy(x: CGFloat.random(in: -20...20), y: 0, duration: 0.03)
-                    ])),
-                ]),
-            ]))
+            // Bounded jitter (a handful of hops) running alongside the staggered fade-out.
+            let jitter = SKAction.repeat(.sequence([
+                .moveBy(x: CGFloat.random(in: -20...20), y: 0, duration: 0.03),
+                .moveBy(x: CGFloat.random(in: -20...20), y: 0, duration: 0.03)
+            ]), count: 6)
 
-            bar.run(.sequence([
-                .wait(forDuration: Double(i) * 0.03),
-                .fadeOut(withDuration: 0.2),
-                .removeFromParent()
+            bar.run(.group([
+                jitter,
+                .sequence([
+                    .wait(forDuration: Double(i) * 0.03),
+                    .fadeOut(withDuration: 0.2),
+                    .removeFromParent()
+                ])
             ]))
 
             container.addChild(bar)
@@ -109,33 +144,43 @@ final class ParticleFactory {
 
         let colors: [UIColor] = [.systemYellow, .systemPink, .systemCyan, .systemGreen, .white]
 
-        for _ in 0..<100 {
+        // Capped & batched: shared tinted texture + SKAction fall/tumble instead of 100 physics bodies.
+        let confettiCount = 40
+        let texture = whiteSquareTexture()
+        let fallDistance = scene.size.height + 120
+
+        for _ in 0..<confettiCount {
             let size = CGFloat.random(in: 5...12)
-            let confetti = SKShapeNode(rectOf: CGSize(width: size, height: size * 0.6))
-            confetti.fillColor = colors.randomElement()!
-            confetti.strokeColor = .clear
+            let confetti = SKSpriteNode(texture: texture, size: CGSize(width: size, height: size * 0.6))
+            confetti.color = colors.randomElement()!
+            confetti.colorBlendFactor = 1.0
             confetti.position = CGPoint(
                 x: CGFloat.random(in: -scene.size.width/2...scene.size.width/2),
                 y: CGFloat.random(in: 0...100)
             )
 
-            confetti.physicsBody = SKPhysicsBody(rectangleOf: CGSize(width: size, height: size * 0.6))
-            confetti.physicsBody?.categoryBitMask = 0
-            confetti.physicsBody?.collisionBitMask = 0
-            confetti.physicsBody?.velocity = CGVector(
-                dx: CGFloat.random(in: -50...50),
-                dy: CGFloat.random(in: -200...(-50))
-            )
-            confetti.physicsBody?.angularVelocity = CGFloat.random(in: -5...5)
-            confetti.physicsBody?.linearDamping = 0.3
-            confetti.physicsBody?.affectedByGravity = true
+            // Lazy fall with horizontal drift and continuous tumble.
+            let duration = Double.random(in: 2.2...3.6)
+            let drift = CGFloat.random(in: -60...60)
+            let tumble = SKAction.rotate(byAngle: CGFloat.random(in: -6...6), duration: duration)
+
+            confetti.run(.sequence([
+                .group([
+                    .moveBy(x: drift, y: -fallDistance, duration: duration),
+                    tumble,
+                    .sequence([
+                        .wait(forDuration: duration * 0.7),
+                        .fadeOut(withDuration: duration * 0.3)
+                    ])
+                ]),
+                .removeFromParent()
+            ]))
 
             container.addChild(confetti)
         }
 
         container.run(.sequence([
             .wait(forDuration: 4.0),
-            .fadeOut(withDuration: 0.5),
             .removeFromParent()
         ]))
 

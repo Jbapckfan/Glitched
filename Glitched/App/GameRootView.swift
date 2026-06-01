@@ -27,10 +27,11 @@ struct GameRootView: View {
                 .frame(width: 0, height: 0)
                 .opacity(0)
 
-            // SpriteKit game with HUD layered via .overlay to guarantee
-            // it renders above the Metal-backed SKView. GeometryReader exposes
-            // the device safe-area insets so SpriteKit scenes can position HUDs
-            // and clue text clear of the status bar / Dynamic Island.
+            // SpriteKit game. The HUD is a sibling ZStack layer below, drawn
+            // after this view so it renders above the Metal-backed SKView.
+            // GeometryReader exposes the device safe-area insets so SpriteKit
+            // scenes can position HUDs and clue text clear of the status bar /
+            // Dynamic Island.
             GeometryReader { geo in
                 SpriteKitContainer(
                     levelID: gameState.currentLevelID,
@@ -39,9 +40,15 @@ struct GameRootView: View {
                 )
             }
             .ignoresSafeArea()
-            .overlay {
-                HUDLayer(levelID: gameState.currentLevelID)
-            }
+
+            // HUD layer (incl. the persistent pause/exit control). Kept as a
+            // sibling ZStack layer rather than an .overlay on the
+            // .ignoresSafeArea() SpriteKit view, so it inherits the real device
+            // safe-area insets and the pause button anchors clear of the
+            // Dynamic Island/notch. The layer is non-blocking; only the pause
+            // button's own frame is hit-testable, so gameplay touches still
+            // reach the SpriteKit scene below.
+            HUDLayer(levelID: gameState.currentLevelID)
 
             // Accessibility fallback buttons
             if accessibility.showsFallbackOverlay {

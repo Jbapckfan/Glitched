@@ -2,6 +2,10 @@ import SwiftUI
 
 struct SettingsView: View {
     @Environment(\.dismiss) private var dismiss
+    // Respect Dynamic Type: the terminal style uses fixed-size `.custom` fonts,
+    // which do NOT scale automatically. We read the system size category and
+    // scale our custom font sizes against it so labels honor the user's setting.
+    @Environment(\.sizeCategory) private var sizeCategory
     @ObservedObject private var store = StoreManager.shared
     @ObservedObject private var accessibility = AccessibilityManager.shared
 
@@ -9,6 +13,23 @@ struct SettingsView: View {
     @State private var restoringPurchases = false
 
     private let background = Color(red: 13 / 255, green: 13 / 255, blue: 13 / 255)
+
+    /// Multiplier derived from the system Dynamic Type setting, clamped so the
+    /// terminal layout stays legible without overflowing.
+    private var typeScale: CGFloat {
+        switch sizeCategory {
+        case .extraSmall, .small: return 0.9
+        case .medium, .large: return 1.0
+        case .extraLarge: return 1.15
+        case .extraExtraLarge: return 1.3
+        case .extraExtraExtraLarge: return 1.45
+        default: return 1.6 // accessibility sizes
+        }
+    }
+
+    private func scaledFont(_ name: String, size: CGFloat) -> Font {
+        .custom(name, size: size * typeScale)
+    }
 
     var body: some View {
         NavigationView {
@@ -18,10 +39,36 @@ struct SettingsView: View {
                 ScrollView(showsIndicators: false) {
                     VStack(alignment: .leading, spacing: 18) {
                         section("ACCESSIBILITY") {
-                            terminalToggle("HARDWARE-FREE MODE", isOn: $settings.hardwareFreeMode)
-                            terminalToggle("REDUCE SCREEN SHAKE", isOn: $settings.reduceScreenShake)
-                            terminalToggle("REDUCE FLASH EFFECTS", isOn: $settings.reduceFlashEffects)
-                            terminalToggle("HIGH CONTRAST MODE", isOn: $settings.highContrastMode)
+                            terminalToggle(
+                                "HARDWARE-FREE MODE",
+                                caption: "Replaces motion/sensor puzzles with on-screen controls.",
+                                isOn: $settings.hardwareFreeMode
+                            )
+                            terminalToggle(
+                                "REDUCE SCREEN SHAKE",
+                                caption: "Dampens camera shake on impacts and deaths.",
+                                isOn: $settings.reduceScreenShake
+                            )
+                            terminalToggle(
+                                "REDUCE FLASH EFFECTS",
+                                caption: "Suppresses full-screen flashes.",
+                                isOn: $settings.reduceFlashEffects
+                            )
+                            terminalToggle(
+                                "HIGH CONTRAST MODE",
+                                caption: "Removes background tint and ambient effects for a clean black-on-white field.",
+                                isOn: $settings.highContrastMode
+                            )
+                            terminalToggle(
+                                "EXTENDED HINT TIMERS",
+                                caption: "Gives you more time before hints appear in a level.",
+                                isOn: $settings.extendedHintTimers
+                            )
+
+                            Text("TEXT SIZE FOLLOWS YOUR SYSTEM DYNAMIC TYPE SETTING.")
+                                .font(scaledFont(VisualConstants.Fonts.secondary, size: 10))
+                                .foregroundStyle(.white.opacity(0.4))
+                                .frame(maxWidth: .infinity, alignment: .leading)
                         }
 
                         section("AUDIO") {
@@ -62,6 +109,7 @@ struct SettingsView: View {
             .onChange(of: settings.reduceScreenShake) { _ in persistSettings() }
             .onChange(of: settings.reduceFlashEffects) { _ in persistSettings() }
             .onChange(of: settings.highContrastMode) { _ in persistSettings() }
+            .onChange(of: settings.extendedHintTimers) { _ in persistSettings() }
             .onChange(of: settings.musicVolume) { _ in persistSettings() }
             .onChange(of: settings.sfxVolume) { _ in persistSettings() }
         }
@@ -70,7 +118,7 @@ struct SettingsView: View {
     private func section<Content: View>(_ title: String, @ViewBuilder content: () -> Content) -> some View {
         VStack(alignment: .leading, spacing: 14) {
                 Text(title)
-                    .font(.custom(VisualConstants.Fonts.main, size: 13))
+                    .font(scaledFont(VisualConstants.Fonts.main, size: 13))
                     .foregroundStyle(Color.cyan)
 
             VStack(spacing: 14) {
@@ -89,11 +137,19 @@ struct SettingsView: View {
         }
     }
 
-    private func terminalToggle(_ label: String, isOn: Binding<Bool>) -> some View {
+    private func terminalToggle(_ label: String, caption: String? = nil, isOn: Binding<Bool>) -> some View {
         Toggle(isOn: isOn) {
-            Text(label)
-                .font(.custom(VisualConstants.Fonts.secondary, size: 13))
-                .foregroundStyle(.white)
+            VStack(alignment: .leading, spacing: 4) {
+                Text(label)
+                    .font(scaledFont(VisualConstants.Fonts.secondary, size: 13))
+                    .foregroundStyle(.white)
+                if let caption {
+                    Text(caption)
+                        .font(scaledFont(VisualConstants.Fonts.secondary, size: 10))
+                        .foregroundStyle(.white.opacity(0.5))
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
         }
         .toggleStyle(SwitchToggleStyle(tint: .cyan))
     }
@@ -102,11 +158,11 @@ struct SettingsView: View {
         VStack(alignment: .leading, spacing: 8) {
             HStack {
                 Text(label)
-                    .font(.custom(VisualConstants.Fonts.secondary, size: 13))
+                    .font(scaledFont(VisualConstants.Fonts.secondary, size: 13))
                     .foregroundStyle(.white)
                 Spacer()
                 Text("\(Int(value.wrappedValue * 100))%")
-                    .font(.custom(VisualConstants.Fonts.main, size: 12))
+                    .font(scaledFont(VisualConstants.Fonts.main, size: 12))
                     .foregroundStyle(Color.cyan)
             }
 
@@ -124,11 +180,11 @@ struct SettingsView: View {
     private func statusRow(_ title: String, unlocked: Bool) -> some View {
         HStack {
             Text(title)
-                .font(.custom(VisualConstants.Fonts.secondary, size: 12))
+                .font(scaledFont(VisualConstants.Fonts.secondary, size: 12))
                 .foregroundStyle(.white.opacity(0.8))
             Spacer()
             Text(unlocked ? "UNLOCKED" : "LOCKED")
-                .font(.custom(VisualConstants.Fonts.main, size: 11))
+                .font(scaledFont(VisualConstants.Fonts.main, size: 11))
                 .foregroundStyle(unlocked ? Color.cyan : .white.opacity(0.45))
         }
     }
@@ -140,7 +196,7 @@ struct SettingsView: View {
                     .tint(.black)
             }
             Text(restoringPurchases ? "RESTORING..." : "RESTORE PURCHASES")
-                .font(.custom(VisualConstants.Fonts.main, size: 13))
+                .font(scaledFont(VisualConstants.Fonts.main, size: 13))
         }
         .foregroundStyle(Color.black)
         .frame(maxWidth: .infinity)

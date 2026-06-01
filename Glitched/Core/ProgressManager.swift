@@ -1,12 +1,20 @@
 import Foundation
 
 struct PlayerSettings: Codable {
+    /// Routes hardware-driven mechanics through on-screen fallback controls.
     var hardwareFreeMode: Bool = false
+    /// Boosts stroke/contrast on line-art rendering. Consumed by the rendering
+    /// layer (JuiceManager / BaseLevelScene). Persisted here so the flag survives
+    /// launches and stays in sync across the SettingsView and the game engine.
     var highContrastMode: Bool = false
+    /// Lengthens the delay before in-level hints surface, for players who need
+    /// more time. Consumed by BaseLevelScene's hint scheduling. Persisted here.
     var extendedHintTimers: Bool = false
     var musicVolume: Float = 1.0
     var sfxVolume: Float = 1.0
+    /// Dampens camera screen-shake. Consumed by JuiceManager.
     var reduceScreenShake: Bool = false
+    /// Suppresses full-screen flash effects. Consumed by JuiceManager.
     var reduceFlashEffects: Bool = false
 }
 
