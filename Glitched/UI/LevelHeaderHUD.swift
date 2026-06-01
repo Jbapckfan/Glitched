@@ -37,17 +37,29 @@ struct LevelHeaderHUD: View {
     @State private var isDragging = false
     @State private var hasDropped = false
 
+    // CLARITY: drive a slow "breathing" idle affordance so the resting banner
+    // reads as draggable BEFORE the player ever touches it (previously the accent
+    // only animated once a drag began). Toggled in/out by `.onAppear` and gated by
+    // Reduce Motion below.
+    @State private var idlePulse = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
     var body: some View {
         if !hasDropped {
             GeometryReader { geometry in
                 let safeTop = geometry.safeAreaInsets.top
+                // CLARITY: idle accent strength. When dragging, keep the existing
+                // strong glow. At rest, breathe between a low and high value (unless
+                // Reduce Motion is on, in which case hold a steady, legible accent).
+                let idleStrong = reduceMotion ? true : idlePulse
                 VStack(alignment: .leading, spacing: 8) {
                     // Main header - looks like part of the level
                     Text("LEVEL \(levelID.index)")
                         .font(.custom(VisualConstants.Fonts.main, size: VisualConstants.Fonts.sizeHUD))
                         .foregroundColor(VisualConstants.Colors.foregroundUI)
                         .tracking(4)
-                        .shadow(color: VisualConstants.Colors.accentUI.opacity(0.8), radius: isDragging ? 12 : 4)
+                        .shadow(color: VisualConstants.Colors.accentUI.opacity(0.8),
+                                radius: isDragging ? 12 : (idleStrong ? 8 : 4))
                         .animation(.easeInOut(duration: 1.0).repeatForever(autoreverses: true), value: isDragging)
 
                     // Underline
@@ -60,6 +72,22 @@ struct LevelHeaderHUD: View {
                                 .opacity(0.5)
                                 .blur(radius: 4)
                         )
+
+                    // CLARITY: drop-handle affordance — a grip + down chevron + hint
+                    // label so the banner reads as something you DRAG DOWN into the
+                    // level. Decorative only (accessibility hint lives on the card).
+                    HStack(spacing: VisualConstants.Spacing.xs) {
+                        Image(systemName: "line.3.horizontal")
+                            .font(.system(size: VisualConstants.Fonts.sizeSmall, weight: .bold))
+                        Text("DRAG DOWN")
+                            .font(.custom(VisualConstants.Fonts.secondary, size: VisualConstants.Fonts.captionSize))
+                            .tracking(2)
+                        Image(systemName: "chevron.down")
+                            .font(.system(size: VisualConstants.Fonts.sizeSmall, weight: .bold))
+                    }
+                    .foregroundColor(VisualConstants.Colors.accentUI)
+                    .opacity(idleStrong ? 0.95 : 0.55)
+                    .accessibilityHidden(true)
                 }
                 .padding(.horizontal, 24)
                 .padding(.vertical, 16)
@@ -67,13 +95,36 @@ struct LevelHeaderHUD: View {
                     RoundedRectangle(cornerRadius: 2)
                         .fill(VisualConstants.Colors.backgroundUI)
                         .overlay(
+                            // CLARITY: breathing border glow at rest — the border
+                            // tints toward the accent while idle so the banner looks
+                            // "live"/grabbable even before the first drag. Dragging
+                            // still pins it fully to the accent (unchanged).
                             RoundedRectangle(cornerRadius: 2)
-                                .strokeBorder(isDragging ? VisualConstants.Colors.accentUI : VisualConstants.Colors.foregroundUI, lineWidth: 2)
+                                .strokeBorder(
+                                    (isDragging || idleStrong)
+                                        ? VisualConstants.Colors.accentUI
+                                        : VisualConstants.Colors.foregroundUI,
+                                    lineWidth: 2
+                                )
                         )
-                        .shadow(color: VisualConstants.Colors.accentUI.opacity(isDragging ? 0.4 : 0.1), radius: 12)
+                        .shadow(color: VisualConstants.Colors.accentUI.opacity(isDragging ? 0.4 : (idleStrong ? 0.3 : 0.1)), radius: 12)
                 )
                 .scaleEffect(isDragging ? 1.05 : 1.0)
                 .offset(dragOffset)
+                // CLARITY: announce the affordance to VoiceOver users, since the
+                // visual grip/chevron hint is decorative (accessibilityHidden).
+                .accessibilityElement(children: .combine)
+                .accessibilityLabel(Text("Level \(levelID.index) banner"))
+                .accessibilityHint(Text("Draggable. Drag this banner down into the level to bridge the gap."))
+                // CLARITY: start the slow idle breathing once the banner appears.
+                // Reduce Motion holds a steady accent instead of animating (idleStrong
+                // is forced true above, and we skip starting the repeating animation).
+                .onAppear {
+                    guard !reduceMotion else { return }
+                    withAnimation(.easeInOut(duration: 1.4).repeatForever(autoreverses: true)) {
+                        idlePulse = true
+                    }
+                }
                 // Gesture stays attached to the title CARD (before the expanding
                 // positioning frame) so only the title is draggable — full drag
                 // functionality preserved.

@@ -98,13 +98,13 @@ final class WiFiScene: BaseLevelScene, SKPhysicsContactDelegate {
         // segments that are each only crossable in one WiFi state, and neither gap
         // is single-jumpable:
         //
-        //   Segment A — requires WiFi ON. A 175-logical chasm between the spawn
+        //   Segment A — requires WiFi ON. A 232-logical chasm between the spawn
         //     bookend and the solid REST ledge is bridged ONLY by the WiFi-ON
         //     stepping stones. With WiFi OFF the stones vanish and the chasm
-        //     (175 logical ≈ 159pt screen on iPhone, 175 on iPad) exceeds Bit's
-        //     ~144pt flat-jump reach on every device (the bookend and rest ledge
-        //     share the same height, so no downhill jump extends the reach), so it
-        //     cannot be jumped.
+        //     (232 logical ≈ 210pt screen on iPhone at width 390 ×0.907, 232 on
+        //     iPad) exceeds Bit's ~184pt running-jump reach on every device (the
+        //     bookend and rest ledge share the same height, so no downhill jump
+        //     extends the reach), so it cannot be jumped.
         //
         //   Segment B — requires WiFi OFF. From the solid REST ledge, a TALL WiFi
         //     wall (solid when ON) blocks the way forward and is too tall to jump
@@ -139,38 +139,49 @@ final class WiFiScene: BaseLevelScene, SKPhysicsContactDelegate {
         createPlatform(at: CGPoint(x: courseX(45), y: groundY),
                        size: CGSize(width: courseLen(70), height: 30), solidity: .always)
 
-        // Wide solid REST ledge (WiFi-independent). Logical span [255, 335]: its
-        // left edge at 255 is 175 logical past the bookend's right edge (80) — the
-        // un-jumpable chasm A. This ledge is the safe spot from which the player
-        // toggles WiFi OFF, and the WiFi wall stands on it.
-        createPlatform(at: CGPoint(x: courseX(295), y: groundY),
+        // Wide solid REST ledge (WiFi-independent). Logical span [312, 392]: its
+        // left edge at 312 is 232 logical past the bookend's right edge (80) — the
+        // un-jumpable chasm A (232 × 0.907 ≈ 210pt screen at the 390-pt iPhone width,
+        // ≥ Bit's ~184pt running-jump reach, so it can NOT be cleared in one jump on
+        // any device). This ledge is the safe spot from which the player toggles
+        // WiFi OFF, and the WiFi wall stands on it.
+        createPlatform(at: CGPoint(x: courseX(352), y: groundY),
                        size: CGSize(width: courseLen(80), height: 30), solidity: .always)
 
         // WiFi-ON stepping stones across chasm A (solid only when WiFi ON). Each
-        // sub-hop is small; they only exist to make the 175-logical chasm crossable
-        // while WiFi is ON. Right edge of the last stone ≈ 238, a short hop to the
-        // rest ledge's left edge (255).
-        createPlatform(at: CGPoint(x: courseX(120), y: groundY + 26), size: CGSize(width: courseLen(46), height: 24), solidity: .wifiOn)
-        createPlatform(at: CGPoint(x: courseX(168), y: groundY + 46), size: CGSize(width: courseLen(46), height: 24), solidity: .wifiOn)
-        createPlatform(at: CGPoint(x: courseX(215), y: groundY + 26), size: CGSize(width: courseLen(46), height: 24), solidity: .wifiOn)
+        // sub-hop is small; they only exist to make the 232-logical chasm crossable
+        // while WiFi is ON. Re-spaced to span the widened chasm: the last stone's
+        // right edge ≈ 293 is a short ~17pt hop to the rest ledge's left edge (312),
+        // and every sub-hop (bookend→s1→s2→s3→rest) stays well inside Bit's ~184pt
+        // reach on both iPhone (×0.907) and iPad (×1.0).
+        createPlatform(at: CGPoint(x: courseX(140), y: groundY + 26), size: CGSize(width: courseLen(46), height: 24), solidity: .wifiOn)
+        createPlatform(at: CGPoint(x: courseX(205), y: groundY + 46), size: CGSize(width: courseLen(46), height: 24), solidity: .wifiOn)
+        createPlatform(at: CGPoint(x: courseX(270), y: groundY + 26), size: CGSize(width: courseLen(46), height: 24), solidity: .wifiOn)
 
         // --- Segment B: WiFi wall + WiFi-OFF step + elevated exit ledge ---
 
         // Tall WiFi wall (solid when ON, passable when OFF) standing on the rest
-        // ledge at logical x = 300 (inside rest span [255, 335]). Too tall to jump
-        // over while ON, so forward progress demands toggling OFF.
-        createWiFiWall(at: CGPoint(x: courseX(300), y: restTopY + 65))
+        // ledge at logical x = 340 (span [330, 350], inside rest span [312, 392]).
+        // The player lands on the rest ledge near its left edge (312) off the last
+        // stone and stands left of the wall; the wall blocks rightward progress and
+        // is too tall to jump over while ON, so forward progress demands toggling
+        // OFF.
+        createWiFiWall(at: CGPoint(x: courseX(340), y: restTopY + 65))
 
-        // WiFi-OFF step (solid ONLY when WiFi OFF). Logical span ≈ [327.5, 382.5],
-        // top at restTopY + 55. It bridges the void past the rest ledge (right edge
-        // 335) and forms the middle stair to the elevated exit. With WiFi ON it is
+        // WiFi-OFF step (solid ONLY when WiFi OFF). Logical span ≈ [350.5, 405.5],
+        // top at restTopY + 55. It sits past the wall and forms the middle stair to
+        // the elevated exit (the +55 vertical hop is inside Bit's ~91pt apex; the
+        // step overlaps the rest ledge / exit ledge horizontally so the climb is
+        // essentially vertical, no horizontal reach problem). With WiFi ON it is
         // intangible, so it can't be used to climb until the player goes OFF.
-        createWiFiOffPlatform(at: CGPoint(x: courseX(355), y: restTopY + 55 - 12),
+        createWiFiOffPlatform(at: CGPoint(x: courseX(378), y: restTopY + 55 - 12),
                               size: CGSize(width: courseLen(55), height: 24))
 
         // Elevated exit ledge (WiFi-independent, always solid so the door always
-        // has footing). Top at restTopY + 100 — beyond Bit's ~91pt apex from the
-        // rest floor, so it is unreachable without first standing on the OFF-step.
+        // has footing). Logical span [370, 430] — its right edge sits exactly at the
+        // design width, so it stays on-screen (full-bleed at 390, centered on iPad).
+        // Top at restTopY + 100 — beyond Bit's ~91pt apex from the rest floor, so it
+        // is unreachable without first standing on the OFF-step.
         let exitLedgeTopY = restTopY + 100
         createPlatform(at: CGPoint(x: courseX(400), y: exitLedgeTopY - 15),
                        size: CGSize(width: courseLen(60), height: 30), solidity: .always)
@@ -360,7 +371,7 @@ final class WiFiScene: BaseLevelScene, SKPhysicsContactDelegate {
         addChild(barContainer)
 
         // Label
-        downloadLabel = SKLabelNode(text: "DOWNLOAD: 0%")
+        downloadLabel = SKLabelNode(text: "SIGNAL: STRONG")
         downloadLabel.fontName = "Menlo-Bold"
         downloadLabel.fontSize = 10
         downloadLabel.fontColor = strokeColor
@@ -388,12 +399,13 @@ final class WiFiScene: BaseLevelScene, SKPhysicsContactDelegate {
         downloadBarFill.path = UIBezierPath(roundedRect: rect, cornerRadius: 2).cgPath
         downloadBarFill.position = CGPoint(x: -downloadBarWidth / 2 + fillWidth / 2, y: 0)
 
-        let percent = Int(downloadProgress * 100)
-        downloadLabel.text = "DOWNLOAD: \(percent)%"
+        // Neutral signal-strength readout (purely cosmetic — it does NOT gate the
+        // exit; the level completes on reaching the door regardless of this value).
+        downloadLabel.text = downloadProgress > 0.0 ? "SIGNAL: STRONG" : "SIGNAL: LOST"
 
         if downloadProgress >= 1.0 && !downloadCompleted {
             downloadCompleted = true
-            downloadLabel.text = "DOWNLOAD COMPLETE"
+            downloadLabel.text = "SIGNAL: STRONG"
             triggerConfettiBurst()
         }
     }

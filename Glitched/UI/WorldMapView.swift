@@ -6,6 +6,8 @@ struct WorldMapView: View {
     @ObservedObject private var gameState = GameState.shared
     @ObservedObject private var store = StoreManager.shared
 
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
     @State private var expandedWorlds: Set<World> = [.world1]
     @State private var showingSettings = false
     @State private var pulseCurrentLevel = false
@@ -41,6 +43,14 @@ struct WorldMapView: View {
 
                     if !store.isUnlocked(StoreManager.fullGameProductID) {
                         lockedWorldBanner
+                    } else if let message = storeMessage {
+                        // When fully unlocked the banner is gone, but transient
+                        // clarity messages (e.g. progression locks) still need a
+                        // visible home.
+                        Text(message)
+                            .font(.custom(VisualConstants.Fonts.secondary, size: 11))
+                            .foregroundStyle(.white.opacity(0.6))
+                            .fixedSize(horizontal: false, vertical: true)
                     }
 
                     ForEach(World.campaignWorlds, id: \.rawValue) { world in
@@ -164,31 +174,63 @@ struct WorldMapView: View {
 
     private var lockedWorldBanner: some View {
         let product = store.product(for: StoreManager.fullGameProductID)
-        let unlockTitle = product.map { "UNLOCK ALL WORLDS - \($0.displayPrice)" } ?? "UNLOCK ALL WORLDS"
 
         return VStack(alignment: .leading, spacing: 12) {
-            glitchTitle("WORLD 1 IS FREE. THE REST IS SEALED.")
+            glitchTitle("WORLDS 0-1 FREE — 11 LEVELS. 4 WORLDS / 23 LEVELS SEALED.")
                 .font(.custom(VisualConstants.Fonts.main, size: 13))
 
-            Button(action: unlockAllWorlds) {
-                HStack {
-                    if isPurchasing {
-                        ProgressView()
-                            .tint(.black)
+            if let product {
+                // Happy path: a real, priced purchase button.
+                Button(action: unlockAllWorlds) {
+                    HStack {
+                        if isPurchasing {
+                            ProgressView()
+                                .tint(.black)
+                        }
+                        Text("UNLOCK ALL WORLDS - \(product.displayPrice)")
+                            .font(.custom(VisualConstants.Fonts.main, size: 13))
+                            .tracking(1.5)
+                            .accessibilityHidden(true)
                     }
-                    Text(unlockTitle)
-                        .font(.custom(VisualConstants.Fonts.main, size: 13))
-                        .tracking(1.5)
+                    .foregroundStyle(Color.black)
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 12)
+                    .background(
+                        RoundedRectangle(cornerRadius: 12)
+                            .fill(Color.cyan)
+                    )
                 }
-                .foregroundStyle(Color.black)
-                .padding(.horizontal, 16)
-                .padding(.vertical, 12)
-                .background(
-                    RoundedRectangle(cornerRadius: 12)
-                        .fill(Color.cyan)
-                )
+                .disabled(isPurchasing)
+                .accessibilityLabel("Unlock all worlds, \(product.displayPrice), button")
+            } else {
+                // Compliance: no price loaded, so never present a purchasable
+                // control. Offer a non-purchasable retry that re-fetches prices.
+                Button(action: retryLoadProducts) {
+                    HStack {
+                        if isPurchasing {
+                            ProgressView()
+                                .tint(.cyan)
+                        }
+                        Text("PRICES UNAVAILABLE — TAP TO RETRY")
+                            .font(.custom(VisualConstants.Fonts.main, size: 13))
+                            .tracking(1.5)
+                            .accessibilityHidden(true)
+                    }
+                    .foregroundStyle(Color.cyan)
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 12)
+                    .background(
+                        RoundedRectangle(cornerRadius: 12)
+                            .fill(Color.white.opacity(0.04))
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 12)
+                                    .stroke(Color.cyan.opacity(0.5), lineWidth: 1)
+                            )
+                    )
+                }
+                .disabled(isPurchasing)
+                .accessibilityLabel("Prices unavailable, tap to retry, button")
             }
-            .disabled(isPurchasing)
 
             Button(action: restorePurchases) {
                 HStack(spacing: 8) {
@@ -199,10 +241,12 @@ struct WorldMapView: View {
                     Text(isRestoring ? "RESTORING..." : "RESTORE PURCHASES")
                         .font(.custom(VisualConstants.Fonts.main, size: 12))
                         .tracking(1.2)
+                        .accessibilityHidden(true)
                 }
                 .foregroundStyle(Color.cyan)
             }
             .disabled(isRestoring)
+            .accessibilityLabel("Restore purchases, button")
 
             if let message = storeMessage ?? store.lastErrorMessage {
                 Text(message)
@@ -229,7 +273,11 @@ struct WorldMapView: View {
 
         return VStack(alignment: .leading, spacing: 14) {
             Button {
-                if lockedByPurchase { return }
+                if lockedByPurchase {
+                    // Purchase lock: explain instead of swallowing the tap.
+                    storeMessage = "Unlock all worlds to play this"
+                    return
+                }
                 toggleExpanded(world)
             } label: {
                 HStack(spacing: 14) {
@@ -308,8 +356,15 @@ struct WorldMapView: View {
         let unlocked = ProgressManager.shared.isUnlocked(level)
         let isCurrent = gameState.currentLevelID == level
 
+        // Reduce Motion: hold a static highlighted state instead of pulsing.
+        let isPulsing = isCurrent && pulseCurrentLevel && !reduceMotion
+
         return Button {
-            guard unlocked else { return }
+            guard unlocked else {
+                // Progression lock: explain instead of swallowing the tap.
+                storeMessage = "Finish the previous level to unlock"
+                return
+            }
             start(level)
         } label: {
             ZStack(alignment: .topTrailing) {
@@ -320,10 +375,10 @@ struct WorldMapView: View {
                             .stroke(isCurrent ? Color.cyan : Color.white.opacity(unlocked ? 0.16 : 0.08), lineWidth: isCurrent ? 2 : 1)
                     )
                     .frame(width: 56, height: 56)
-                    .scaleEffect(isCurrent && pulseCurrentLevel ? 1.08 : 1.0)
+                    .scaleEffect(isPulsing ? 1.08 : 1.0)
                     .shadow(color: isCurrent ? Color.cyan.opacity(0.35) : .clear, radius: 12)
                     .animation(
-                        isCurrent
+                        (isCurrent && !reduceMotion)
                             ? .easeInOut(duration: 0.9).repeatForever(autoreverses: true)
                             : .default,
                         value: pulseCurrentLevel
@@ -354,12 +409,16 @@ struct WorldMapView: View {
 
     private func glitchTitle(_ text: String) -> some View {
         ZStack {
+            // Decorative chromatic-aberration copies: hidden from VoiceOver so the
+            // title is announced once rather than three times.
             Text(text)
                 .offset(x: 1.5, y: 0)
                 .foregroundStyle(Color.cyan.opacity(0.65))
+                .accessibilityHidden(true)
             Text(text)
                 .offset(x: -1.0, y: 0)
                 .foregroundStyle(.white.opacity(0.28))
+                .accessibilityHidden(true)
             Text(text)
                 .foregroundStyle(.white)
         }
@@ -418,10 +477,31 @@ struct WorldMapView: View {
 
             do {
                 _ = try await store.purchase(product)
+            } catch StoreManager.StoreError.purchasePending {
+                storeMessage = "Waiting for approval — worlds unlock automatically once approved"
+            } catch StoreManager.StoreError.purchaseCancelled {
+                // User backed out: no error, gentle nudge instead.
+                storeMessage = "No charge — tap Unlock when you are ready"
             } catch StoreManager.StoreError.purchaseNotCompleted {
-                storeMessage = "Purchase not completed."
+                storeMessage = store.lastErrorMessage
             } catch {
                 storeMessage = store.lastErrorMessage ?? error.localizedDescription
+            }
+        }
+    }
+
+    /// Compliance retry: re-fetch product metadata (prices) WITHOUT starting a
+    /// purchase. Shown only when no price is available, so the user is never
+    /// asked to buy something with no displayed price.
+    private func retryLoadProducts() {
+        isPurchasing = true
+        storeMessage = nil
+
+        Task {
+            defer { isPurchasing = false }
+            await store.loadProducts()
+            if store.product(for: StoreManager.fullGameProductID) == nil {
+                storeMessage = store.lastErrorMessage ?? "Store is unavailable. Try again later."
             }
         }
     }

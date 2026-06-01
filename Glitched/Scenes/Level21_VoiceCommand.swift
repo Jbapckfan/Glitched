@@ -30,13 +30,15 @@ final class VoiceCommandScene: BaseLevelScene, SKPhysicsContactDelegate {
 
     /// Logical (course-space) width of the bridge span. Shared by the visual
     /// in createBridge() and the physics body in extendBridge() so the walkable
-    /// surface always matches the drawn span. Bridge center is logical 160,
-    /// width 170, so it covers logical [75, 245] — overlapping the start
-    /// platform's right edge (80) and the middle platform's left edge (240) by
-    /// 5pt each for a continuous walkable surface. The 160-pt chasm (start.right
-    /// 80 -> middle.left 240) exceeds the maximum flat horizontal jump on every
-    /// device, so the BRIDGE command is genuinely required, not skippable.
-    private let bridgeLogicalWidth: CGFloat = 170
+    /// surface always matches the drawn span. Bridge center is logical 205,
+    /// width 260, so it covers logical [75, 335] — overlapping the start
+    /// platform's right edge (80) and the middle platform's left edge (330) by
+    /// 5pt each for a continuous walkable surface. The 250-pt logical chasm
+    /// (start.right 80 -> middle.left 330) maps to ~227pt at the narrowest
+    /// shipping iPhone (390-pt width, courseScale ~0.907), which exceeds the
+    /// ~184-pt running-jump-plus-coyote horizontal reach on every device, so the
+    /// BRIDGE command is genuinely required, not skippable.
+    private let bridgeLogicalWidth: CGFloat = 260
 
     private var bit: BitCharacter!
     private var playerController: PlayerController!
@@ -134,11 +136,13 @@ final class VoiceCommandScene: BaseLevelScene, SKPhysicsContactDelegate {
         let groundY: CGFloat = 160
 
         // Fits a 390-pt iPhone canvas. Three voice commands gate progress:
-        //   BRIDGE spans a 160-pt chasm (> ~145-pt absolute max horizontal jump
-        //     on every device, so the bridge mechanic is required, not jumpable).
+        //   BRIDGE spans a 250-pt logical chasm (~227pt at the narrowest 390-pt
+        //     iPhone, courseScale ~0.907) which exceeds the ~184-pt running-jump
+        //     horizontal reach on every device, so the bridge mechanic is
+        //     required, not jumpable.
         //   OPEN unlocks a door blocking the middle section.
         //   FLY briefly reduces gravity so the player can clear the ~97-pt
-        //     rise to the exit plateau (> 72-pt normal jump ceiling).
+        //     rise to the exit plateau (> ~91-pt normal jump apex).
         // Gameplay X positions and widths are mapped through the centered
         // logical course (courseX / courseLen) so spacing/gaps/exit placement
         // stay consistent across iPhone and iPad. Y stays on its existing
@@ -147,19 +151,25 @@ final class VoiceCommandScene: BaseLevelScene, SKPhysicsContactDelegate {
         // Start platform: center 45, width 70 -> logical span [10,80].
         createPlatform(at: CGPoint(x: courseX(45), y: groundY), size: CGSize(width: courseLen(70), height: 30))
 
-        // Bridge: center 160, width 170 -> covers logical [75,245], bridging the
-        // 160-pt chasm from start.right (80) to middle.left (240).
-        createBridge(at: CGPoint(x: courseX(160), y: groundY), width: courseLen(bridgeLogicalWidth))
+        // Bridge: center 205, width 260 -> covers logical [75,335], bridging the
+        // 250-pt logical chasm from start.right (80) to middle.left (330).
+        createBridge(at: CGPoint(x: courseX(205), y: groundY), width: courseLen(bridgeLogicalWidth))
 
-        // Middle platform: center 270, width 60 -> logical span [240,300].
-        createPlatform(at: CGPoint(x: courseX(270), y: groundY), size: CGSize(width: courseLen(60), height: 30))
-        // Door centered at groundY+60 with a 90-pt frame spans y=175..265 —
-        // higher than the player's jump-apex body bottom (247), so it can't
-        // be cleared by jumping before OPEN is spoken.
-        createLockedDoor(at: CGPoint(x: courseX(300), y: groundY + 60))
+        // Middle platform: center 360, width 60 -> logical span [330,390]. The
+        // chasm to its left (start.right 80 -> 330) is 250 logical = ~227pt at
+        // the 390-pt iPhone, beyond the ~184-pt horizontal jump reach, so it is
+        // only crossable via the extended BRIDGE.
+        createPlatform(at: CGPoint(x: courseX(360), y: groundY), size: CGSize(width: courseLen(60), height: 30))
+        // Door at the middle platform's right edge (logical 390), centered at
+        // groundY+60 with a 90-pt frame spanning y=175..265 — higher than the
+        // player's jump-apex body bottom (~247), so it can't be cleared by
+        // jumping before OPEN is spoken.
+        createLockedDoor(at: CGPoint(x: courseX(390), y: groundY + 60))
 
-        // Small platform before the exit plateau: center 330, width 40 -> [310,350].
-        createPlatform(at: CGPoint(x: courseX(330), y: groundY), size: CGSize(width: courseLen(40), height: 30))
+        // Small platform before the exit plateau: center 400, width 50 -> [375,425].
+        // Overlaps the middle platform's right edge (390) so, once OPEN clears
+        // the door, the floor is contiguous out to the FLY ascent point.
+        createPlatform(at: CGPoint(x: courseX(400), y: groundY), size: CGSize(width: courseLen(50), height: 30))
 
         // Exit platform/door authored relative to the right of the logical
         // course: previously size.width-40 / size.width-30 on a ~430 canvas, so
@@ -176,9 +186,21 @@ final class VoiceCommandScene: BaseLevelScene, SKPhysicsContactDelegate {
         death.physicsBody?.categoryBitMask = PhysicsCategory.hazard
         addChild(death)
 
-        createHintLabel("SAY \"BRIDGE\"", at: CGPoint(x: courseX(160), y: groundY + 40))
-        createHintLabel("SAY \"OPEN\"", at: CGPoint(x: courseX(300), y: groundY + 90))
-        createHintLabel("SAY \"FLY\"", at: CGPoint(x: courseX(350), y: groundY + 70))
+        createHintLabel("SAY \"BRIDGE\"", at: CGPoint(x: courseX(205), y: groundY + 40))
+        // OVERLAP FIX: the widened chasm shifted the middle platform + exit pillar
+        // right and the hint fontSize was bumped 9 -> 13, so the OPEN/FLY prompts
+        // (previously at logical 390/410) now sit on top of the EXIT pillar/door
+        // (which spans logical ~[380,420]) and clip the right edge on iPhone. Pull
+        // both prompts LEFT of the pillar — over the middle/small platforms, whose
+        // left edges sit around logical 330..375 — and stack them so they read
+        // OPEN-above-FLY without crowding. createHintLabel() additionally clamps
+        // each label's center so its full width stays >=12pt inside the right edge.
+        // courseX(355) at fontSize 13 still overran onto the EXIT door/pillar (door at
+        // courseX(390)) on BOTH devices. Move further left to courseX(310): "SAY OPEN"
+        // right edge then sits ~34pt (iPhone) / ~51pt (iPad) clear of the door, while
+        // staying right of "SAY BRIDGE" (courseX 205) and above the bridge surface.
+        createHintLabel("SAY \"OPEN\"", at: CGPoint(x: courseX(310), y: groundY + 100))
+        createHintLabel("SAY \"FLY\"", at: CGPoint(x: courseX(310), y: groundY + 70))
     }
 
     private func createPlatform(at position: CGPoint, size: CGSize) {
@@ -284,17 +306,25 @@ final class VoiceCommandScene: BaseLevelScene, SKPhysicsContactDelegate {
     }
 
     private func createHintLabel(_ text: String, at position: CGPoint) {
+        // CLARITY: bumped from 9 -> 13 pt and the alpha/pulse floor raised so the
+        // on-course SAY "BRIDGE/OPEN/FLY" prompts stay legible (the old 9 pt at
+        // ~0.3 floor was effectively invisible on the narrow iPhone).
         let label = SKLabelNode(text: text)
         label.fontName = "Menlo"
-        label.fontSize = 9
-        label.fontColor = strokeColor.withAlphaComponent(0.5)
-        label.position = position
+        label.fontSize = 13
+        label.fontColor = strokeColor.withAlphaComponent(0.85)
         label.zPosition = 50
+        // OVERLAP FIX: clamp the (center-aligned) label so its full width never
+        // clips the right safe-area edge — keep a >=12pt margin. Half-width comes
+        // from the realized frame (Menlo is monospaced; valid once it has text).
+        let halfWidth = label.frame.width / 2
+        let maxCenterX = size.width - halfWidth - 12
+        label.position = CGPoint(x: min(position.x, maxCenterX), y: position.y)
         addChild(label)
 
         label.run(.repeatForever(.sequence([
-            .fadeAlpha(to: 0.3, duration: 1.0),
-            .fadeAlpha(to: 0.7, duration: 1.0)
+            .fadeAlpha(to: 0.6, duration: 1.0),
+            .fadeAlpha(to: 1.0, duration: 1.0)
         ])))
     }
 
@@ -364,8 +394,15 @@ final class VoiceCommandScene: BaseLevelScene, SKPhysicsContactDelegate {
         // on iPhone 390 the box spans x[65,325]: its right edge (325) clears the
         // top-right pause column (x[300,390] / mic at x~335-377) and its left
         // edge (65) clears the top-left LEVEL 21 title. On iPad (1024) the panel
-        // is centered with even more margin. Still above the gameplay/Bit, and
-        // fades out after 5 s as before — the mechanic is unchanged.
+        // is centered with even more margin. Still above the gameplay/Bit.
+        //
+        // CLARITY: the 5 s fade is DEFERRED until the permission overlay is
+        // dismissed. On a first play the speech-permission overlay (zPosition
+        // 8500) sits atop everything, so the panel previously expired unseen
+        // behind it. We poll for the overlay's "GOT IT" button (the base scene
+        // names it "permissionContinueButton" and removes the whole overlay on
+        // dismiss) and only start the timed fade once it is gone, so the
+        // instructions are actually read first.
         panel.position = CGPoint(x: size.width / 2, y: topSafeY - 160)
         panel.zPosition = 300
         addChild(panel)
@@ -389,7 +426,38 @@ final class VoiceCommandScene: BaseLevelScene, SKPhysicsContactDelegate {
         text2.position = CGPoint(x: 0, y: -8)
         panel.addChild(text2)
 
-        panel.run(.sequence([.wait(forDuration: 5), .fadeOut(withDuration: 0.5), .removeFromParent()]))
+        // Wait until the permission overlay has been dismissed before starting
+        // the 5 s visible-fade window, so the panel is never spent behind the
+        // overlay on first play. `permissionOverlayPresent` checks the overlay's
+        // named "GOT IT" button recursively; once the base scene removes the
+        // overlay it returns false and the fade runs exactly as before. The
+        // poller drains its own sequence on the tick that finds the overlay
+        // gone, then kicks off the timed fade as a fresh action, so the wait
+        // can't accidentally cancel the fade.
+        let timedFade = SKAction.sequence([
+            .wait(forDuration: 5),
+            .fadeOut(withDuration: 0.5),
+            .removeFromParent()
+        ])
+        let pollForOverlayGone = SKAction.run { [weak self, weak panel] in
+            guard let self, let panel else { return }
+            guard !self.permissionOverlayPresent else { return }
+            panel.removeAction(forKey: "instructionPoll")
+            panel.run(timedFade)
+        }
+        panel.run(
+            .repeatForever(.sequence([pollForOverlayGone, .wait(forDuration: 0.2)])),
+            withKey: "instructionPoll"
+        )
+    }
+
+    /// True while the base scene's speech-permission overlay is on screen. The
+    /// overlay node itself is private to BaseLevelScene, but its "GOT IT" button
+    /// is named "permissionContinueButton" and removed together with the overlay
+    /// on dismiss, so a recursive lookup is a safe presence probe without
+    /// touching the base class.
+    private var permissionOverlayPresent: Bool {
+        childNode(withName: "//permissionContinueButton") != nil
     }
 
     private func setupBit() {
@@ -464,9 +532,9 @@ final class VoiceCommandScene: BaseLevelScene, SKPhysicsContactDelegate {
     private func activateFly() {
         guard !flyActive else { return }
         // Gate FLY behind the earlier commands so it can't be used to skip
-        // BRIDGE (chasm traversal) or OPEN (locked door). Without this,
-        // saying FLY at spawn launches the player high enough to clear the
-        // 130-pt BRIDGE chasm and the 90-pt OPEN door in one arc.
+        // BRIDGE (the ~227pt chasm at the 390-pt iPhone) or OPEN (the locked
+        // door). Without this, saying FLY at spawn launches the player high
+        // enough to arc over the chasm and the door in one go.
         guard bridgeExtended && doorOpened else {
             showCommandHint("SPEAK BRIDGE AND OPEN FIRST")
             return

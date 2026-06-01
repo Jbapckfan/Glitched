@@ -16,6 +16,34 @@ struct PlayerSettings: Codable {
     var reduceScreenShake: Bool = false
     /// Suppresses full-screen flash effects. Consumed by JuiceManager.
     var reduceFlashEffects: Bool = false
+
+    init() {}
+
+    // Explicit keys + tolerant decoder so that adding a future field can never
+    // fail decoding (and wipe saved progress / re-lock paid worlds). Every
+    // property falls back to its default when the key is absent. Encoding stays
+    // synthesized.
+    private enum CodingKeys: String, CodingKey {
+        case hardwareFreeMode
+        case highContrastMode
+        case extendedHintTimers
+        case musicVolume
+        case sfxVolume
+        case reduceScreenShake
+        case reduceFlashEffects
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        let defaults = PlayerSettings()
+        hardwareFreeMode = try container.decodeIfPresent(Bool.self, forKey: .hardwareFreeMode) ?? defaults.hardwareFreeMode
+        highContrastMode = try container.decodeIfPresent(Bool.self, forKey: .highContrastMode) ?? defaults.highContrastMode
+        extendedHintTimers = try container.decodeIfPresent(Bool.self, forKey: .extendedHintTimers) ?? defaults.extendedHintTimers
+        musicVolume = try container.decodeIfPresent(Float.self, forKey: .musicVolume) ?? defaults.musicVolume
+        sfxVolume = try container.decodeIfPresent(Float.self, forKey: .sfxVolume) ?? defaults.sfxVolume
+        reduceScreenShake = try container.decodeIfPresent(Bool.self, forKey: .reduceScreenShake) ?? defaults.reduceScreenShake
+        reduceFlashEffects = try container.decodeIfPresent(Bool.self, forKey: .reduceFlashEffects) ?? defaults.reduceFlashEffects
+    }
 }
 
 struct LevelStats: Codable {
@@ -23,6 +51,27 @@ struct LevelStats: Codable {
     var bestTimeSeconds: Double?
     var hintsUsed: Int = 0
     var completedAt: Date?
+
+    init() {}
+
+    // Explicit keys + tolerant decoder so a future field addition cannot fail
+    // decoding (which would wipe saved progress). Optionals default to nil via
+    // decodeIfPresent. Encoding stays synthesized.
+    private enum CodingKeys: String, CodingKey {
+        case deaths
+        case bestTimeSeconds
+        case hintsUsed
+        case completedAt
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        let defaults = LevelStats()
+        deaths = try container.decodeIfPresent(Int.self, forKey: .deaths) ?? defaults.deaths
+        bestTimeSeconds = try container.decodeIfPresent(Double.self, forKey: .bestTimeSeconds) ?? defaults.bestTimeSeconds
+        hintsUsed = try container.decodeIfPresent(Int.self, forKey: .hintsUsed) ?? defaults.hintsUsed
+        completedAt = try container.decodeIfPresent(Date.self, forKey: .completedAt) ?? defaults.completedAt
+    }
 }
 
 struct PlayerProgress: Codable {
@@ -33,6 +82,34 @@ struct PlayerProgress: Codable {
     var levelStats: [String: LevelStats] = [:]
     var lastPlayedLevel: LevelID?
     var settings: PlayerSettings = PlayerSettings()
+
+    init() {}
+
+    // Explicit keys + tolerant decoder so adding a future field can never fail
+    // decoding and silently wipe saved progress (which would re-lock paid
+    // worlds). Every property falls back to its default when the key is absent
+    // or its value is malformed-but-optional. Encoding stays synthesized.
+    private enum CodingKeys: String, CodingKey {
+        case highestWorld
+        case highestLevelIndex
+        case completedLevels
+        case collectiblesFound
+        case levelStats
+        case lastPlayedLevel
+        case settings
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        let defaults = PlayerProgress()
+        highestWorld = try container.decodeIfPresent(World.self, forKey: .highestWorld) ?? defaults.highestWorld
+        highestLevelIndex = try container.decodeIfPresent(Int.self, forKey: .highestLevelIndex) ?? defaults.highestLevelIndex
+        completedLevels = try container.decodeIfPresent(Set<LevelID>.self, forKey: .completedLevels) ?? defaults.completedLevels
+        collectiblesFound = try container.decodeIfPresent([String: Set<String>].self, forKey: .collectiblesFound) ?? defaults.collectiblesFound
+        levelStats = try container.decodeIfPresent([String: LevelStats].self, forKey: .levelStats) ?? defaults.levelStats
+        lastPlayedLevel = try container.decodeIfPresent(LevelID.self, forKey: .lastPlayedLevel) ?? defaults.lastPlayedLevel
+        settings = try container.decodeIfPresent(PlayerSettings.self, forKey: .settings) ?? defaults.settings
+    }
 
     static func key(for id: LevelID) -> String {
         id.displayName

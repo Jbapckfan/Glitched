@@ -21,14 +21,17 @@ final class HeaderScene: BaseLevelScene, SKPhysicsContactDelegate {
         min(layoutXScale, layoutYScale)
     }
 
-    // CHARM FIX: The single-jump horizontal reach is ~145pt (apex ~91pt, air time
-    // ~0.59s at moveSpeed 245). The old 140pt design gap was jumpable, letting the
-    // player bypass the header-drag mechanic this level exists to teach. Widen the
-    // gap to 200 design pts (>= ~181pt scene on the narrowest 390-wide phone, and
-    // far wider on iPad) so it cannot be cleared in a single jump and the bridge is
-    // required. Right platform [pitEndX, width] still hosts the exit at width-50.
+    // CHARM FIX: The running-jump horizontal reach is ~184pt (apex ~91pt at the 620
+    // velocity cap, plus ~0.16s coyote, moveSpeed 245). The old 200 design-pt gap
+    // (~181pt scene at the narrowest 390-wide phone) was right at that reach, so the
+    // player could bypass the header-drag mechanic this level exists to teach. Widen
+    // the gap to 240 design pts (= ~218pt scene at 390w via courseScale ~0.907, and
+    // far wider on iPad) so its center-travel exceeds ~210pt and it cannot be cleared
+    // in a single jump -> the bridge is required. Right platform [pitEndX, width]
+    // still hosts the exit at width-50 (at 390w: pitEndX ~326.5, exit ~344.7, both
+    // on-screen).
     private var pitStartX: CGFloat { 120 * layoutXScale }
-    private var pitEndX: CGFloat { 320 * layoutXScale }
+    private var pitEndX: CGFloat { 360 * layoutXScale }
     private var groundHeight: CGFloat { 100 * layoutYScale }
     private var platformHeight: CGFloat { 40 * layoutYScale }
 
@@ -391,7 +394,7 @@ final class HeaderScene: BaseLevelScene, SKPhysicsContactDelegate {
         // drag gate at height/3 already guarantees). Only a drop that lands clearly
         // off to the far edges counts as a miss.
         let dropInPlayBand = skPosition.y < topSafeY - 60 && skPosition.y > bottomSafeY
-        let dropNearPit = skPosition.x > pitStartX - 80 * layoutXScale
+        let dropNearPit = skPosition.x > min(HUDZones.titleLeadingInset, pitStartX - 80 * layoutXScale)
             && skPosition.x < pitEndX + 80 * layoutXScale
 
         if (skPosition.x > pitStartX && skPosition.x < pitEndX) || (dropInPlayBand && dropNearPit) {

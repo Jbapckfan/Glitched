@@ -876,7 +876,7 @@ final class DarkModeScene: BaseLevelScene, SKPhysicsContactDelegate {
         instructionPanel?.addChild(label)
         lineElements.append(label)
 
-        let subLabel = SKLabelNode(text: "IN SETTINGS")
+        let subLabel = SKLabelNode(text: "IN CONTROL CENTER")
         subLabel.fontName = "Menlo"
         subLabel.fontSize = 11
         subLabel.fontColor = strokeColor
@@ -884,6 +884,28 @@ final class DarkModeScene: BaseLevelScene, SKPhysicsContactDelegate {
         subLabel.name = "instruction_sublabel"
         instructionPanel?.addChild(subLabel)
         lineElements.append(subLabel)
+
+        // The actual rule, spelled out so the moon/sun platform icons aren't a guess.
+        // Solidity is still driven entirely by categoryBitMask (updateDualPlatforms);
+        // these labels are copy only. Centered across the 180pt-wide panel and kept
+        // above its bottom edge (y = -55) so they fit on the narrowest iPhone canvas.
+        let ruleLine1 = SKLabelNode(text: "MOON PLATFORMS: SOLID IN DARK")
+        ruleLine1.fontName = "Menlo"
+        ruleLine1.fontSize = 8
+        ruleLine1.fontColor = strokeColor
+        ruleLine1.position = CGPoint(x: 0, y: -28)
+        ruleLine1.name = "instruction_rule_moon"
+        instructionPanel?.addChild(ruleLine1)
+        lineElements.append(ruleLine1)
+
+        let ruleLine2 = SKLabelNode(text: "SUN PLATFORMS: SOLID IN LIGHT")
+        ruleLine2.fontName = "Menlo"
+        ruleLine2.fontSize = 8
+        ruleLine2.fontColor = strokeColor
+        ruleLine2.position = CGPoint(x: 0, y: -42)
+        ruleLine2.name = "instruction_rule_sun"
+        instructionPanel?.addChild(ruleLine2)
+        lineElements.append(ruleLine2)
     }
 
     // MARK: - Hidden Dark Mode Aside (narrator)

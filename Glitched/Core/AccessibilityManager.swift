@@ -52,6 +52,63 @@ enum MechanicType: String, CaseIterable {
     case gyroShadow
     case speech
     case multiTouch
+
+    /// Human-readable, action-oriented label for the on-screen fallback control,
+    /// surfaced to VoiceOver and as the accessibility label for each fallback button.
+    /// Covers every case so the switch stays exhaustive as mechanics are added.
+    var displayName: String {
+        switch self {
+        // World 1: Hardware Awakening
+        case .dragHUD: return "Drop the level title"
+        case .microphone: return "Blow into the microphone"
+        case .shake: return "Shake the device"
+        case .volume: return "Change the volume"
+        case .brightness: return "Raise the brightness"
+        case .charging: return "Plug in to charge"
+        case .screenshot: return "Take a screenshot"
+        case .darkMode: return "Switch to Dark Mode"
+        case .orientation: return "Rotate to landscape"
+        case .appBackgrounding: return "Send the app to the background"
+
+        // World 2: Control Surface
+        case .notification: return "Tap the notification"
+        case .clipboard: return "Copy to the clipboard"
+        case .wifi: return "Toggle Wi-Fi"
+        case .focusMode: return "Toggle Do Not Disturb"
+        case .lowPowerMode: return "Toggle Low Power Mode"
+        case .shakeUndo: return "Shake to undo"
+        case .appSwitcher: return "Peek the App Switcher"
+        case .faceID: return "Authenticate with Face ID"
+        case .appDeletion: return "Reinstall the app"
+        case .airplaneMode: return "Toggle Airplane Mode"
+
+        // World 3: Data Corruption
+        case .voiceCommand: return "Speak a voice command"
+        case .batteryLevel: return "Change the battery level"
+        case .deviceName: return "Read the device name"
+        case .storageSpace: return "Clear the storage cache"
+        case .timeOfDay: return "Set time to night"
+
+        // World 4: Reality Break
+        case .locale: return "Switch device language"
+        case .voiceOver: return "Reveal the hidden path"
+        case .airdrop: return "Receive an AirDrop"
+
+        // World 5: System Override
+        case .flashlight: return "Aim the flashlight"
+        case .multiTouchPressure: return "Press with multiple fingers"
+        case .appReview: return "Return from the App Store review"
+
+        // Utility/Future
+        case .proximity: return "Cover the proximity sensor"
+        case .timedPress: return "Press and hold"
+        case .hapticPattern: return "Match the haptic pattern"
+        case .clockTime: return "Set the clock time"
+        case .gyroShadow: return "Tilt the device"
+        case .speech: return "Speak aloud"
+        case .multiTouch: return "Touch with multiple fingers"
+        }
+    }
 }
 
 final class AccessibilityManager: ObservableObject {

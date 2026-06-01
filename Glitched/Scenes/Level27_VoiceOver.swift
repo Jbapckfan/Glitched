@@ -67,6 +67,13 @@ final class VoiceOverScene: BaseLevelScene, SKPhysicsContactDelegate {
 
     // MARK: VoiceOver state
 
+    /// Mirrors JuiceManager / sibling levels: honor the system Reduce Motion
+    /// setting so the decoy "unstable" shimmer becomes a static state instead of a
+    /// repeating animation.
+    private var systemReduceMotion: Bool {
+        UIAccessibility.isReduceMotionEnabled
+    }
+
     private var isVoiceOverActive = false
     /// Latch: once the path has been phased in (real toggle OR fallback), it stays
     /// in so the player can platform without re-toggling. Toggling VoiceOver back
@@ -149,24 +156,33 @@ final class VoiceOverScene: BaseLevelScene, SKPhysicsContactDelegate {
     private func buildLevel() {
         // Narrow start/exit platforms pushed to the screen edges so the crossing
         // span is genuinely wide on every device (no overlap into a slab).
+        //
+        // This scene uses .resizeFill (no courseScale transform) so `size.width`
+        // is the device width in points. The edge inset is tightened from 58 to 40
+        // so the forced gap clears the ~210pt floor at the narrowest shipping iPhone
+        // (390w): at 58 the center-travel span was only 190pt (< floor) and the
+        // VoiceOver mechanic could be marginally jumped without phasing the path in.
+        // At inset 40: startRight = 82, exitLeft = width - 82, so span = width - 164
+        // → 226pt at 390w (>= the ~216 target). Wider phones and iPad only GROW the
+        // span (430→266, 1024→860), staying healthy and well within reach per sub-hop.
         let edgePlatformW: CGFloat = 84
-        let startCx: CGFloat = 58
-        let exitCx: CGFloat = size.width - 58
+        let startCx: CGFloat = 40
+        let exitCx: CGFloat = size.width - 40
 
         createPlatform(at: CGPoint(x: startCx, y: groundY), size: CGSize(width: edgePlatformW, height: 30))
         createPlatform(at: CGPoint(x: exitCx, y: groundY), size: CGSize(width: edgePlatformW, height: 30))
 
-        let startRight = startCx + edgePlatformW / 2          // 100
-        let exitLeft = exitCx - edgePlatformW / 2             // width - 100
-        let span = exitLeft - startRight
+        let startRight = startCx + edgePlatformW / 2          // 82
+        let exitLeft = exitCx - edgePlatformW / 2             // width - 82
+        let span = exitLeft - startRight                      // width - 164  (226 @ 390w)
 
         // Pick stone count by available span so iPhone stays jumpable and iPad
         // gets a longer route. Each transition is a real jump (positive gap, rise
         // within ~70pt, all reachable given apex ~91 / moveSpeed 245).
         let realCount: Int
-        if span < 360 { realCount = 2 }        // iPhone (~190-230pt span)
+        if span < 360 { realCount = 2 }        // iPhone (~226-266pt span)
         else if span < 560 { realCount = 4 }   // wide phones / small split
-        else { realCount = 6 }                 // iPad (~824pt span)
+        else { realCount = 6 }                 // iPad (~860pt span)
 
         // Heights for the SOLUTION path (the real stones), zig-zagged within reach.
         let realHeightPattern: [CGFloat] = [55, 20, 60, 25, 50, 30]
@@ -387,8 +403,8 @@ final class VoiceOverScene: BaseLevelScene, SKPhysicsContactDelegate {
         // bottomSafeY+22): pill spans x[95,205] (24pt horizontal gap from the
         // circle) and y[bottomSafeY+7, bottomSafeY+37] (its top now sits 3pt BELOW
         // the circle's bottom too — separated on BOTH axes). On iPhone 390/402 the
-        // right edge (205) is well clear of the right half (start platform/exit
-        // door live at the screen edges, x<=100 and x>=width-100); on iPad 1024 the
+        // right edge (205) is well clear of the right half (start platform right
+        // edge at x<=82 and exit platform left edge at x>=width-82); on iPad 1024 the
         // far-left accessibility column and this pill are the only bottom-leading
         // items and the gap holds. Still above gameplay (stones at y>=160) and the
         // home indicator (bottomSafeY). Mechanic unchanged.
@@ -512,10 +528,16 @@ final class VoiceOverScene: BaseLevelScene, SKPhysicsContactDelegate {
         JuiceManager.shared.flash(color: .white, duration: 0.2)
         HapticManager.shared.collect()
 
+        // Demoted from .boss to .alert and shortened to a single short row: the
+        // narrator band centers at ~y216 on iPhone (size.height * 0.26 / 2 above the
+        // lower inset), which sits inside the crossing-stone band (y 160-220). A
+        // 3-row .boss block (fontSize 28, ~113pt tall) blanketed the stones the
+        // player must read; a one-line .alert (fontSize 20) keeps the footprint
+        // minimal so the reveal clears the crossing stones.
         GlitchedNarrator.present(
-            "PERCEPTION IS A SWITCH. SOLID TILES BEAR WEIGHT. THE BARRED ONES ARE LIES.",
+            "SOLID BEARS WEIGHT. BARRED LIES.",
             in: self,
-            style: .boss
+            style: .alert
         )
     }
 
@@ -533,18 +555,26 @@ final class VoiceOverScene: BaseLevelScene, SKPhysicsContactDelegate {
                 stone.surface.run(.fadeAlpha(to: 1.0, duration: 0.25))
                 stone.glyph.run(.fadeAlpha(to: 1.0, duration: 0.25))
             } else {
-                // Hollow, shimmering, untrustworthy.
+                // Hollow, untrustworthy.
                 stone.surface.fillColor = .clear
                 stone.surface.strokeColor = strokeColor
                 stone.surface.lineWidth = 1
                 stone.surface.alpha = 0
-                stone.surface.run(.fadeAlpha(to: 0.45, duration: 0.25))
-                stone.glyph.run(.fadeAlpha(to: 0.5, duration: 0.25))
-                // Pulse so decoys read as "unstable / not real".
-                stone.surface.run(.repeatForever(.sequence([
-                    .fadeAlpha(to: 0.55, duration: 0.7),
-                    .fadeAlpha(to: 0.2, duration: 0.7)
-                ])), withKey: "decoyPulse")
+                if systemReduceMotion {
+                    // Reduce Motion: no repeating shimmer. The decoy settles at a
+                    // static low alpha and leans on its barred "no-step" glyph to
+                    // read as "void / not real".
+                    stone.surface.alpha = 0.35
+                    stone.glyph.alpha = 0.6
+                } else {
+                    stone.surface.run(.fadeAlpha(to: 0.45, duration: 0.25))
+                    stone.glyph.run(.fadeAlpha(to: 0.5, duration: 0.25))
+                    // Pulse so decoys read as "unstable / not real".
+                    stone.surface.run(.repeatForever(.sequence([
+                        .fadeAlpha(to: 0.55, duration: 0.7),
+                        .fadeAlpha(to: 0.2, duration: 0.7)
+                    ])), withKey: "decoyPulse")
+                }
             }
         }
     }

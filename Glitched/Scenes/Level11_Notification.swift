@@ -417,14 +417,14 @@ final class NotificationScene: BaseLevelScene, SKPhysicsContactDelegate {
         text1.position = CGPoint(x: 0, y: 20)
         instructionPanel?.addChild(text1)
 
-        let text2 = SKLabelNode(text: "SO ASK FOR PERMISSION.")
+        let text2 = SKLabelNode(text: "TAP THE BELL BUTTON ABOVE")
         text2.fontName = "Menlo"
         text2.fontSize = 11
         text2.fontColor = strokeColor
         text2.position = CGPoint(x: 0, y: 0)
         instructionPanel?.addChild(text2)
 
-        let text3 = SKLabelNode(text: "THEN WAIT FOR A REPLY.")
+        let text3 = SKLabelNode(text: "THEN WAIT FOR THE ALERT.")
         text3.fontName = "Menlo"
         text3.fontSize = 11
         text3.fontColor = strokeColor

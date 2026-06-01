@@ -28,6 +28,13 @@ final class LocaleScene: BaseLevelScene, SKPhysicsContactDelegate {
     // already solved. Latch that fact so a later language revert is purely
     // cosmetic and can never desolidify footing or eject Bit mid-climb.
     private var puzzleLatched = false
+    // P1 REGRESSION FIX (L26-locale-autounscramble): on non-English devices the
+    // initial .localeChanged baseline post can land AFTER .playing, which would
+    // auto-solve the puzzle at launch. Capture the load-time language so the
+    // first baseline event (language == baselineLanguage) is ignored; we only
+    // unscramble when the player ACTUALLY changes the device language away from
+    // whatever it was when the level loaded.
+    private var baselineLanguage: String?
     private let designWidth: CGFloat = 390
 
     private var courseScale: CGFloat { min(1.0, size.width / designWidth) }
@@ -52,6 +59,9 @@ final class LocaleScene: BaseLevelScene, SKPhysicsContactDelegate {
 
         AccessibilityManager.shared.registerMechanics([.locale])
         DeviceManagerCoordinator.shared.configure(for: [.locale])
+        // Record the language the level loaded with so onLocaleChanged can
+        // distinguish the initial baseline post (ignore) from a real change.
+        baselineLanguage = LocaleManager.shared.currentLanguageCode
 
         setupBackground()
         setupLevelTitle()
@@ -342,7 +352,12 @@ final class LocaleScene: BaseLevelScene, SKPhysicsContactDelegate {
         revertES.position = CGPoint(x: 0, y: -30)
         panel.addChild(revertES)
 
-        panel.run(.sequence([.wait(forDuration: 10), .fadeOut(withDuration: 0.5), .removeFromParent()]))
+        // COPY FIX: this panel holds the ONLY copy of the "Settings > General >
+        // Language" revert steps. A 10s fade made it vanish exactly when the
+        // player returned from the Settings detour to change their language, so
+        // the revert instructions were gone right when they were needed. Bump to
+        // 25s so the steps stay visible across the round-trip to Settings.
+        panel.run(.sequence([.wait(forDuration: 25), .fadeOut(withDuration: 0.5), .removeFromParent()]))
     }
 
     private func setupBit() {
@@ -357,6 +372,15 @@ final class LocaleScene: BaseLevelScene, SKPhysicsContactDelegate {
     // MARK: - Locale Change Logic
 
     private func onLocaleChanged(language: String) {
+        // P1 REGRESSION FIX (L26-locale-autounscramble): the device-manager posts
+        // an initial .localeChanged baseline; on a non-English device that baseline
+        // can arrive after .playing and would auto-solve the puzzle at launch.
+        // Ignore the event when it merely reports the load-time language — only a
+        // language DIFFERENT from the load-time baseline is a real player action.
+        if let baseline = baselineLanguage, language == baseline {
+            return
+        }
+
         let isNonEnglish = language.lowercased() != "en"
 
         if isNonEnglish && !isUnscrambled {

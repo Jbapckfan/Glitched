@@ -16,6 +16,7 @@ final class AirplaneModeScene: BaseLevelScene, SKPhysicsContactDelegate {
     private var flyingPlatforms: [SKNode] = []
     private var landedPositions: [CGPoint] = []
     private var flyingPositions: [CGPoint] = []
+    private var flyingSizes: [CGSize] = []
     private var isAirplaneMode = false
     private var airplaneIcon: SKNode!
     private var hasShownFourthWall = false
@@ -127,6 +128,7 @@ final class AirplaneModeScene: BaseLevelScene, SKPhysicsContactDelegate {
         for data in flyingData {
             landedPositions.append(data.landed)
             flyingPositions.append(data.flying)
+            flyingSizes.append(data.size)
             let platform = createPlatform(at: data.landed, size: data.size, isFlying: true)
             flyingPlatforms.append(platform)
         }
@@ -289,15 +291,24 @@ final class AirplaneModeScene: BaseLevelScene, SKPhysicsContactDelegate {
         text1.fontName = "Menlo-Bold"
         text1.fontSize = 11
         text1.fontColor = strokeColor
-        text1.position = CGPoint(x: 0, y: 10)
+        text1.position = CGPoint(x: 0, y: 20)
         panel.addChild(text1)
 
         let text2 = SKLabelNode(text: "CUT THE WORLD LOOSE. LET IT RISE.")
         text2.fontName = "Menlo"
         text2.fontSize = 10
         text2.fontColor = strokeColor
-        text2.position = CGPoint(x: 0, y: -10)
+        text2.position = CGPoint(x: 0, y: 2)
         panel.addChild(text2)
+
+        // Plain, unambiguous instruction so the cryptic flavor lines above
+        // never leave the player guessing how to act on the mechanic.
+        let text3 = SKLabelNode(text: "TURN ON AIRPLANE MODE — TAP THE PLANE OR USE CONTROL CENTER")
+        text3.fontName = "Menlo"
+        text3.fontSize = 7
+        text3.fontColor = strokeColor
+        text3.position = CGPoint(x: 0, y: -18)
+        panel.addChild(text3)
 
         panel.run(.sequence([.wait(forDuration: 5), .fadeOut(withDuration: 0.5), .removeFromParent()]))
     }
@@ -311,11 +322,47 @@ final class AirplaneModeScene: BaseLevelScene, SKPhysicsContactDelegate {
         playerController = PlayerController(character: bit, scene: self)
     }
 
+    /// Returns the index of the flying platform Bit is currently standing on, or
+    /// nil. Used to protect the player from being dropped into the death plane
+    /// when Airplane Mode toggles OFF: the landed positions sit at y=-60, inside
+    /// the death zone, so animating a platform down out from under Bit is an
+    /// instant kill. We require `isGrounded`, an X overlap against the platform's
+    /// (current, turbulence-included) extent, and Bit's feet resting near the
+    /// platform top.
+    private func flyingPlatformSupportingBit() -> Int? {
+        guard bit != nil, bit.isGrounded else { return nil }
+        let bitHalfWidth: CGFloat = 22   // Bit is 44 wide
+        let bitHalfHeight: CGFloat = 32  // Bit is 64 tall
+        for (index, platform) in flyingPlatforms.enumerated() {
+            guard index < flyingSizes.count else { break }
+            let halfWidth = flyingSizes[index].width / 2
+            let topY = platform.position.y + flyingSizes[index].height / 2
+            let feetY = bit.position.y - bitHalfHeight
+            let horizontalOverlap = abs(bit.position.x - platform.position.x) <= halfWidth + bitHalfWidth
+            let restingOnTop = abs(feetY - topY) <= 16
+            if horizontalOverlap && restingOnTop {
+                return index
+            }
+        }
+        return nil
+    }
+
     private func updateAirplaneState(_ enabled: Bool) {
         isAirplaneMode = enabled
 
+        // On an OFF transition the flying platforms drop to their landed
+        // positions (y=-60), which sit inside the death plane. If Bit is
+        // standing on one, animating it down would carry/strand him into the
+        // hazard — an avoidable death trap. Protect that platform by skipping
+        // its descent; it stays aloft until Bit steps off and the next OFF
+        // toggle lands it. The live-monitor OFF path is additionally debounced
+        // in handleGameInput so a background reachability blip cannot trigger
+        // this at all while Bit is grounded on a flying platform.
+        let protectedIndex = enabled ? nil : flyingPlatformSupportingBit()
+
         // Animate platforms with staggered timing offsets
         for (index, platform) in flyingPlatforms.enumerated() {
+            if index == protectedIndex { continue }
             let targetPos = enabled ? flyingPositions[index] : landedPositions[index]
             let delay = index < platformDelayOffsets.count ? platformDelayOffsets[index] : 0
             platform.run(.sequence([
@@ -346,6 +393,15 @@ final class AirplaneModeScene: BaseLevelScene, SKPhysicsContactDelegate {
     override func handleGameInput(_ event: GameInputEvent) {
         switch event {
         case .airplaneModeChanged(let enabled):
+            // Debounce a spurious OFF from the live reachability monitor while
+            // Bit is grounded on a flying platform. NWPathMonitor can briefly
+            // report "no connectivity" (i.e. OFF) on background network blips;
+            // honoring that here would yank the platform down into the death
+            // plane under a stationary player. Ignore OFF in that state — Bit
+            // must step off (or the player must re-toggle) before platforms land.
+            if !enabled && flyingPlatformSupportingBit() != nil {
+                return
+            }
             updateAirplaneState(enabled)
         default:
             break
@@ -413,6 +469,9 @@ final class AirplaneModeScene: BaseLevelScene, SKPhysicsContactDelegate {
     private func handleDeath() {
         guard GameState.shared.levelState == .playing else { return }
         playerController.cancel()
+        // Matches L1/L3: surface the difficulty hint (hintText "Toggle Airplane
+        // Mode...") after repeated deaths so a stuck player learns the mechanic.
+        notePlayerStruggle()
         bit.playBufferDeath(respawnAt: spawnPoint) { [weak self] in self?.bit.setGrounded(true) }
     }
 

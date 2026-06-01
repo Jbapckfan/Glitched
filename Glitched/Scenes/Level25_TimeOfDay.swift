@@ -127,16 +127,25 @@ final class TimeOfDayScene: BaseLevelScene, SKPhysicsContactDelegate {
     private func buildLevel() {
         let groundY: CGFloat = 160
 
-        // Fits a 390-pt logical course and is centered on wider devices. Each
-        // rise is <= 40 pt, well under the corrected ~91-pt jump apex.
-        createPlatform(at: CGPoint(x: courseX(45), y: groundY), size: CGSize(width: courseLen(80), height: 30))
+        // Fits a 390-pt logical course and is centered on wider devices. The
+        // P1->P2 span is the *forced* gap: with wide landing pads its
+        // center-to-center travel is 215 logical pt (clearly a jump, not a
+        // walk) while the open air to clear is only 130 pt (<= the ~184-pt
+        // running-jump reach). P2's only safe landing is guarded by an awake
+        // DAY spike, so the day/night mechanic is genuinely required (sleep
+        // the spikes -> NIGHT -> land safely). Each rise is <= 13 pt, well
+        // under the ~91-pt jump apex.
+        // P1 (start): center 50, span [10,90], top y=175
+        createPlatform(at: CGPoint(x: courseX(50), y: groundY), size: CGSize(width: courseLen(80), height: 30))
 
-        createPlatform(at: CGPoint(x: courseX(130), y: groundY + 20), size: CGSize(width: courseLen(65), height: 25))
-        createPlatform(at: CGPoint(x: courseX(215), y: groundY + 40), size: CGSize(width: courseLen(70), height: 25))
-        createPlatform(at: CGPoint(x: courseX(290), y: groundY + 25), size: CGSize(width: courseLen(50), height: 25))
+        // P2 (guarded landing): center 265, span [220,310], top y=187.5.
+        // Center-to-center from P1 = 215 (>= 210), open gap = 130 (<= 184).
+        createPlatform(at: CGPoint(x: courseX(265), y: groundY + 15), size: CGSize(width: courseLen(90), height: 25))
 
-        createPlatform(at: CGPoint(x: courseX(350), y: groundY), size: CGSize(width: courseLen(70), height: 30))
-        createExitDoor(at: CGPoint(x: courseX(360), y: groundY + 50))
+        // P3 (exit pad): center 355, span [320,390], top y=175. Trivial hop
+        // from P2 (open gap 10). Right edge = 390 = on-screen at 390 width.
+        createPlatform(at: CGPoint(x: courseX(355), y: groundY), size: CGSize(width: courseLen(70), height: 30))
+        createExitDoor(at: CGPoint(x: courseX(363), y: groundY + 50))
 
         // Death zone
         let death = SKNode()
@@ -167,32 +176,48 @@ final class TimeOfDayScene: BaseLevelScene, SKPhysicsContactDelegate {
     private func createEnemies() {
         let groundY: CGFloat = 160
 
-        // Enemy patrol data: position, patrol range. Positions match the
-        // new iPhone-fit platform layout (platforms at x = 130, 215, 290).
-        let enemyData: [(pos: CGPoint, range: CGFloat)] = [
-            (CGPoint(x: 130, y: groundY + 55), 25),
-            (CGPoint(x: 215, y: groundY + 75), 30),
-            (CGPoint(x: 290, y: groundY + 60), 20),
+        // Enemy patrol data is authored in LOGICAL course space (x and range)
+        // and converted at placement via courseX()/courseLen(), so spikes stay
+        // pinned to the platforms on every device (on iPad the raw coords used
+        // to float far left of the centered course, making the puzzle merely
+        // cosmetic). y is a screen-space offset and is left unconverted.
+        //
+        // Enemy 0 is the REQUIRED-mechanic guard: it patrols across P2's only
+        // safe landing (span [220,310], top y=187.5), so in DAY it sweeps the
+        // landing of the forced P1->P2 jump (lethal-but-fair timing) and the
+        // player must switch to NIGHT to sleep it and land. Enemies 1-2 are
+        // flavor patrols on the same pad / exit pad.
+        let enemyData: [(logicalX: CGFloat, y: CGFloat, range: CGFloat)] = [
+            (250, groundY + 38, 35),   // GUARD: covers P2 landing [215,285]
+            (300, groundY + 38, 12),   // flavor: P2 right shoulder
+            (355, groundY + 23, 15),   // flavor: exit pad
         ]
 
         for (index, data) in enemyData.enumerated() {
+            // Build the patrol band in logical space, then convert: the x
+            // anchor through courseX() and the range through courseLen() so
+            // the moveBy distances (which read the converted range) scale with
+            // the course automatically.
+            let pos = CGPoint(x: courseX(data.logicalX), y: data.y)
+            let range = courseLen(data.range)
+
             let enemy = createSpikeEnemy()
-            enemy.position = data.pos
+            enemy.position = pos
             enemy.name = "enemy_\(index)"
             addChild(enemy)
             enemies.append(enemy)
 
-            let startPt = CGPoint(x: data.pos.x - data.range, y: data.pos.y)
-            let endPt = CGPoint(x: data.pos.x + data.range, y: data.pos.y)
+            let startPt = CGPoint(x: pos.x - range, y: pos.y)
+            let endPt = CGPoint(x: pos.x + range, y: pos.y)
             enemyPaths[enemy] = (start: startPt, end: endPt)
 
             // Patrol movement. Store the canonical parameters (origin, range,
             // duration) so every (re)start can reproduce this exact patrol.
             let duration: TimeInterval = 1.5 + Double(index) * 0.3
-            enemyPatrols[enemy] = (origin: data.pos, range: data.range, duration: duration)
+            enemyPatrols[enemy] = (origin: pos, range: range, duration: duration)
             enemy.run(.repeatForever(.sequence([
-                .moveBy(x: data.range, y: 0, duration: duration),
-                .moveBy(x: -data.range, y: 0, duration: duration)
+                .moveBy(x: range, y: 0, duration: duration),
+                .moveBy(x: -range, y: 0, duration: duration)
             ])), withKey: "patrol")
 
             // Create zzz label as a scene child (not enemy child) so it
@@ -201,7 +226,7 @@ final class TimeOfDayScene: BaseLevelScene, SKPhysicsContactDelegate {
             zzz.fontName = "Menlo"
             zzz.fontSize = 10
             zzz.fontColor = strokeColor
-            zzz.position = CGPoint(x: data.pos.x, y: data.pos.y + 20)
+            zzz.position = CGPoint(x: pos.x, y: pos.y + 20)
             zzz.alpha = 0
             zzz.zPosition = 95
             addChild(zzz)
@@ -347,7 +372,7 @@ final class TimeOfDayScene: BaseLevelScene, SKPhysicsContactDelegate {
         text1.position = CGPoint(x: 0, y: 12)
         panel.addChild(text1)
 
-        let text2 = SKLabelNode(text: "NIGHT BRINGS PEACE. DAY BRINGS DANGER.")
+        let text2 = SKLabelNode(text: "TAP CYCLE TIME TO SLEEP THE ENEMIES")
         text2.fontName = "Menlo"
         text2.fontSize = 9
         text2.fontColor = strokeColor
@@ -358,7 +383,7 @@ final class TimeOfDayScene: BaseLevelScene, SKPhysicsContactDelegate {
     }
 
     private func setupBit() {
-        spawnPoint = CGPoint(x: courseX(45), y: 200)
+        spawnPoint = CGPoint(x: courseX(50), y: 200)
         bit = BitCharacter.make()
         bit.position = spawnPoint
         addChild(bit)

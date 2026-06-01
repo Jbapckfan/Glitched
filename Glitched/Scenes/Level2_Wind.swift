@@ -40,7 +40,11 @@ final class WindBridgeScene: BaseLevelScene, SKPhysicsContactDelegate {
 
     private var groundHeight: CGFloat { 100 * layoutYScale }
     private var chasmStartX: CGFloat { 140 * layoutXScale }
-    private var chasmEndX: CGFloat { 340 * layoutXScale }
+    // Span widened 200 -> 235 design-pt (end 340 -> 375) so the chasm stays
+    // genuinely unjumpable on the narrowest shipping iPhone (390pt, courseScale
+    // ~0.907): 235 * 0.907 = ~213pt center-travel >= the ~210pt forced-gap floor,
+    // closing the old mic-bypass where 181pt < the ~184pt running-jump reach.
+    private var chasmEndX: CGFloat { 375 * layoutXScale }
     private var bridgeOverlap: CGFloat { 80 * layoutXScale }
 
     private var windParticles: [SKShapeNode] = []
@@ -691,7 +695,7 @@ final class WindBridgeScene: BaseLevelScene, SKPhysicsContactDelegate {
         }
 
         // Label
-        let label = SKLabelNode(text: "SIGNAL?")
+        let label = SKLabelNode(text: "BLOW")
         label.fontName = "Menlo-Bold"
         label.fontSize = 14
         label.fontColor = strokeColor

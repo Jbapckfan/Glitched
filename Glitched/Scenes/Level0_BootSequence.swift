@@ -44,6 +44,18 @@ final class BootSequenceScene: BaseLevelScene {
         gameCamera.position = CGPoint(x: size.width / 2, y: size.height / 2)
     }
 
+    override func willMove(from view: SKView) {
+        super.willMove(from: view)
+        // glitchTimer is otherwise only invalidated in completeBootSequence; leaving the
+        // scene early (e.g. backgrounding mid-boot) would leak the repeating timer.
+        glitchTimer?.invalidate()
+        glitchTimer = nil
+    }
+
+    deinit {
+        glitchTimer?.invalidate()
+    }
+
     // MARK: - Configuration
 
     override func configureScene() {
@@ -97,7 +109,7 @@ final class BootSequenceScene: BaseLevelScene {
             ("Recovery failed. Proceeding anyway.", 4.3),
             ("", 4.6),
             ("Welcome to GLITCHED OS v1.0", 4.8),
-            ("Type 'start' to begin or drag to 100%", 5.2),
+            ("DRAG TO 100% TO BOOT", 5.2),
         ]
 
         var yOffset: CGFloat = 0
@@ -236,6 +248,9 @@ final class BootSequenceScene: BaseLevelScene {
     }
 
     private func triggerMicroGlitch() {
+        // Honor Reduce Motion: skip the positional jitter and raw RGB flash bars.
+        guard !UIAccessibility.isReduceMotionEnabled else { return }
+
         // Subtle horizontal offset
         contentNode.run(.sequence([
             .moveBy(x: CGFloat.random(in: -5...5), y: 0, duration: 0.02),
@@ -394,6 +409,10 @@ final class BootSequenceScene: BaseLevelScene {
         if handleTutorialTouchBegan(at: location) {
             return
         }
+        // progressHandle is an IUO assigned only in setupProgressBar (via revealMainUI
+        // at ~5.5s). Tapping during the boot log would deref nil and crash, so bail until
+        // the handle exists.
+        guard let progressHandle else { return }
         let contentLocation = touch.location(in: contentNode)
 
         // Check if touch is near the handle (with some padding for easier touch)
@@ -411,6 +430,7 @@ final class BootSequenceScene: BaseLevelScene {
             return
         }
         guard isDraggingHandle else { return }
+        guard let progressHandle else { return }
         let location = touch.location(in: contentNode)
 
         let minX = -barWidth/2 + 4
@@ -432,6 +452,7 @@ final class BootSequenceScene: BaseLevelScene {
         if tutorialStep != nil {
             tutorialDragOrigin = nil
         }
+        guard let progressHandle else { return }
         if isDraggingHandle {
             progressHandle.run(.scale(to: 1.0, duration: 0.1))
         }
@@ -443,6 +464,7 @@ final class BootSequenceScene: BaseLevelScene {
     }
 
     override func touchesCancelled(_ touches: Set<UITouch>, with event: UIEvent?) {
+        guard let progressHandle else { return }
         if isDraggingHandle {
             progressHandle.run(.scale(to: 1.0, duration: 0.1))
         }
@@ -492,12 +514,20 @@ final class BootSequenceScene: BaseLevelScene {
         // Fake crash moment - screen goes black
         run(.sequence([
             .run { [weak self] in
-                JuiceManager.shared.glitchEffect(duration: 0.3)
-                JuiceManager.shared.shake(intensity: .medium, duration: 0.2)
-                // Screen goes black
-                self?.backgroundColor = .black
-                self?.contentNode.alpha = 0
-                self?.digitalRain?.alpha = 0
+                guard let self else { return }
+                if UIAccessibility.isReduceMotionEnabled {
+                    // Reduce Motion: gentle fade to black, no glitch/shake hard cut.
+                    self.backgroundColor = .black
+                    self.contentNode.run(.fadeOut(withDuration: 0.3))
+                    self.digitalRain?.run(.fadeOut(withDuration: 0.3))
+                } else {
+                    JuiceManager.shared.glitchEffect(duration: 0.3)
+                    JuiceManager.shared.shake(intensity: .medium, duration: 0.2)
+                    // Screen goes black
+                    self.backgroundColor = .black
+                    self.contentNode.alpha = 0
+                    self.digitalRain?.alpha = 0
+                }
             },
             .wait(forDuration: 1.0),
             .run { [weak self] in
@@ -520,10 +550,16 @@ final class BootSequenceScene: BaseLevelScene {
             },
             .wait(forDuration: 1.4),
             .run { [weak self] in
+                guard let self else { return }
                 // Restore screen
-                self?.backgroundColor = .white
-                self?.contentNode.alpha = 1
-                JuiceManager.shared.flash(color: .white, duration: 0.2)
+                self.backgroundColor = .white
+                if UIAccessibility.isReduceMotionEnabled {
+                    // Reduce Motion: gentle fade back in, skip the white flash.
+                    self.contentNode.run(.fadeIn(withDuration: 0.2))
+                } else {
+                    self.contentNode.alpha = 1
+                    JuiceManager.shared.flash(color: .white, duration: 0.2)
+                }
             },
             .wait(forDuration: 0.2),
             .run {

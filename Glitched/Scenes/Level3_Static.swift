@@ -678,14 +678,14 @@ final class StaticScene: BaseLevelScene, SKPhysicsContactDelegate {
         }
 
         // Text
-        let label1 = SKLabelNode(text: "STATIC BLOCKS")
+        let label1 = SKLabelNode(text: "MAKE NOISE")
         label1.fontName = "Menlo-Bold"
         label1.fontSize = 14
         label1.fontColor = strokeColor
         label1.position = CGPoint(x: 25, y: 8)
         instructionPanel?.addChild(label1)
 
-        let label2 = SKLabelNode(text: "THE LASERS")
+        let label2 = SKLabelNode(text: "TO BLOCK LASERS")
         label2.fontName = "Menlo"
         label2.fontSize = 11
         label2.fontColor = strokeColor
@@ -926,7 +926,7 @@ final class StaticScene: BaseLevelScene, SKPhysicsContactDelegate {
         // CHARM: the old hint ("noise = shield") was actively LETHAL at the 4th
         // barrier, which is INVERSE — there, noise arms the laser and silence
         // clears it. Teach both halves so the hint never kills the player.
-        return "Noise blocks the first lasers. The dashed 4th is INVERSE — go SILENT to pass it."
+        return "Noise blocks the first lasers. The dashed 4th is INVERSE — go QUIET to pass it."
     }
 
     // MARK: - Cleanup

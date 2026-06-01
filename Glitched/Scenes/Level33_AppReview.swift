@@ -816,8 +816,8 @@ final class AppReviewScene: BaseLevelScene, SKPhysicsContactDelegate {
         buttonBG.name = "reviewButtonBG"
         reviewButton.addChild(buttonBG)
 
-        // Star + CONTINUE + Star text
-        let buttonText = SKLabelNode(text: "CONTINUE")
+        // Star + RATE 5 STARS + Star text
+        let buttonText = SKLabelNode(text: "RATE 5 STARS")
         buttonText.fontName = "Menlo-Bold"
         buttonText.fontSize = 16
         buttonText.fontColor = fillColor
@@ -842,6 +842,11 @@ final class AppReviewScene: BaseLevelScene, SKPhysicsContactDelegate {
         reviewButton.addChild(rightStar)
 
         addChild(reviewButton)
+
+        // VoiceOver: expose the button and make clear the exit unlocks regardless.
+        reviewButton.isAccessibilityElement = true
+        reviewButton.accessibilityTraits = .button
+        reviewButton.accessibilityLabel = "Leave a review (optional). The exit unlocks either way."
 
         // Pulsing glow animation
         let pulse = SKAction.sequence([
@@ -933,7 +938,7 @@ final class AppReviewScene: BaseLevelScene, SKPhysicsContactDelegate {
         guard !exitUnlocked else { return }
         removeAction(forKey: "reviewUnlockFallback")
         removeReviewButton()
-        appendLargeTerminalLine("FINE. YOU WIN. NO BUTTON NEEDED.", to: finalTerminal)
+        appendLargeTerminalLine("FINE. YOU WIN. NO REVIEW NEEDED.", to: finalTerminal)
 
         run(.sequence([
             .wait(forDuration: 0.8),

@@ -134,7 +134,15 @@ final class AppSwitcherScene: BaseLevelScene, SKPhysicsContactDelegate {
 
         for (index, data) in hazardData.enumerated() {
             let hazard = createSpike()
-            hazard.position = data.pos
+            // Desync each spike's oscillation phase so the cadence can't be
+            // memorized by eye. Start each spike at a random point along its
+            // horizontal sweep rather than always at the left anchor; the live
+            // rhythm then never lines up the same way twice, so the peek-freeze
+            // trajectory snapshot is the only reliable read. Geometry is
+            // unchanged — only the timing/phase moves (positions, ranges and the
+            // anchor still fit the 390-pt iPhone course and clear the exit).
+            let phase = CGFloat.random(in: 0...1)
+            hazard.position = CGPoint(x: data.pos.x + data.range * phase, y: data.pos.y)
             hazard.name = "hazard_\(index)"
             addChild(hazard)
             movingHazards.append(hazard)
@@ -142,12 +150,37 @@ final class AppSwitcherScene: BaseLevelScene, SKPhysicsContactDelegate {
             // Store the direction vector for trajectory prediction
             hazardDirections.append(CGVector(dx: data.range, dy: 0))
 
-            // Fast oscillation
-            hazard.run(.repeatForever(.sequence([
-                .moveBy(x: data.range, y: 0, duration: data.speed),
-                .moveBy(x: -data.range, y: 0, duration: data.speed)
-            ])), withKey: "movement")
+            // Begin the self-rescheduling, phase-desynced oscillation. Each
+            // half-sweep re-randomizes its duration slightly so the spikes drift
+            // out of any learnable pattern over time (un-eye-timeable) while the
+            // travel range stays fixed.
+            startDesyncedOscillation(hazard, leftX: data.pos.x, range: data.range,
+                                     baseSpeed: data.speed, goingRight: phase < 1)
         }
+    }
+
+    /// Drives a spike back and forth across [leftX, leftX+range] with a per-leg
+    /// randomized duration. The freeze (peek) pauses the node and renders the
+    /// trajectory line, so planning still works; only the unpaused cadence is
+    /// scrambled so it can't be timed by eye. Travel distance is constant, so
+    /// platform geometry and the safe-jump windows are unaffected.
+    private func startDesyncedOscillation(_ hazard: SKNode, leftX: CGFloat, range: CGFloat,
+                                          baseSpeed: TimeInterval, goingRight: Bool) {
+        let rightX = leftX + range
+        let targetX = goingRight ? rightX : leftX
+        // ±20% per-leg jitter keeps the sweep fast (clear window < ~0.3s at speed)
+        // but desynchronized from any memorized beat.
+        let jitter = TimeInterval.random(in: 0.8...1.2)
+        let distanceFraction = range > 0 ? abs(targetX - hazard.position.x) / range : 1
+        let duration = max(0.05, baseSpeed * jitter * Double(distanceFraction))
+
+        let move = SKAction.moveTo(x: targetX, duration: duration)
+        let next = SKAction.run { [weak self, weak hazard] in
+            guard let self = self, let hazard = hazard else { return }
+            self.startDesyncedOscillation(hazard, leftX: leftX, range: range,
+                                          baseSpeed: baseSpeed, goingRight: !goingRight)
+        }
+        hazard.run(.sequence([move, next]), withKey: "movement")
     }
 
     private func createSpike() -> SKNode {
@@ -256,7 +289,7 @@ final class AppSwitcherScene: BaseLevelScene, SKPhysicsContactDelegate {
         line1c.position = CGPoint(x: 0, y: -2)
         panel.addChild(line1c)
 
-        let text2 = SKLabelNode(text: "PLAN YOUR MOVES CAREFULLY")
+        let text2 = SKLabelNode(text: "SWIPE UP TO PEEK & FREEZE TIME")
         text2.fontName = "Menlo"
         text2.fontSize = 9
         text2.fontColor = strokeColor

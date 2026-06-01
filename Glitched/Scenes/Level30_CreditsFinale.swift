@@ -38,6 +38,14 @@ final class CreditsFinaleScene: BaseLevelScene, SKPhysicsContactDelegate {
     // Victory state
     private var hasFinished = false
 
+    /// System-level Reduce Motion (Settings > Accessibility > Motion). When on we leave
+    /// the background stars static, skip the digital-rain emitter on the final screen,
+    /// and damp the title pulse — matching the `systemReduceMotion` guards used across the
+    /// other scene files and JuiceManager.
+    private var systemReduceMotion: Bool {
+        UIAccessibility.isReduceMotionEnabled
+    }
+
     override func configureScene() {
         levelID = LevelID(world: .world4, index: 30)
         backgroundColor = strokeColor // Dark background for credits
@@ -74,7 +82,8 @@ final class CreditsFinaleScene: BaseLevelScene, SKPhysicsContactDelegate {
             // Don't add to worldContainer - stays fixed
             addChild(star)
 
-            // Twinkle
+            // Twinkle (skipped under Reduce Motion — stars stay at their static alpha)
+            guard !systemReduceMotion else { continue }
             star.run(.repeatForever(.sequence([
                 .fadeAlpha(to: CGFloat.random(in: 0.02...0.1), duration: CGFloat.random(in: 1...3)),
                 .fadeAlpha(to: CGFloat.random(in: 0.1...0.3), duration: CGFloat.random(in: 1...3))
@@ -91,19 +100,23 @@ final class CreditsFinaleScene: BaseLevelScene, SKPhysicsContactDelegate {
         // course scrolled through it. Anchor the title to the CAMERA (stable HUD, like
         // Level31) and drop it BELOW the top-right pause band so it never shares a screen
         // row with the pause button or the bright credit boxes:
-        //   iPhone 390 (topSafeY 785, cam@422): scene-y 665 -> screen-top ~179, glyph
-        //     band ~[165,193]; pause bottom ~155, so 10pt below pause. x[80,~210] is the
+        //   iPhone 390 (topSafeY 785, cam@422): scene-y 651 -> screen-top ~193, glyph
+        //     band ~[179,207]; pause bottom ~155, so ~24pt below pause. x[80,~210] is the
         //     top-LEFT column, clear of the pause column x[290,390].
-        //   iPad 1024 (topSafeY 1342, cam@683): scene-y 1222 -> screen-top ~144, glyph
-        //     ~[130,158]; pause bottom ~120, so 10pt below pause; x clear of pause[924,1024].
+        //   iPad 1024 (topSafeY 1342, cam@683): scene-y 1208 -> screen-top ~158, glyph
+        //     ~[144,172]; pause bottom ~120, so ~24pt below pause; x clear of pause[924,1024].
+        // p2 NUDGE-DOWN: was topSafeY-120; the title glyph cap ran close to the top safe
+        // edge and read as clipped above the rounded panel below it. Drop the title (and the
+        // panel in showInstructionPanel) 14pt further down so the cap clears the edge with
+        // margin and nothing touches the top safe-area line.
         let title = SKLabelNode(text: "LEVEL 30")
         title.fontName = VisualConstants.Fonts.display
         title.fontSize = 28
         title.fontColor = fillColor
         // Camera-local: camera sits at (size.width/2, size.height/2) at t=0, so a scene-y
-        // of (topSafeY-120) and a scene-x of 80 map to these local offsets.
+        // of (topSafeY-134) and a scene-x of 80 map to these local offsets.
         title.position = CGPoint(x: 80 - size.width / 2,
-                                 y: (topSafeY - 120) - size.height / 2)
+                                 y: (topSafeY - 134) - size.height / 2)
         title.horizontalAlignmentMode = .left
         title.zPosition = 100
         gameCamera?.addChild(title)
@@ -169,21 +182,34 @@ final class CreditsFinaleScene: BaseLevelScene, SKPhysicsContactDelegate {
         createBugs(startY: startY, spacing: verticalSpacing)
 
         // Fourth wall sign
+        // OVERLAP FIX: last pass placed these at startY+280 / startY+260, which is the gap
+        // ABOVE rung i=2 "PROGRAMMED BY" (center startY+228). That rung's role caption sits
+        // at center+28 = startY+256, so the "SAY THANK YOU." line (startY+260) landed right
+        // on the caption and crowded the panel — both illegible on iPhone 390 and iPad 1024.
+        // Re-derive the rung Y ladder (center = startY + (i+1)*verticalSpacing; role caption
+        // at center+28 spanning ~center+24..+32; surface ±12.5; name at center-2) and move
+        // the signs into a gap that contains NO section caption: the band between rung i=3
+        // "MUSIC BY" (center startY+304) and rung i=4 "ART DIRECTION" (center startY+380).
+        // Clear band there ≈ [MUSIC-BY caption top startY+337, ART-DIRECTION surface bottom
+        // startY+367.5]. Place line 1 at startY+355 (glyph top ~+360 < +367.5) and line 2 at
+        // startY+345 (glyph bottom ~+340 > +337): ~20pt spacing (>10pt cap height), both
+        // inside the empty band, colliding with no credit caption. Keep this pass's
+        // legibility (10pt / alpha 0.75). No platform or geometry moves.
         let sign = SKLabelNode(text: "YOU'RE STANDING ON THE PEOPLE WHO MADE ME.")
         sign.fontName = "Menlo"
-        sign.fontSize = 8
+        sign.fontSize = 10
         sign.fontColor = fillColor
-        sign.alpha = 0.4
-        sign.position = CGPoint(x: size.width / 2, y: startY + verticalSpacing * 3 + 50)
+        sign.alpha = 0.75
+        sign.position = CGPoint(x: size.width / 2, y: startY + verticalSpacing * 4 + 51)
         sign.zPosition = 50
         worldContainer.addChild(sign)
 
         let sign2 = SKLabelNode(text: "SAY THANK YOU.")
         sign2.fontName = "Menlo-Bold"
-        sign2.fontSize = 8
+        sign2.fontSize = 10
         sign2.fontColor = fillColor
-        sign2.alpha = 0.4
-        sign2.position = CGPoint(x: size.width / 2, y: startY + verticalSpacing * 3 + 38)
+        sign2.alpha = 0.75
+        sign2.position = CGPoint(x: size.width / 2, y: startY + verticalSpacing * 4 + 41)
         sign2.zPosition = 50
         worldContainer.addChild(sign2)
 
@@ -265,18 +291,22 @@ final class CreditsFinaleScene: BaseLevelScene, SKPhysicsContactDelegate {
     private func createBug() -> SKNode {
         let bug = SKNode()
 
+        // LEGIBILITY: against the near-black credit backdrop these tiny hazards were
+        // a hairline outline on a black body — nearly invisible. Fill the body white and
+        // thicken every stroke so the bug reads as a distinct hazard silhouette. Drawing
+        // only; the physics body / size / spawn positions below are untouched.
         // Body - small oval
         let body = SKShapeNode(ellipseOf: CGSize(width: 14, height: 8))
-        body.fillColor = strokeColor
-        body.strokeColor = fillColor
-        body.lineWidth = 1
+        body.fillColor = fillColor
+        body.strokeColor = strokeColor
+        body.lineWidth = 1.8
         bug.addChild(body)
 
         // Head
         let head = SKShapeNode(circleOfRadius: 3)
-        head.fillColor = strokeColor
-        head.strokeColor = fillColor
-        head.lineWidth = 1
+        head.fillColor = fillColor
+        head.strokeColor = strokeColor
+        head.lineWidth = 1.8
         head.position = CGPoint(x: 9, y: 0)
         bug.addChild(head)
 
@@ -290,7 +320,7 @@ final class CreditsFinaleScene: BaseLevelScene, SKPhysicsContactDelegate {
                 path.addLine(to: CGPoint(x: baseX + side * 3, y: side * 6))
                 leg.path = path
                 leg.strokeColor = fillColor
-                leg.lineWidth = 1
+                leg.lineWidth = 1.5
                 bug.addChild(leg)
             }
         }
@@ -303,13 +333,19 @@ final class CreditsFinaleScene: BaseLevelScene, SKPhysicsContactDelegate {
             path.addLine(to: CGPoint(x: 15, y: side * 5))
             antenna.path = path
             antenna.strokeColor = fillColor
-            antenna.lineWidth = 0.8
+            antenna.lineWidth = 1.5
             bug.addChild(antenna)
         }
 
         bug.physicsBody = SKPhysicsBody(rectangleOf: CGSize(width: 16, height: 10))
         bug.physicsBody?.isDynamic = false
         bug.physicsBody?.categoryBitMask = PhysicsCategory.hazard
+
+        // Accessibility: announce the hazard. (No accessibilityFrame — bugs scroll with
+        // the camera, so a fixed screen-space frame would be stale.)
+        bug.isAccessibilityElement = true
+        bug.accessibilityLabel = "Bug. Hazard, avoid."
+        bug.accessibilityTraits = .staticText
 
         return bug
     }
@@ -341,6 +377,11 @@ final class CreditsFinaleScene: BaseLevelScene, SKPhysicsContactDelegate {
         exit.physicsBody?.categoryBitMask = PhysicsCategory.exit
         exit.physicsBody?.collisionBitMask = 0
         exit.name = "exit"
+        // Accessibility: announce the goal. (No accessibilityFrame — the door scrolls with
+        // the camera, so a fixed screen-space frame would be stale.)
+        exit.isAccessibilityElement = true
+        exit.accessibilityLabel = "Exit door. Reach it to finish."
+        exit.accessibilityTraits = .staticText
         worldContainer.addChild(exit)
     }
 
@@ -349,15 +390,17 @@ final class CreditsFinaleScene: BaseLevelScene, SKPhysicsContactDelegate {
         // Camera-anchor the discovery panel (like the title) so it stays a stable HUD in
         // the reserved-clear band instead of scrolling with the centered credit ladder.
         // Stack it just BELOW the camera-anchored title and BELOW the top pause band:
-        //   iPhone 390 (topSafeY 785, cam@422): scene-y 610 -> screen-top ~234; 80-tall
-        //     box -> screen-y[194,274]. Pause bottom ~155 and title glyph bottom ~193 are
-        //     both above the box top (194) -> no overlap. Box narrowed to 240 -> x[75,315];
+        //   iPhone 390 (topSafeY 785, cam@422): scene-y 596 -> screen-top ~248; 80-tall
+        //     box -> screen-y[208,288]. Pause bottom ~155 and title glyph bottom ~207 are
+        //     both above the box top (208) -> no overlap. Box narrowed to 240 -> x[75,315];
         //     its y-band sits entirely below the pause band, so the 315 right edge never
         //     meets the pause column.
-        //   iPad 1024 (topSafeY 1342, cam@683): scene-y 1167 -> screen-top ~199, box
-        //     [159,239], below pause bottom ~120; centered x[392,632] nowhere near pause.
+        //   iPad 1024 (topSafeY 1342, cam@683): scene-y 1153 -> screen-top ~213, box
+        //     [173,253], below pause bottom ~120; centered x[392,632] nowhere near pause.
+        // p2 NUDGE-DOWN: moved 14pt down in lockstep with the title (was topSafeY-175) so
+        // the title above it clears the top safe edge while the panel keeps its clear band.
         panel.position = CGPoint(x: 0,
-                                 y: (topSafeY - 175) - size.height / 2)
+                                 y: (topSafeY - 189) - size.height / 2)
         panel.zPosition = 300
         gameCamera?.addChild(panel)
 
@@ -535,10 +578,13 @@ final class CreditsFinaleScene: BaseLevelScene, SKPhysicsContactDelegate {
     }
 
     private func showFinalScreen() {
-        // Digital rain background
-        let rain = ParticleFactory.shared.createDigitalRain(in: self)
-        rain.zPosition = 5002
-        gameCamera?.addChild(rain)
+        // Digital rain background — skipped under Reduce Motion (continuous falling-glyph
+        // emitter is exactly the kind of perpetual motion that setting suppresses).
+        if !systemReduceMotion {
+            let rain = ParticleFactory.shared.createDigitalRain(in: self)
+            rain.zPosition = 5002
+            gameCamera?.addChild(rain)
+        }
 
         // "GLITCHED" title
         let title = SKLabelNode(text: "GLITCHED")
@@ -549,14 +595,22 @@ final class CreditsFinaleScene: BaseLevelScene, SKPhysicsContactDelegate {
         title.alpha = 0
         gameCamera?.addChild(title)
 
-        title.run(.sequence([
-            .wait(forDuration: 0.5),
-            .fadeIn(withDuration: 1.0),
-            .repeatForever(.sequence([
-                .fadeAlpha(to: 0.7, duration: 1.0),
-                .fadeAlpha(to: 1.0, duration: 1.0)
+        if systemReduceMotion {
+            // Static reveal: fade in once and hold (no forever-pulse).
+            title.run(.sequence([
+                .wait(forDuration: 0.5),
+                .fadeIn(withDuration: 1.0)
             ]))
-        ]))
+        } else {
+            title.run(.sequence([
+                .wait(forDuration: 0.5),
+                .fadeIn(withDuration: 1.0),
+                .repeatForever(.sequence([
+                    .fadeAlpha(to: 0.7, duration: 1.0),
+                    .fadeAlpha(to: 1.0, duration: 1.0)
+                ]))
+            ]))
+        }
 
         // Mark game as complete
         UserDefaults.standard.set(true, forKey: "glitched_game_complete")

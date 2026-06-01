@@ -52,9 +52,7 @@ final class AppSwitcherManager: DeviceManager {
         // If the inactive period was short, it's a "peek"
         if duration < peekThreshold {
             DispatchQueue.main.async {
-                DispatchQueue.main.async {
-                    InputEventBus.shared.post(.appSwitcherPeeked(duration: duration))
-                }
+                InputEventBus.shared.post(.appSwitcherPeeked(duration: duration))
             }
         }
     }

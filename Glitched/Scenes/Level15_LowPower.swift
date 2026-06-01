@@ -284,6 +284,14 @@ final class LowPowerScene: BaseLevelScene, SKPhysicsContactDelegate {
     private func updateToggleButtonVisual() {
         // Amber-ish low-power cue mirrors the battery indicator: dim when active.
         lowPowerToggleButton?.alpha = isLowPower ? 0.55 : 1.0
+        // Make the gravity mode READABLE rather than inferred from alpha alone:
+        // "POWER OFF" = low power engaged (light/floaty), "POWER ON" = normal.
+        // The button's bg shape and its label SHARE the name "lowPowerToggle"
+        // (so taps on either hit-test), so we can't use childNode(withName:) —
+        // it would return the bg shape first. Find the SKLabelNode by type.
+        if let label = lowPowerToggleButton?.children.first(where: { $0 is SKLabelNode }) as? SKLabelNode {
+            label.text = isLowPower ? "POWER OFF" : "POWER ON"
+        }
     }
 
     private func createExitDoor(at position: CGPoint) {
@@ -358,13 +366,16 @@ final class LowPowerScene: BaseLevelScene, SKPhysicsContactDelegate {
         text1.position = CGPoint(x: 0, y: 16)
         panel.addChild(text1)
 
-        // BODY — center at y=-16, a clear 21pt below the heading's bottom. fontSize
-        // dropped 10 -> 9 so the 36-char string renders ~195pt (< 216 inner box) and
+        // BODY — center at y=-16, a clear 21pt below the heading's bottom. The
+        // actionable instruction (41 chars) renders ~197pt at fontSize 8
+        // (Menlo monospace ≈ 4.8pt/char: 41 * 4.8 = 197 < 216 inner box) and
         // stays on ONE line; numberOfLines forced to 1 so it can never wrap upward
-        // into the heading again. Visual band ≈ [-21, -11].
-        let text2 = SKLabelNode(text: "THE LESS I SPEND, THE LIGHTER WE GET")
+        // into the heading again. (fontSize was 9 for the old 36-char body; dropped
+        // to 8 so the longer, clearer copy still fits on one line.)
+        // Visual band ≈ [-20, -12].
+        let text2 = SKLabelNode(text: "TAP POWER TO GO LIGHT. TAP AGAIN TO DROP.")
         text2.fontName = "Menlo"
-        text2.fontSize = 9
+        text2.fontSize = 8
         text2.fontColor = strokeColor
         text2.horizontalAlignmentMode = .center
         text2.verticalAlignmentMode = .center

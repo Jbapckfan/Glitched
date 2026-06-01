@@ -66,18 +66,24 @@ final class StoreManager: ObservableObject {
                 return transaction
             case .userCancelled:
                 // Not a failure: the user backed out. Don't surface a scary error.
-                lastErrorMessage = "Purchase canceled."
-                throw StoreError.purchaseNotCompleted
+                lastErrorMessage = nil
+                throw StoreError.purchaseCancelled
             case .pending:
                 // Not a failure: awaiting external approval (e.g. Ask to Buy).
-                lastErrorMessage = "Pending approval."
-                throw StoreError.purchaseNotCompleted
+                lastErrorMessage = nil
+                throw StoreError.purchasePending
             @unknown default:
                 throw StoreError.purchaseNotCompleted
             }
+        } catch StoreError.purchaseCancelled {
+            // User backed out: rethrow without populating the error surface that
+            // WorldMapView/SettingsView show.
+            throw StoreError.purchaseCancelled
+        } catch StoreError.purchasePending {
+            // Awaiting external approval: rethrow without surfacing an error.
+            throw StoreError.purchasePending
         } catch StoreError.purchaseNotCompleted {
-            // Cancelled/pending already set a neutral message above; rethrow without
-            // populating the error surface that WorldMapView/SettingsView show.
+            // Rethrow without populating the error surface.
             throw StoreError.purchaseNotCompleted
         } catch {
             setStoreError("Purchase could not be completed. Try again or restore purchases.", error: error)
@@ -143,6 +149,8 @@ final class StoreManager: ObservableObject {
     enum StoreError: Error, LocalizedError {
         case failedVerification
         case purchaseNotCompleted
+        case purchaseCancelled
+        case purchasePending
 
         var errorDescription: String? {
             switch self {
@@ -150,6 +158,10 @@ final class StoreManager: ObservableObject {
                 return "The purchase could not be verified."
             case .purchaseNotCompleted:
                 return "The purchase was not completed."
+            case .purchaseCancelled:
+                return "No charge — tap Unlock when you are ready."
+            case .purchasePending:
+                return "Waiting for approval — worlds unlock automatically once approved."
             }
         }
     }

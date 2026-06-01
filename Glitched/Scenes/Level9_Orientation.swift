@@ -86,6 +86,15 @@ final class OrientationScene: BaseLevelScene, SKPhysicsContactDelegate {
     private var rotationTimestamps: [TimeInterval] = []
     private var hasShownDizzyCommentary = false
 
+    /// System-level Reduce Motion (Settings > Accessibility > Motion). When on we
+    /// skip the purely cosmetic crusher rumble, speed-line flicker, phone-icon
+    /// rotation, and exit down-arrow bob. NONE of these are load-bearing: the
+    /// lethal hazard is the manual `crusherWall.position` creep in updatePlaying,
+    /// which is unaffected by this guard.
+    private var systemReduceMotion: Bool {
+        UIAccessibility.isReduceMotionEnabled
+    }
+
     // MARK: - Configuration
 
     override func configureScene() {
@@ -419,20 +428,26 @@ final class OrientationScene: BaseLevelScene, SKPhysicsContactDelegate {
             visuals.addChild(speedLine)
             lineElements.append(speedLine)
 
-            // Aggressive flicker animation
-            speedLine.run(.repeatForever(.sequence([
-                .fadeAlpha(to: 0.1, duration: 0.05),
-                .fadeAlpha(to: 0.8, duration: 0.05)
-            ])))
+            // Aggressive flicker animation (cosmetic; gated behind Reduce Motion)
+            if !systemReduceMotion {
+                speedLine.run(.repeatForever(.sequence([
+                    .fadeAlpha(to: 0.1, duration: 0.05),
+                    .fadeAlpha(to: 0.8, duration: 0.05)
+                ])))
+            }
         }
 
         // Ominous rumble animation - on the visuals child only, NOT crusherWall,
         // so it never overwrites the creep-controlled crusherWall.position.
-        visuals.run(.repeatForever(.sequence([
-            .moveBy(x: 0, y: 2, duration: 0.1),
-            .moveBy(x: 0, y: -4, duration: 0.1),
-            .moveBy(x: 0, y: 2, duration: 0.1)
-        ])))
+        // Cosmetic only; gated behind Reduce Motion. The lethal advance lives in
+        // updatePlaying's crusherWall.position creep and is unaffected.
+        if !systemReduceMotion {
+            visuals.run(.repeatForever(.sequence([
+                .moveBy(x: 0, y: 2, duration: 0.1),
+                .moveBy(x: 0, y: -4, duration: 0.1),
+                .moveBy(x: 0, y: 2, duration: 0.1)
+            ])))
+        }
     }
 
     private func createDangerSkull() -> SKNode {
@@ -648,10 +663,14 @@ final class OrientationScene: BaseLevelScene, SKPhysicsContactDelegate {
         let arrow = createDownArrow()
         arrow.position = CGPoint(x: exitPos.x, y: exitPos.y + 50)
         arrow.zPosition = 15
-        arrow.run(.repeatForever(.sequence([
-            .moveBy(x: 0, y: -6, duration: 0.4),
-            .moveBy(x: 0, y: 6, duration: 0.4)
-        ])))
+        // Bob is cosmetic; gated behind Reduce Motion. The arrow stays drawn at
+        // its rest position, so the exit remains clearly marked.
+        if !systemReduceMotion {
+            arrow.run(.repeatForever(.sequence([
+                .moveBy(x: 0, y: -6, duration: 0.4),
+                .moveBy(x: 0, y: 6, duration: 0.4)
+            ])))
+        }
         worldNode.addChild(arrow)
         lineElements.append(arrow)
     }
@@ -744,13 +763,17 @@ final class OrientationScene: BaseLevelScene, SKPhysicsContactDelegate {
         instructionPanel?.addChild(arrowHead)
         lineElements.append(arrowHead)
 
-        // Animate rotation
-        phone.run(.repeatForever(.sequence([
-            .rotate(toAngle: .pi / 2, duration: 0.8),
-            .wait(forDuration: 0.5),
-            .rotate(toAngle: 0, duration: 0.8),
-            .wait(forDuration: 0.5)
-        ])))
+        // Animate rotation (cosmetic; gated behind Reduce Motion). The icon and
+        // its "ROTATE / LANDSCAPE" text remain visible either way — only the
+        // looping spin is suppressed.
+        if !systemReduceMotion {
+            phone.run(.repeatForever(.sequence([
+                .rotate(toAngle: .pi / 2, duration: 0.8),
+                .wait(forDuration: 0.5),
+                .rotate(toAngle: 0, duration: 0.8),
+                .wait(forDuration: 0.5)
+            ])))
+        }
 
         // Text
         let label = SKLabelNode(text: "ROTATE")
@@ -1004,7 +1027,7 @@ final class OrientationScene: BaseLevelScene, SKPhysicsContactDelegate {
         bg.lineWidth = lineWidth * 0.6
         cue.addChild(bg)
 
-        let label = SKLabelNode(text: "ROTATE TO LANDSCAPE")
+        let label = SKLabelNode(text: "TURN YOUR DEVICE SIDEWAYS")
         label.fontName = "Menlo-Bold"
         label.fontSize = 12
         label.fontColor = strokeColor
