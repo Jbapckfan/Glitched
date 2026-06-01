@@ -50,10 +50,7 @@ final class ReinstallManager: DeviceManager {
         store.synchronize()
 
         let cloudFlag = store.bool(forKey: cloudKitKey)
-        let localFlag = UserDefaults.standard.bool(forKey: userDefaultsKey)
-
-        // If cloud says we deleted but local is fresh (no local flag or first launch)
-        // Then this is a reinstall!
+        // If cloud says we deleted and this local install is fresh, this is a reinstall.
         let isFirstLaunch = !UserDefaults.standard.bool(forKey: "has_launched_before")
         UserDefaults.standard.set(true, forKey: "has_launched_before")
 

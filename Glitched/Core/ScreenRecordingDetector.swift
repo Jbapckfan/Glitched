@@ -56,8 +56,6 @@ final class ScreenRecordingDetector: ObservableObject {
             JuiceManager.shared.glitchEffect(duration: 0.4)
             HapticManager.shared.glitch()
 
-            // Flash a "we see you" message via pop text
-            let scene = JuiceManager.shared
             // The scene reference is internal to JuiceManager, so we use the
             // glitch effect as the visible easter egg. Levels can check
             // ScreenRecordingDetector.shared.isRecording for custom reactions.

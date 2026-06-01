@@ -25,6 +25,7 @@ final class DarkModeScene: BaseLevelScene, SKPhysicsContactDelegate {
     private var doorPlatformPoint: CGPoint = .zero      // center of the door platform
     private var doorPlatformTopY: CGFloat = 0            // top surface Y of the door platform
     private var light1Point: CGPoint = .zero            // center of the light-mode platform (shadow enemy patrols here)
+    private var courseOffsetX: CGFloat = 0               // centers the route on wide canvases
 
     // Visual elements
     private var backgroundNode: SKShapeNode!
@@ -147,8 +148,16 @@ final class DarkModeScene: BaseLevelScene, SKPhysicsContactDelegate {
     }
 
     private func drawMoonDecoration() {
-        // Large moon in background
-        let moonPos = CGPoint(x: size.width - 100, y: topSafeY - 90)
+        // Large moon in background.
+        // HUD-OVERLAP FIX: the old (width-100, topSafeY-90) center put the crescent's
+        // radius-40 outer + inner cutout into the top-right PAUSE zone (x[width-90,width],
+        // y[topSafeY-115, topSafeY]) — the line-art ran under the pause button on
+        // iPhone 390/402 and iPad 1024. Lower the moon to top topSafeY-135 (so its
+        // highest point, my+40, sits ~20pt below the pause zone's bottom edge at
+        // topSafeY-115) and pull it 15pt further inboard. The moon now clears the
+        // pause zone vertically on every device while staying in the upper-right sky
+        // motif. Decorative only (zPosition < 0) — no physics/mechanic touched.
+        let moonPos = CGPoint(x: size.width - 115, y: topSafeY - 175)
 
         // Moon crescent
         let moonOuter = SKShapeNode(circleOfRadius: 40)
@@ -347,14 +356,24 @@ final class DarkModeScene: BaseLevelScene, SKPhysicsContactDelegate {
         // apart (capped at ~90pt) so the inner edge-to-edge gap can never exceed
         // ~95pt for a <=+50pt rise, regardless of canvas width.
         //
-        // Anchor the start at the same w*0.12 the spawn (setupBit) and easter-egg
-        // text (createHiddenDarkText) already key off, so those stay aligned without
-        // touching them. Each subsequent element steps one pitch to the right.
+        // Anchor the start at w*0.12 on phones, then add one uniform offset on
+        // wide canvases so the whole route is centered without changing any
+        // verified gaps or rises.
         let pitch = min(w * 0.18, 90)        // center-to-center spacing
-        let startX = w * 0.12
+        let rawStartX = w * 0.12
+        let doorXUnshifted = rawStartX + pitch * 4
+        let courseLeftEdge = rawStartX - 160 / 2
+        let doorRightEdge = max(
+            doorXUnshifted + 140 / 2,
+            doorXUnshifted + 20 + 45 / 2
+        )
+        let contentWidth = doorRightEdge - courseLeftEdge
+        courseOffsetX = max(0, (w - contentWidth) / 2 - courseLeftEdge)
+
+        let startX = rawStartX + courseOffsetX
         let dark1X = startX + pitch
-        let light1X = startX + pitch * 2
-        let dark2X = startX + pitch * 3
+        let rest1X = startX + pitch * 2
+        let light1X = startX + pitch * 3
         let doorX  = startX + pitch * 4
 
         // Scale the dual-platform width with the pitch so adjacent platforms still
@@ -362,23 +381,31 @@ final class DarkModeScene: BaseLevelScene, SKPhysicsContactDelegate {
         // moon/sun icon and dashed ghost outline stay legible on narrow iPhones.
         let dualW = max(80, pitch * 0.85)
 
-        // Start platform (always solid)
+        // Five-platform route:
+        // start(always) -> dark1(dark) -> rest(always) -> light1(light) -> door(always).
+        // The always-solid rest ledge is what makes the required mode flip fair:
+        // Bit never has to stand on a platform while that same platform becomes
+        // non-solid.
         let startPlatform = createPlatform(
             at: CGPoint(x: startX, y: groundY),
             size: CGSize(width: 160, height: 40)
         )
         startPlatform.name = "start_platform"
 
-        // GHOST PLATFORMS: Only solid in DARK mode (moon icon)
         let darkPlatform1 = createDualPlatform(
-            at: CGPoint(x: dark1X, y: groundY + step),
+            at: CGPoint(x: dark1X, y: groundY + step * 0.95),
             size: CGSize(width: dualW, height: 25),
             isDarkModeOnly: true
         )
         darkModePlatforms.append(darkPlatform1)
 
-        // REAL PLATFORMS: Only solid in LIGHT mode (sun icon)
-        let light1Y = groundY + step * 2
+        let restPlatform = createPlatform(
+            at: CGPoint(x: rest1X, y: groundY + step * 1.45),
+            size: CGSize(width: 120, height: 30)
+        )
+        restPlatform.name = "rest_platform"
+
+        let light1Y = groundY + step * 2.40
         let lightPlatform1 = createDualPlatform(
             at: CGPoint(x: light1X, y: light1Y),
             size: CGSize(width: dualW, height: 25),
@@ -387,16 +414,18 @@ final class DarkModeScene: BaseLevelScene, SKPhysicsContactDelegate {
         lightModePlatforms.append(lightPlatform1)
         light1Point = CGPoint(x: light1X, y: light1Y)
 
-        // Another dark mode platform
-        let darkPlatform2 = createDualPlatform(
-            at: CGPoint(x: dark2X, y: groundY + step * 3),
-            size: CGSize(width: dualW, height: 25),
-            isDarkModeOnly: true
-        )
-        darkModePlatforms.append(darkPlatform2)
-
         // Door platform (always solid) — rightmost element, at the top of the climb.
-        let doorPlatformY = groundY + step * 4
+        //
+        // BYPASS FIX: the multiplier was 3.30, which put the door platform top only
+        // ~95pt above the rest-ledge top — a razor-thin ~4pt margin over Bit's audited
+        // ~91pt jump apex (no clampVelocity here, so the 620 cap, not the 500 clamp,
+        // governs). That let a dark-only player jump rest -> door directly, skipping the
+        // light1 platform and the required dark->light mode flip. Raising the multiplier
+        // to 3.55 lifts the door top to ~107.5pt above the rest top (≈16.5pt > apex),
+        // so the rest-ledge can no longer be jump-skipped. The intended path is
+        // unaffected: rest -> light1 (~45pt rise) then light1 -> door (~62.5pt rise),
+        // both comfortably within reach.
+        let doorPlatformY = groundY + step * 3.55
         let doorPlatform = createPlatform(
             at: CGPoint(x: doorX, y: doorPlatformY),
             size: CGSize(width: 140, height: 35)
@@ -857,9 +886,9 @@ final class DarkModeScene: BaseLevelScene, SKPhysicsContactDelegate {
     // MARK: - Hidden Dark Mode Text
 
     private func createHiddenDarkText() {
-        // Easter-egg text sits on the floor near the start area; anchor to the
-        // bottom-derived groundY (was hardcoded y=130/115 for an old short canvas).
-        let textX = size.width * 0.12 + 30
+        // Easter-egg text sits on the floor; centered so it clears the bottom-LEFT
+        // hardware-fallback pill (was left-anchored at ~x77 on iPhone, overlapping it).
+        let textX = size.width / 2
         hiddenDarkText = SKLabelNode(text: "PSST. BETWEEN YOU AND ME...")
         hiddenDarkText?.fontName = "Menlo-Bold"
         hiddenDarkText?.fontSize = 10
@@ -966,10 +995,11 @@ final class DarkModeScene: BaseLevelScene, SKPhysicsContactDelegate {
     // MARK: - Setup
 
     private func setupBit() {
-        // Spawn on the start platform (derived in buildLevel): start is at x = size.width*0.12,
+        // Spawn on the start platform (derived in buildLevel): start is at
+        // x = size.width*0.12 + courseOffsetX,
         // groundY anchored to the bottom safe area. Keep ~40pt above ground center so Bit
         // lands cleanly on the start platform on every canvas.
-        spawnPoint = CGPoint(x: size.width * 0.12, y: groundY + 40)
+        spawnPoint = CGPoint(x: size.width * 0.12 + courseOffsetX, y: groundY + 40)
 
         bit = BitCharacter.make()
         bit.position = spawnPoint

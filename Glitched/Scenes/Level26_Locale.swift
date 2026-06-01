@@ -28,6 +28,12 @@ final class LocaleScene: BaseLevelScene, SKPhysicsContactDelegate {
     // already solved. Latch that fact so a later language revert is purely
     // cosmetic and can never desolidify footing or eject Bit mid-climb.
     private var puzzleLatched = false
+    private let designWidth: CGFloat = 390
+
+    private var courseScale: CGFloat { min(1.0, size.width / designWidth) }
+    private var courseOriginX: CGFloat { (size.width - designWidth * courseScale) / 2 }
+    private func courseX(_ logicalX: CGFloat) -> CGFloat { courseOriginX + logicalX * courseScale }
+    private func courseLen(_ logical: CGFloat) -> CGFloat { logical * courseScale }
 
     // Hint texts when unscrambled
     private let hintTexts = [
@@ -90,17 +96,17 @@ final class LocaleScene: BaseLevelScene, SKPhysicsContactDelegate {
         // Fits a 390-pt iPhone canvas. Two overlapping zigzag routes share
         // the same narrow column: the scrambled "wrong" route leads nowhere,
         // the unscrambled "correct" route connects start → exit with rises ≤40 pt.
-        createPlatform(at: CGPoint(x: 45, y: groundY), size: CGSize(width: 80, height: 30))
+        createPlatform(at: CGPoint(x: courseX(45), y: groundY), size: CGSize(width: courseLen(80), height: 30))
 
         // The "wrong" zigzag dead-ends well short of the exit plateau.
         // The last wrong platform's right edge (177.5) is 137.5 pt from the
         // exit plateau's left edge on a 390-pt canvas — beyond the 115-pt
         // horizontal jump — so completing the level requires unscrambling.
         let wrongPositions: [CGPoint] = [
-            CGPoint(x: 130, y: groundY + 30),
-            CGPoint(x: 220, y: groundY + 80),
-            CGPoint(x: 130, y: groundY + 140),
-            CGPoint(x: 150, y: groundY + 180)
+            CGPoint(x: courseX(130), y: groundY + 30),
+            CGPoint(x: courseX(220), y: groundY + 80),
+            CGPoint(x: courseX(130), y: groundY + 140),
+            CGPoint(x: courseX(150), y: groundY + 180)
         ]
 
         for pos in wrongPositions {
@@ -111,10 +117,10 @@ final class LocaleScene: BaseLevelScene, SKPhysicsContactDelegate {
         }
 
         let correctPositions: [CGPoint] = [
-            CGPoint(x: 140, y: groundY + 50),
-            CGPoint(x: 220, y: groundY + 100),
-            CGPoint(x: 150, y: groundY + 160),
-            CGPoint(x: 245, y: groundY + 210)
+            CGPoint(x: courseX(140), y: groundY + 50),
+            CGPoint(x: courseX(220), y: groundY + 100),
+            CGPoint(x: courseX(150), y: groundY + 160),
+            CGPoint(x: courseX(245), y: groundY + 210)
         ]
 
         for pos in correctPositions {
@@ -127,18 +133,18 @@ final class LocaleScene: BaseLevelScene, SKPhysicsContactDelegate {
         }
 
         let signPositions: [CGPoint] = [
-            CGPoint(x: 60, y: groundY + 60),
-            CGPoint(x: 140, y: groundY + 110),
-            CGPoint(x: 230, y: groundY + 160),
-            CGPoint(x: 150, y: groundY + 220)
+            CGPoint(x: courseX(60), y: groundY + 60),
+            CGPoint(x: courseX(140), y: groundY + 110),
+            CGPoint(x: courseX(230), y: groundY + 160),
+            CGPoint(x: courseX(150), y: groundY + 220)
         ]
 
         for (i, pos) in signPositions.enumerated() {
             createSignPost(at: pos, hintIndex: i)
         }
 
-        createPlatform(at: CGPoint(x: size.width - 40, y: groundY + 240), size: CGSize(width: 70, height: 30))
-        createExitDoor(at: CGPoint(x: size.width - 30, y: groundY + 295))
+        createPlatform(at: CGPoint(x: courseX(350), y: groundY + 240), size: CGSize(width: courseLen(70), height: 30))
+        createExitDoor(at: CGPoint(x: courseX(360), y: groundY + 295))
 
         // Death zone
         let death = SKNode()
@@ -250,7 +256,13 @@ final class LocaleScene: BaseLevelScene, SKPhysicsContactDelegate {
         let button = SKShapeNode(rectOf: CGSize(width: 100, height: 30), cornerRadius: 6)
         button.fillColor = strokeColor
         button.strokeColor = strokeColor
-        button.position = CGPoint(x: size.width - 70, y: topSafeY - 20)
+        // FIX (overlap): old position topSafeY-20 put this DEBUG button's rect
+        // x[w-120,w-20]=[270,370] inside the reserved top-right PAUSE zone
+        // [w-88,w]x[topSafeY-88,topSafeY]. Drop it below the (now-lowered)
+        // instruction panel (bottom topSafeY-255) and the pause zone so it
+        // sits in clear space on iPhone 390/402 and iPad 1024. (DEBUG-only;
+        // never ships, but kept clear for the simulator.)
+        button.position = CGPoint(x: size.width - 70, y: topSafeY - 290)
         button.zPosition = 500
         button.name = "testLocaleButton"
         addChild(button)
@@ -269,7 +281,20 @@ final class LocaleScene: BaseLevelScene, SKPhysicsContactDelegate {
 
     private func showInstructionPanel() {
         let panel = SKNode()
-        panel.position = CGPoint(x: size.width / 2, y: topSafeY - 90)
+        // FIX (overlap): a 320-wide centered panel sat too high — at topSafeY-155
+        // its TOP edge (topSafeY-90) was still inside the reserved top-right PAUSE
+        // band (which runs from the top down to ~topSafeY-115), so its x-span
+        // [w/2-160, w/2+160] = [35,355] on iPhone 390 put the panel's top-right
+        // corner (x[300,355] inside the pause column [302,390]) UNDER the pause
+        // button. The panel is wider than the centre gap between the title column
+        // and the pause column, so it can't be narrowed without losing legibility.
+        // RULE FIX: drop its centre to topSafeY-190 so its TOP edge (topSafeY-125)
+        // sits at/below the topSafeY-120 threshold — fully below the pause-zone
+        // bottom (~topSafeY-115) AND the title band (bottom ~topSafeY-36). Once the
+        // whole box is below the pause band, the x-overlap with the pause column no
+        // longer matters: zero rect overlap on iPhone 390/402 and iPad 1024. Bottom
+        // edge (topSafeY-255) stays well above the highest signpost/platform.
+        panel.position = CGPoint(x: size.width / 2, y: topSafeY - 190)
         panel.zPosition = 300
         addChild(panel)
 
@@ -321,7 +346,7 @@ final class LocaleScene: BaseLevelScene, SKPhysicsContactDelegate {
     }
 
     private func setupBit() {
-        spawnPoint = CGPoint(x: 45, y: 200)
+        spawnPoint = CGPoint(x: courseX(45), y: 200)
         bit = BitCharacter.make()
         bit.position = spawnPoint
         addChild(bit)

@@ -6,10 +6,10 @@ final class StoreManager: ObservableObject {
     static let shared = StoreManager()
 
     static let fullGameProductID = "com.glitched.app.fullgame"
-    static let devCommentaryProductID = "com.glitched.app.devcommentary"
 
     @Published private(set) var products: [Product] = []
     @Published private(set) var purchasedProductIDs: Set<String> = []
+    @Published private(set) var lastErrorMessage: String?
 
     private var updatesTask: Task<Void, Never>?
 
@@ -43,38 +43,56 @@ final class StoreManager: ObservableObject {
     func loadProducts() async {
         do {
             let loaded = try await Product.products(for: [
-                Self.fullGameProductID,
-                Self.devCommentaryProductID
+                Self.fullGameProductID
             ])
             products = loaded.sorted { $0.id < $1.id }
+            lastErrorMessage = nil
             await refreshEntitlements()
         } catch {
-            print("StoreManager product load failed: \(error)")
+            setStoreError("Could not load purchases. Check your connection and try again.", error: error)
         }
     }
 
     func purchase(_ product: Product) async throws -> Transaction {
-        let result = try await product.purchase()
+        do {
+            let result = try await product.purchase()
 
-        switch result {
-        case .success(let verification):
-            let transaction = try checkVerified(verification)
-            await transaction.finish()
-            await refreshEntitlements()
-            return transaction
-        case .userCancelled, .pending:
+            switch result {
+            case .success(let verification):
+                let transaction = try checkVerified(verification)
+                await transaction.finish()
+                await refreshEntitlements()
+                lastErrorMessage = nil
+                return transaction
+            case .userCancelled:
+                // Not a failure: the user backed out. Don't surface a scary error.
+                lastErrorMessage = "Purchase canceled."
+                throw StoreError.purchaseNotCompleted
+            case .pending:
+                // Not a failure: awaiting external approval (e.g. Ask to Buy).
+                lastErrorMessage = "Pending approval."
+                throw StoreError.purchaseNotCompleted
+            @unknown default:
+                throw StoreError.purchaseNotCompleted
+            }
+        } catch StoreError.purchaseNotCompleted {
+            // Cancelled/pending already set a neutral message above; rethrow without
+            // populating the error surface that WorldMapView/SettingsView show.
             throw StoreError.purchaseNotCompleted
-        @unknown default:
-            throw StoreError.purchaseNotCompleted
+        } catch {
+            setStoreError("Purchase could not be completed. Try again or restore purchases.", error: error)
+            throw error
         }
     }
 
-    func restorePurchases() async {
+    func restorePurchases() async throws {
         do {
             try await AppStore.sync()
             await refreshEntitlements()
+            lastErrorMessage = nil
         } catch {
-            print("StoreManager restore failed: \(error)")
+            setStoreError("Restore failed. Check your connection and try again.", error: error)
+            throw error
         }
     }
 
@@ -117,8 +135,22 @@ final class StoreManager: ObservableObject {
         }
     }
 
-    enum StoreError: Error {
+    private func setStoreError(_ message: String, error: Error) {
+        lastErrorMessage = message
+        print("StoreManager error: \(message) \(error)")
+    }
+
+    enum StoreError: Error, LocalizedError {
         case failedVerification
         case purchaseNotCompleted
+
+        var errorDescription: String? {
+            switch self {
+            case .failedVerification:
+                return "The purchase could not be verified."
+            case .purchaseNotCompleted:
+                return "The purchase was not completed."
+            }
+        }
     }
 }

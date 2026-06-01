@@ -185,13 +185,14 @@ final class PlayerController {
 
     private func updateTouchMoveDirection(from point: CGPoint) {
         guard let character = character, let scene = scene else { return }
+        let characterScenePosition = character.parent?.convert(character.position, to: scene) ?? character.position
 
         let characterScreenX: CGFloat
         if let camera = scene.camera {
             let cameraOriginX = camera.position.x - scene.size.width / 2
-            characterScreenX = character.position.x - cameraOriginX
+            characterScreenX = characterScenePosition.x - cameraOriginX
         } else {
-            characterScreenX = character.position.x
+            characterScreenX = characterScenePosition.x
         }
 
         let touchScreenX: CGFloat
@@ -218,7 +219,8 @@ final class PlayerController {
         guard let character = character, let scene = scene else { return false }
 
         let cameraOriginY = scene.camera.map { $0.position.y - scene.size.height / 2 } ?? 0
-        let characterScreenY = character.position.y - cameraOriginY
+        let characterSceneY = character.parent?.convert(character.position, to: scene).y ?? character.position.y
+        let characterScreenY = characterSceneY - cameraOriginY
         let touchScreenY = point.y - cameraOriginY
 
         return touchScreenY > characterScreenY + 48

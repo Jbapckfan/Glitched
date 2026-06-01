@@ -30,6 +30,24 @@ final class ChargingScene: BaseLevelScene, SKPhysicsContactDelegate {
     private let plugSinkRate: CGFloat = 15.0  // Points per second when unplugged
     private let plugRiseRate: CGFloat = 30.0  // Points per second when plugged back in
 
+    // Maximum the plug may sink below its resting base before bottoming out.
+    // Clamping here keeps an unplug near the floor recoverable instead of
+    // letting the surface slide down into the death zone with Bit on it.
+    private let plugMaxSink: CGFloat = 90.0
+
+    // Passenger-carry state. The plug platform is non-dynamic and is driven by
+    // SKAction.moveTo / direct position.y writes, so a resting Bit is never
+    // transported by the physics engine. We track grounded-on-plug contact and
+    // manually advance Bit by the plug's per-frame deltaY so he rides it up.
+    private var plugContactCount = 0
+    private var isRidingPlug: Bool { plugContactCount > 0 }
+    // Becomes true the moment the plug surface is rideable (collision enabled at
+    // the start of the entry cinematic). The carry must run during the scripted
+    // riseToTop SKAction too — which finishes BEFORE hasPlugArrived flips — or
+    // Bit is left behind during the main ride and the softlock returns.
+    private var plugIsRideable = false
+    private var lastTrackedPlugY: CGFloat = 0
+
     // 4th-wall commentary
     private var chargingCommentaryLabel: SKLabelNode?
     private var hasShownPluggedText = false
@@ -70,13 +88,49 @@ final class ChargingScene: BaseLevelScene, SKPhysicsContactDelegate {
         // Power lines
         drawPowerLines()
 
-        // Electrical panels
-        drawElectricalPanel(at: CGPoint(x: 50, y: topSafeY - 120))
-        drawElectricalPanel(at: CGPoint(x: size.width - 50, y: topSafeY - 120))
+        // Electrical panels (the dial/knob mechanic HUD widgets).
+        //
+        // The RIGHT panel is the one the audit flagged: at the old center
+        // (x size.width-50, y topSafeY-150) its 60x80 box spanned
+        //   x [size.width-80, size.width-20]  -> on iPhone 390: [310, 370]
+        //   y top edge topSafeY-110
+        // Both axes intruded on the reserved top-right PAUSE 88x88 zone, which
+        // on iPhone 390 occupies x [300, 390] (i.e. x >= size.width-90) and runs
+        // from the top down to ~topSafeY-115. So the box's right half sat under
+        // the pause column AND its top edge (topSafeY-110) poked ~5pt into the
+        // reserved vertical band — that is the overlap in the screenshot.
+        //
+        // FIX (down + left), keeping the mechanic unchanged:
+        //   center -> (x size.width-130, y topSafeY-170)  for the RIGHT panel
+        //   box (60x80) now spans
+        //     x [size.width-160, size.width-100] -> iPhone 390: [230, 290]
+        //        right edge size.width-100 is 10pt LEFT of the pause column
+        //        start (size.width-90), so it never enters x>=size.width-90.
+        //     y top edge topSafeY-130, a clear 15pt below the topSafeY-115
+        //        reserved-band bottom (and 30pt below the pause bottom at
+        //        topSafeY-100).
+        //   Verified non-overlapping on iPhone 390x844 / 402x874 and iPad
+        //   1024x1366 (pause column is anchored to the right edge on all three,
+        //   so the size.width-relative inset holds everywhere).
+        // The LEFT panel is moved down symmetrically (it never touched the pause
+        // column, but matching keeps the two widgets visually level).
+        drawElectricalPanel(at: CGPoint(x: 50, y: topSafeY - 170))
+        drawElectricalPanel(at: CGPoint(x: size.width - 130, y: topSafeY - 170))
 
-        // Lightning bolt decorations
-        drawLightningBolt(at: CGPoint(x: 80, y: topSafeY - 50))
-        drawLightningBolt(at: CGPoint(x: size.width - 80, y: topSafeY - 70))
+        // Lightning bolt decorations.
+        // The LEFT bolt is dropped to topSafeY-170 so it no longer pokes into the
+        // top-left TITLE band ("LEVEL 5" + underline, ~y[topSafeY-44, topSafeY-8])
+        // and stays beside its (now-lowered) left panel.
+        // The RIGHT bolt is moved to x=size.width-185 so it sits BESIDE the
+        // relocated right panel (panel box now spans x [size.width-160,
+        // size.width-100]) instead of on top of it, and is dropped to
+        // topSafeY-180. The bolt's narrow ~16pt-wide glyph centred at
+        // size.width-185 spans x ~[size.width-193, size.width-177] -> iPhone 390:
+        // [197, 213], far clear of both the pause column (x >= size.width-90) and
+        // the panel box. Verified non-overlapping on iPhone 390x844 / 402x874 and
+        // iPad 1024x1366.
+        drawLightningBolt(at: CGPoint(x: 120, y: topSafeY - 170))
+        drawLightningBolt(at: CGPoint(x: size.width - 185, y: topSafeY - 180))
     }
 
     private func drawPowerLines() {
@@ -217,17 +271,39 @@ final class ChargingScene: BaseLevelScene, SKPhysicsContactDelegate {
         addChild(leftWall)
         addChild(rightWall)
 
-        // Exit platform
+        // Exit platform.
+        //
+        // Right edge is extended to abut the giant plug's right edge so the
+        // dismount has NO horizontal gap. The plug body is 120pt wide centred on
+        // `centerX` (x in [centerX-60, centerX+60]); the plug's rest surface is
+        // raised to be COPLANAR with this platform's top (see `riseToTop` below),
+        // so the plug + platform present one continuous walk-off surface and Bit
+        // never has to clear a step or hop across a void.
+        //
+        // Geometry (worst case 1.25x body, half-height 34pt):
+        //   platform body top    = (topSafeY-110) + 10 = topSafeY-100
+        //   plug rest surface top = topSafeY-100  (coplanar — see riseToTop)
+        // Spanning x in [centerX-120, centerX+60] (width 180, centre centerX-30)
+        // keeps the door landing zone (door at centerX+30, see createExitDoor)
+        // and covers the full plug surface so a rightward drift still lands safely.
+        let exitPlatformLeftX = centerX - 120
+        let exitPlatformRightX = centerX + 60   // == plug body right edge
+        let exitPlatformWidth = exitPlatformRightX - exitPlatformLeftX  // 180
         let exitPlatform = createPlatform(
-            width: 120,
+            width: exitPlatformWidth,
             height: 20,
-            position: CGPoint(x: centerX - 60, y: topSafeY - 110)
+            position: CGPoint(x: (exitPlatformLeftX + exitPlatformRightX) / 2, y: topSafeY - 110)
         )
         exitPlatform.name = "ground"
         addChild(exitPlatform)
 
-        // Exit door
-        createExitDoor(at: CGPoint(x: centerX - 80, y: topSafeY - 70))
+        // Exit door.
+        // Moved from centerX-80 to centerX+30 so the door frame + bobbing arrow
+        // hint no longer pokes into the top-left TITLE band ("LEVEL 5") on narrow
+        // phones (iPhone 390/402). centerX+30 keeps the frame (x +-20) fully on the
+        // exit platform [centerX-120, centerX+60] and over the plug body
+        // [centerX-60, centerX+60], so the coplanar plug-ride dismount is intact.
+        createExitDoor(at: CGPoint(x: centerX + 30, y: topSafeY - 70))
 
         // Death zone
         let deathZone = SKNode()
@@ -463,7 +539,10 @@ final class ChargingScene: BaseLevelScene, SKPhysicsContactDelegate {
             let progress = elapsed / 1.0
             let newHeight = 15 + progress * 65
             let newY = -30 + progress * 32.5
-            self.batteryFill.path = SKShapeNode(rectOf: CGSize(width: 40, height: newHeight)).path
+            self.batteryFill.path = CGPath(
+                rect: CGRect(x: -20, y: -newHeight / 2, width: 40, height: newHeight),
+                transform: nil
+            )
             self.batteryFill.position.y = newY
             self.batteryFill.fillColor = self.strokeColor
         }
@@ -530,6 +609,16 @@ final class ChargingScene: BaseLevelScene, SKPhysicsContactDelegate {
         }
     }
 
+    /// The plug_platform body sits at local y=45 inside giantPlug and is 20pt
+    /// tall, so its rideable surface top is `giantPlug.position.y + 55`.
+    private let plugSurfaceOffset: CGFloat = 55
+
+    /// Convert a desired world-space surface-top Y into the giantPlug.position.y
+    /// that produces it.
+    private func plugSurfaceTopToPlugY(_ surfaceTopY: CGFloat) -> CGFloat {
+        surfaceTopY - plugSurfaceOffset
+    }
+
     // MARK: - Plug Animation
 
     private func triggerPlugAnimation() {
@@ -562,16 +651,39 @@ final class ChargingScene: BaseLevelScene, SKPhysicsContactDelegate {
 
         breakFloor()
 
-        let burstUp = SKAction.moveTo(y: 180, duration: 0.4)
+        // Gate the burst so the plug's *surface* (giantPlug.y + plugSurfaceOffset)
+        // arrives JUST UNDER Bit's feet (start-platform top is y=190) instead of
+        // erupting up through his torso. Surface offset = platform local y (45) +
+        // half its 20pt height (10) = 55, so a surface top of ~190 needs
+        // giantPlug.y = 190 - 55 = 135.
+        let burstUp = SKAction.moveTo(y: plugSurfaceTopToPlugY(190), duration: 0.4)
         burstUp.timingMode = .easeOut
 
         let pause = SKAction.wait(forDuration: 0.3)
 
-        let riseToTop = SKAction.moveTo(y: topSafeY - 170, duration: 2.0)
+        // Raise the plug so its rideable SURFACE TOP lands exactly level with the
+        // exit-platform surface top, making the dismount a flush walk-off instead
+        // of a fiddly hop.
+        //
+        // exit-platform surface top = (topSafeY-110) + height/2(10) = topSafeY-100
+        // plug surface top          = giantPlug.y + plugSurfaceOffset(55)
+        // For these to be coplanar: giantPlug.y = (topSafeY-100) - 55 = topSafeY-155.
+        //
+        // Coplanar tops also make the two NON-DYNAMIC bodies share the same span
+        // (both y in [topSafeY-120, topSafeY-100]); the previous ~5pt vertical
+        // interpenetration (old plug surface topSafeY-115 sat 5pt ABOVE the exit
+        // body bottom topSafeY-120) is gone, so contact resolution seats Bit on
+        // the unified top rather than shoving him sideways on touch.
+        let riseToTop = SKAction.moveTo(y: plugSurfaceTopToPlugY(topSafeY - 100), duration: 2.0)
         riseToTop.timingMode = .easeInEaseOut
 
         setPlugCollisionEnabled(true)
         setBatteryCharging()
+
+        // Begin per-frame carry tracking now so Bit rides the scripted riseToTop
+        // SKAction (which completes before hasPlugArrived flips below).
+        plugIsRideable = true
+        lastTrackedPlugY = giantPlug.position.y
 
         giantPlug.run(SKAction.sequence([burstUp, pause, riseToTop])) { [weak self] in
             guard let self = self else { return }
@@ -579,6 +691,27 @@ final class ChargingScene: BaseLevelScene, SKPhysicsContactDelegate {
             self.isPlugAnimating = false
             self.plugPlatformBaseY = self.giantPlug.position.y
             self.plugPlatformCurrentY = self.giantPlug.position.y
+
+            // P1 SOFTLOCK FIX: once the plug has arrived the destructible floor is
+            // gone and the original bottom spawnPoint (y=220) is over the void;
+            // worse, `triggerPlugAnimation` is hard-gated by `!hasPlugArrived`, so
+            // the plug can never return. Any death after this point would respawn
+            // Bit at an unreachable bottom -> permanent softlock.
+            //
+            // Move the respawn ONTO the exit platform's top surface. We add the
+            // WORST-CASE body half-height (1.25x tablet body: height
+            // 64*0.85*1.25 = 68, half = 34) plus a small margin so Bit's FEET land
+            // *above* the platform top on every device — modelling body-top, not
+            // body-centre. (Earlier breakage seated the centre at the surface,
+            // burying the lower half in the platform body.)
+            //   exit-platform surface top = (topSafeY-110) + 10 = topSafeY-100
+            //   safe respawn centre y     = (topSafeY-100) + 34 + 6 = topSafeY-60
+            let exitPlatformTopY = self.topSafeY - 100
+            let worstCaseBodyHalfHeight: CGFloat = 34   // 64 * 0.85 * 1.25 / 2
+            self.spawnPoint = CGPoint(
+                x: self.size.width / 2 - 60,
+                y: exitPlatformTopY + worstCaseBodyHalfHeight + 6
+            )
             // Preserve the event-driven charging state (set via .deviceCharging or the
             // initial battery poll in configureScene) rather than re-reading hardware here.
             // Re-polling UIDevice would clobber a simulator / accessibility "plug in" back
@@ -696,7 +829,10 @@ final class ChargingScene: BaseLevelScene, SKPhysicsContactDelegate {
         label.text = text
         label.fontSize = 11
         label.fontColor = strokeColor
-        label.position = CGPoint(x: size.width / 2, y: size.height / 2 + 60)
+        // Raised to h/2+90 so the transient 4th-wall commentary clears the
+        // battery objective indicator's hint label (top ~h/2+53) instead of
+        // crowding it.
+        label.position = CGPoint(x: size.width / 2, y: size.height / 2 + 90)
         label.zPosition = 300
         label.alpha = 0
         addChild(label)
@@ -719,19 +855,34 @@ final class ChargingScene: BaseLevelScene, SKPhysicsContactDelegate {
     override func updatePlaying(deltaTime: TimeInterval) {
         playerController.update()
 
-        // Plug platform sinking/rising logic
-        guard hasPlugArrived else { return }
-
-        if isCurrentlyCharging {
-            // Rise back toward base position when plugged in
-            if plugPlatformCurrentY < plugPlatformBaseY {
-                plugPlatformCurrentY = min(plugPlatformCurrentY + plugRiseRate * CGFloat(deltaTime), plugPlatformBaseY)
-                giantPlug.position.y = plugPlatformCurrentY
+        // Drive the post-arrival sink/rise of the plug platform. (The scripted
+        // entry SKAction owns giantPlug.position.y until hasPlugArrived flips.)
+        if hasPlugArrived {
+            if isCurrentlyCharging {
+                // Rise back toward base position when plugged in
+                if plugPlatformCurrentY < plugPlatformBaseY {
+                    plugPlatformCurrentY = min(plugPlatformCurrentY + plugRiseRate * CGFloat(deltaTime), plugPlatformBaseY)
+                }
+            } else {
+                // Sink slowly when unplugged, but never below a recoverable floor
+                // so an unplug near the bottom is survivable rather than a death drop.
+                plugPlatformCurrentY = max(
+                    plugPlatformCurrentY - plugSinkRate * CGFloat(deltaTime),
+                    plugPlatformBaseY - plugMaxSink
+                )
             }
-        } else {
-            // Sink slowly when unplugged
-            plugPlatformCurrentY -= plugSinkRate * CGFloat(deltaTime)
             giantPlug.position.y = plugPlatformCurrentY
+        }
+
+        // Carry Bit with the plug across BOTH the scripted riseToTop SKAction and
+        // the post-arrival sink/rise. The non-dynamic platform body never
+        // transports a resting passenger on its own, so we add the plug's
+        // per-frame deltaY to Bit's position while he is standing on it.
+        guard plugIsRideable else { return }
+        let deltaY = giantPlug.position.y - lastTrackedPlugY
+        lastTrackedPlugY = giantPlug.position.y
+        if isRidingPlug && deltaY != 0 {
+            bit.position.y += deltaY
         }
     }
 
@@ -767,6 +918,9 @@ final class ChargingScene: BaseLevelScene, SKPhysicsContactDelegate {
             handleExit()
         } else if collision == PhysicsCategory.player | PhysicsCategory.ground {
             bit.setGrounded(true)
+            if contactInvolvesPlugPlatform(contact) {
+                plugContactCount += 1
+            }
         }
     }
 
@@ -774,6 +928,9 @@ final class ChargingScene: BaseLevelScene, SKPhysicsContactDelegate {
         let collision = contact.bodyA.categoryBitMask | contact.bodyB.categoryBitMask
 
         if collision == PhysicsCategory.player | PhysicsCategory.ground {
+            if contactInvolvesPlugPlatform(contact) {
+                plugContactCount = max(0, plugContactCount - 1)
+            }
             run(.sequence([
                 .wait(forDuration: 0.05),
                 .run { [weak self] in
@@ -783,10 +940,19 @@ final class ChargingScene: BaseLevelScene, SKPhysicsContactDelegate {
         }
     }
 
+    /// True when either body in the contact is the plug's rideable platform,
+    /// matched by the node name 'plug_platform'.
+    private func contactInvolvesPlugPlatform(_ contact: SKPhysicsContact) -> Bool {
+        contact.bodyA.node?.name == "plug_platform" || contact.bodyB.node?.name == "plug_platform"
+    }
+
     // MARK: - Game Events
 
     private func handleDeath() {
         guard GameState.shared.levelState == .playing else { return }
+        // Bit is teleported to spawn on death; didEnd for the plug may not fire,
+        // so clear the carry contact to avoid a phantom "riding" state.
+        plugContactCount = 0
         playerController.cancel()
         bit.playBufferDeath(respawnAt: spawnPoint) { [weak self] in
             self?.bit.setGrounded(true)

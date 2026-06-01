@@ -51,10 +51,6 @@ final class TheLieScene: BaseLevelScene, SKPhysicsContactDelegate {
         physicsWorld.gravity = CGVector(dx: 0, dy: -14)
         physicsWorld.contactDelegate = self
 
-        // Uses appBackgrounding as placeholder mechanic (level has no real device mechanic)
-        AccessibilityManager.shared.registerMechanics([.appBackgrounding])
-        DeviceManagerCoordinator.shared.configure(for: [.appBackgrounding])
-
         setupBackground()
         setupLevelTitle()
         buildLevel()
@@ -294,7 +290,20 @@ final class TheLieScene: BaseLevelScene, SKPhysicsContactDelegate {
 
     private func showInstructionPanel() {
         let panel = SKNode()
-        panel.position = CGPoint(x: size.width / 2, y: topSafeY - 90)
+        // BUG FIX (HUD overlap, screenshot audit): the previous fix dropped the center
+        // to topSafeY-130, but the 320x80 box is centered, so its TOP edge sat at
+        // topSafeY-90 — still inside the top-right PAUSE reserved zone (zone runs from
+        // the top down to ~topSafeY-115). On iPhone 390 the 320-wide box's right edge
+        // (x = w/2+160 = 355) reached into the pause column x[302,390], so the box's
+        // top-right corner ran UNDER the pause button. Apply the systemic rule: move the
+        // panel DOWN so its TOP edge is at/below topSafeY-120 (clear of the pause bottom).
+        // Box is 80 tall, so center = topSafeY-120-40 = topSafeY-160 puts the top edge at
+        // exactly topSafeY-120. Now the entire box (top edge topSafeY-120, bottom edge
+        // topSafeY-200) is BELOW the pause zone, so the x-overlap with the pause column no
+        // longer matters on any device. Still well above the gameplay/Bit (ground at y=160,
+        // doors at y~210-290 sit far below this top band), and the title band
+        // (y[topSafeY-62..-8]) is untouched. Verified clear on iPhone 390/402 & iPad 1024.
+        panel.position = CGPoint(x: size.width / 2, y: topSafeY - 160)
         panel.zPosition = 300
         addChild(panel)
 

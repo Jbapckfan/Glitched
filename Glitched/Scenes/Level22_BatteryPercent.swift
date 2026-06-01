@@ -19,7 +19,7 @@ final class BatteryPercentScene: BaseLevelScene, SKPhysicsContactDelegate {
     private var currentBattery: Float = 100
     private var steppingStones: [SKNode] = []
     private var batteryLabel: SKLabelNode!
-    private var fourthWallLabel: SKLabelNode?
+    private var fourthWallLabel: SKNode?
 
     // Hidden exit below platform 5
     private var hiddenExitNode: SKNode?
@@ -245,7 +245,13 @@ final class BatteryPercentScene: BaseLevelScene, SKPhysicsContactDelegate {
         batteryLabel.fontName = "Menlo-Bold"
         batteryLabel.fontSize = 14
         batteryLabel.fontColor = strokeColor
-        batteryLabel.position = CGPoint(x: size.width / 2, y: topSafeY - 10)
+        // HUD FIX: previously centered at topSafeY-10, which on iPhone 390/402 put the
+        // centered label's left edge (~x137) under the left-aligned title (x[80,~210]) in
+        // the same vertical band -> rect overlap with TITLE. Drop it below the title band
+        // (title glyphs end ~topSafeY-2 down to ~topSafeY-36; this baseline sits clear) and
+        // keep it horizontally centered between the reserved top-left title and top-right
+        // pause zones.
+        batteryLabel.position = CGPoint(x: size.width / 2, y: topSafeY - 56)
         batteryLabel.zPosition = 200
         addChild(batteryLabel)
     }
@@ -275,7 +281,11 @@ final class BatteryPercentScene: BaseLevelScene, SKPhysicsContactDelegate {
 
     private func showInstructionPanel() {
         let panel = SKNode()
-        panel.position = CGPoint(x: size.width / 2, y: topSafeY - 90)
+        // HUD FIX: this panel is wide (340) and its first line overflows toward the right,
+        // so at topSafeY-110 it ran UNDER the top-right pause button. Drop it well below the
+        // pause band (pause bottom ~topSafeY-111) so neither the box nor the overflowing text
+        // collides with the pause/title; battery label above sits at topSafeY-56.
+        panel.position = CGPoint(x: size.width / 2, y: topSafeY - 175)
         panel.zPosition = 300
         addChild(panel)
 
@@ -363,7 +373,15 @@ final class BatteryPercentScene: BaseLevelScene, SKPhysicsContactDelegate {
             overlay.zPosition = 8500
             overlay.name = "batteryDimOverlay"
             overlay.isUserInteractionEnabled = false
-            gameCamera.addChild(overlay)
+            // CRASH FIX: configureScene can run via didChangeSize BEFORE didMove sets up
+            // gameCamera, so the IUO gameCamera may be nil here (was EXC_BREAKPOINT on launch).
+            // Attach to the camera when available (screen-fixed); else fall back to the scene.
+            if let cam = gameCamera {
+                cam.addChild(overlay)
+            } else {
+                overlay.position = CGPoint(x: size.width / 2, y: size.height / 2)
+                addChild(overlay)
+            }
             dimOverlay = overlay
         }
         overlay.fillColor = dimColor
@@ -390,14 +408,39 @@ final class BatteryPercentScene: BaseLevelScene, SKPhysicsContactDelegate {
     private func showFourthWall(percentage: Float) {
         fourthWallLabel?.removeFromParent()
 
-        let label = SKLabelNode(text: "YOUR BATTERY IS AT \(Int(percentage))%. THIS LEVEL IS \(Int(percentage))% COMPLETE. COINCIDENCE?")
-        label.fontName = "Menlo"
-        label.fontSize = 8
-        label.fontColor = strokeColor.withAlphaComponent(0.5)
-        label.position = CGPoint(x: size.width / 2, y: 30)
-        label.zPosition = 150
-        addChild(label)
-        fourthWallLabel = label
+        // HUD FIX: this 4th-wall commentary was one ~58-char line CENTERED at
+        // (size.width/2, y:30). At fontSize 8 Menlo (~4.8px/char) it spanned ~278px,
+        // so on iPhone 390/402 its right end (x up to ~334) crossed under the bottom-right
+        // SIM DRAIN button (box x[size.width-105, size.width-15] = [285,375], y[35,65]) —
+        // the text's top glyphs (~y38) collided with the button's bottom (y35).
+        // RELIABLE FIX: left-align the text and anchor it to the LEFT margin, AND wrap it
+        // into two short lines so the right edge stays far left of the button column
+        // (each line ~30 chars -> ~144px wide; right edge ~x164 << button left x285 on 390,
+        // and even on a 1024-wide iPad the button is at the right while text hugs the left).
+        // Vertical: lines sit at y34/y20 on the empty bottom-left; nothing renders there
+        // (ground/platforms are at y>=60 in the center; button is bottom-right only).
+        let container = SKNode()
+        container.position = CGPoint(x: 20, y: 0)
+        container.zPosition = 150
+
+        let line1 = SKLabelNode(text: "YOUR BATTERY IS AT \(Int(percentage))%.")
+        line1.fontName = "Menlo"
+        line1.fontSize = 8
+        line1.fontColor = strokeColor.withAlphaComponent(0.5)
+        line1.horizontalAlignmentMode = .left
+        line1.position = CGPoint(x: 0, y: 34)
+        container.addChild(line1)
+
+        let line2 = SKLabelNode(text: "THIS LEVEL IS \(Int(percentage))% COMPLETE. COINCIDENCE?")
+        line2.fontName = "Menlo"
+        line2.fontSize = 8
+        line2.fontColor = strokeColor.withAlphaComponent(0.5)
+        line2.horizontalAlignmentMode = .left
+        line2.position = CGPoint(x: 0, y: 20)
+        container.addChild(line2)
+
+        addChild(container)
+        fourthWallLabel = container
     }
 
     private func simulateBatteryDrain() {

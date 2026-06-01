@@ -27,10 +27,9 @@ struct GameRootView: View {
                 .frame(width: 0, height: 0)
                 .opacity(0)
 
-            // SpriteKit game with HUD layered via .overlay to guarantee
-            // it renders above the Metal-backed SKView. GeometryReader exposes
-            // the device safe-area insets so SpriteKit scenes can position HUDs
-            // and clue text clear of the status bar / Dynamic Island.
+            // SpriteKit game. The HUD is a sibling ZStack layer below, drawn
+            // after this view so it renders above the Metal-backed SKView.
+            // GeometryReader exposes safe-area insets for SpriteKit layout.
             GeometryReader { geo in
                 SpriteKitContainer(
                     levelID: gameState.currentLevelID,
@@ -39,13 +38,28 @@ struct GameRootView: View {
                 )
             }
             .ignoresSafeArea()
-            .overlay {
-                HUDLayer(levelID: gameState.currentLevelID)
-            }
+
+            // Persistent HUD / pause control. Kept as a sibling so it inherits
+            // real safe-area insets while SpriteKit remains full-bleed.
+            HUDLayer(levelID: gameState.currentLevelID)
 
             // Accessibility fallback buttons
             if accessibility.showsFallbackOverlay {
                 AccessibilityOverlay()
+            }
+
+            // P1 SOFTLOCK FIX: Release-build escape hatch for hardware-gated levels.
+            // The per-mechanic fallback controls above only render once a mechanic
+            // is no longer hardware-gated (Hardware-Free Mode, simulator, or a forced
+            // fallback). On a release device a player who can't/won't perform the
+            // real hardware action would otherwise be softlocked. This affordance
+            // surfaces a "can't do this?" button on hardware-gated levels — and
+            // auto-surfaces the fallback after a no-progress interval (tied to the
+            // same hint-timer delay) — so every level keeps a working path to
+            // completion WITHOUT pre-toggling the global Hardware-Free Mode setting.
+            // It hides itself once the overlay is showing (nothing left to unblock).
+            if !accessibility.showsFallbackOverlay && accessibility.hasActiveHardwareGatedMechanic {
+                HardwareFallbackEscapeHatch(levelID: gameState.currentLevelID)
             }
 
             // Pause menu (FIX #6: uses UIState enum now)
@@ -217,42 +231,54 @@ struct AccessibilityOverlay: View {
                     accessibilityButton(for: .orientation, icon: "rotate.right", color: .teal) {
                         InputEventBus.shared.post(.orientationChanged(isLandscape: true))
                     }
+                    accessibilityButton(for: .appBackgrounding, icon: "clock.arrow.circlepath", color: .cyan) {
+                        InputEventBus.shared.post(.timePassageSimulated(years: 10))
+                    }
 
                     // World 2 mechanics
                     accessibilityButton(for: .notification, icon: "bell.fill", color: .red) {
                         InputEventBus.shared.post(.notificationTapped(id: "fallback", isCorrect: true))
                     }
                     accessibilityButton(for: .clipboard, icon: "doc.on.clipboard", color: .mint) {
-                        InputEventBus.shared.post(.clipboardUpdated(value: "GLITCH"))
+                        InputEventBus.shared.post(.clipboardUpdated(value: "GLITCH3D"))
                     }
                     accessibilityButton(for: .wifi, icon: "wifi", color: .blue) {
                         InputEventBus.shared.post(.wifiStateChanged(isEnabled: false))
                     }
-                    accessibilityButton(for: .focusMode, icon: "moon.circle", color: .purple) {
-                        InputEventBus.shared.post(.focusModeChanged(isEnabled: true))
-                    }
-                    accessibilityButton(for: .lowPowerMode, icon: "battery.25", color: .yellow) {
-                        InputEventBus.shared.post(.lowPowerModeChanged(isEnabled: true))
-                    }
+                    focusModeFallbackControls
+                    lowPowerFallbackControls
                     accessibilityButton(for: .shakeUndo, icon: "arrow.uturn.backward", color: .orange) {
                         InputEventBus.shared.post(.shakeUndoTriggered)
                     }
+                    accessibilityButton(for: .appSwitcher, icon: "rectangle.on.rectangle", color: .teal) {
+                        InputEventBus.shared.post(.appSwitcherPeeked(duration: 5))
+                    }
+                    accessibilityButton(for: .faceID, icon: "faceid", color: .indigo) {
+                        InputEventBus.shared.post(.faceIDResult(recognized: true))
+                    }
                     accessibilityButton(for: .proximity, icon: "hand.raised.slash.fill", color: .gray) {
                         InputEventBus.shared.post(.proximityFlipped(isCovered: true))
+                    }
+                    accessibilityButton(for: .appDeletion, icon: "trash", color: .red) {
+                        InputEventBus.shared.post(.appReinstallDetected)
                     }
                     accessibilityButton(for: .airplaneMode, icon: "airplane", color: .cyan) {
                         InputEventBus.shared.post(.airplaneModeChanged(isEnabled: true))
                     }
 
                     // World 3 mechanics
-                    accessibilityButton(for: .voiceCommand, icon: "mic.circle", color: .pink) {
-                        InputEventBus.shared.post(.voiceCommandRecognized(command: "open"))
-                    }
+                    voiceCommandFallbackControls
                     accessibilityButton(for: .batteryLevel, icon: "battery.50", color: .green) {
                         InputEventBus.shared.post(.batteryLevelChanged(percentage: 50))
                     }
+                    accessibilityButton(for: .deviceName, icon: "person.text.rectangle", color: .cyan) {
+                        InputEventBus.shared.post(.deviceNameRead(name: "PLAYER"))
+                    }
                     accessibilityButton(for: .storageSpace, icon: "internaldrive", color: .gray) {
                         InputEventBus.shared.post(.storageCacheCleared)
+                    }
+                    accessibilityButton(for: .timeOfDay, icon: "moon.stars", color: .indigo) {
+                        InputEventBus.shared.post(.clockTimeUpdate(hour: 22))
                     }
 
                     // World 4 mechanics
@@ -267,12 +293,9 @@ struct AccessibilityOverlay: View {
                     }
 
                     // World 5 mechanics
-                    accessibilityButton(for: .flashlight, icon: "flashlight.on.fill", color: .yellow) {
-                        InputEventBus.shared.post(.flashlightChanged(isOn: true))
-                        InputEventBus.shared.post(.flashlightAngleChanged(pitch: -1.2))
-                    }
+                    flashlightFallbackControls
                     accessibilityButton(for: .multiTouchPressure, icon: "hand.tap.fill", color: .orange) {
-                        InputEventBus.shared.post(.multiTouch(count: 3, locations: [.zero, .zero, .zero]))
+                        InputEventBus.shared.post(.multiTouch(count: 4, locations: [.zero, .zero, .zero, .zero]))
                     }
                     accessibilityButton(for: .appReview, icon: "star.fill", color: .yellow) {
                         InputEventBus.shared.post(.appReviewReturned)
@@ -326,6 +349,207 @@ struct AccessibilityOverlay: View {
                 .accessibilityLabel(Text("Volume high"))
             }
         }
+    }
+
+    @ViewBuilder
+    private var lowPowerFallbackControls: some View {
+        if accessibility.needsFallbackUI(for: .lowPowerMode) {
+            HStack(spacing: 8) {
+                Button {
+                    InputEventBus.shared.post(.lowPowerModeChanged(isEnabled: true))
+                } label: {
+                    Image(systemName: "battery.25")
+                        .font(.system(size: 24))
+                        .foregroundColor(.white)
+                        .padding(10)
+                        .background(Circle().fill(Color.yellow.opacity(0.7)))
+                }
+                .accessibilityLabel(Text("Low Power on"))
+
+                Button {
+                    InputEventBus.shared.post(.lowPowerModeChanged(isEnabled: false))
+                } label: {
+                    Image(systemName: "battery.100")
+                        .font(.system(size: 24))
+                        .foregroundColor(.white)
+                        .padding(10)
+                        .background(Circle().fill(Color.green.opacity(0.7)))
+                }
+                .accessibilityLabel(Text("Low Power off"))
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var focusModeFallbackControls: some View {
+        if accessibility.needsFallbackUI(for: .focusMode) {
+            HStack(spacing: 8) {
+                Button {
+                    InputEventBus.shared.post(.focusModeChanged(isEnabled: true))
+                } label: {
+                    Image(systemName: "moon.circle.fill")
+                        .font(.system(size: 24))
+                        .foregroundColor(.white)
+                        .padding(10)
+                        .background(Circle().fill(Color.purple.opacity(0.7)))
+                }
+                .accessibilityLabel(Text("Focus Mode on"))
+
+                Button {
+                    InputEventBus.shared.post(.focusModeChanged(isEnabled: false))
+                } label: {
+                    Image(systemName: "moon.circle")
+                        .font(.system(size: 24))
+                        .foregroundColor(.white)
+                        .padding(10)
+                        .background(Circle().fill(Color.gray.opacity(0.7)))
+                }
+                .accessibilityLabel(Text("Focus Mode off"))
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var voiceCommandFallbackControls: some View {
+        if accessibility.needsFallbackUI(for: .voiceCommand) {
+            HStack(spacing: 8) {
+                commandButton("BRIDGE") {
+                    InputEventBus.shared.post(.voiceCommandRecognized(command: "bridge"))
+                }
+                commandButton("OPEN") {
+                    InputEventBus.shared.post(.voiceCommandRecognized(command: "open"))
+                }
+                commandButton("FLY") {
+                    InputEventBus.shared.post(.voiceCommandRecognized(command: "fly"))
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var flashlightFallbackControls: some View {
+        if accessibility.needsFallbackUI(for: .flashlight) {
+            HStack(spacing: 8) {
+                Button {
+                    InputEventBus.shared.post(.flashlightChanged(isOn: true))
+                    InputEventBus.shared.post(.flashlightAngleChanged(pitch: -1.35))
+                } label: {
+                    Image(systemName: "flashlight.on.fill")
+                        .font(.system(size: 24))
+                        .foregroundColor(.white)
+                        .padding(10)
+                        .background(Circle().fill(Color.yellow.opacity(0.7)))
+                }
+                .accessibilityLabel(Text("Flashlight look ahead"))
+
+                Button {
+                    InputEventBus.shared.post(.flashlightChanged(isOn: true))
+                    InputEventBus.shared.post(.flashlightAngleChanged(pitch: -0.1))
+                } label: {
+                    Image(systemName: "light.min")
+                        .font(.system(size: 24))
+                        .foregroundColor(.white)
+                        .padding(10)
+                        .background(Circle().fill(Color.orange.opacity(0.7)))
+                }
+                .accessibilityLabel(Text("Flashlight look down"))
+            }
+        }
+    }
+
+    private func commandButton(_ label: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Text(label)
+                .font(.custom(VisualConstants.Fonts.main, size: 10))
+                .foregroundColor(.white)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 12)
+                .background(Capsule().fill(Color.pink.opacity(0.7)))
+        }
+        .accessibilityLabel(Text("Voice command \(label)"))
+    }
+}
+
+// P1 SOFTLOCK FIX: Persistent + auto-surfacing release-build escape hatch for
+// hardware-gated levels. Calls `AccessibilityManager.forceFallbackForActiveHardwareMechanics`,
+// which flips the level's active mechanic(s) into the existing `AccessibilityOverlay`
+// fallback path — so the player gets the same on-screen controls Hardware-Free Mode
+// would have given them, but WITHOUT having had to pre-toggle that global setting.
+struct HardwareFallbackEscapeHatch: View {
+    let levelID: LevelID
+
+    @ObservedObject private var accessibility = AccessibilityManager.shared
+
+    // Mirrors BaseLevelScene's FIX #13 hint-timer delay (base 18s, x1.75 with the
+    // "extended hint timers" accessibility setting). When the player makes no
+    // progress for this long on a hardware-gated level, we auto-surface the
+    // fallback so a real hardware action is never the SOLE path to completion.
+    private static let baseNoProgressHintDelay: TimeInterval = 18.0
+    private var autoSurfaceDelay: TimeInterval {
+        let extended = ProgressManager.shared.load().settings.extendedHintTimers
+        return extended ? Self.baseNoProgressHintDelay * 1.75 : Self.baseNoProgressHintDelay
+    }
+
+    @State private var autoSurfaceTask: DispatchWorkItem?
+
+    var body: some View {
+        // ZONE: FALLBACK — bottom-TRAILING. Distinct from PAUSE (top-trailing),
+        // from the mechanic-HUD / AccessibilityOverlay row (bottom-centered, see
+        // AccessibilityOverlay's centered ScrollView), and from the exit area.
+        // Pinned to the bottom-trailing corner above the home indicator.
+        VStack {
+            Spacer()
+            HStack {
+                Spacer()
+                Button(action: surfaceFallback) {
+                    HStack(spacing: 6) {
+                        Image(systemName: "questionmark.circle")
+                            .font(.system(size: 13, weight: .semibold))
+                        Text("CAN'T DO THIS?")
+                            .font(.custom(VisualConstants.Fonts.main, size: 11))
+                            .tracking(1)
+                    }
+                    .foregroundColor(.white)
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 10)
+                    .background(
+                        Capsule()
+                            .fill(Color.black.opacity(0.55))
+                            .overlay(Capsule().strokeBorder(Color.white.opacity(0.35), lineWidth: 1))
+                    )
+                }
+                .accessibilityLabel(Text("Can't perform the device action"))
+                .accessibilityHint(Text("Shows on-screen buttons to complete this level without the hardware action."))
+                .padding(.trailing, 16)
+            }
+            // Place above the bottom safe area / home indicator, clear of the
+            // AccessibilityOverlay row which lives slightly higher when shown.
+            .padding(.bottom, 40)
+        }
+        // Reschedule the auto-surface whenever the level changes so a fresh
+        // hardware-gated level starts its own no-progress countdown.
+        .onChange(of: levelID) { _ in scheduleAutoSurface() }
+        .onAppear { scheduleAutoSurface() }
+        .onDisappear { autoSurfaceTask?.cancel() }
+    }
+
+    private func surfaceFallback() {
+        autoSurfaceTask?.cancel()
+        autoSurfaceTask = nil
+        accessibility.forceFallbackForActiveHardwareMechanics()
+    }
+
+    private func scheduleAutoSurface() {
+        autoSurfaceTask?.cancel()
+        let task = DispatchWorkItem {
+            // Re-check at fire time: the player may have completed the action via
+            // real hardware (overlay no longer needed) or already tapped the hatch.
+            if accessibility.hasActiveHardwareGatedMechanic {
+                accessibility.forceFallbackForActiveHardwareMechanics()
+            }
+        }
+        autoSurfaceTask = task
+        DispatchQueue.main.asyncAfter(deadline: .now() + autoSurfaceDelay, execute: task)
     }
 }
 

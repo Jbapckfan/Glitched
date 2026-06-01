@@ -271,20 +271,21 @@ final class FlashlightScene: BaseLevelScene, SKPhysicsContactDelegate {
         // Stalactites hanging from ceiling — must hold phone vertical to see them
         let stalactitePositions: [(x: CGFloat, length: CGFloat, gap: CGFloat)] = [
             (x: 440, length: 140, gap: 80),
-            (x: 520, length: 160, gap: 60),
+            (x: 520, length: 160, gap: 80),
             (x: 590, length: 120, gap: 100),
-            (x: 660, length: 180, gap: 40),
+            (x: 660, length: 180, gap: 80),
             (x: 740, length: 100, gap: 120),
-            (x: 820, length: 170, gap: 50),
+            (x: 820, length: 170, gap: 80),
             (x: 880, length: 130, gap: 90),
-            (x: 950, length: 150, gap: 70),
+            (x: 950, length: 150, gap: 80),
         ]
 
         for data in stalactitePositions {
             createStalactiteHazard(
                 at: CGPoint(x: data.x, y: topSafeY - 15),
                 length: data.length,
-                gapFromFloor: data.gap
+                gapFromFloor: data.gap,
+                floorY: groundY
             )
         }
 
@@ -370,11 +371,23 @@ final class FlashlightScene: BaseLevelScene, SKPhysicsContactDelegate {
             (x: 2420, length: 160),
         ]
 
+        // SOFTLOCK FIX: Every Section 4 stalactite x (1880/2040/2160/2300/2420)
+        // sits within a mandatory gap's ±40pt range, and at gapFromFloor 70 the
+        // tip was at y = platformTop(180)+70 = 250 — below Bit's jumped head apex,
+        // so a mandatory jump over each gap drove Bit's head into a hazard
+        // (not-completable). Raise gapFromFloor so the tip clears the worst-case
+        // head apex. Worst case head top = iPad-scaled body top (180 + 64*0.85*1.25
+        // = 248) + larger assumed apex (~91pt at the 620 cap) = ~339pt. With
+        // gapFromFloor 175 the tip sits at 180 + 175 = 355 (>= ~340), clearing
+        // the head with comfortable margin on every device and under both apex
+        // assumptions (worst-case iPad/620 margin ~16pt; real clamp-500 margins
+        // ~48-62pt).
         for data in stalactites {
             createStalactiteHazard(
                 at: CGPoint(x: data.x, y: topSafeY - 15),
                 length: data.length,
-                gapFromFloor: 70
+                gapFromFloor: 175,
+                floorY: groundY
             )
         }
 
@@ -588,9 +601,10 @@ final class FlashlightScene: BaseLevelScene, SKPhysicsContactDelegate {
 
     // MARK: - Stalactite Hazard Factory
 
-    private func createStalactiteHazard(at position: CGPoint, length: CGFloat, gapFromFloor: CGFloat) {
+    private func createStalactiteHazard(at position: CGPoint, length: CGFloat, gapFromFloor: CGFloat, floorY: CGFloat) {
         let container = SKNode()
-        container.position = position
+        let platformTopY = floorY + 20
+        container.position = CGPoint(x: position.x, y: platformTopY + gapFromFloor + length)
         container.zPosition = 20
         levelContainer.addChild(container)
 
@@ -1215,9 +1229,22 @@ final class FlashlightScene: BaseLevelScene, SKPhysicsContactDelegate {
     // MARK: - Fourth-Wall Commentary
 
     private func showCommentaryText(_ text: String) {
-        // Attach to camera so it's always visible regardless of scrolling
+        // Attach to camera so it's always visible regardless of scrolling.
+        // HUD-OVERLAP FIX: The old local y (size.height/2 - 60) placed this 30pt-tall
+        // banner near screen-top (screen-y ~45-75 on iPhone 390/402, ~40-70 on iPad),
+        // where its wide box (up to 50 chars -> ~430pt) overlapped BOTH the level
+        // title (top-left, screen-y ~61-115) and the screen-pinned pause button
+        // (top-right ~88x88). The "CREATIVE USE OF HARDWARE." comment fires the moment
+        // the flashlight turns on — which can be at t=0 with Bit still at spawn and the
+        // title fully visible — so the collision is real, not just transient.
+        // Anchor the banner ~130pt below the safe-top so its top edge (center-15)
+        // sits below both reserved top zones on every device:
+        //   iPhone 390/402: scene-y topSafeY-130 = 655 -> screen-top ~174 (title ends ~115, pause ~111)
+        //   iPad 1024x1366: scene-y topSafeY-130 = 1212 -> screen-top ~139 (title ends ~83, pause ~76)
+        // Expressed in camera-local space (camera centered at size.height/2 at t=0).
+        let commentaryLocalY = (topSafeY - 130) - size.height / 2
         let container = SKNode()
-        container.position = CGPoint(x: 0, y: size.height / 2 - 60)
+        container.position = CGPoint(x: 0, y: commentaryLocalY)
         container.zPosition = 9500
         container.alpha = 0
 

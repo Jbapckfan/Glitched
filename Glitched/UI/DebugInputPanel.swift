@@ -13,9 +13,12 @@ struct DebugInputPanel: View {
     @State private var batteryLevel: Float = 1.0
 
     var body: some View {
+        // ZONE: DEBUG — DEBUG-only. Parked top-LEADING (under the title band) so
+        // it can NEVER intrude on the reserved top-trailing PAUSE 88x88 square.
+        // Previously this toggle was top-trailing (Spacer pushed it right) and
+        // overlapped the pause button; it is now leading-aligned.
         VStack(spacing: 0) {
             HStack {
-                Spacer()
                 Button(isExpanded ? "DEBUG ▼" : "DEBUG ▲") {
                     withAnimation(.easeInOut(duration: 0.2)) {
                         isExpanded.toggle()
@@ -27,8 +30,9 @@ struct DebugInputPanel: View {
                 .background(Color.black.opacity(0.8))
                 .foregroundColor(.green)
                 .cornerRadius(4)
+                Spacer()
             }
-            .padding(.trailing, 8)
+            .padding(.leading, 8)
 
             if isExpanded {
                 VStack(spacing: 6) {
@@ -62,12 +66,15 @@ struct DebugInputPanel: View {
                 .padding(8)
                 .background(Color.black.opacity(0.9))
                 .cornerRadius(6)
-                .padding(.trailing, 8)
+                .padding(.leading, 8)
             }
 
             Spacer()
         }
-        .padding(.top, 50)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        // Sit BELOW the title card (which can extend to ~y151 on W1L1) and well
+        // clear of the top-trailing PAUSE zone (which lives in the x>=286 column).
+        .padding(.top, 165)
     }
 
     // MARK: - Level Picker Grid

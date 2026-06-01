@@ -1,12 +1,20 @@
 import Foundation
 
 struct PlayerSettings: Codable {
+    /// Routes hardware-driven mechanics through on-screen fallback controls.
     var hardwareFreeMode: Bool = false
+    /// Boosts stroke/contrast on line-art rendering. Consumed by the rendering
+    /// layer (JuiceManager / BaseLevelScene). Persisted here so the flag survives
+    /// launches and stays in sync across the SettingsView and the game engine.
     var highContrastMode: Bool = false
+    /// Lengthens the delay before in-level hints surface, for players who need
+    /// more time. Consumed by BaseLevelScene's hint scheduling. Persisted here.
     var extendedHintTimers: Bool = false
     var musicVolume: Float = 1.0
     var sfxVolume: Float = 1.0
+    /// Dampens camera screen-shake. Consumed by JuiceManager.
     var reduceScreenShake: Bool = false
+    /// Suppresses full-screen flash effects. Consumed by JuiceManager.
     var reduceFlashEffects: Bool = false
 }
 
@@ -117,15 +125,24 @@ final class ProgressManager {
     }
 
     func save(_ progress: PlayerProgress) {
-        guard let data = try? JSONEncoder().encode(progress) else { return }
+        let data: Data
+        do {
+            data = try JSONEncoder().encode(progress)
+        } catch {
+            assertionFailure("ProgressManager failed to encode progress: \(error)")
+            print("ProgressManager save failed: \(error)")
+            return
+        }
         defaults.set(data, forKey: storageKey)
         ubiquitousStore?.set(data, forKey: storageKey)
+        defaults.synchronize()
         ubiquitousStore?.synchronize()
         cached = progress
     }
 
     func markCompleted(_ levelID: LevelID) {
         var progress = load()
+        let worldWasComplete = isWorldComplete(levelID.world, completedLevels: progress.completedLevels)
         progress.completedLevels.insert(levelID)
 
         if levelID.world.rawValue > progress.highestWorld.rawValue {
@@ -136,6 +153,94 @@ final class ProgressManager {
         }
 
         save(progress)
+
+        // Game Center reporting. recordCompletion(for:time:) runs before this
+        // (via BaseLevelScene.succeedLevel -> onLevelSucceeded -> markCompleted),
+        // so progress.levelStats already holds the recorded best time for this
+        // level. Report on the world-complete transition so achievements/scores
+        // only fire once the world is genuinely finished.
+        let world = levelID.world
+        guard !worldWasComplete, isWorldComplete(world, completedLevels: progress.completedLevels) else { return }
+
+        reportWorldCompletion(world, progress: progress)
+    }
+
+    /// Reports all Game Center events that fire when `world` becomes complete:
+    /// the world-completion achievement, the world's aggregate time score, and
+    /// — if this completion finishes the whole campaign — the all-worlds
+    /// achievement plus the total-time score. The no-hint achievement fires
+    /// when the world (or, for the final world, the entire campaign) was
+    /// completed without any recorded hint usage.
+    private func reportWorldCompletion(_ world: World, progress: PlayerProgress) {
+        let gameCenter = GameCenterManager.shared
+        gameCenter.reportWorldCompleted(world)
+
+        if let worldTime = aggregateBestTime(for: world, progress: progress) {
+            gameCenter.reportWorldTime(worldTime, world: world)
+        }
+
+        let allComplete = allCampaignWorldsComplete(completedLevels: progress.completedLevels)
+        if allComplete {
+            gameCenter.reportAllWorldsCompleted()
+            if let totalTime = aggregateBestTimeAcrossCampaign(progress: progress) {
+                gameCenter.reportTotalTime(totalTime)
+            }
+        }
+
+        // No-hint: only when the relevant scope was completed with zero hints.
+        // Report it once the campaign is fully clear with no hints, or per world
+        // when that world was finished hint-free.
+        if allComplete {
+            if usedNoHints(across: World.campaignWorlds, progress: progress) {
+                gameCenter.reportNoHintCompletion()
+            }
+        } else if usedNoHints(across: [world], progress: progress) {
+            gameCenter.reportNoHintCompletion()
+        }
+    }
+
+    private func isWorldComplete(_ world: World, completedLevels: Set<LevelID>) -> Bool {
+        guard world != .world0 else { return false }
+        return world.levels.allSatisfy { completedLevels.contains($0) }
+    }
+
+    private func allCampaignWorldsComplete(completedLevels: Set<LevelID>) -> Bool {
+        World.campaignWorlds.allSatisfy { isWorldComplete($0, completedLevels: completedLevels) }
+    }
+
+    /// Sum of recorded best times for every level in `world`. Returns nil if any
+    /// level in the world has no recorded time (so we never report a partial
+    /// aggregate to a "lowest time wins" leaderboard).
+    private func aggregateBestTime(for world: World, progress: PlayerProgress) -> Double? {
+        aggregateBestTime(for: world.levels, progress: progress)
+    }
+
+    private func aggregateBestTimeAcrossCampaign(progress: PlayerProgress) -> Double? {
+        let allLevels = World.campaignWorlds.flatMap { $0.levels }
+        return aggregateBestTime(for: allLevels, progress: progress)
+    }
+
+    private func aggregateBestTime(for levels: [LevelID], progress: PlayerProgress) -> Double? {
+        var total = 0.0
+        for level in levels {
+            let key = PlayerProgress.key(for: level)
+            guard let best = progress.levelStats[key]?.bestTimeSeconds else { return nil }
+            total += best
+        }
+        return total
+    }
+
+    /// True if no hints were used on any level across the given worlds.
+    private func usedNoHints(across worlds: [World], progress: PlayerProgress) -> Bool {
+        for world in worlds {
+            for level in world.levels {
+                let key = PlayerProgress.key(for: level)
+                if (progress.levelStats[key]?.hintsUsed ?? 0) > 0 {
+                    return false
+                }
+            }
+        }
+        return true
     }
 
     func recordDeath(for levelID: LevelID) {

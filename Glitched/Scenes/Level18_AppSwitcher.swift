@@ -25,6 +25,15 @@ final class AppSwitcherScene: BaseLevelScene, SKPhysicsContactDelegate {
     private let basePeekTime: TimeInterval = 5.0
     private var peekCount = 0
     private var hasShownFourthWall = false
+    private let designWidth: CGFloat = 390
+
+    // Center a phone-sized gameplay course on wider devices. The hazard stones
+    // and final exit must share one coordinate system; otherwise iPad creates an
+    // impossible final gap from the last fixed stone to the size.width-pinned exit.
+    private var courseScale: CGFloat { min(1.0, size.width / designWidth) }
+    private var courseOriginX: CGFloat { (size.width - designWidth * courseScale) / 2 }
+    private func courseX(_ logicalX: CGFloat) -> CGFloat { courseOriginX + logicalX * courseScale }
+    private func courseLen(_ logical: CGFloat) -> CGFloat { logical * courseScale }
 
     override func configureScene() {
         levelID = LevelID(world: .world2, index: 18)
@@ -76,16 +85,16 @@ final class AppSwitcherScene: BaseLevelScene, SKPhysicsContactDelegate {
     private func buildLevel() {
         let groundY: CGFloat = 160
 
-        // Fits a 390-pt iPhone canvas. Stepping stones are ≤ 25 pt apart
-        // with 30-pt rise/drop — well inside the 72-pt jump height.
-        createPlatform(at: CGPoint(x: 45, y: groundY), size: CGSize(width: 80, height: 30))
+        // Fits a 390-pt logical course. Stepping stones are ≤ 25 pt apart
+        // with 30-pt rise/drop — well inside the 91-pt jump height.
+        createPlatform(at: CGPoint(x: courseX(45), y: groundY), size: CGSize(width: courseLen(80), height: 30))
 
-        createPlatform(at: CGPoint(x: 125, y: groundY + 30), size: CGSize(width: 55, height: 20))
-        createPlatform(at: CGPoint(x: 200, y: groundY + 60), size: CGSize(width: 55, height: 20))
-        createPlatform(at: CGPoint(x: 275, y: groundY + 30), size: CGSize(width: 55, height: 20))
+        createPlatform(at: CGPoint(x: courseX(125), y: groundY + 30), size: CGSize(width: courseLen(55), height: 20))
+        createPlatform(at: CGPoint(x: courseX(200), y: groundY + 60), size: CGSize(width: courseLen(55), height: 20))
+        createPlatform(at: CGPoint(x: courseX(275), y: groundY + 30), size: CGSize(width: courseLen(55), height: 20))
 
-        createPlatform(at: CGPoint(x: size.width - 45, y: groundY), size: CGSize(width: 80, height: 30))
-        createExitDoor(at: CGPoint(x: size.width - 35, y: groundY + 50))
+        createPlatform(at: CGPoint(x: courseX(345), y: groundY), size: CGSize(width: courseLen(80), height: 30))
+        createExitDoor(at: CGPoint(x: courseX(355), y: groundY + 50))
 
         // Death zone
         let death = SKNode()
@@ -118,9 +127,9 @@ final class AppSwitcherScene: BaseLevelScene, SKPhysicsContactDelegate {
         // Positions and oscillation ranges fit a 390-pt iPhone canvas and
         // are kept clear of the exit plateau on narrow iPhones (≥375 pt).
         let hazardData: [(pos: CGPoint, range: CGFloat, speed: TimeInterval)] = [
-            (CGPoint(x: 130, y: 235), 40, 0.8),
-            (CGPoint(x: 200, y: 265), 50, 0.6),
-            (CGPoint(x: 275, y: 240), 45, 0.7)
+            (CGPoint(x: courseX(130), y: 235), courseLen(40), 0.8),
+            (CGPoint(x: courseX(200), y: 265), courseLen(50), 0.6),
+            (CGPoint(x: courseX(275), y: 240), courseLen(45), 0.7)
         ]
 
         for (index, data) in hazardData.enumerated() {
@@ -203,34 +212,62 @@ final class AppSwitcherScene: BaseLevelScene, SKPhysicsContactDelegate {
 
     private func showInstructionPanel() {
         let panel = SKNode()
-        panel.position = CGPoint(x: size.width / 2, y: topSafeY - 90)
+        // Systemic HUD fix: the centered instruction panel previously sat at
+        // topSafeY-98 and was 280pt wide. Its TOP edge (topSafeY-58) was inside
+        // the top-trailing PAUSE reserved zone (~88x88, bottom ~topSafeY-115),
+        // and its right edge (x=335 on iPhone 390) plus the overflowing first
+        // line ran UNDER the pause button. Fix per the rule: drop the panel so
+        // its TOP edge is at/below topSafeY-120 (clear of the pause bottom),
+        // narrow the box to 200pt so it stays out of the top-right pause column
+        // and the top-left title, and wrap the long first line so the text
+        // stays inside the box. Box height 90 -> top edge = (topSafeY-165)+45 =
+        // topSafeY-120; on iPhone 390 the box spans x[95,295], well clear of the
+        // pause column x[300,390]. Still far above the gameplay (Bit spawns y=200,
+        // platforms top out ~y=295; the box bottom sits ~y=575 on iPhone 390).
+        panel.position = CGPoint(x: size.width / 2, y: topSafeY - 165)
         panel.zPosition = 300
         addChild(panel)
 
-        let bg = SKShapeNode(rectOf: CGSize(width: 280, height: 80), cornerRadius: 8)
+        let bg = SKShapeNode(rectOf: CGSize(width: 200, height: 90), cornerRadius: 8)
         bg.fillColor = fillColor
         bg.strokeColor = strokeColor
         panel.addChild(bg)
 
-        let text1 = SKLabelNode(text: "THE WORLD HOLDS ITS BREATH WHEN YOU LOOK AWAY")
-        text1.fontName = "Menlo-Bold"
-        text1.fontSize = 11
-        text1.fontColor = strokeColor
-        text1.position = CGPoint(x: 0, y: 10)
-        panel.addChild(text1)
+        // Wrapped so no line overflows the narrowed 200pt box (was a single
+        // 45-char line that overran the old 280pt box into the pause column).
+        let line1a = SKLabelNode(text: "THE WORLD HOLDS")
+        line1a.fontName = "Menlo-Bold"
+        line1a.fontSize = 11
+        line1a.fontColor = strokeColor
+        line1a.position = CGPoint(x: 0, y: 26)
+        panel.addChild(line1a)
+
+        let line1b = SKLabelNode(text: "ITS BREATH WHEN")
+        line1b.fontName = "Menlo-Bold"
+        line1b.fontSize = 11
+        line1b.fontColor = strokeColor
+        line1b.position = CGPoint(x: 0, y: 12)
+        panel.addChild(line1b)
+
+        let line1c = SKLabelNode(text: "YOU LOOK AWAY")
+        line1c.fontName = "Menlo-Bold"
+        line1c.fontSize = 11
+        line1c.fontColor = strokeColor
+        line1c.position = CGPoint(x: 0, y: -2)
+        panel.addChild(line1c)
 
         let text2 = SKLabelNode(text: "PLAN YOUR MOVES CAREFULLY")
         text2.fontName = "Menlo"
-        text2.fontSize = 10
+        text2.fontSize = 9
         text2.fontColor = strokeColor
-        text2.position = CGPoint(x: 0, y: -10)
+        text2.position = CGPoint(x: 0, y: -24)
         panel.addChild(text2)
 
         panel.run(.sequence([.wait(forDuration: 5), .fadeOut(withDuration: 0.5), .removeFromParent()]))
     }
 
     private func setupBit() {
-        spawnPoint = CGPoint(x: 45, y: 200)
+        spawnPoint = CGPoint(x: courseX(45), y: 200)
         bit = BitCharacter.make()
         bit.position = spawnPoint
         addChild(bit)

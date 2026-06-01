@@ -23,6 +23,12 @@ final class ClipboardScene: BaseLevelScene, SKPhysicsContactDelegate {
     private var doorBlocker: SKNode?
     private var clipboardScanLabel: SKLabelNode?
     private var hasScannedClipboard = false
+    private let designWidth: CGFloat = 390
+
+    private var courseScale: CGFloat { min(1.0, size.width / designWidth) }
+    private var courseOriginX: CGFloat { (size.width - designWidth * courseScale) / 2 }
+    private func courseX(_ logicalX: CGFloat) -> CGFloat { courseOriginX + logicalX * courseScale }
+    private func courseLen(_ logical: CGFloat) -> CGFloat { logical * courseScale }
 
     override func configureScene() {
         levelID = LevelID(world: .world2, index: 12)
@@ -72,15 +78,18 @@ final class ClipboardScene: BaseLevelScene, SKPhysicsContactDelegate {
     private func buildLevel() {
         let groundY: CGFloat = 160
 
-        createPlatform(at: CGPoint(x: 80, y: groundY), size: CGSize(width: 120, height: 30))
-        createPlatform(at: CGPoint(x: size.width / 2, y: groundY), size: CGSize(width: 200, height: 30))
-        createPlatform(at: CGPoint(x: size.width - 80, y: groundY), size: CGSize(width: 120, height: 30))
+        // Authored in a 390-pt logical course and centered on iPad. The old
+        // mixed layout pinned the middle platform to size.width/2 and the exit
+        // to size.width, creating huge gaps on wide canvases.
+        createPlatform(at: CGPoint(x: courseX(80), y: groundY), size: CGSize(width: courseLen(120), height: 30))
+        createPlatform(at: CGPoint(x: courseX(195), y: groundY), size: CGSize(width: courseLen(200), height: 30))
+        createPlatform(at: CGPoint(x: courseX(310), y: groundY), size: CGSize(width: courseLen(120), height: 30))
 
         // Locked door
-        createLockedDoor(at: CGPoint(x: size.width / 2 + 60, y: groundY + 50))
+        createLockedDoor(at: CGPoint(x: courseX(255), y: groundY + 50))
 
         // Exit
-        createExitDoor(at: CGPoint(x: size.width - 60, y: groundY + 50))
+        createExitDoor(at: CGPoint(x: courseX(330), y: groundY + 50))
 
         // Death zone
         let death = SKNode()
@@ -112,14 +121,25 @@ final class ClipboardScene: BaseLevelScene, SKPhysicsContactDelegate {
         let door = SKNode()
         door.position = position
 
-        let frame = SKShapeNode(rectOf: CGSize(width: 45, height: 65))
+        // Door frame/body must exceed Bit's audited ~91 pt jump apex from the
+        // platform top so the locked door cannot be cleared before unlock.
+        //
+        // BYPASS FIX: at height 115 the door center (groundY+50) put the door top at
+        // groundY+107.5 — only ~1.5pt above Bit's jump apex from the platform top
+        // (groundY+15 +91 = groundY+106; no clampVelocity here, so the 620 cap governs).
+        // That razor-thin margin let the locked door be jump-cleared. Height 145 lifts
+        // the door top to groundY+122.5 (~16.5pt > apex) so it can no longer be cleared
+        // before unlock. The blocker's physics body is removed entirely on unlock, so
+        // completability is unaffected.
+        let doorSize = CGSize(width: 45, height: 145)
+        let frame = SKShapeNode(rectOf: doorSize)
         frame.fillColor = fillColor
         frame.strokeColor = strokeColor
         frame.lineWidth = lineWidth
         door.addChild(frame)
 
         doorBlocker = SKNode()
-        doorBlocker?.physicsBody = SKPhysicsBody(rectangleOf: CGSize(width: 45, height: 65))
+        doorBlocker?.physicsBody = SKPhysicsBody(rectangleOf: doorSize)
         doorBlocker?.physicsBody?.isDynamic = false
         doorBlocker?.physicsBody?.categoryBitMask = PhysicsCategory.ground
         door.addChild(doorBlocker!)
@@ -201,12 +221,24 @@ final class ClipboardScene: BaseLevelScene, SKPhysicsContactDelegate {
     }
 
     private func showInstructionPanel() {
+        // OVERLAP FIX (PAUSE button): the panel was centered at topSafeY-120 with a
+        // 240-wide bg, so on iPhone 390 it spanned x[75,315] and its 60-tall top edge
+        // sat at topSafeY-90. The top-right PAUSE button reserves ~88x88 at x[300,390]
+        // from the top down to ~topSafeY-115. The panel's right edge (315) was inside
+        // the pause column (x>=300) AND its top edge (topSafeY-90) was above the pause
+        // bottom (topSafeY-115), so the panel clipped the pause button. Two-part fix:
+        //   1) Drop the panel: center at topSafeY-155 puts the 60-tall top edge at
+        //      topSafeY-125 — below the spec's topSafeY-120 floor (clear of pause bottom).
+        //   2) Narrow to 200 wide so on iPhone 390 (center x=195) the right edge is 295,
+        //      clearing the pause column's left edge at x=300.
+        // The text "EXTRACT & RETURN" (~136pt) stays comfortably inside 200pt, and at
+        // topSafeY-155 the panel is still far above the terminal (y=260) and course.
         let panel = SKNode()
-        panel.position = CGPoint(x: size.width / 2, y: topSafeY - 70)
+        panel.position = CGPoint(x: size.width / 2, y: topSafeY - 155)
         panel.zPosition = 300
         addChild(panel)
 
-        let bg = SKShapeNode(rectOf: CGSize(width: 240, height: 60), cornerRadius: 8)
+        let bg = SKShapeNode(rectOf: CGSize(width: 200, height: 60), cornerRadius: 8)
         bg.fillColor = fillColor
         bg.strokeColor = strokeColor
         bg.lineWidth = lineWidth
@@ -232,7 +264,7 @@ final class ClipboardScene: BaseLevelScene, SKPhysicsContactDelegate {
     }
 
     private func setupBit() {
-        spawnPoint = CGPoint(x: 80, y: 200)
+        spawnPoint = CGPoint(x: courseX(80), y: 200)
         bit = BitCharacter.make()
         bit.position = spawnPoint
         addChild(bit)
@@ -350,6 +382,8 @@ final class ClipboardScene: BaseLevelScene, SKPhysicsContactDelegate {
     }
 
     private func handleExit() {
+        guard GameState.shared.levelState == .playing, isUnlocked else { return }
+
         succeedLevel()
         bit.run(.sequence([.fadeOut(withDuration: 0.5), .run { [weak self] in self?.transitionToNextLevel() }]))
     }

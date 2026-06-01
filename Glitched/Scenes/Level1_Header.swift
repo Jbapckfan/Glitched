@@ -21,8 +21,14 @@ final class HeaderScene: BaseLevelScene, SKPhysicsContactDelegate {
         min(layoutXScale, layoutYScale)
     }
 
-    private var pitStartX: CGFloat { 140 * layoutXScale }
-    private var pitEndX: CGFloat { 280 * layoutXScale }
+    // CHARM FIX: The single-jump horizontal reach is ~145pt (apex ~91pt, air time
+    // ~0.59s at moveSpeed 245). The old 140pt design gap was jumpable, letting the
+    // player bypass the header-drag mechanic this level exists to teach. Widen the
+    // gap to 200 design pts (>= ~181pt scene on the narrowest 390-wide phone, and
+    // far wider on iPad) so it cannot be cleared in a single jump and the bridge is
+    // required. Right platform [pitEndX, width] still hosts the exit at width-50.
+    private var pitStartX: CGFloat { 120 * layoutXScale }
+    private var pitEndX: CGFloat { 320 * layoutXScale }
     private var groundHeight: CGFloat { 100 * layoutYScale }
     private var platformHeight: CGFloat { 40 * layoutYScale }
 
@@ -374,7 +380,21 @@ final class HeaderScene: BaseLevelScene, SKPhysicsContactDelegate {
             y: size.height - screenPosition.y
         )
 
-        if skPosition.x > pitStartX && skPosition.x < pitEndX {
+        // CHARM FIX: The accessibility/sim fallback posts a FIXED screen point
+        // (x: 210, y: 240). The old hit-test required `skPosition.x` to fall inside
+        // the *scaled* pit [pitStartX, pitEndX]. On iPad (layoutXScale ~2.38) the
+        // pit sits at high x (e.g. ~[286, 762] now, ~[333, 666] before), so the fixed
+        // x:210 fell short -> notePlayerStruggle(), no bridge, UNWINNABLE. The fix:
+        // the bridge always materializes at the fixed pit
+        // location regardless of the exact drop x, so accept any drop that lands in
+        // the central play band (and below the top title band, which the SwiftUI
+        // drag gate at height/3 already guarantees). Only a drop that lands clearly
+        // off to the far edges counts as a miss.
+        let dropInPlayBand = skPosition.y < topSafeY - 60 && skPosition.y > bottomSafeY
+        let dropNearPit = skPosition.x > pitStartX - 80 * layoutXScale
+            && skPosition.x < pitEndX + 80 * layoutXScale
+
+        if (skPosition.x > pitStartX && skPosition.x < pitEndX) || (dropInPlayBand && dropNearPit) {
             spawnBridge()
         } else {
             notePlayerStruggle()

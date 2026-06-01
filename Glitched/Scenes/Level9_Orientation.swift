@@ -22,6 +22,22 @@ final class OrientationScene: BaseLevelScene, SKPhysicsContactDelegate {
     private var isCrusherActive = true
     private var crusherBaseX: CGFloat = 0
 
+    // CHARM / grace: the crusher reaches the player in ~2.5s at full creep, while
+    // the explicit "rotate" clue is gated 18s behind the base hint timer -> a
+    // reading first-timer dies ~7 times before being told the answer. We give the
+    // FIRST life a warm-up window where the crusher barely advances (so the player
+    // can read the discovery line and look around), surface an early rotate cue a
+    // few seconds in, then ramp to the normal lethal creep. Respawns get a shorter
+    // grace so the level stays tense but never insta-kills on the read. The
+    // mechanic is untouched: in portrait the crusher always advances and kills;
+    // rotating to landscape is still required to pass the corridor.
+    private var armedTime: TimeInterval = 0
+    private let firstLifeGrace: TimeInterval = 5.0   // near-idle creep window (life 1)
+    private let respawnGrace: TimeInterval = 2.0     // shorter window after a death
+    private var hasDiedOnce = false
+    private var hasShownEarlyRotateCue = false
+    private let earlyRotateCueDelay: TimeInterval = 3.0
+
     private let portraitGap: CGFloat = 18   // Clearly impossible (player is 22pts wide)
     private let landscapeGap: CGFloat = 100  // Comfortable passage in landscape
 
@@ -112,6 +128,12 @@ final class OrientationScene: BaseLevelScene, SKPhysicsContactDelegate {
         if let panel = instructionPanel {
             panel.position = CGPoint(x: 0, y: instructionPanelLocalY())
         }
+
+        // Discovery-first atmospheric line (t=0). Added to the SCENE (not the
+        // scaled worldNode) so it stays a fixed-size HUD overlay, matching the
+        // L11+ convention. Non-spoiler: it does NOT name the device feature; the
+        // explicit clue lives in hintText() (shown at 18s if the player stalls).
+        showDiscoveryPanel()
     }
 
     // MARK: - Background
@@ -236,7 +258,14 @@ final class OrientationScene: BaseLevelScene, SKPhysicsContactDelegate {
         title.fontColor = strokeColor
         title.horizontalAlignmentMode = .left
         title.zPosition = 100
-        worldNode.addChild(title)
+        // Title lives on the SCENE (not the scaled worldNode), matching the L8/L11+
+        // convention. The old worldNode-local mapping mixed a camera-centered
+        // (-size.width/2) offset with a worldNode whose origin is shifted by the
+        // playfield rebase (+290 -> playfieldCenterX), which placed the glyphs at
+        // scene x ~= -202 (fully off the LEFT edge) on every device. Anchoring in
+        // scene space pins the title to the reserved top-LEFT band (x from 80).
+        title.name = "level_title"
+        addChild(title)
         lineElements.append(title)
         titleLabel = title
 
@@ -248,7 +277,8 @@ final class OrientationScene: BaseLevelScene, SKPhysicsContactDelegate {
         underline.strokeColor = strokeColor
         underline.lineWidth = lineWidth
         underline.zPosition = 100
-        worldNode.addChild(underline)
+        underline.name = "title_underline"
+        addChild(underline)
         lineElements.append(underline)
         titleUnderline = underline
 
@@ -256,22 +286,17 @@ final class OrientationScene: BaseLevelScene, SKPhysicsContactDelegate {
     }
 
     /// Positions the title/underline against the safe-area top so the glyphs
-    /// clear the Dynamic Island / status bar, re-runnable on rotation. worldNode
-    /// is centered and scaled, so we map the desired scene-space top into local
-    /// space by subtracting the scene midpoint and dividing out the node scale.
+    /// clear the Dynamic Island / status bar, re-runnable on rotation. The title
+    /// is a fixed-size SCENE-space HUD overlay anchored at the reserved top-LEFT
+    /// band (x=80, left-aligned), with its baseline lowered so the 28pt cap height
+    /// sits just under the safe inset. This matches the global TITLE reserve and
+    /// is independent of worldNode's scale/rebase.
     private func layoutLevelTitle() {
         guard let title = titleLabel, let underline = titleUnderline else { return }
 
-        let yScale = worldNode.yScale == 0 ? 1 : worldNode.yScale
-        let xScale = worldNode.xScale == 0 ? 1 : worldNode.xScale
-
-        // Sit the title's anchor just below the safe inset (title is 28pt tall).
-        let titleLocalY = ((topSafeY - size.height / 2) / yScale) - 28
-        // Keep the left margin clear of the safe area too, mapped to local space.
-        let titleLocalX = ((-size.width / 2) / xScale) + 40
-
-        title.position = CGPoint(x: titleLocalX, y: titleLocalY)
-        underline.position = title.position
+        let pos = CGPoint(x: 80, y: topSafeY - 44)
+        title.position = pos
+        underline.position = pos
     }
 
     // MARK: - Level Building
@@ -745,6 +770,47 @@ final class OrientationScene: BaseLevelScene, SKPhysicsContactDelegate {
         lineElements.append(subLabel)
     }
 
+    // MARK: - Discovery Panel
+
+    /// Discovery-first t=0 atmospheric line (L11+ convention; ref Level 13's
+    /// "THE SIGNAL COMES AND GOES..." panel). Lives on the SCENE in scene-space
+    /// (NOT the scaled worldNode), so it stays a fixed-size HUD overlay anchored
+    /// just below the safe-area top. The line is evocative and NON-SPOILER — it
+    /// never says "rotate"; the explicit clue is reserved for hintText() at 18s.
+    private func showDiscoveryPanel() {
+        let panel = SKNode()
+        // Sit the panel BELOW the reserved TITLE band AND below the top-right
+        // PAUSE column. The prior center topSafeY-125 put the 280x60 box at top
+        // edge topSafeY-95 -> still inside the pause button's vertical band
+        // (top..topSafeY-115), and 280-wide+centered spanned x[55,335] on iPhone
+        // 390 so its right edge ran into the reserved pause column x[300,390]:
+        // the pause button's lower-left sat over the panel's top-right corner.
+        // FIX (both axes): (1) drop the center to topSafeY-148 so the 60pt box's
+        // TOP edge is at topSafeY-118 (<= the pause bottom topSafeY-115), making
+        // it fully clear of the pause button VERTICALLY; (2) narrow the box to
+        // 240 so on iPhone 390 it spans x[75,315] and on 402 x[81,321] — its right
+        // edge no longer crosses deep into the pause column, and its left edge
+        // stays clear of the title (x from 80). On iPad 1024 (center 512) the box
+        // spans x[392,632], nowhere near either the title (left) or pause (right).
+        // The 28-char line still fits 240 at 11pt Menlo-Bold (~185pt wide).
+        panel.position = CGPoint(x: size.width / 2, y: topSafeY - 148)
+        panel.zPosition = 300
+        addChild(panel)
+
+        let bg = SKShapeNode(rectOf: CGSize(width: 240, height: 60), cornerRadius: 8)
+        bg.fillColor = fillColor
+        bg.strokeColor = strokeColor
+        panel.addChild(bg)
+
+        let text = SKLabelNode(text: "UP IS A MATTER OF OPINION...")
+        text.fontName = "Menlo-Bold"
+        text.fontSize = 11
+        text.fontColor = strokeColor
+        panel.addChild(text)
+
+        panel.run(.sequence([.wait(forDuration: 5), .fadeOut(withDuration: 0.5), .removeFromParent()]))
+    }
+
     // MARK: - Setup
 
     private func setupBit() {
@@ -889,14 +955,68 @@ final class OrientationScene: BaseLevelScene, SKPhysicsContactDelegate {
 
         // Crusher creep in portrait mode
         if isCrusherActive && !isLandscape {
-            let creepSpeed: CGFloat = 8.0 * CGFloat(deltaTime)
+            armedTime += deltaTime
+
+            // Grace ramp: during the warm-up window the crusher only inches forward
+            // (10% speed) so a first-timer has time to read and react instead of
+            // being crushed in ~2.5s. After the window it advances at full lethal
+            // speed. First life gets the longer window; respawns get a shorter one.
+            let grace = hasDiedOnce ? respawnGrace : firstLifeGrace
+            let speedFactor: CGFloat = armedTime < grace ? 0.1 : 1.0
+            let creepSpeed: CGFloat = 8.0 * speedFactor * CGFloat(deltaTime)
             crusherWall.position.x += creepSpeed
+
+            // Surface an explicit rotate cue a few seconds in (well before the 18s
+            // base hint timer) so the player learns the answer instead of dying
+            // into it. Once only; the persistent ROTATE panel still carries it.
+            if !hasShownEarlyRotateCue && armedTime >= earlyRotateCueDelay {
+                hasShownEarlyRotateCue = true
+                showEarlyRotateCue()
+            }
 
             // Check if crusher caught up to Bit
             if crusherWall.position.x + 60 > bit.position.x - 20 {
                 handleDeath()
             }
         }
+    }
+
+    /// Early, explicit rotate nudge shown a few seconds into the first portrait
+    /// life — long before the 18s base no-progress hint — so a reading player is
+    /// told the answer before the crusher becomes lethal. Scene-space HUD overlay
+    /// placed in the cleared band BELOW the title/discovery panel, centered, so it
+    /// never overlaps the TITLE, the top-right PAUSE zone, or the discovery panel.
+    private func showEarlyRotateCue() {
+        let cue = SKNode()
+        // Center at topSafeY-200 (34pt tall -> y[topSafeY-217, topSafeY-183]) so it
+        // clears the now-lowered discovery panel (bottom at topSafeY-178) with a
+        // 5pt margin during the brief 3-5s window where both can be visible. (The
+        // discovery panel was dropped to clear the top-right pause column, so this
+        // cue follows it down to preserve the vertical separation.)
+        cue.position = CGPoint(x: size.width / 2, y: topSafeY - 200)
+        cue.zPosition = 320
+        cue.alpha = 0
+        addChild(cue)
+
+        let bg = SKShapeNode(rectOf: CGSize(width: 250, height: 34), cornerRadius: 8)
+        bg.fillColor = fillColor
+        bg.strokeColor = strokeColor
+        bg.lineWidth = lineWidth * 0.6
+        cue.addChild(bg)
+
+        let label = SKLabelNode(text: "ROTATE TO LANDSCAPE")
+        label.fontName = "Menlo-Bold"
+        label.fontSize = 12
+        label.fontColor = strokeColor
+        label.verticalAlignmentMode = .center
+        cue.addChild(label)
+
+        cue.run(.sequence([
+            .fadeIn(withDuration: 0.3),
+            .wait(forDuration: 4.0),
+            .fadeOut(withDuration: 0.5),
+            .removeFromParent()
+        ]))
     }
 
     // MARK: - Input Handling
@@ -1034,9 +1154,12 @@ final class OrientationScene: BaseLevelScene, SKPhysicsContactDelegate {
         guard GameState.shared.levelState == .playing else { return }
         playerController.cancel()
 
-        // Reset crusher
+        // Reset crusher and re-grant a (shorter) grace window for the respawn so
+        // the player still gets a beat to react instead of dying on contact again.
         crusherWall.position.x = crusherBaseX
         isCrusherActive = true
+        hasDiedOnce = true
+        armedTime = 0
 
         // Respawn lands on the floor; reset the ground refcount so a stale
         // didEnd from the death teleport can't strand Bit airborne.

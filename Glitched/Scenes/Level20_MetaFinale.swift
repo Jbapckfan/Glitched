@@ -172,8 +172,6 @@ final class MetaFinaleScene: BaseLevelScene, SKPhysicsContactDelegate {
     }
 
     private func revealLevel() {
-        hasShownIntro = true
-
         // Flash to white
         JuiceManager.shared.flash(color: .white, duration: 0.3)
         backgroundColor = fillColor
@@ -195,6 +193,7 @@ final class MetaFinaleScene: BaseLevelScene, SKPhysicsContactDelegate {
         warningOverlay?.position = CGPoint(x: size.width / 2, y: size.height / 2)
         addChild(warningOverlay!)
 
+        hasShownIntro = true
         checkIfReinstalled()
     }
 
@@ -387,11 +386,22 @@ final class MetaFinaleScene: BaseLevelScene, SKPhysicsContactDelegate {
 
     private func showInstructionPanel() {
         let panel = SKNode()
-        panel.position = CGPoint(x: size.width / 2, y: topSafeY - 100)
+        // Centered 280-wide x 100-tall panel. Lowered from topSafeY-100 to
+        // topSafeY-145 so its TOP edge (topSafeY-95) sits fully below the title
+        // band and clear of the top-right pause zone. Previously its rect
+        // x[w/2-150, w/2+150] = x[45,345] on iPhone 390 with top edge topSafeY-50
+        // overlapped both the title band (x[80,~231], bottom topSafeY-58) AND the
+        // top-right ~88x88 pause zone (x[302,390], bottom ~topSafeY-88). At the new
+        // center the panel spans y[topSafeY-195, topSafeY-95]: top edge topSafeY-95
+        // clears the title bottom (topSafeY-58) by ~37pt and the pause-zone bottom
+        // (~topSafeY-88) by ~7pt — zero rect overlap on iPhone 390/402. On iPad
+        // (course centered) the panel x stays well right of the title and well left
+        // of the pause column, so no collision there either.
+        panel.position = CGPoint(x: size.width / 2, y: topSafeY - 145)
         panel.zPosition = 300
         addChild(panel)
 
-        let bg = SKShapeNode(rectOf: CGSize(width: 300, height: 100), cornerRadius: 8)
+        let bg = SKShapeNode(rectOf: CGSize(width: 280, height: 100), cornerRadius: 8)
         bg.fillColor = fillColor
         bg.strokeColor = strokeColor
         panel.addChild(bg)
@@ -632,6 +642,11 @@ final class MetaFinaleScene: BaseLevelScene, SKPhysicsContactDelegate {
     override func handleGameInput(_ event: GameInputEvent) {
         switch event {
         case .appReinstallDetected:
+            guard hasShownIntro,
+                  corruptionWall != nil,
+                  !corruptionBlocks.isEmpty,
+                  hintLabel != nil,
+                  progressSavedLabel != nil else { return }
             clearCorruption()
         default:
             break

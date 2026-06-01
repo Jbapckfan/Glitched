@@ -22,6 +22,10 @@ final class NotificationScene: BaseLevelScene, SKPhysicsContactDelegate {
     private var doorStates: [Bool] = [false, false]  // unlocked state
     private var currentDoorIndex = 0
     private var pendingNotificationId: String?
+    // The "real choice": each request also fans out a decoy alert. Tapping the
+    // decoy (a spoofed GLITCHED message) is the wrong option and has a
+    // consequence. Reset on every successful unlock / re-arm.
+    private var decoyNotificationId: String?
     private var notificationRequestCount = 0
 
     // 4th-wall notification messages (sequential)
@@ -31,12 +35,27 @@ final class NotificationScene: BaseLevelScene, SKPhysicsContactDelegate {
         "FINE. I'LL OPEN IT MYSELF."
     ]
 
+    // Decoy alerts: superficially look like the system handshake but are spoofs.
+    // The genuine unlock always arrives from the "GLITCHED" sender; the decoy
+    // mimics a generic OS/permission prompt to bait an inattentive tap.
+    private let decoyMessages = [
+        "ALLOW \"GAME\" TO UNLOCK ALL DOORS?",
+        "TAP HERE TO SKIP — DOORS UNLOCKED",
+        "SYSTEM: PRESS TO GRANT FULL ACCESS"
+    ]
+
     // UI
     private var notificationButton: SKNode!
     private var instructionPanel: SKNode?
     private var bellIcon: SKNode!
     private var waitingIndicator: SKNode?
     private var fourthWallLabel: SKLabelNode?
+    private let designWidth: CGFloat = 390
+
+    private var courseScale: CGFloat { min(1.0, size.width / designWidth) }
+    private var courseOriginX: CGFloat { (size.width - designWidth * courseScale) / 2 }
+    private func courseX(_ logicalX: CGFloat) -> CGFloat { courseOriginX + logicalX * courseScale }
+    private func courseLen(_ logical: CGFloat) -> CGFloat { logical * courseScale }
 
     // MARK: - Configuration
 
@@ -58,6 +77,44 @@ final class NotificationScene: BaseLevelScene, SKPhysicsContactDelegate {
         createNotificationUI()
         showInstructionPanel()
         setupBit()
+        observeForegroundForRearm()
+    }
+
+    // P1 DEAD-BOLT FIX (2/2): Even with the manager now preserved across
+    // background, re-arm defensively on return. If the player backgrounded while
+    // waiting and the current door is still locked, clear the stale pending id so
+    // re-tapping the bell schedules a fresh request instead of being blocked by
+    // `guard pendingNotificationId == nil`. Never fires after a successful unlock
+    // (unlockCurrentDoor already nils the id and advances), so it can't undo
+    // progress.
+    private var foregroundObserver: NSObjectProtocol?
+
+    private func observeForegroundForRearm() {
+        foregroundObserver = NotificationCenter.default.addObserver(
+            forName: UIApplication.willEnterForegroundNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            guard let self else { return }
+            // "No door unlocked yet" for the current segment == the current door
+            // is still locked.
+            let currentDoorStillLocked = self.currentDoorIndex < self.doorStates.count
+                && self.doorStates[self.currentDoorIndex] == false
+            guard currentDoorStillLocked, let pendingId = self.pendingNotificationId else { return }
+
+            // Only re-arm if the request was actually torn down. With the
+            // preserveAcrossBackground fix the pending request normally survives a
+            // background/return, so we must NOT clobber a still-valid pending id
+            // (that would orphan a notification that's about to fire). We clear —
+            // and let the player re-tap the bell — only when the manager no longer
+            // tracks the request, i.e. the dead-bolt condition this fix targets.
+            if !NotificationGameManager.shared.hasPendingNotification(id: pendingId) {
+                self.pendingNotificationId = nil
+                self.decoyNotificationId = nil
+                self.waitingIndicator?.removeFromParent()
+                self.waitingIndicator = nil
+            }
+        }
     }
 
     // MARK: - Background
@@ -196,20 +253,19 @@ final class NotificationScene: BaseLevelScene, SKPhysicsContactDelegate {
     private func buildLevel() {
         let groundY: CGFloat = 160
 
-        // Layout fits a 390-pt iPhone canvas. Gaps between platforms stay
-        // under the 115-pt max jump range; locked doors (65-pt tall) block
-        // forward travel because the player's 72-pt jump peak can't clear
-        // them even with the gap open.
-        createPlatform(at: CGPoint(x: 50, y: groundY), size: CGSize(width: 80, height: 30))
+        // Layout fits a 390-pt logical course and is centered on wider devices.
+        // Locked doors block forward travel until the notification event unlocks
+        // each segment; the final platform no longer drifts to the iPad edge.
+        createPlatform(at: CGPoint(x: courseX(50), y: groundY), size: CGSize(width: courseLen(80), height: 30))
 
-        createPlatform(at: CGPoint(x: 160, y: groundY), size: CGSize(width: 60, height: 30))
-        doors.append(createLockedDoor(at: CGPoint(x: 190, y: groundY + 50), index: 0))
+        createPlatform(at: CGPoint(x: courseX(160), y: groundY), size: CGSize(width: courseLen(60), height: 30))
+        doors.append(createLockedDoor(at: CGPoint(x: courseX(190), y: groundY + 50), index: 0))
 
-        createPlatform(at: CGPoint(x: 260, y: groundY), size: CGSize(width: 60, height: 30))
-        doors.append(createLockedDoor(at: CGPoint(x: 290, y: groundY + 50), index: 1))
+        createPlatform(at: CGPoint(x: courseX(260), y: groundY), size: CGSize(width: courseLen(60), height: 30))
+        doors.append(createLockedDoor(at: CGPoint(x: courseX(290), y: groundY + 50), index: 1))
 
-        createPlatform(at: CGPoint(x: size.width - 45, y: groundY), size: CGSize(width: 70, height: 30))
-        createExitDoor(at: CGPoint(x: size.width - 35, y: groundY + 50))
+        createPlatform(at: CGPoint(x: courseX(345), y: groundY), size: CGSize(width: courseLen(70), height: 30))
+        createExitDoor(at: CGPoint(x: courseX(355), y: groundY + 50))
 
         // Death zone
         let deathZone = SKNode()
@@ -243,10 +299,10 @@ final class NotificationScene: BaseLevelScene, SKPhysicsContactDelegate {
         door.name = "locked_door_\(index)"
         addChild(door)
 
-        // Door frame — 85 pt tall so the top (y ≈ 252 above a plat at y=160)
-        // sits above the player's jump-apex body bottom (~247), guaranteeing
-        // the door cannot be cleared with a running jump before it unlocks.
-        let frame = SKShapeNode(rectOf: CGSize(width: 45, height: 85))
+        // Door frame/body must exceed Bit's audited ~91 pt jump apex from the
+        // platform top so locked doors cannot be cleared before they unlock.
+        let doorSize = CGSize(width: 45, height: 115)
+        let frame = SKShapeNode(rectOf: doorSize)
         frame.fillColor = fillColor
         frame.strokeColor = strokeColor
         frame.lineWidth = lineWidth * 1.2
@@ -274,7 +330,7 @@ final class NotificationScene: BaseLevelScene, SKPhysicsContactDelegate {
 
         // Blocking physics — must match frame height.
         let blocker = SKNode()
-        blocker.physicsBody = SKPhysicsBody(rectangleOf: CGSize(width: 45, height: 85))
+        blocker.physicsBody = SKPhysicsBody(rectangleOf: doorSize)
         blocker.physicsBody?.isDynamic = false
         blocker.physicsBody?.categoryBitMask = PhysicsCategory.ground
         blocker.name = "door_blocker"
@@ -284,9 +340,12 @@ final class NotificationScene: BaseLevelScene, SKPhysicsContactDelegate {
     }
 
     private func createNotificationUI() {
-        // Request notification button
+        // Request notification button. Anchored well below the title band
+        // (title bottom ≈ topSafeY-40) so the centered widget never collides with
+        // "LEVEL 11" on a 390/402-wide phone, and its 180-wide footprint
+        // (right edge = w/2+90) stays clear of the top-right pause column.
         notificationButton = SKNode()
-        notificationButton.position = CGPoint(x: size.width / 2, y: topSafeY - 70)
+        notificationButton.position = CGPoint(x: size.width / 2, y: topSafeY - 95)
         notificationButton.zPosition = 200
         addChild(notificationButton)
 
@@ -337,8 +396,11 @@ final class NotificationScene: BaseLevelScene, SKPhysicsContactDelegate {
     }
 
     private func showInstructionPanel() {
+        // Centered mid-screen so the 260x100 panel sits well below the
+        // topSafeY-anchored notification stack (button / waiting / faux) on every
+        // device and never overlaps it.
         instructionPanel = SKNode()
-        instructionPanel?.position = CGPoint(x: size.width / 2, y: size.height / 2 + 100)
+        instructionPanel?.position = CGPoint(x: size.width / 2, y: size.height / 2)
         instructionPanel?.zPosition = 300
         addChild(instructionPanel!)
 
@@ -379,7 +441,7 @@ final class NotificationScene: BaseLevelScene, SKPhysicsContactDelegate {
     // MARK: - Setup
 
     private func setupBit() {
-        spawnPoint = CGPoint(x: 50, y: 200)
+        spawnPoint = CGPoint(x: courseX(50), y: 200)
         bit = BitCharacter.make()
         bit.position = spawnPoint
         addChild(bit)
@@ -401,22 +463,32 @@ final class NotificationScene: BaseLevelScene, SKPhysicsContactDelegate {
         let notificationBody = fourthWallMessages[messageIndex]
         notificationRequestCount += 1
 
-        // If this is the 3rd+ request, auto-unlock (the game gives up)
-        if messageIndex == fourthWallMessages.count - 1 {
+        // The genuine unlock signal — always from the "GLITCHED" sender.
+        // If this is the 3rd+ request, auto-unlock faster (the game gives up).
+        let realDelay: TimeInterval = (messageIndex == fourthWallMessages.count - 1) ? 2.0 : 3.0
+        NotificationGameManager.shared.scheduleNotification(
+            id: id,
+            title: "GLITCHED",
+            body: notificationBody,
+            delay: realDelay,
+            isCorrect: true
+        )
+
+        // REAL CHOICE: fan out a decoy alert that *looks* like a one-tap unlock
+        // but is a spoof (wrong title "SYSTEM", isCorrect=false). The player must
+        // read and tap the genuine GLITCHED message; tapping the decoy has a
+        // consequence (see handleGameInput). Skip on the give-up auto-unlock so
+        // the escape valve stays frustration-free.
+        if messageIndex < fourthWallMessages.count - 1 {
+            let decoyId = "door_decoy_\(currentDoorIndex)_\(Date().timeIntervalSince1970)"
+            decoyNotificationId = decoyId
+            let decoyBody = decoyMessages[min(messageIndex, decoyMessages.count - 1)]
             NotificationGameManager.shared.scheduleNotification(
-                id: id,
-                title: "GLITCHED",
-                body: notificationBody,
-                delay: 2.0,
-                isCorrect: true
-            )
-        } else {
-            NotificationGameManager.shared.scheduleNotification(
-                id: id,
-                title: "GLITCHED",
-                body: notificationBody,
-                delay: 3.0,
-                isCorrect: true
+                id: decoyId,
+                title: "SYSTEM",
+                body: decoyBody,
+                delay: max(0.5, realDelay - 1.0),
+                isCorrect: false
             )
         }
 
@@ -449,7 +521,7 @@ final class NotificationScene: BaseLevelScene, SKPhysicsContactDelegate {
         label.fontName = "Menlo-Bold"
         label.fontSize = 10
         label.fontColor = strokeColor
-        label.position = CGPoint(x: size.width / 2, y: size.height / 2 + 50)
+        label.position = CGPoint(x: size.width / 2, y: size.height / 2 + 90)
         label.zPosition = 500
         label.alpha = 0
         addChild(label)
@@ -471,8 +543,13 @@ final class NotificationScene: BaseLevelScene, SKPhysicsContactDelegate {
     private func showFauxNotification() {
         fauxNotificationNode?.removeFromParent()
 
+        // Sits in its own band beneath the waiting indicator (topSafeY-150) so the
+        // two never overlap when both are on screen in the permission-denied flow.
+        // At topSafeY-210 the 280x60 panel is far below the top-right pause column's
+        // y-band, so its width can't intrude on the pause zone, and it clears the
+        // mid-screen instruction panel.
         let notif = SKNode()
-        notif.position = CGPoint(x: size.width / 2, y: topSafeY - 150)
+        notif.position = CGPoint(x: size.width / 2, y: topSafeY - 210)
         notif.zPosition = 600
         notif.name = "fauxNotification"
 
@@ -515,8 +592,10 @@ final class NotificationScene: BaseLevelScene, SKPhysicsContactDelegate {
     }
 
     private func showWaitingIndicator() {
+        // Below the request button (bottom ≈ topSafeY-120) and above the faux
+        // notification (topSafeY-210), giving each a clear band.
         waitingIndicator = SKNode()
-        waitingIndicator?.position = CGPoint(x: size.width / 2, y: topSafeY - 130)
+        waitingIndicator?.position = CGPoint(x: size.width / 2, y: topSafeY - 150)
         waitingIndicator?.zPosition = 200
         addChild(waitingIndicator!)
 
@@ -573,6 +652,7 @@ final class NotificationScene: BaseLevelScene, SKPhysicsContactDelegate {
         waitingIndicator?.removeFromParent()
         waitingIndicator = nil
         pendingNotificationId = nil
+        decoyNotificationId = nil
 
         currentDoorIndex += 1
 
@@ -580,13 +660,52 @@ final class NotificationScene: BaseLevelScene, SKPhysicsContactDelegate {
         generator.notificationOccurred(.success)
     }
 
+    /// Wrong-option consequence: tapping the spoofed "SYSTEM" alert cancels the
+    /// current attempt and forces the player to re-request the genuine signal.
+    /// Keeps the puzzle a real read-and-choose rather than a one-tap ceremony,
+    /// but is fully recoverable (re-tap the bell).
+    private func handleDecoyTapped() {
+        // Only meaningful while still working the current locked door.
+        guard currentDoorIndex < doors.count, doorStates[currentDoorIndex] == false else { return }
+
+        decoyNotificationId = nil
+        // Re-arm: clearing the pending id lets requestNotification() run again.
+        pendingNotificationId = nil
+        waitingIndicator?.removeFromParent()
+        waitingIndicator = nil
+
+        fourthWallLabel?.removeFromParent()
+        let label = SKLabelNode(text: "THAT WASN'T ME. TAP THE BELL AGAIN.")
+        label.fontName = "Menlo-Bold"
+        label.fontSize = 11
+        label.fontColor = strokeColor
+        label.position = CGPoint(x: size.width / 2, y: size.height / 2 + 90)
+        label.zPosition = 500
+        label.alpha = 0
+        addChild(label)
+        fourthWallLabel = label
+        label.run(.sequence([
+            .fadeIn(withDuration: 0.25),
+            .wait(forDuration: 3.0),
+            .fadeOut(withDuration: 0.4),
+            .removeFromParent()
+        ]))
+
+        let generator = UINotificationFeedbackGenerator()
+        generator.notificationOccurred(.error)
+    }
+
     // MARK: - Input Handling
 
     override func handleGameInput(_ event: GameInputEvent) {
         switch event {
         case .notificationTapped(let id, let isCorrect):
-            if id == pendingNotificationId && isCorrect {
+            let isFallbackTap = id == "fallback" && AccessibilityManager.shared.needsFallbackUI(for: .notification)
+            if isCorrect && (id == pendingNotificationId || isFallbackTap) {
                 unlockCurrentDoor()
+            } else if id == decoyNotificationId {
+                // Player tapped the spoofed alert — wrong choice, with consequence.
+                handleDecoyTapped()
             }
         default:
             break
@@ -666,6 +785,8 @@ final class NotificationScene: BaseLevelScene, SKPhysicsContactDelegate {
     }
 
     private func handleExit() {
+        guard GameState.shared.levelState == .playing, doorStates.allSatisfy({ $0 }) else { return }
+
         succeedLevel()
         bit.removeAllActions()
         bit.run(.sequence([.fadeOut(withDuration: 0.5), .run { [weak self] in self?.transitionToNextLevel() }]))
@@ -682,6 +803,10 @@ final class NotificationScene: BaseLevelScene, SKPhysicsContactDelegate {
 
     override func willMove(from view: SKView) {
         super.willMove(from: view)
+        if let foregroundObserver {
+            NotificationCenter.default.removeObserver(foregroundObserver)
+            self.foregroundObserver = nil
+        }
         DeviceManagerCoordinator.shared.deactivateAll()
     }
 }

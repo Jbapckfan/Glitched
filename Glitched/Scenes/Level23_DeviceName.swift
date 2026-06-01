@@ -407,11 +407,26 @@ final class DeviceNameScene: BaseLevelScene, SKPhysicsContactDelegate {
 
     private func showInstructionPanel() {
         let panel = SKNode()
-        panel.position = CGPoint(x: size.width / 2, y: topSafeY - 90)
+        // FIX (HUD overlap audit): the 320-wide box centered at topSafeY-130 had
+        // its TOP edge at only topSafeY-90 — still inside the reserved top-right
+        // PAUSE vertical band (which runs from the top down to ~topSafeY-115) —
+        // and on iPhone 390 its rect x[195-160, 195+160] = x[35,355] pushed its
+        // RIGHT edge (355) into the pause column x[300,390], so "I KNOW WHO YOU
+        // ARE." ran under the pause button. Systemic fix (matches L19/L7):
+        //   (1) DROP the panel: center topSafeY-165, box 80 tall -> top edge
+        //       topSafeY-125, fully below the ~topSafeY-115/-120 pause bottom.
+        //   (2) NARROW the box 320 -> 220: on iPhone 390 rect x[195-110,195+110]
+        //       = x[85,305], so the right edge clears the pause column (x>=300)
+        //       and the left edge clears the LEVEL 23 title (left-anchored at
+        //       x=80, ~ x[80,180]). The longest line "I KNOW WHO YOU ARE." (19
+        //       Menlo-Bold @12 ≈ 137pt) still fits the ~180pt usable interior.
+        // On iPad 1024 the centered box (x[402,622]) is nowhere near the title
+        // (left) or pause (right) columns. Still well above the gameplay/Bit.
+        panel.position = CGPoint(x: size.width / 2, y: topSafeY - 165)
         panel.zPosition = 300
         addChild(panel)
 
-        let bg = SKShapeNode(rectOf: CGSize(width: 320, height: 80), cornerRadius: 8)
+        let bg = SKShapeNode(rectOf: CGSize(width: 220, height: 80), cornerRadius: 8)
         bg.fillColor = fillColor
         bg.strokeColor = strokeColor
         panel.addChild(bg)
@@ -477,7 +492,11 @@ final class DeviceNameScene: BaseLevelScene, SKPhysicsContactDelegate {
         greeting.fontName = "Menlo-Bold"
         greeting.fontSize = 10
         greeting.fontColor = strokeColor
-        greeting.position = CGPoint(x: size.width / 2, y: topSafeY - 130)
+        // Sit below the dropped instruction panel's bottom edge (now ~topSafeY-205
+        // after the panel moved to center topSafeY-165) so the greeting/follow-up
+        // commentary never overlaps the panel if their lifetimes briefly coincide
+        // (the panel lingers 5s; the fallback name also fires at 5s).
+        greeting.position = CGPoint(x: size.width / 2, y: topSafeY - 225)
         greeting.zPosition = 300
         addChild(greeting)
 
@@ -485,7 +504,7 @@ final class DeviceNameScene: BaseLevelScene, SKPhysicsContactDelegate {
         followUp.fontName = "Menlo"
         followUp.fontSize = 9
         followUp.fontColor = strokeColor
-        followUp.position = CGPoint(x: size.width / 2, y: topSafeY - 145)
+        followUp.position = CGPoint(x: size.width / 2, y: topSafeY - 243)
         followUp.zPosition = 300
         followUp.alpha = 0
         addChild(followUp)

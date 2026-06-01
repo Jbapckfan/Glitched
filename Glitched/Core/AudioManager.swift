@@ -17,6 +17,10 @@ final class AudioManager {
     private var currentAmbientWorld: World?
     private var isAmbientPaused = false
 
+    // Generation token so a stale background synth can't crossfade in after a newer world request.
+    private var ambientRequestToken = 0
+    private let ambientSynthQueue = DispatchQueue(label: "com.glitched.audio.ambientSynth", qos: .userInitiated)
+
     private var isMuted = false
     private var sfxVolume: Float = 0.7
     private var musicVolume: Float = 0.7
@@ -352,27 +356,45 @@ final class AudioManager {
             return
         }
 
-        let nextIndex = activeAmbientIndex == 0 ? 1 : 0
-        let nextPlayer = ambientPlayers[nextIndex]
-        let previousPlayer = ambientPlayers[activeAmbientIndex]
         let format = engine.mainMixerNode.outputFormat(forBus: 0)
 
-        nextPlayer.stop()
-        nextPlayer.reset()
-        nextPlayer.volume = 0
+        // Bump the request token; an in-flight synth for an older world becomes stale.
+        ambientRequestToken &+= 1
+        let token = ambientRequestToken
 
-        guard let buffer = makeAmbientBuffer(for: world, format: format, duration: 8.0) else { return }
-        nextPlayer.scheduleBuffer(buffer, at: nil, options: [.loops])
-        nextPlayer.play()
+        // Synthesizing ~8s of audio is expensive; do it off the main thread so world
+        // transitions don't hitch. Hop back to main only to schedule/play/crossfade.
+        ambientSynthQueue.async { [weak self] in
+            guard let self else { return }
+            let buffer = self.makeAmbientBuffer(for: world, format: format, duration: 8.0)
 
-        rampVolume(for: nextPlayer, to: musicVolume, duration: 0.8)
-        rampVolume(for: previousPlayer, to: 0, duration: 0.8) { [weak previousPlayer] in
-            previousPlayer?.stop()
+            DispatchQueue.main.async {
+                guard let buffer else { return }
+                // A newer request (different world, or stop) superseded this synth — drop it.
+                guard token == self.ambientRequestToken, !self.isMuted,
+                      self.audioEngine != nil else { return }
+
+                let nextIndex = self.activeAmbientIndex == 0 ? 1 : 0
+                let nextPlayer = self.ambientPlayers[nextIndex]
+                let previousPlayer = self.ambientPlayers[self.activeAmbientIndex]
+
+                nextPlayer.stop()
+                nextPlayer.reset()
+                nextPlayer.volume = 0
+
+                nextPlayer.scheduleBuffer(buffer, at: nil, options: [.loops])
+                nextPlayer.play()
+
+                self.rampVolume(for: nextPlayer, to: self.musicVolume, duration: 0.8)
+                self.rampVolume(for: previousPlayer, to: 0, duration: 0.8) { [weak previousPlayer] in
+                    previousPlayer?.stop()
+                }
+
+                self.activeAmbientIndex = nextIndex
+                self.currentAmbientWorld = world
+                self.isAmbientPaused = false
+            }
         }
-
-        activeAmbientIndex = nextIndex
-        currentAmbientWorld = world
-        isAmbientPaused = false
     }
 
     func pauseAmbientBed() {
@@ -389,6 +411,9 @@ final class AudioManager {
     }
 
     func stopAmbientBed(fadeDuration: TimeInterval = 0.4) {
+        // Invalidate any in-flight background synth so it can't crossfade in after a stop.
+        ambientRequestToken &+= 1
+
         guard !ambientPlayers.isEmpty else {
             currentAmbientWorld = nil
             isAmbientPaused = false

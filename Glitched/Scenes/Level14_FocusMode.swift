@@ -16,12 +16,19 @@ final class FocusModeScene: BaseLevelScene, SKPhysicsContactDelegate {
     private var hazards: [SKNode] = []
     private var moonIcon: SKNode!
     private var isFocusEnabled = false
+    private var hasFocusedOnce = false
     private var exitDoorLocked = true
     private var exitBlocker: SKNode?
     private var calmOverlay: SKShapeNode?
     private var focusTextLabel: SKLabelNode?
     private var orbitalAngles: [Int: CGFloat] = [:]  // hazard index -> current angle
     private var orbitalCenters: [Int: CGPoint] = [:]   // hazard index -> orbit center
+    private let designWidth: CGFloat = 390
+
+    private var courseScale: CGFloat { min(1.0, size.width / designWidth) }
+    private var courseOriginX: CGFloat { (size.width - designWidth * courseScale) / 2 }
+    private func courseX(_ logicalX: CGFloat) -> CGFloat { courseOriginX + logicalX * courseScale }
+    private func courseLen(_ logical: CGFloat) -> CGFloat { logical * courseScale }
 
     override func configureScene() {
         levelID = LevelID(world: .world2, index: 14)
@@ -80,14 +87,16 @@ final class FocusModeScene: BaseLevelScene, SKPhysicsContactDelegate {
     private func buildLevel() {
         let groundY: CGFloat = 160
 
-        // Fits a 390-pt iPhone canvas. Each gap ≤ 30 pt; the rise/drop of
-        // 50 pt is inside the 72-pt max jump height.
-        createPlatform(at: CGPoint(x: 50, y: groundY), size: CGSize(width: 80, height: 30))
-        createPlatform(at: CGPoint(x: 145, y: groundY + 50), size: CGSize(width: 70, height: 25))
-        createPlatform(at: CGPoint(x: 245, y: groundY + 50), size: CGSize(width: 70, height: 25))
-        createPlatform(at: CGPoint(x: size.width - 50, y: groundY), size: CGSize(width: 80, height: 30))
+        // Fits a 390-pt logical course and centers that course on wider devices.
+        // The previous layout kept the stepping stones fixed near the left edge
+        // but pinned the exit to size.width, creating an impossible iPad gap.
+        // Each rise/drop is 50 pt, safely under the corrected ~91 pt jump apex.
+        createPlatform(at: CGPoint(x: courseX(50), y: groundY), size: CGSize(width: courseLen(80), height: 30))
+        createPlatform(at: CGPoint(x: courseX(145), y: groundY + 50), size: CGSize(width: courseLen(70), height: 25))
+        createPlatform(at: CGPoint(x: courseX(245), y: groundY + 50), size: CGSize(width: courseLen(70), height: 25))
+        createPlatform(at: CGPoint(x: courseX(340), y: groundY), size: CGSize(width: courseLen(80), height: 30))
 
-        createExitDoor(at: CGPoint(x: size.width - 40, y: groundY + 50))
+        createExitDoor(at: CGPoint(x: courseX(350), y: groundY + 50))
 
         let death = SKNode()
         death.position = CGPoint(x: size.width / 2, y: -50)
@@ -119,29 +128,29 @@ final class FocusModeScene: BaseLevelScene, SKPhysicsContactDelegate {
         // platform 2's surface (top y ≈ 222.5) so it threatens high jumps
         // rather than sitting on the landing spot.
         let h0 = createSpike()
-        h0.position = CGPoint(x: 120, y: 260)
+        h0.position = CGPoint(x: courseX(120), y: 260)
         h0.name = "hazard_0"
         addChild(h0)
         hazards.append(h0)
         h0.run(.repeatForever(.sequence([
-            .moveBy(x: 40, y: 0, duration: 2.0),
-            .moveBy(x: -40, y: 0, duration: 2.0)
+            .moveBy(x: courseLen(40), y: 0, duration: 2.0),
+            .moveBy(x: -courseLen(40), y: 0, duration: 2.0)
         ])), withKey: "movement")
 
         // Hazard 1: Horizontal oscillation (fast)
         let h1 = createSpike()
-        h1.position = CGPoint(x: 210, y: 260)
+        h1.position = CGPoint(x: courseX(210), y: 260)
         h1.name = "hazard_1"
         addChild(h1)
         hazards.append(h1)
         h1.run(.repeatForever(.sequence([
-            .moveBy(x: 70, y: 0, duration: 1.0),
-            .moveBy(x: -70, y: 0, duration: 1.0)
+            .moveBy(x: courseLen(70), y: 0, duration: 1.0),
+            .moveBy(x: -courseLen(70), y: 0, duration: 1.0)
         ])), withKey: "movement")
 
         // Hazard 2: Vertical oscillation
         let h2 = createSpike()
-        h2.position = CGPoint(x: 160, y: 275)
+        h2.position = CGPoint(x: courseX(160), y: 275)
         h2.name = "hazard_2"
         addChild(h2)
         hazards.append(h2)
@@ -152,7 +161,7 @@ final class FocusModeScene: BaseLevelScene, SKPhysicsContactDelegate {
 
         // Hazard 3: Vertical oscillation (offset)
         let h3 = createSpike()
-        h3.position = CGPoint(x: 260, y: 310)
+        h3.position = CGPoint(x: courseX(260), y: 310)
         h3.name = "hazard_3"
         addChild(h3)
         hazards.append(h3)
@@ -163,20 +172,20 @@ final class FocusModeScene: BaseLevelScene, SKPhysicsContactDelegate {
 
         // Hazard 4: Orbital/circular movement
         let h4 = createSpike()
-        h4.position = CGPoint(x: 180, y: 290)
+        h4.position = CGPoint(x: courseX(180), y: 290)
         h4.name = "hazard_4"
         addChild(h4)
         hazards.append(h4)
-        orbitalCenters[4] = CGPoint(x: 180, y: 290)
+        orbitalCenters[4] = CGPoint(x: courseX(180), y: 290)
         orbitalAngles[4] = 0
 
         // Hazard 5: Orbital/circular movement (opposite phase)
         let h5 = createSpike()
-        h5.position = CGPoint(x: 285, y: 290)
+        h5.position = CGPoint(x: courseX(285), y: 290)
         h5.name = "hazard_5"
         addChild(h5)
         hazards.append(h5)
-        orbitalCenters[5] = CGPoint(x: 285, y: 290)
+        orbitalCenters[5] = CGPoint(x: courseX(285), y: 290)
         orbitalAngles[5] = .pi
     }
 
@@ -204,7 +213,12 @@ final class FocusModeScene: BaseLevelScene, SKPhysicsContactDelegate {
 
     private func createFocusIndicator() {
         moonIcon = createMoonIcon(size: 25)
-        moonIcon.position = CGPoint(x: size.width - 50, y: topSafeY - 20)
+        // Focus status indicator. Previously top-RIGHT (x[w-75,w-25], y[T-45,T+5])
+        // which sat inside the reserved top-right 88x88 PAUSE zone (x[w-88,w],
+        // y[T-88,T]). Moved to the top-LEFT corner, left of the title (title
+        // x[80,203]) and above the relocated instruction panel (panel top now
+        // T-70), so it overlaps neither TITLE, PAUSE, nor the panel.
+        moonIcon.position = CGPoint(x: 35, y: topSafeY - 20)
         moonIcon.zPosition = 200
         addChild(moonIcon)
 
@@ -225,11 +239,18 @@ final class FocusModeScene: BaseLevelScene, SKPhysicsContactDelegate {
 
     private func createDNDToggleButton() {
         let button = SKNode()
-        button.position = CGPoint(x: 60, y: topSafeY - 20)
+        // "CAN'T DO THIS?" manual fallback affordance. Previously a top-LEFT HUD
+        // widget at (60, T-20) -> bg x[10,110], y[T-38,T-2], which overlapped the
+        // TITLE band (title x[80,203], y[T-32,T-8]). Moved to a distinct
+        // BOTTOM-TRAILING zone, clear of the top-right pause button, the title,
+        // the moon HUD indicator (top-left), and the exit area (mid-level).
+        let buttonW: CGFloat = 130
+        let buttonH: CGFloat = 36
+        button.position = CGPoint(x: size.width - 16 - buttonW / 2, y: bottomSafeY + 40)
         button.zPosition = 200
         button.name = "dndToggle"
 
-        let bg = SKShapeNode(rectOf: CGSize(width: 100, height: 36), cornerRadius: 8)
+        let bg = SKShapeNode(rectOf: CGSize(width: buttonW, height: buttonH), cornerRadius: 8)
         bg.fillColor = fillColor
         bg.strokeColor = strokeColor
         bg.lineWidth = lineWidth
@@ -237,16 +258,17 @@ final class FocusModeScene: BaseLevelScene, SKPhysicsContactDelegate {
         button.addChild(bg)
 
         let icon = createMoonIcon(size: 10)
-        icon.position = CGPoint(x: -30, y: 0)
+        icon.position = CGPoint(x: -buttonW / 2 + 18, y: 0)
         icon.name = "dndToggle"
         button.addChild(icon)
 
-        let label = SKLabelNode(text: "DND")
+        let label = SKLabelNode(text: "CAN'T DO THIS?")
         label.fontName = "Menlo-Bold"
-        label.fontSize = 11
+        label.fontSize = 10
         label.fontColor = strokeColor
         label.verticalAlignmentMode = .center
-        label.position = CGPoint(x: 10, y: 0)
+        label.horizontalAlignmentMode = .center
+        label.position = CGPoint(x: 12, y: 0)
         label.name = "dndToggle"
         button.addChild(label)
 
@@ -289,11 +311,24 @@ final class FocusModeScene: BaseLevelScene, SKPhysicsContactDelegate {
 
     private func showInstructionPanel() {
         let panel = SKNode()
-        panel.position = CGPoint(x: size.width / 2, y: topSafeY - 90)
+        // Centered discovery panel. The reserved top-right PAUSE zone (~88x88,
+        // iPhone 390 x[300,390]) extends DOWN to ~T-115. The previous center
+        // y=T-110 left the 80-tall box spanning y[T-150,T-70], so its TOP edge
+        // (T-70) sat well inside the pause band AND its right edge (280-wide ->
+        // x[55,335]) crossed into the pause column [300,390] -> the
+        // "THE NOISE NEVER STOPS" line ran under the PAUSE button.
+        // Fix (systemic rule): drop the center to T-160 so the box spans
+        // y[T-200,T-120] -> TOP edge at T-120, at/below the pause button bottom
+        // (~T-115) -> clear of PAUSE; and narrow the box 280 -> 240 so on
+        // iPhone 390 it spans x[75,315] (right edge no longer reaches the
+        // pause column, and being below T-120 clears it vertically anyway).
+        // Bottom edge T-200 stays well above the hazards (y 260-310) and Bit
+        // (spawn y 200) on iPhone 390/402 and iPad 1024 -> above gameplay.
+        panel.position = CGPoint(x: size.width / 2, y: topSafeY - 160)
         panel.zPosition = 300
         addChild(panel)
 
-        let bg = SKShapeNode(rectOf: CGSize(width: 280, height: 80), cornerRadius: 8)
+        let bg = SKShapeNode(rectOf: CGSize(width: 240, height: 80), cornerRadius: 8)
         bg.fillColor = fillColor
         bg.strokeColor = strokeColor
         panel.addChild(bg)
@@ -316,7 +351,7 @@ final class FocusModeScene: BaseLevelScene, SKPhysicsContactDelegate {
     }
 
     private func setupBit() {
-        spawnPoint = CGPoint(x: 50, y: 200)
+        spawnPoint = CGPoint(x: courseX(50), y: 200)
         bit = BitCharacter.make()
         bit.position = spawnPoint
         addChild(bit)
@@ -326,6 +361,9 @@ final class FocusModeScene: BaseLevelScene, SKPhysicsContactDelegate {
 
     private func updateFocusState(_ enabled: Bool) {
         isFocusEnabled = enabled
+
+        // Latch: once Focus has ever been active, the exit stays unlocked.
+        if enabled { hasFocusedOnce = true }
 
         // Freeze/unfreeze hazards
         for hazard in hazards {
@@ -341,14 +379,11 @@ final class FocusModeScene: BaseLevelScene, SKPhysicsContactDelegate {
         // Update moon icon
         moonIcon.alpha = enabled ? 1.0 : 0.3
 
-        // Exit door - only passable when Focus is OFF
-        if enabled {
-            exitDoorLocked = true
-            exitBlocker?.physicsBody?.categoryBitMask = PhysicsCategory.ground
-        } else {
-            exitDoorLocked = false
-            exitBlocker?.physicsBody?.categoryBitMask = 0
-        }
+        // Exit door - unlocks only after Focus has been active (LEVEL-GUIDE l.146).
+        // Turn Focus ON -> hazards freeze AND the latch opens the gate, so the
+        // player walks out through the frozen hazards.
+        exitDoorLocked = !hasFocusedOnce
+        exitBlocker?.physicsBody?.categoryBitMask = exitDoorLocked ? PhysicsCategory.ground : 0
 
         // 4th-wall text
         if enabled {
@@ -436,7 +471,7 @@ final class FocusModeScene: BaseLevelScene, SKPhysicsContactDelegate {
 
         // Update orbital hazards (indices 4 and 5)
         guard !isFocusEnabled else { return }
-        let orbitalRadius: CGFloat = 40
+        let orbitalRadius: CGFloat = courseLen(40)
         let orbitalSpeed: CGFloat = 2.0
 
         for index in [4, 5] {

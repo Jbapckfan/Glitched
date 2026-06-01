@@ -51,6 +51,19 @@ final class StaticScene: BaseLevelScene, SKPhysicsContactDelegate {
     private let noiseThresholdToBlock: Float = 0.25  // Noise above this blocks lasers
     private var lasersBlocked: Bool = false
 
+    // CHARM / fallback: each noise input opens a brief "shield hold" before the
+    // level decays. On a real device the mic streams continuously so the hold is
+    // constantly refreshed (no behavior change). For the accessibility / "CAN'T
+    // DO THIS?" fallback — which posts a SINGLE .micLevelChanged(power: 0.8) pulse
+    // — the raw 2.5/sec decay gave only ~0.2s of shield (too short to cross even
+    // one laser, making the fallback effectively unbeatable). Holding the noise
+    // floor for `noiseHoldDuration` after the last input gives a single tap a
+    // usable, traversable window. Silence is still reachable after the hold +
+    // decay, so the INVERSE 4th laser (silence = safe) stays solvable on fallback.
+    private var noiseHoldRemaining: TimeInterval = 0
+    private let noiseHoldDuration: TimeInterval = 1.4
+    private let noiseHoldFloor: Float = 0.45  // comfortably above noiseThresholdToBlock
+
     // 4th-wall commentary
     private var hasShownNeighborText = false
 
@@ -410,7 +423,50 @@ final class StaticScene: BaseLevelScene, SKPhysicsContactDelegate {
             if let light = laserEmitters[inverseLaserIndex].childNode(withName: "warning_light") as? SKShapeNode {
                 light.fillColor = strokeColor.withAlphaComponent(0.2)
             }
+
+            // CHARM: make the inverse rule discoverable IN-WORLD. The 4th laser is
+            // dashed AND tagged so the player can read that this barrier reverses:
+            // noise arms it, silence clears it (opposite of the first three).
+            addInverseLaserClue(on: laserEmitters[inverseLaserIndex])
         }
+    }
+
+    /// A small placard mounted on the 4th laser's emitter that teaches its inverse
+    /// behavior before the player commits to crossing — the rule is no longer hidden.
+    private func addInverseLaserClue(on emitter: SKNode) {
+        let badge = SKNode()
+        badge.zPosition = 30
+        badge.position = CGPoint(x: 0, y: 34 * visualScale)
+
+        let plate = SKShapeNode(rectOf: CGSize(width: 86 * visualScale, height: 34 * visualScale), cornerRadius: 4 * visualScale)
+        plate.fillColor = fillColor
+        plate.strokeColor = strokeColor
+        plate.lineWidth = lineWidth * 0.8
+        badge.addChild(plate)
+
+        let top = SKLabelNode(text: "INVERSE")
+        top.fontName = "Menlo-Bold"
+        top.fontSize = 9 * visualScale
+        top.fontColor = strokeColor
+        top.verticalAlignmentMode = .center
+        top.position = CGPoint(x: 0, y: 8 * visualScale)
+        badge.addChild(top)
+
+        let bottom = SKLabelNode(text: "QUIET = SAFE")
+        bottom.fontName = "Menlo"
+        bottom.fontSize = 8 * visualScale
+        bottom.fontColor = strokeColor
+        bottom.verticalAlignmentMode = .center
+        bottom.position = CGPoint(x: 0, y: -7 * visualScale)
+        badge.addChild(bottom)
+
+        // Gentle pulse to draw the eye to the rule reversal.
+        badge.run(.repeatForever(.sequence([
+            .fadeAlpha(to: 0.55, duration: 0.9),
+            .fadeAlpha(to: 1.0, duration: 0.9)
+        ])))
+
+        emitter.addChild(badge)
     }
 
     private func createLaser(from start: CGPoint, to end: CGPoint, index: Int) {
@@ -586,7 +642,13 @@ final class StaticScene: BaseLevelScene, SKPhysicsContactDelegate {
 
     private func showInstructionPanel() {
         instructionPanel = SKNode()
-        instructionPanel?.position = CGPoint(x: size.width / 2, y: size.height - 130 * layoutYScale)
+        // Anchored BELOW the top-left "LEVEL 3" title band (offset 160 vs the
+        // title's 60) so the centered 230-wide panel never overlaps the title /
+        // underline rect on iPhone 390/402 (where x[91,299] previously abutted the
+        // title's x[73,179] with a ~0pt vertical gap). Top-right pause zone and the
+        // bottom-trailing fallback affordance are unaffected (panel is centered,
+        // high, and far from both). See updatePlaying() for the inverse-laser clue.
+        instructionPanel?.position = CGPoint(x: size.width / 2, y: size.height - 160 * layoutYScale)
         instructionPanel?.setScale(visualScale)
         instructionPanel?.zPosition = 300
         addChild(instructionPanel!)
@@ -734,12 +796,25 @@ final class StaticScene: BaseLevelScene, SKPhysicsContactDelegate {
     override func updatePlaying(deltaTime: TimeInterval) {
         playerController.update()
 
+        // Shield hold (see noiseHoldRemaining): keep the noise floor up for a
+        // short, traversable window after the last input, then decay toward
+        // silence. This makes the single-pulse accessibility fallback actually
+        // beatable while leaving real continuous-mic behavior unchanged (the mic
+        // refreshes both currentNoiseLevel and the hold every frame).
+        if noiseHoldRemaining > 0 {
+            noiseHoldRemaining = max(0, noiseHoldRemaining - deltaTime)
+            if currentNoiseLevel < noiseHoldFloor {
+                currentNoiseLevel = noiseHoldFloor
+            }
+            updateLaserState()
+        }
+
         // Decay noise toward silence so the shield fades without fresh input.
         // On-device the mic streams continuously, so sustained blowing keeps the
         // level high; this matters for the accessibility/simulator fallback, whose
         // wind button posts a single pulse — without decay the inverse laser (#4)
         // would stay armed forever and the level would be uncompletable.
-        if currentNoiseLevel > 0 {
+        if noiseHoldRemaining <= 0 && currentNoiseLevel > 0 {
             currentNoiseLevel = max(0, currentNoiseLevel - Float(deltaTime) * 2.5)
             updateLaserState()
         }
@@ -753,6 +828,11 @@ final class StaticScene: BaseLevelScene, SKPhysicsContactDelegate {
         switch event {
         case .micLevelChanged(let power):
             currentNoiseLevel = power
+            // Open / refresh the shield hold whenever meaningful noise arrives so a
+            // single fallback pulse yields a usable, traversable shield window.
+            if power > noiseThresholdToBlock {
+                noiseHoldRemaining = noiseHoldDuration
+            }
             updateLaserState()
 
             if power > noiseThresholdToBlock {
@@ -852,7 +932,10 @@ final class StaticScene: BaseLevelScene, SKPhysicsContactDelegate {
     }
 
     override func hintText() -> String? {
-        return "Make noise to turn static into a shield."
+        // CHARM: the old hint ("noise = shield") was actively LETHAL at the 4th
+        // barrier, which is INVERSE — there, noise arms the laser and silence
+        // clears it. Teach both halves so the hint never kills the player.
+        return "Noise blocks the first lasers. The dashed 4th is INVERSE — go SILENT to pass it."
     }
 
     // MARK: - Cleanup

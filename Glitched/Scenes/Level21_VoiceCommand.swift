@@ -295,7 +295,14 @@ final class VoiceCommandScene: BaseLevelScene, SKPhysicsContactDelegate {
 
     private func createMicIndicator() {
         let container = SKNode()
-        container.position = CGPoint(x: size.width - 50, y: topSafeY - 20)
+        // Tuck the mic indicator into the trailing column BELOW the reserved
+        // top-right pause-button zone (which extends down to ~topSafeY-52) and
+        // below the centered instruction panel band (bottom ~topSafeY-130), so
+        // its ~21pt pulse radius never overlaps the pause button, the title,
+        // the instruction panel, or the fourth-wall labels on iPhone
+        // (390x844 / 402x874) or iPad (1024x1366). Previously at topSafeY-20 it
+        // sat directly under the pause button.
+        container.position = CGPoint(x: size.width - 34, y: topSafeY - 160)
         container.zPosition = 200
 
         // Mic body
@@ -345,11 +352,20 @@ final class VoiceCommandScene: BaseLevelScene, SKPhysicsContactDelegate {
 
     private func showInstructionPanel() {
         let panel = SKNode()
-        panel.position = CGPoint(x: size.width / 2, y: topSafeY - 90)
+        // Drop the panel BELOW the reserved top-right pause-button zone (which
+        // extends down to ~topSafeY-115). The box is 80 pt tall, so a center at
+        // topSafeY-160 puts its top edge at topSafeY-120 — clear of the pause
+        // button bottom. It is also narrowed (320 -> 260) and stays centered, so
+        // on iPhone 390 the box spans x[65,325]: its right edge (325) clears the
+        // top-right pause column (x[300,390] / mic at x~335-377) and its left
+        // edge (65) clears the top-left LEVEL 21 title. On iPad (1024) the panel
+        // is centered with even more margin. Still above the gameplay/Bit, and
+        // fades out after 5 s as before — the mechanic is unchanged.
+        panel.position = CGPoint(x: size.width / 2, y: topSafeY - 160)
         panel.zPosition = 300
         addChild(panel)
 
-        let bg = SKShapeNode(rectOf: CGSize(width: 320, height: 80), cornerRadius: 8)
+        let bg = SKShapeNode(rectOf: CGSize(width: 260, height: 80), cornerRadius: 8)
         bg.fillColor = fillColor
         bg.strokeColor = strokeColor
         panel.addChild(bg)

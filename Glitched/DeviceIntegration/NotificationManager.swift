@@ -129,6 +129,15 @@ final class NotificationGameManager: DeviceManager {
         }
     }
 
+    /// True if this manager still tracks a pending request for `id`. A request is
+    /// dropped from this map when it is tapped (consumed) or when the manager is
+    /// deactivated and cancels its owned requests. Level 11 uses this on
+    /// foreground to decide whether its pending notification survived a
+    /// background/return (preserved) or was torn down (needs a re-arm).
+    func hasPendingNotification(id: String) -> Bool {
+        pendingNotifications[id] != nil
+    }
+
     private func handleNotificationTapped(id: String) {
         let isCorrect = pendingNotifications[id] ?? false
         pendingNotifications.removeValue(forKey: id)

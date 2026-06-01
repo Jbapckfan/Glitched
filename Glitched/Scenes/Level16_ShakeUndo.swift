@@ -126,14 +126,14 @@ final class ShakeUndoScene: BaseLevelScene, SKPhysicsContactDelegate {
         // updatePlaying); only its BASE X is course-mapped. The widest gameplay
         // gaps occur at courseScale 1.0 (430-pt iPhone / iPad) and stay inside
         // the jumpable budget (see trace below).
-        createPlatform(at: CGPoint(x: courseX(45), y: groundY), size: CGSize(width: courseLen(80), height: 30))
+        _ = createPlatform(at: CGPoint(x: courseX(45), y: groundY), size: CGSize(width: courseLen(80), height: 30))
 
         movingPlatform = createPlatform(at: CGPoint(x: courseX(160), y: groundY + 80), size: CGSize(width: courseLen(55), height: 20))
         movingPlatform.name = "moving"
 
-        createPlatform(at: CGPoint(x: courseX(260), y: groundY + 40), size: CGSize(width: courseLen(60), height: 25))
+        _ = createPlatform(at: CGPoint(x: courseX(260), y: groundY + 40), size: CGSize(width: courseLen(60), height: 25))
 
-        createPlatform(at: CGPoint(x: courseX(designSize.width - 45), y: groundY), size: CGSize(width: courseLen(70), height: 30))
+        _ = createPlatform(at: CGPoint(x: courseX(designSize.width - 45), y: groundY), size: CGSize(width: courseLen(70), height: 30))
         createExitDoor(at: CGPoint(x: courseX(designSize.width - 35), y: groundY + 50))
 
         // Death zone — stays full-width so it always catches falls regardless of
@@ -166,7 +166,12 @@ final class ShakeUndoScene: BaseLevelScene, SKPhysicsContactDelegate {
 
     private func createUndoIndicator() {
         undoIcon = SKNode()
-        undoIcon.position = CGPoint(x: size.width - 60, y: topSafeY - 20)
+        // Top-LEFT, anchored just below the "LEVEL 16" title band. The previous
+        // top-RIGHT position (x: size.width - 60) sat inside the global pause
+        // button's reserved ~88x88 top-trailing zone and overlapped it on every
+        // device (iPhone 390/402 + iPad). Keep the undo HUD clear of the pause
+        // column, the title (x>=80) and the centered instruction panel.
+        undoIcon.position = CGPoint(x: 42, y: topSafeY - 66)
         undoIcon.zPosition = 200
         addChild(undoIcon)
 
@@ -219,11 +224,22 @@ final class ShakeUndoScene: BaseLevelScene, SKPhysicsContactDelegate {
 
     private func showInstructionPanel() {
         let panel = SKNode()
-        panel.position = CGPoint(x: size.width / 2, y: topSafeY - 90)
+        // OVERLAP FIX (clock + pause): the 260-wide panel centered at topSafeY-150
+        // had a TOP edge at topSafeY-110 (still inside the pause button's
+        // ~topSafeY-115 bottom) and a right edge at x=325 on iPhone 390 — which
+        // intruded into BOTH the reserved top-right PAUSE column (x>=300) and the
+        // rightmost decorative CLOCK widget (x[262.5,322.5], y[topSafeY-80,-20]).
+        // Two-part fix: (1) drop the panel so its TOP edge lands at topSafeY-125
+        // (center = topSafeY-165, 80-tall) — fully below the pause-zone bottom
+        // (~topSafeY-115) AND ~45pt below the rightmost clock's bottom; (2) narrow
+        // the box 260 -> 200 so on iPhone 390 it spans x[95,295] (right edge 295 <
+        // the pause column start 300, left edge 95 > the title lead 80). On iPad
+        // 1024 the centered box is x[412,612], nowhere near the title/pause/clocks.
+        panel.position = CGPoint(x: size.width / 2, y: topSafeY - 165)
         panel.zPosition = 300
         addChild(panel)
 
-        let bg = SKShapeNode(rectOf: CGSize(width: 260, height: 80), cornerRadius: 8)
+        let bg = SKShapeNode(rectOf: CGSize(width: 200, height: 80), cornerRadius: 8)
         bg.fillColor = fillColor
         bg.strokeColor = strokeColor
         panel.addChild(bg)

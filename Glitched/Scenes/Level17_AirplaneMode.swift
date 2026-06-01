@@ -21,6 +21,15 @@ final class AirplaneModeScene: BaseLevelScene, SKPhysicsContactDelegate {
     private var hasShownFourthWall = false
     private var turbulenceTime: TimeInterval = 0
     private let platformDelayOffsets: [TimeInterval] = [0.0, 0.3, 0.6]
+    private let designWidth: CGFloat = 390
+
+    // Keep the traversal course phone-sized and centered. The old layout kept
+    // the lift platforms at fixed phone X values but pushed the exit to
+    // size.width, making the final gap impossible on iPad.
+    private var courseScale: CGFloat { min(1.0, size.width / designWidth) }
+    private var courseOriginX: CGFloat { (size.width - designWidth * courseScale) / 2 }
+    private func courseX(_ logicalX: CGFloat) -> CGFloat { courseOriginX + logicalX * courseScale }
+    private func courseLen(_ logical: CGFloat) -> CGFloat { logical * courseScale }
 
     override func configureScene() {
         levelID = LevelID(world: .world2, index: 17)
@@ -92,11 +101,11 @@ final class AirplaneModeScene: BaseLevelScene, SKPhysicsContactDelegate {
     private func buildLevel() {
         let groundY: CGFloat = 160
 
-        // Fits a 390-pt iPhone canvas. When airplane mode is OFF the flying
+        // Fits a 390-pt logical course. When airplane mode is OFF the flying
         // platforms sit below ground (unusable). When ON they rise to
         // cascading heights: rises between consecutive platforms stay at
-        // 60 pt (< 72-pt max jump) so the upward path is reachable.
-        createPlatform(at: CGPoint(x: 45, y: groundY), size: CGSize(width: 70, height: 30), isFlying: false)
+        // 60 pt (< 91-pt max jump) so the upward path is reachable.
+        createPlatform(at: CGPoint(x: courseX(45), y: groundY), size: CGSize(width: courseLen(70), height: 30), isFlying: false)
 
         // Landed y sits inside the death plane (y = -100...0), so if
         // Airplane Mode is OFF the platforms aren't usable: dropping off
@@ -104,15 +113,15 @@ final class AirplaneModeScene: BaseLevelScene, SKPhysicsContactDelegate {
         // zone before they can touch a platform top. Toggling the mode ON
         // is the only way to raise the platforms into a walkable position.
         let flyingData: [(landed: CGPoint, flying: CGPoint, size: CGSize)] = [
-            (landed: CGPoint(x: 130, y: -60),
-             flying: CGPoint(x: 130, y: groundY + 60),
-             size: CGSize(width: 55, height: 25)),
-            (landed: CGPoint(x: 205, y: -60),
-             flying: CGPoint(x: 205, y: groundY + 120),
-             size: CGSize(width: 55, height: 25)),
-            (landed: CGPoint(x: 280, y: -60),
-             flying: CGPoint(x: 280, y: groundY + 80),
-             size: CGSize(width: 55, height: 25))
+            (landed: CGPoint(x: courseX(130), y: -60),
+             flying: CGPoint(x: courseX(130), y: groundY + 60),
+             size: CGSize(width: courseLen(55), height: 25)),
+            (landed: CGPoint(x: courseX(205), y: -60),
+             flying: CGPoint(x: courseX(205), y: groundY + 120),
+             size: CGSize(width: courseLen(55), height: 25)),
+            (landed: CGPoint(x: courseX(280), y: -60),
+             flying: CGPoint(x: courseX(280), y: groundY + 80),
+             size: CGSize(width: courseLen(55), height: 25))
         ]
 
         for data in flyingData {
@@ -122,8 +131,8 @@ final class AirplaneModeScene: BaseLevelScene, SKPhysicsContactDelegate {
             flyingPlatforms.append(platform)
         }
 
-        createPlatform(at: CGPoint(x: size.width - 45, y: groundY + 140), size: CGSize(width: 70, height: 30), isFlying: false)
-        createExitDoor(at: CGPoint(x: size.width - 35, y: groundY + 190))
+        createPlatform(at: CGPoint(x: courseX(345), y: groundY + 140), size: CGSize(width: courseLen(70), height: 30), isFlying: false)
+        createExitDoor(at: CGPoint(x: courseX(355), y: groundY + 190))
 
         // Death zone
         let death = SKNode()
@@ -195,7 +204,14 @@ final class AirplaneModeScene: BaseLevelScene, SKPhysicsContactDelegate {
 
     private func createAirplaneIndicator() {
         airplaneIcon = SKNode()
-        airplaneIcon.position = CGPoint(x: size.width - 60, y: topSafeY - 20)
+        // Anchor LEFT of the reserved top-right pause zone (trailing safe-area +
+        // ~88x88, i.e. x >= width-88). The body ellipse is 40pt wide (extends
+        // 20pt left of origin) and the ON/OFF status label sits below it, so
+        // origin at width-118 keeps the whole indicator (body x ≈ [width-138,
+        // width-98]) clear of the pause button on both iPhone 390 and iPad 1024.
+        // Previously origin (width-60) put the body at x[width-80, width-40],
+        // fully inside the reserved pause zone — a collision on every device.
+        airplaneIcon.position = CGPoint(x: size.width - 118, y: topSafeY - 20)
         airplaneIcon.zPosition = 200
         addChild(airplaneIcon)
 
@@ -241,8 +257,26 @@ final class AirplaneModeScene: BaseLevelScene, SKPhysicsContactDelegate {
     }
 
     private func showInstructionPanel() {
+        // Centered 280-wide panel: x ≈ [w/2-140, w/2+140] (iPhone 390 → x[55,335],
+        // right edge inside the top-right pause column x>=300). The PREVIOUS
+        // center (topSafeY-110) put the box top edge at topSafeY-70 — that is
+        // ABOVE the pause button's bottom (~topSafeY-115), so the box's
+        // top-right corner ran UNDER the global pause button.
+        //
+        // SYSTEMIC FIX: drop the panel so its TOP edge sits well below the
+        // pause-button bottom (~topSafeY-115). With an 80-tall box the top
+        // edge = center + 40, so center = topSafeY-175 → top edge at
+        // topSafeY-135, a comfortable 20pt below the pause-button bottom.
+        // Now the box occupies the band y[topSafeY-215, topSafeY-135], a
+        // different vertical band than the pause button (which ends at
+        // ~topSafeY-115) and the title (top of screen), so the x-overlap with
+        // the pause column is harmless — they never share a row.
+        // Still far above gameplay: highest geometry is the exit door top at
+        // ~y=380, and topSafeY is near the screen top (~800 on iPhone), so the
+        // panel bottom (topSafeY-215 ≈ 585) clears Bit/platforms with wide
+        // margin on both iPhone 390/402 and iPad 1024.
         let panel = SKNode()
-        panel.position = CGPoint(x: size.width / 2, y: topSafeY - 90)
+        panel.position = CGPoint(x: size.width / 2, y: topSafeY - 175)
         panel.zPosition = 300
         addChild(panel)
 
@@ -269,7 +303,7 @@ final class AirplaneModeScene: BaseLevelScene, SKPhysicsContactDelegate {
     }
 
     private func setupBit() {
-        spawnPoint = CGPoint(x: 45, y: 200)
+        spawnPoint = CGPoint(x: courseX(45), y: 200)
         bit = BitCharacter.make()
         bit.position = spawnPoint
         addChild(bit)
@@ -287,7 +321,7 @@ final class AirplaneModeScene: BaseLevelScene, SKPhysicsContactDelegate {
             platform.run(.sequence([
                 .wait(forDuration: delay),
                 .move(to: targetPos, duration: 0.5)
-            ]))
+            ]), withKey: "flightMove")
         }
 
         // Update icon
@@ -382,6 +416,7 @@ final class AirplaneModeScene: BaseLevelScene, SKPhysicsContactDelegate {
             turbulenceTime += deltaTime
             for (index, platform) in flyingPlatforms.enumerated() {
                 guard index < flyingPositions.count else { break }
+                guard platform.action(forKey: "flightMove") == nil else { continue }
                 let freq = 3.0 + Double(index) * 0.7
                 let ampX: CGFloat = 1.5
                 let ampY: CGFloat = 2.0

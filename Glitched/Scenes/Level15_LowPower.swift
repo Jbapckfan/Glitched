@@ -22,6 +22,21 @@ final class LowPowerScene: BaseLevelScene, SKPhysicsContactDelegate {
     private var platformSurfaces: [(shape: SKShapeNode, size: CGSize)] = []  // Track platforms for visual degradation
     private var fourthWallLabel: SKLabelNode?
     private var hasShownFourthWall = false
+    private let designWidth: CGFloat = 390
+
+    private var courseScale: CGFloat { min(1.0, size.width / designWidth) }
+    private var courseOriginX: CGFloat { (size.width - designWidth * courseScale) / 2 }
+    private func courseX(_ logicalX: CGFloat) -> CGFloat { courseOriginX + logicalX * courseScale }
+    private func courseLen(_ logical: CGFloat) -> CGFloat { logical * courseScale }
+
+    // The player's EFFECTIVE on-screen footprint, derived (not hardcoded) so the
+    // narrow drop stays threadable whether or not setScale scales the physics body.
+    // BitCharacter's physics body is `size.width * 0.5` wide (44 * 0.5 = 22pt) at
+    // displayScale 1.0; `registerPlayer` then applies a 1.25x display scale on
+    // tablet-sized canvases (min side >= 700). We mirror that exact rule here.
+    private let playerBaseBodyWidth: CGFloat = 44 * 0.5
+    private var playerDisplayScale: CGFloat { (min(size.width, size.height) >= 700) ? 1.25 : 1.0 }
+    private var playerEffectiveBodyWidth: CGFloat { playerBaseBodyWidth * playerDisplayScale }
 
     override func configureScene() {
         levelID = LevelID(world: .world2, index: 15)
@@ -77,58 +92,94 @@ final class LowPowerScene: BaseLevelScene, SKPhysicsContactDelegate {
     private func buildLevel() {
         let groundY: CGFloat = 160
 
-        // Fits a 390-pt iPhone canvas. Three gravity-gated sections:
-        //   1. Start: reachable via normal gravity.
-        //   2. Narrow drop: a 32-pt gap between ledges (> 22-pt player body
-        //      width) passable in normal gravity only — low gravity floats
-        //      the player upward into the ledges instead of down.
-        //   3. Wide chasm: 97.5-pt horizontal gap with a 70-pt rise, which
-        //      exceeds the 78-pt normal-jump envelope at that rise, so the
-        //      chasm is only crossable with Low Power active.
+        // Fits a 390-pt logical course, centered on wider devices. courseScale is
+        // clamped to <= 1.0, so horizontal logical pts == scene pts on both iPhone
+        // (390-wide) and iPad (centered 390 band); narrower devices only SHRINK the
+        // horizontal gaps (easier), so we design at the 1.0x worst case.
+        //
+        // Three gravity-gated sections, flowing left -> right:
+        //   1. Start (normal gravity): a short climb.
+        //   2. Narrow drop (NEEDS normal gravity): a gap sized from the player's
+        //      EFFECTIVE width (effectiveBodyWidth + 12pt) so the ~12pt center
+        //      window holds on iPhone (1.0x) and iPad (1.25x) alike — passable in
+        //      normal gravity only; low gravity floats the player into the ledges.
+        //      [Wave-1 fix, kept verbatim in formula — only repositioned.]
+        //   3. Wide chasm (NEEDS low gravity): a HEIGHT-GATE, not a wall. The
+        //      Section-3 landing shelf top sits ABOVE the normal jump's reach and
+        //      WITHIN the low-power jump's reach, so the chasm is uncrossable
+        //      without Low Power on every device. The old mid-air wall is removed.
+        //
+        // ---- Physics model (this scene does NOT call clampVelocity, so the jump
+        //      launches at the 620 dy cap; apex = v^2 / (2 * |g| * 150)) ----
+        //   • Launch surface = Section-2 catch-ledge top, y = 140, at logical x=100.
+        //   • Normal gravity (-14): apex = 620^2/(2*14*150) = 91.52pt.
+        //       The body half-height CANCELS when launching from a surface and
+        //       landing on a surface, so the highest surface the body can stand on
+        //       (peak body-bottom) = launch_top + apex = 140 + 91.52 = 231.5pt,
+        //       identical on iPhone (1.0x body) and iPad (1.25x body).
+        //   • Low gravity (-5): apex = 620^2/(2*5*150) = 256.27pt.
+        //       peak body-bottom = 140 + 256.27 = 396.3pt (also device-independent).
+        //   • Section-3 shelf TOP = 360pt: 128.5pt ABOVE the normal peak (231.5,
+        //     so normal undershoots into the chasm = mechanic required) and 36.3pt
+        //     BELOW the low peak (396.3, so the low arc clears with margin).
 
         // === SECTION 1: Start (normal gravity) ===
-        createPlatform(at: CGPoint(x: 45, y: groundY), size: CGSize(width: 70, height: 30))
-        createPlatform(at: CGPoint(x: 135, y: groundY + 40), size: CGSize(width: 55, height: 25))
+        // Spawn-area floor + a step up. Normal jump from the floor top (175)
+        // reaches body-bottom 266.5, easily clearing the step tops below.
+        createPlatform(at: CGPoint(x: courseX(40), y: groundY), size: CGSize(width: courseLen(70), height: 30))
+        createPlatform(at: CGPoint(x: courseX(100), y: groundY + 34), size: CGSize(width: courseLen(55), height: 22))
 
-        // === SECTION 2: Narrow drop (NEEDS NORMAL GRAVITY) ===
-        createPlatform(at: CGPoint(x: 205, y: groundY + 80), size: CGSize(width: 50, height: 20))
-        // 32-pt gap between ledges — leaves 10 pt of clearance for Bit's
-        // 22-pt physics body, tight but reliably passable when falling.
-        createPlatform(at: CGPoint(x: 183, y: groundY + 20), size: CGSize(width: 15, height: 15))
-        createPlatform(at: CGPoint(x: 230, y: groundY + 20), size: CGSize(width: 15, height: 15))
-        createPlatform(at: CGPoint(x: 205, y: groundY - 30), size: CGSize(width: 50, height: 20))
+        // === SECTION 2: Narrow drop (NEEDS NORMAL GRAVITY) — Wave-1 fix preserved ===
+        // High ledge the player walks onto before threading the drop (top = 220).
+        createPlatform(at: CGPoint(x: courseX(100), y: groundY + 50), size: CGSize(width: courseLen(50), height: 20))
+        // The drop gap is sized from the player's EFFECTIVE width rather than a
+        // hardcoded value. On iPad the player renders at 1.25x, so a fixed gap
+        // softlocked the level. We size it to `effectiveBodyWidth + 12pt` so the
+        // center window stays ~12pt on every device (iPhone: 34pt gap / 12pt window,
+        // iPad: 39.5pt gap / 12pt window) — still tight, still normal-gravity-only.
+        let narrowGapScene = playerEffectiveBodyWidth + 12
+        let gapCenterSceneX = courseX(100)
+        let miniLedgeSceneWidth = courseLen(15)
+        // Place each mini ledge so its inner edge sits half-a-gap from centre; the
+        // 50pt catch platform below (x=100) still spans the full fall corridor.
+        let leftMiniSceneX = gapCenterSceneX - narrowGapScene / 2 - miniLedgeSceneWidth / 2
+        let rightMiniSceneX = gapCenterSceneX + narrowGapScene / 2 + miniLedgeSceneWidth / 2
+        createPlatform(at: CGPoint(x: leftMiniSceneX, y: groundY + 20),
+                       size: CGSize(width: miniLedgeSceneWidth, height: 15))
+        createPlatform(at: CGPoint(x: rightMiniSceneX, y: groundY + 20),
+                       size: CGSize(width: miniLedgeSceneWidth, height: 15))
+        // Catch ledge = the Section-3 LAUNCH surface. center y=130, h20 -> top=140.
+        createPlatform(at: CGPoint(x: courseX(100), y: groundY - 30), size: CGSize(width: courseLen(50), height: 20))
 
-        // === SECTION 3: Wide chasm (NEEDS LOW GRAVITY) ===
-        // Catch right edge = 230, section-3 left edge = 327.5 → 97.5-pt gap
-        // with a 70-pt rise. At rise 70 pt the normal jump tops out at
-        // ~78 pt horizontal, so this chasm is unjumpable without Low Power.
-        createPlatform(at: CGPoint(x: 350, y: groundY + 40), size: CGSize(width: 45, height: 20))
+        // === SECTION 3: Wide chasm (NEEDS LOW GRAVITY) — HEIGHT-GATE, no wall ===
+        // Launch from the catch-ledge top (logical x=100, y=140). The chasm runs
+        // from the catch-ledge right edge (x=125) to the shelf's left edge (x=250):
+        // a 125-pt gap with NO platform between, so a normal-gravity arc (peak
+        // body-bottom 231.5) falls straight into the death zone (verified: dies at
+        // logical x≈287 at full speed, on both devices). The low-power arc (peak
+        // body-bottom 396.3) rises above the shelf top (360) BEFORE its leading
+        // edge reaches the shelf's left face (clears at logical x≈226, < 250 - the
+        // body half-width), then floats over and descends ONTO the shelf top.
+        //
+        // The shelf is intentionally THIN (12pt) and its left edge (250) is set
+        // beyond where the low arc has already cleared 360, so the rising body
+        // never clips the shelf's side — it only ever lands on the top surface.
+        // Full-speed low landing is logical x≈378.6 (within the 388 right edge);
+        // slower (~140-210) speeds land earlier on the shelf. Identical reach on
+        // iPhone (1.0x) and iPad (1.25x worst-case body) because the body
+        // half-height cancels in the surface-to-surface launch/land model.
+        let shelfTopY: CGFloat = groundY + 200          // top surface = 360
+        let shelfHeight: CGFloat = 12
+        let shelfCenterY = shelfTopY - shelfHeight / 2   // 354
+        // Shelf logical span [250, 388] -> center x = 319, width = 138.
+        createPlatform(at: CGPoint(x: courseX(319), y: shelfCenterY),
+                       size: CGSize(width: courseLen(138), height: shelfHeight))
 
-        // Low-gravity "ceiling" spanning x=317.5..322.5 at y=390..460.
-        // A low-gravity jump launched from the stepup (y=200, top=212.5)
-        // rises far enough to clip this wall before crossing toward
-        // section 3. The intended catch→section 3 arc stays below y=382
-        // when crossing x=320 and passes under the wall cleanly.
-        let ceilingGuard = SKNode()
-        ceilingGuard.position = CGPoint(x: 320, y: 425)
-        ceilingGuard.name = "low_power_ceiling"
-        ceilingGuard.physicsBody = SKPhysicsBody(rectangleOf: CGSize(width: 5, height: 70))
-        ceilingGuard.physicsBody?.isDynamic = false
-        ceilingGuard.physicsBody?.categoryBitMask = PhysicsCategory.ground
-
-        // Visible wall so the collision reads instead of being an unseen ledge.
-        let ceilingVisual = SKShapeNode(rectOf: CGSize(width: 5, height: 70))
-        ceilingVisual.fillColor = fillColor
-        ceilingVisual.strokeColor = strokeColor
-        ceilingVisual.lineWidth = lineWidth
-        ceilingVisual.name = "platform_surface"
-        ceilingGuard.addChild(ceilingVisual)
-        addChild(ceilingGuard)
-
-        // Exit sits on section 3. The 97.5-pt catch-to-section-3 gap blocks
-        // reaching the exit until Low Power has been engaged, so the exit
-        // can't be triggered before the gravity puzzle has been solved.
-        createExitDoor(at: CGPoint(x: 350, y: groundY + 90))
+        // Exit sits ON the Section-3 shelf. Because the normal arc cannot land on
+        // the shelf at all (peak body-bottom 231.5 << shelf top 360), the exit is
+        // unreachable until Low Power has been engaged — the gravity puzzle is
+        // mandatory and the exit can't be triggered before it is solved.
+        createExitDoor(at: CGPoint(x: courseX(319), y: shelfTopY + 30))
 
         // Death zone
         let death = SKNode()
@@ -161,7 +212,15 @@ final class LowPowerScene: BaseLevelScene, SKPhysicsContactDelegate {
 
     private func createBatteryIndicator() {
         batteryIndicator = SKNode()
-        batteryIndicator.position = CGPoint(x: size.width - 50, y: topSafeY - 20)
+        // Top-trailing, but inset LEFT of the reserved top-right PAUSE zone
+        // (the SwiftUI pause button owns an ~88pt-wide top-right column). The
+        // battery body spans [center-20, center+24] (tip at +22); anchoring the
+        // center at width-120 puts its right edge at width-96, clearing the
+        // pause column on iPhone 390 (right 294 < pause-left 330) and iPad 1024
+        // (right 928 < pause-left 936). y stays in the title band (topSafeY-20),
+        // above the instruction panel (panel top = topSafeY-50), so it overlaps
+        // neither PAUSE, the TITLE (right edge ~210, < 270), nor the panel.
+        batteryIndicator.position = CGPoint(x: size.width - 120, y: topSafeY - 20)
         batteryIndicator.zPosition = 200
         addChild(batteryIndicator)
 
@@ -192,7 +251,13 @@ final class LowPowerScene: BaseLevelScene, SKPhysicsContactDelegate {
     // unavailable (e.g. simulator). Additive to real-device detection.
     private func createLowPowerToggleButton() {
         let button = SKNode()
-        button.position = CGPoint(x: 60, y: topSafeY - 20)
+        // Manual fallback affordance -> distinct BOTTOM-TRAILING zone, clear of
+        // the TITLE (top-left), the PAUSE button (top-right), the battery HUD
+        // (top band) and the exit (mid-screen, logical x=319). The 110x36 bg
+        // centered at (width-65, bottomSafeY+30) spans x[width-120,width-10],
+        // y[bottomSafeY+12, bottomSafeY+48] — well below every top-band element
+        // and the chasm/shelf gameplay, with a 10pt trailing inset.
+        button.position = CGPoint(x: size.width - 65, y: bottomSafeY + 30)
         button.zPosition = 200
         button.name = "lowPowerToggle"
 
@@ -241,35 +306,81 @@ final class LowPowerScene: BaseLevelScene, SKPhysicsContactDelegate {
     }
 
     private func showInstructionPanel() {
+        // Reserved-zone clearance: the global PAUSE button owns an ~88pt-wide
+        // top-right column down to ~topSafeY-115, and the TITLE owns the top-left.
+        // The old panel sat at y = topSafeY-90 (box top at topSafeY-50) and was
+        // 280pt wide (half-width 140 -> right edge size.width/2+140 = 335 on
+        // iPhone 390), so its top-right corner and overflowing text ran UNDER the
+        // pause button. Fix per the systemic rule: (1) drop the panel so its TOP
+        // edge clears the pause-button bottom, and (2) narrow the box so neither
+        // edge reaches the pause column or the title.
+        //
+        // Internal-overlap fix: the two labels were colliding. text1 sat baseline
+        // y=10 (default .baseline alignment) and text2 (36-char body) wrapped to two
+        // 10pt lines whose TOP line rose to ~y=9 — straight into text1's glyphs. We
+        // now (a) pin both labels to .center vertical alignment for deterministic
+        // placement, (b) open a 21pt clear vertical gap between them (centers at
+        // +16 / -16), and (c) keep the body to ONE line so it can't wrap up into the
+        // heading. That needs more box height, so we GROW THE BOX DOWNWARD ONLY:
+        // height 70 -> 84 while holding the TOP edge fixed at topSafeY-120 (the same
+        // 5pt-below-pause clearance the original solved for). center.y therefore
+        // moves from topSafeY-155 to topSafeY-162 (top still topSafeY-120, bottom
+        // topSafeY-204 — still far above the gameplay: Section-3 shelf top y=360).
+        // Width is UNCHANGED (240) so the carefully-tuned pause/title clearance from
+        // the original layout is preserved untouched.
+        let panelWidth: CGFloat = 240
+        let panelHeight: CGFloat = 84
         let panel = SKNode()
-        panel.position = CGPoint(x: size.width / 2, y: topSafeY - 90)
+        panel.position = CGPoint(x: size.width / 2, y: topSafeY - 162)
         panel.zPosition = 300
         addChild(panel)
 
-        let bg = SKShapeNode(rectOf: CGSize(width: 280, height: 80), cornerRadius: 8)
+        let bg = SKShapeNode(rectOf: CGSize(width: panelWidth, height: panelHeight), cornerRadius: 8)
         bg.fillColor = fillColor
         bg.strokeColor = strokeColor
         panel.addChild(bg)
 
+        // Cap text width to the inner box (panelWidth - 24pt padding). Both labels
+        // are single-line and centered vertically so their on-screen boxes are
+        // deterministic (no baseline/wrap ambiguity).
+        let textMaxWidth = panelWidth - 24
+
+        // HEADING — center at y=+16. At fontSize 12 (Menlo-Bold, monospace) the
+        // 23-char string renders ~166pt wide, comfortably inside the 216pt inner box
+        // (no wrap). Visual band ≈ [+10, +22].
         let text1 = SKLabelNode(text: "CONSERVE ENERGY. FLOAT.")
         text1.fontName = "Menlo-Bold"
         text1.fontSize = 12
         text1.fontColor = strokeColor
-        text1.position = CGPoint(x: 0, y: 10)
+        text1.horizontalAlignmentMode = .center
+        text1.verticalAlignmentMode = .center
+        text1.preferredMaxLayoutWidth = textMaxWidth
+        text1.numberOfLines = 1
+        text1.position = CGPoint(x: 0, y: 16)
         panel.addChild(text1)
 
+        // BODY — center at y=-16, a clear 21pt below the heading's bottom. fontSize
+        // dropped 10 -> 9 so the 36-char string renders ~195pt (< 216 inner box) and
+        // stays on ONE line; numberOfLines forced to 1 so it can never wrap upward
+        // into the heading again. Visual band ≈ [-21, -11].
         let text2 = SKLabelNode(text: "THE LESS I SPEND, THE LIGHTER WE GET")
         text2.fontName = "Menlo"
-        text2.fontSize = 10
+        text2.fontSize = 9
         text2.fontColor = strokeColor
-        text2.position = CGPoint(x: 0, y: -10)
+        text2.horizontalAlignmentMode = .center
+        text2.verticalAlignmentMode = .center
+        text2.preferredMaxLayoutWidth = textMaxWidth
+        text2.numberOfLines = 1
+        text2.position = CGPoint(x: 0, y: -16)
         panel.addChild(text2)
 
         panel.run(.sequence([.wait(forDuration: 5), .fadeOut(withDuration: 0.5), .removeFromParent()]))
     }
 
     private func setupBit() {
-        spawnPoint = CGPoint(x: 45, y: 200)
+        // Spawn above the Section-1 floor (logical x=40, top y=175); the player
+        // settles onto it under normal gravity.
+        spawnPoint = CGPoint(x: courseX(40), y: 210)
         bit = BitCharacter.make()
         bit.position = spawnPoint
         addChild(bit)

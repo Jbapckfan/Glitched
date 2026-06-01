@@ -16,6 +16,16 @@ final class DeviceManagerCoordinator: DeviceManagerCoordinating {
     // External code can call register()/unregister() to add/remove managers.
     private var managers: [DeviceManager] = []
     private var activeMechanics: Set<MechanicType> = []
+    private let preserveAcrossBackground: Set<MechanicType> = [
+        .appBackgrounding,
+        .appSwitcher,
+        .storageSpace,
+        // P1 DEAD-BOLT FIX: Level 11 instructs the player to leave the app and wait
+        // for the message. If we tear the notification manager down on background, it
+        // cancels the pending request + tap subscription mid-wait, so the bell can
+        // never deliver. Preserve it so the "background and wait" flow actually works.
+        .notification,
+    ]
 
     private init() {
         // FIX #9: Populate via register() calls so the pattern is consistent
@@ -111,14 +121,23 @@ final class DeviceManagerCoordinator: DeviceManagerCoordinating {
 
     func deactivateAll() {
         managers.forEach { $0.deactivate() }
-        // P0 FIX: Clear active mechanics so stale managers don't reactivate on foreground
+        // Clear active mechanics so stale managers and fallback buttons do not
+        // leak into the next scene.
         activeMechanics.removeAll()
+        AccessibilityManager.shared.registerMechanics([])
     }
 
     @objc private func appDidEnterBackground() {
-        // Deactivate all managers when app backgrounds
-        // Note: preserve activeMechanics so foreground can restore them
-        managers.forEach { $0.deactivate() }
+        // Deactivate sensors that should not keep running in the background, but
+        // preserve managers whose puzzle depends on spanning a background/return.
+        managers.forEach { manager in
+            let shouldPreserve = manager.supportedMechanics.contains { mechanic in
+                activeMechanics.contains(mechanic) && preserveAcrossBackground.contains(mechanic)
+            }
+            if !shouldPreserve {
+                manager.deactivate()
+            }
+        }
     }
 
     @objc private func appWillEnterForeground() {

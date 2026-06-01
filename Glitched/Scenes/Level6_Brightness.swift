@@ -286,7 +286,13 @@ final class BrightnessScene: BaseLevelScene, SKPhysicsContactDelegate {
     }
 
     private func commentaryPosition() -> CGPoint {
-        CGPoint(x: size.width / 2, y: layoutBottomY + (isCompactCanvas ? 52 : 82))
+        // Bottom-center, but raised clear of the SwiftUI "CAN'T DO THIS?" fallback
+        // affordance (HardwareFallbackEscapeHatch), which is bottom-centered with
+        // padding(.bottom, 96) and auto-surfaces on this hardware-gated brightness
+        // level. The old +52/+82 offsets put this transient easter-egg line directly
+        // under / abutting that pill (overlapping it on iPad). Lift it above the
+        // fallback's reserved zone while staying below the right-edge brightness HUD.
+        CGPoint(x: size.width / 2, y: layoutBottomY + (isCompactCanvas ? 130 : 150))
     }
 
     // MARK: - Max Brightness Sun Hazard

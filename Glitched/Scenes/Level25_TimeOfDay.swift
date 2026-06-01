@@ -43,6 +43,12 @@ final class TimeOfDayScene: BaseLevelScene, SKPhysicsContactDelegate {
     // Override toggle
     private var toggleButton: SKNode?
     private var toggleIndex = 0
+    private let designWidth: CGFloat = 390
+
+    private var courseScale: CGFloat { min(1.0, size.width / designWidth) }
+    private var courseOriginX: CGFloat { (size.width - designWidth * courseScale) / 2 }
+    private func courseX(_ logicalX: CGFloat) -> CGFloat { courseOriginX + logicalX * courseScale }
+    private func courseLen(_ logical: CGFloat) -> CGFloat { logical * courseScale }
 
     override func configureScene() {
         levelID = LevelID(world: .world3, index: 25)
@@ -122,16 +128,16 @@ final class TimeOfDayScene: BaseLevelScene, SKPhysicsContactDelegate {
     private func buildLevel() {
         let groundY: CGFloat = 160
 
-        // Fits a 390-pt iPhone canvas. Each gap ≤ 17.5 pt with rises ≤ 20 pt —
-        // well under the 72-pt max jump height.
-        createPlatform(at: CGPoint(x: 45, y: groundY), size: CGSize(width: 80, height: 30))
+        // Fits a 390-pt logical course and is centered on wider devices. Each
+        // rise is <= 40 pt, well under the corrected ~91-pt jump apex.
+        createPlatform(at: CGPoint(x: courseX(45), y: groundY), size: CGSize(width: courseLen(80), height: 30))
 
-        createPlatform(at: CGPoint(x: 130, y: groundY + 20), size: CGSize(width: 65, height: 25))
-        createPlatform(at: CGPoint(x: 215, y: groundY + 40), size: CGSize(width: 70, height: 25))
-        createPlatform(at: CGPoint(x: 290, y: groundY + 25), size: CGSize(width: 50, height: 25))
+        createPlatform(at: CGPoint(x: courseX(130), y: groundY + 20), size: CGSize(width: courseLen(65), height: 25))
+        createPlatform(at: CGPoint(x: courseX(215), y: groundY + 40), size: CGSize(width: courseLen(70), height: 25))
+        createPlatform(at: CGPoint(x: courseX(290), y: groundY + 25), size: CGSize(width: courseLen(50), height: 25))
 
-        createPlatform(at: CGPoint(x: size.width - 40, y: groundY), size: CGSize(width: 70, height: 30))
-        createExitDoor(at: CGPoint(x: size.width - 30, y: groundY + 50))
+        createPlatform(at: CGPoint(x: courseX(350), y: groundY), size: CGSize(width: courseLen(70), height: 30))
+        createExitDoor(at: CGPoint(x: courseX(360), y: groundY + 50))
 
         // Death zone
         let death = SKNode()
@@ -261,11 +267,27 @@ final class TimeOfDayScene: BaseLevelScene, SKPhysicsContactDelegate {
     }
 
     private func createTimeDisplay() {
+        // Center the time/mode stack horizontally, but on narrow phones the
+        // ideal center (w/2 = 195 on iPhone 390) sits directly under the
+        // top-leading "LEVEL 25" title (which extends to ~x215). Push the
+        // stack's center right so its left edge clears the title band, while
+        // keeping its right edge clear of the top-trailing pause column. On
+        // iPad the slot is wide enough that this leaves the stack centered.
+        let titleRightEdge: CGFloat = 80 + 140      // title x ~[80, 220]
+        let pauseLeftEdge = size.width - 88         // reserved top-right zone
+        let halfLabelWidth: CGFloat = 28            // half of widest "22:00"
+        let margin: CGFloat = 8
+        var displayX = size.width / 2
+        let minCenterX = titleRightEdge + margin + halfLabelWidth
+        let maxCenterX = pauseLeftEdge - margin - halfLabelWidth
+        if displayX < minCenterX { displayX = minCenterX }
+        if displayX > maxCenterX { displayX = maxCenterX }
+
         timeLabel = SKLabelNode(text: "12:00")
         timeLabel.fontName = "Menlo-Bold"
         timeLabel.fontSize = 16
         timeLabel.fontColor = strokeColor
-        timeLabel.position = CGPoint(x: size.width / 2, y: topSafeY - 10)
+        timeLabel.position = CGPoint(x: displayX, y: topSafeY - 14)
         timeLabel.zPosition = 200
         addChild(timeLabel)
 
@@ -273,7 +295,7 @@ final class TimeOfDayScene: BaseLevelScene, SKPhysicsContactDelegate {
         modeLabel.fontName = "Menlo"
         modeLabel.fontSize = 10
         modeLabel.fontColor = strokeColor
-        modeLabel.position = CGPoint(x: size.width / 2, y: topSafeY - 25)
+        modeLabel.position = CGPoint(x: displayX, y: topSafeY - 29)
         modeLabel.zPosition = 200
         addChild(modeLabel)
     }
@@ -302,26 +324,33 @@ final class TimeOfDayScene: BaseLevelScene, SKPhysicsContactDelegate {
     }
 
     private func showInstructionPanel() {
+        // Systemic HUD-overlap fix: the panel's top edge must clear the global
+        // top-right PAUSE button (reserved zone bottom ~topSafeY-115). With a
+        // box height of 76 (half-height 38), centering at topSafeY-160 puts the
+        // TOP edge at topSafeY-122 — below the pause band. Also narrow the box
+        // to 300 (from 340) and shrink the text one step so neither the box nor
+        // its longest line (~205pt) reaches the pause column or the title. The
+        // panel auto-removes after 6s, so this only affects the intro overlay.
         let panel = SKNode()
-        panel.position = CGPoint(x: size.width / 2, y: topSafeY - 90)
+        panel.position = CGPoint(x: size.width / 2, y: topSafeY - 160)
         panel.zPosition = 300
         addChild(panel)
 
-        let bg = SKShapeNode(rectOf: CGSize(width: 340, height: 80), cornerRadius: 8)
+        let bg = SKShapeNode(rectOf: CGSize(width: 300, height: 76), cornerRadius: 8)
         bg.fillColor = fillColor
         bg.strokeColor = strokeColor
         panel.addChild(bg)
 
         let text1 = SKLabelNode(text: "THE WORLD CHANGES WITH THE CLOCK")
         text1.fontName = "Menlo-Bold"
-        text1.fontSize = 11
+        text1.fontSize = 10
         text1.fontColor = strokeColor
         text1.position = CGPoint(x: 0, y: 12)
         panel.addChild(text1)
 
         let text2 = SKLabelNode(text: "NIGHT BRINGS PEACE. DAY BRINGS DANGER.")
         text2.fontName = "Menlo"
-        text2.fontSize = 10
+        text2.fontSize = 9
         text2.fontColor = strokeColor
         text2.position = CGPoint(x: 0, y: -8)
         panel.addChild(text2)
@@ -330,7 +359,7 @@ final class TimeOfDayScene: BaseLevelScene, SKPhysicsContactDelegate {
     }
 
     private func setupBit() {
-        spawnPoint = CGPoint(x: 45, y: 200)
+        spawnPoint = CGPoint(x: courseX(45), y: 200)
         bit = BitCharacter.make()
         bit.position = spawnPoint
         addChild(bit)
@@ -348,7 +377,6 @@ final class TimeOfDayScene: BaseLevelScene, SKPhysicsContactDelegate {
     }
 
     private func applyTimeMode(_ mode: TimeMode) {
-        let previousMode = currentMode
         currentMode = mode
 
         switch mode {
@@ -564,7 +592,13 @@ final class TimeOfDayScene: BaseLevelScene, SKPhysicsContactDelegate {
         label.fontName = "Menlo"
         label.fontSize = 8
         label.fontColor = currentMode == .day ? strokeColor.withAlphaComponent(0.5) : fillColor.withAlphaComponent(0.5)
-        label.position = CGPoint(x: size.width / 2, y: 30)
+        // This commentary line is centered; at y=78 its left half still ran
+        // under the global bottom-left night/moon toggle circle (~r44, top
+        // edge ~y96). Raise it to y=120 so its baseline clears that toggle's
+        // top while staying below the playfield platforms (groundY 160) and
+        // above the bottom-right CYCLE TIME button (y[35,65]). Centered, so it
+        // also clears both bottom corners on iPad's wider layout.
+        label.position = CGPoint(x: size.width / 2, y: 120)
         label.zPosition = 150
         addChild(label)
         fourthWallLabel = label
