@@ -61,6 +61,15 @@ class BaseLevelScene: SKScene {
     // Player tracking for effects
     weak var playerNode: SKNode?
 
+    /// Shared ground tracking (P2). The platform the player is currently resting on.
+    /// Levels that adopt the shared de-solidify helpers (see `clearGroundedIfStandingOn`)
+    /// use this instead of declaring their own ground tracker. Named `sharedGroundPlatform`
+    /// (not `currentGroundPlatform`) deliberately: Levels 6/8 already declare a private
+    /// `currentGroundPlatform`, and a same-named non-private stored property on the base
+    /// would be an invalid redeclaration in those subclasses. New levels should adopt
+    /// this one; see the de-solidify doc-comment below for the adoption recipe.
+    weak var sharedGroundPlatform: SKNode?
+
     // FIX #13: Dynamic difficulty hint timer
     private var noProgressTimer: TimeInterval = 0
     private let baseNoProgressHintDelay: TimeInterval = 18.0
@@ -326,17 +335,32 @@ class BaseLevelScene: SKScene {
         // Slow-mo for dramatic effect
         JuiceManager.shared.slowMotion(factor: 0.3, duration: 0.5)
 
-        // Confetti!
+        // Confetti! ParticleFactory origins its container at scene.size/2 above the
+        // top edge; re-anchor it to the camera so it rains down the visible viewport
+        // even when the camera has panned away from the scene center.
         let confetti = ParticleFactory.shared.createConfetti(in: self)
+        let viewCenter = screenSpaceCenter
+        confetti.position = CGPoint(
+            x: viewCenter.x,
+            y: viewCenter.y + size.height / 2 + 50
+        )
         addChild(confetti)
 
-        // Victory text
+        // Victory text — anchor to the camera so the marquee moment is on-screen.
         JuiceManager.shared.popText(
             "LEVEL COMPLETE",
-            at: CGPoint(x: size.width / 2, y: size.height / 2),
+            at: viewCenter,
             color: VisualConstants.Colors.accent,
             fontSize: 32
         )
+    }
+
+    /// Center of the currently-visible viewport in scene coordinates. Full-screen
+    /// "screen-space" juice (flashes, marquee text, confetti, vignette) must be
+    /// placed relative to this — NOT `size/2` — because `gameCamera` may have
+    /// panned elsewhere, which previously made those moments play off-screen.
+    var screenSpaceCenter: CGPoint {
+        gameCamera?.position ?? CGPoint(x: size.width / 2, y: size.height / 2)
     }
 
     /// Called automatically on level failure - override to customize
@@ -349,8 +373,10 @@ class BaseLevelScene: SKScene {
         // Sound
         AudioManager.shared.playDeath()
 
-        // FIX #20: Full glitch death sequence
-        JuiceManager.shared.playGlitchDeath(in: self, at: playerNode?.position ?? CGPoint(x: size.width / 2, y: size.height / 2))
+        // FIX #20: Full glitch death sequence. The screen-space portions (flash,
+        // glitch bars, static overlay) are camera-anchored inside JuiceManager; the
+        // fallback origin here uses the camera center, not size/2, for the same reason.
+        JuiceManager.shared.playGlitchDeath(in: self, at: playerNode?.position ?? screenSpaceCenter)
 
         // Explosion at player position with pixel fragmentation
         if let player = playerNode {
@@ -541,6 +567,65 @@ class BaseLevelScene: SKScene {
             let isTabletCanvas = min(size.width, size.height) >= 700
             bit.setDisplayScale(isTabletCanvas ? 1.25 : 1.0)
         }
+    }
+
+    // MARK: - Shared De-Solidify / Ground Tracking (P2)
+
+    /// Returns the `PhysicsCategory.ground` node participating in a contact, if any.
+    /// Mirrors the per-level `groundNode(from:)` helper in Level 6 / Level 8. The
+    /// argument label is `fromContact:` (not `from:`) on purpose: Levels 6/8 already
+    /// declare a `private func groundNode(from:)`, and a non-private base method with
+    /// the identical `from:` signature would force an illegal `override` in those
+    /// subclasses. New levels adopt this one. Usage in a contact handler:
+    ///
+    /// ```swift
+    /// func didBegin(_ contact: SKPhysicsContact) {
+    ///     let collision = contact.bodyA.categoryBitMask | contact.bodyB.categoryBitMask
+    ///     if collision == PhysicsCategory.player | PhysicsCategory.ground {
+    ///         sharedGroundPlatform = groundNode(fromContact: contact)
+    ///         (playerNode as? BitCharacter)?.setGrounded(true)
+    ///     }
+    /// }
+    /// func didEnd(_ contact: SKPhysicsContact) {
+    ///     let collision = contact.bodyA.categoryBitMask | contact.bodyB.categoryBitMask
+    ///     if collision == PhysicsCategory.player | PhysicsCategory.ground,
+    ///        sharedGroundPlatform === groundNode(fromContact: contact) {
+    ///         sharedGroundPlatform = nil
+    ///         (playerNode as? BitCharacter)?.setGrounded(false)
+    ///     }
+    /// }
+    /// ```
+    func groundNode(fromContact contact: SKPhysicsContact) -> SKNode? {
+        if contact.bodyA.categoryBitMask == PhysicsCategory.ground {
+            return contact.bodyA.node
+        }
+        if contact.bodyB.categoryBitMask == PhysicsCategory.ground {
+            return contact.bodyB.node
+        }
+        return nil
+    }
+
+    /// De-solidify safety net. SpriteKit fires NO `didEnd(_:)` when a platform's
+    /// `categoryBitMask` is flipped to `0` out from under the player — so without
+    /// this the player keeps reporting `isGrounded` (and can keep jumping) while
+    /// falling through a platform that just vanished. This is the Level 6 grounded-
+    /// state bug; Level 6 and Level 8 each hand-rolled the same fix inline.
+    ///
+    /// Call this immediately AFTER mutating a platform's `categoryBitMask`, whenever
+    /// a platform may have just stopped being solid. If `node` was the player's
+    /// current ground and is no longer solid, grounded state is cleared.
+    ///
+    /// Adoption recipe for a level toggling platform solidity:
+    /// ```swift
+    /// platform.physicsBody?.categoryBitMask = solid ? PhysicsCategory.ground : 0
+    /// clearGroundedIfStandingOn(platform)   // no-op unless it just de-solidified under the player
+    /// ```
+    func clearGroundedIfStandingOn(_ node: SKNode) {
+        guard sharedGroundPlatform === node else { return }
+        let isSolid = (node.physicsBody?.categoryBitMask ?? 0) == PhysicsCategory.ground
+        guard !isSolid else { return }
+        sharedGroundPlatform = nil
+        (playerNode as? BitCharacter)?.setGrounded(false)
     }
 
     // MARK: - World Atmosphere Helpers
