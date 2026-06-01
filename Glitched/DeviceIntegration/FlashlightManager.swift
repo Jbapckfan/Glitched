@@ -17,12 +17,24 @@ final class FlashlightManager: DeviceManager {
 
     func activate() {
         guard !isActive else { return }
+
+        guard Self.deviceHasTorch else {
+            AccessibilityManager.shared.forceHardwareFallback(for: .flashlight)
+            return
+        }
+
+        let motionManager = CMMotionManager()
+        guard motionManager.isDeviceMotionAvailable else {
+            AccessibilityManager.shared.forceHardwareFallback(for: .flashlight)
+            return
+        }
+
         isActive = true
 
         // Start motion updates for pitch detection
-        motionManager = CMMotionManager()
-        motionManager?.deviceMotionUpdateInterval = 1.0 / 30.0
-        motionManager?.startDeviceMotionUpdates(to: .main) { [weak self] motion, _ in
+        self.motionManager = motionManager
+        motionManager.deviceMotionUpdateInterval = 1.0 / 30.0
+        motionManager.startDeviceMotionUpdates(to: .main) { [weak self] motion, _ in
             guard let motion = motion, self?.isActive == true else { return }
             // pitch: 0 = flat, -π/2 = vertical (screen facing user)
             let pitch = motion.attitude.pitch
@@ -61,5 +73,9 @@ final class FlashlightManager: DeviceManager {
     private func isTorchOn() -> Bool {
         guard let device = AVCaptureDevice.default(for: .video) else { return false }
         return device.hasTorch && device.torchMode == .on
+    }
+
+    private static var deviceHasTorch: Bool {
+        AVCaptureDevice.default(for: .video)?.hasTorch == true
     }
 }

@@ -68,7 +68,7 @@ final class StorageSpaceScene: BaseLevelScene, SKPhysicsContactDelegate {
 
     private func setupBackground() {
         // Binary/data pattern decoration
-        for i in 0..<10 {
+        for _ in 0..<10 {
             let binary = SKLabelNode(text: ["0110", "1001", "1100", "0011", "1010"].randomElement()!)
             binary.fontName = "Menlo"
             binary.fontSize = 12
@@ -410,6 +410,10 @@ final class StorageSpaceScene: BaseLevelScene, SKPhysicsContactDelegate {
 
         // Check clear button
         if let button = clearButton, button.contains(location) {
+            if AccessibilityManager.shared.needsFallbackUI(for: .storageSpace) {
+                InputEventBus.shared.post(.storageCacheCleared)
+                return
+            }
             StorageSpaceManager.shared.clearCache()
             return
         }

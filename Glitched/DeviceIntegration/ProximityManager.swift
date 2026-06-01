@@ -15,6 +15,12 @@ final class ProximityManager: DeviceManager {
         isActive = true
 
         UIDevice.current.isProximityMonitoringEnabled = true
+        guard UIDevice.current.isProximityMonitoringEnabled else {
+            isActive = false
+            AccessibilityManager.shared.forceHardwareFallback(for: .proximity)
+            AccessibilityManager.shared.forceHardwareFallback(for: .faceID)
+            return
+        }
         
         NotificationCenter.default.addObserver(
             self,

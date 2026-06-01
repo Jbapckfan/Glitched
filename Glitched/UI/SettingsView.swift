@@ -7,6 +7,7 @@ struct SettingsView: View {
 
     @State private var settings = ProgressManager.shared.load().settings
     @State private var restoringPurchases = false
+    @State private var storeMessage: String?
 
     private let background = Color(red: 13 / 255, green: 13 / 255, blue: 13 / 255)
 
@@ -22,6 +23,7 @@ struct SettingsView: View {
                             terminalToggle("REDUCE SCREEN SHAKE", isOn: $settings.reduceScreenShake)
                             terminalToggle("REDUCE FLASH EFFECTS", isOn: $settings.reduceFlashEffects)
                             terminalToggle("HIGH CONTRAST MODE", isOn: $settings.highContrastMode)
+                            terminalToggle("EXTENDED HINT TIMERS", isOn: $settings.extendedHintTimers)
                         }
 
                         section("AUDIO") {
@@ -37,6 +39,13 @@ struct SettingsView: View {
 
                             statusRow("FULL GAME", unlocked: store.isUnlocked(StoreManager.fullGameProductID))
                             statusRow("DEV COMMENTARY", unlocked: store.isUnlocked(StoreManager.devCommentaryProductID))
+
+                            if let storeMessage {
+                                Text(storeMessage)
+                                    .font(.custom(VisualConstants.Fonts.secondary, size: 11))
+                                    .foregroundStyle(Color.cyan.opacity(0.75))
+                                    .fixedSize(horizontal: false, vertical: true)
+                            }
                         }
                     }
                     .padding(20)
@@ -62,6 +71,7 @@ struct SettingsView: View {
             .onChange(of: settings.reduceScreenShake) { _ in persistSettings() }
             .onChange(of: settings.reduceFlashEffects) { _ in persistSettings() }
             .onChange(of: settings.highContrastMode) { _ in persistSettings() }
+            .onChange(of: settings.extendedHintTimers) { _ in persistSettings() }
             .onChange(of: settings.musicVolume) { _ in persistSettings() }
             .onChange(of: settings.sfxVolume) { _ in persistSettings() }
         }
@@ -161,9 +171,17 @@ struct SettingsView: View {
 
     private func restorePurchases() {
         restoringPurchases = true
+        storeMessage = nil
         Task {
-            await store.restorePurchases()
-            restoringPurchases = false
+            defer { restoringPurchases = false }
+            do {
+                try await store.restorePurchases()
+                storeMessage = store.isUnlocked(StoreManager.fullGameProductID)
+                    ? "Purchases restored."
+                    : "No previous purchase found for this Apple ID."
+            } catch {
+                storeMessage = store.lastErrorMessage ?? error.localizedDescription
+            }
         }
     }
 }

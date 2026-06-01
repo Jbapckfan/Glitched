@@ -22,6 +22,12 @@ final class FocusModeScene: BaseLevelScene, SKPhysicsContactDelegate {
     private var focusTextLabel: SKLabelNode?
     private var orbitalAngles: [Int: CGFloat] = [:]  // hazard index -> current angle
     private var orbitalCenters: [Int: CGPoint] = [:]   // hazard index -> orbit center
+    private let designWidth: CGFloat = 390
+
+    private var courseScale: CGFloat { min(1.0, size.width / designWidth) }
+    private var courseOriginX: CGFloat { (size.width - designWidth * courseScale) / 2 }
+    private func courseX(_ logicalX: CGFloat) -> CGFloat { courseOriginX + logicalX * courseScale }
+    private func courseLen(_ logical: CGFloat) -> CGFloat { logical * courseScale }
 
     override func configureScene() {
         levelID = LevelID(world: .world2, index: 14)
@@ -80,14 +86,16 @@ final class FocusModeScene: BaseLevelScene, SKPhysicsContactDelegate {
     private func buildLevel() {
         let groundY: CGFloat = 160
 
-        // Fits a 390-pt iPhone canvas. Each gap ≤ 30 pt; the rise/drop of
-        // 50 pt is inside the 72-pt max jump height.
-        createPlatform(at: CGPoint(x: 50, y: groundY), size: CGSize(width: 80, height: 30))
-        createPlatform(at: CGPoint(x: 145, y: groundY + 50), size: CGSize(width: 70, height: 25))
-        createPlatform(at: CGPoint(x: 245, y: groundY + 50), size: CGSize(width: 70, height: 25))
-        createPlatform(at: CGPoint(x: size.width - 50, y: groundY), size: CGSize(width: 80, height: 30))
+        // Fits a 390-pt logical course and centers that course on wider devices.
+        // The previous layout kept the stepping stones fixed near the left edge
+        // but pinned the exit to size.width, creating an impossible iPad gap.
+        // Each rise/drop is 50 pt, safely under the corrected ~91 pt jump apex.
+        createPlatform(at: CGPoint(x: courseX(50), y: groundY), size: CGSize(width: courseLen(80), height: 30))
+        createPlatform(at: CGPoint(x: courseX(145), y: groundY + 50), size: CGSize(width: courseLen(70), height: 25))
+        createPlatform(at: CGPoint(x: courseX(245), y: groundY + 50), size: CGSize(width: courseLen(70), height: 25))
+        createPlatform(at: CGPoint(x: courseX(340), y: groundY), size: CGSize(width: courseLen(80), height: 30))
 
-        createExitDoor(at: CGPoint(x: size.width - 40, y: groundY + 50))
+        createExitDoor(at: CGPoint(x: courseX(350), y: groundY + 50))
 
         let death = SKNode()
         death.position = CGPoint(x: size.width / 2, y: -50)
@@ -119,29 +127,29 @@ final class FocusModeScene: BaseLevelScene, SKPhysicsContactDelegate {
         // platform 2's surface (top y ≈ 222.5) so it threatens high jumps
         // rather than sitting on the landing spot.
         let h0 = createSpike()
-        h0.position = CGPoint(x: 120, y: 260)
+        h0.position = CGPoint(x: courseX(120), y: 260)
         h0.name = "hazard_0"
         addChild(h0)
         hazards.append(h0)
         h0.run(.repeatForever(.sequence([
-            .moveBy(x: 40, y: 0, duration: 2.0),
-            .moveBy(x: -40, y: 0, duration: 2.0)
+            .moveBy(x: courseLen(40), y: 0, duration: 2.0),
+            .moveBy(x: -courseLen(40), y: 0, duration: 2.0)
         ])), withKey: "movement")
 
         // Hazard 1: Horizontal oscillation (fast)
         let h1 = createSpike()
-        h1.position = CGPoint(x: 210, y: 260)
+        h1.position = CGPoint(x: courseX(210), y: 260)
         h1.name = "hazard_1"
         addChild(h1)
         hazards.append(h1)
         h1.run(.repeatForever(.sequence([
-            .moveBy(x: 70, y: 0, duration: 1.0),
-            .moveBy(x: -70, y: 0, duration: 1.0)
+            .moveBy(x: courseLen(70), y: 0, duration: 1.0),
+            .moveBy(x: -courseLen(70), y: 0, duration: 1.0)
         ])), withKey: "movement")
 
         // Hazard 2: Vertical oscillation
         let h2 = createSpike()
-        h2.position = CGPoint(x: 160, y: 275)
+        h2.position = CGPoint(x: courseX(160), y: 275)
         h2.name = "hazard_2"
         addChild(h2)
         hazards.append(h2)
@@ -152,7 +160,7 @@ final class FocusModeScene: BaseLevelScene, SKPhysicsContactDelegate {
 
         // Hazard 3: Vertical oscillation (offset)
         let h3 = createSpike()
-        h3.position = CGPoint(x: 260, y: 310)
+        h3.position = CGPoint(x: courseX(260), y: 310)
         h3.name = "hazard_3"
         addChild(h3)
         hazards.append(h3)
@@ -163,20 +171,20 @@ final class FocusModeScene: BaseLevelScene, SKPhysicsContactDelegate {
 
         // Hazard 4: Orbital/circular movement
         let h4 = createSpike()
-        h4.position = CGPoint(x: 180, y: 290)
+        h4.position = CGPoint(x: courseX(180), y: 290)
         h4.name = "hazard_4"
         addChild(h4)
         hazards.append(h4)
-        orbitalCenters[4] = CGPoint(x: 180, y: 290)
+        orbitalCenters[4] = CGPoint(x: courseX(180), y: 290)
         orbitalAngles[4] = 0
 
         // Hazard 5: Orbital/circular movement (opposite phase)
         let h5 = createSpike()
-        h5.position = CGPoint(x: 285, y: 290)
+        h5.position = CGPoint(x: courseX(285), y: 290)
         h5.name = "hazard_5"
         addChild(h5)
         hazards.append(h5)
-        orbitalCenters[5] = CGPoint(x: 285, y: 290)
+        orbitalCenters[5] = CGPoint(x: courseX(285), y: 290)
         orbitalAngles[5] = .pi
     }
 
@@ -316,7 +324,7 @@ final class FocusModeScene: BaseLevelScene, SKPhysicsContactDelegate {
     }
 
     private func setupBit() {
-        spawnPoint = CGPoint(x: 50, y: 200)
+        spawnPoint = CGPoint(x: courseX(50), y: 200)
         bit = BitCharacter.make()
         bit.position = spawnPoint
         addChild(bit)
@@ -436,7 +444,7 @@ final class FocusModeScene: BaseLevelScene, SKPhysicsContactDelegate {
 
         // Update orbital hazards (indices 4 and 5)
         guard !isFocusEnabled else { return }
-        let orbitalRadius: CGFloat = 40
+        let orbitalRadius: CGFloat = courseLen(40)
         let orbitalSpeed: CGFloat = 2.0
 
         for index in [4, 5] {

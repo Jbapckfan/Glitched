@@ -117,15 +117,24 @@ final class ProgressManager {
     }
 
     func save(_ progress: PlayerProgress) {
-        guard let data = try? JSONEncoder().encode(progress) else { return }
+        let data: Data
+        do {
+            data = try JSONEncoder().encode(progress)
+        } catch {
+            assertionFailure("ProgressManager failed to encode progress: \(error)")
+            print("ProgressManager save failed: \(error)")
+            return
+        }
         defaults.set(data, forKey: storageKey)
         ubiquitousStore?.set(data, forKey: storageKey)
+        defaults.synchronize()
         ubiquitousStore?.synchronize()
         cached = progress
     }
 
     func markCompleted(_ levelID: LevelID) {
         var progress = load()
+        let worldWasComplete = isWorldComplete(levelID.world, completedLevels: progress.completedLevels)
         progress.completedLevels.insert(levelID)
 
         if levelID.world.rawValue > progress.highestWorld.rawValue {
@@ -136,6 +145,15 @@ final class ProgressManager {
         }
 
         save(progress)
+
+        if !worldWasComplete && isWorldComplete(levelID.world, completedLevels: progress.completedLevels) {
+            GameCenterManager.shared.reportWorldCompleted(levelID.world)
+        }
+    }
+
+    private func isWorldComplete(_ world: World, completedLevels: Set<LevelID>) -> Bool {
+        guard world != .world0 else { return false }
+        return world.levels.allSatisfy { completedLevels.contains($0) }
     }
 
     func recordDeath(for levelID: LevelID) {

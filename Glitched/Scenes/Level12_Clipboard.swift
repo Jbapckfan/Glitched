@@ -23,6 +23,12 @@ final class ClipboardScene: BaseLevelScene, SKPhysicsContactDelegate {
     private var doorBlocker: SKNode?
     private var clipboardScanLabel: SKLabelNode?
     private var hasScannedClipboard = false
+    private let designWidth: CGFloat = 390
+
+    private var courseScale: CGFloat { min(1.0, size.width / designWidth) }
+    private var courseOriginX: CGFloat { (size.width - designWidth * courseScale) / 2 }
+    private func courseX(_ logicalX: CGFloat) -> CGFloat { courseOriginX + logicalX * courseScale }
+    private func courseLen(_ logical: CGFloat) -> CGFloat { logical * courseScale }
 
     override func configureScene() {
         levelID = LevelID(world: .world2, index: 12)
@@ -72,15 +78,18 @@ final class ClipboardScene: BaseLevelScene, SKPhysicsContactDelegate {
     private func buildLevel() {
         let groundY: CGFloat = 160
 
-        createPlatform(at: CGPoint(x: 80, y: groundY), size: CGSize(width: 120, height: 30))
-        createPlatform(at: CGPoint(x: size.width / 2, y: groundY), size: CGSize(width: 200, height: 30))
-        createPlatform(at: CGPoint(x: size.width - 80, y: groundY), size: CGSize(width: 120, height: 30))
+        // Authored in a 390-pt logical course and centered on iPad. The old
+        // mixed layout pinned the middle platform to size.width/2 and the exit
+        // to size.width, creating huge gaps on wide canvases.
+        createPlatform(at: CGPoint(x: courseX(80), y: groundY), size: CGSize(width: courseLen(120), height: 30))
+        createPlatform(at: CGPoint(x: courseX(195), y: groundY), size: CGSize(width: courseLen(200), height: 30))
+        createPlatform(at: CGPoint(x: courseX(310), y: groundY), size: CGSize(width: courseLen(120), height: 30))
 
         // Locked door
-        createLockedDoor(at: CGPoint(x: size.width / 2 + 60, y: groundY + 50))
+        createLockedDoor(at: CGPoint(x: courseX(255), y: groundY + 50))
 
         // Exit
-        createExitDoor(at: CGPoint(x: size.width - 60, y: groundY + 50))
+        createExitDoor(at: CGPoint(x: courseX(330), y: groundY + 50))
 
         // Death zone
         let death = SKNode()
@@ -112,14 +121,17 @@ final class ClipboardScene: BaseLevelScene, SKPhysicsContactDelegate {
         let door = SKNode()
         door.position = position
 
-        let frame = SKShapeNode(rectOf: CGSize(width: 45, height: 65))
+        // Door frame/body must exceed Bit's audited ~91 pt jump apex from the
+        // platform top so the locked door cannot be cleared before unlock.
+        let doorSize = CGSize(width: 45, height: 115)
+        let frame = SKShapeNode(rectOf: doorSize)
         frame.fillColor = fillColor
         frame.strokeColor = strokeColor
         frame.lineWidth = lineWidth
         door.addChild(frame)
 
         doorBlocker = SKNode()
-        doorBlocker?.physicsBody = SKPhysicsBody(rectangleOf: CGSize(width: 45, height: 65))
+        doorBlocker?.physicsBody = SKPhysicsBody(rectangleOf: doorSize)
         doorBlocker?.physicsBody?.isDynamic = false
         doorBlocker?.physicsBody?.categoryBitMask = PhysicsCategory.ground
         door.addChild(doorBlocker!)
@@ -232,7 +244,7 @@ final class ClipboardScene: BaseLevelScene, SKPhysicsContactDelegate {
     }
 
     private func setupBit() {
-        spawnPoint = CGPoint(x: 80, y: 200)
+        spawnPoint = CGPoint(x: courseX(80), y: 200)
         bit = BitCharacter.make()
         bit.position = spawnPoint
         addChild(bit)
@@ -350,6 +362,8 @@ final class ClipboardScene: BaseLevelScene, SKPhysicsContactDelegate {
     }
 
     private func handleExit() {
+        guard GameState.shared.levelState == .playing, isUnlocked else { return }
+
         succeedLevel()
         bit.run(.sequence([.fadeOut(withDuration: 0.5), .run { [weak self] in self?.transitionToNextLevel() }]))
     }

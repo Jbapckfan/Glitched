@@ -126,14 +126,14 @@ final class ShakeUndoScene: BaseLevelScene, SKPhysicsContactDelegate {
         // updatePlaying); only its BASE X is course-mapped. The widest gameplay
         // gaps occur at courseScale 1.0 (430-pt iPhone / iPad) and stay inside
         // the jumpable budget (see trace below).
-        createPlatform(at: CGPoint(x: courseX(45), y: groundY), size: CGSize(width: courseLen(80), height: 30))
+        _ = createPlatform(at: CGPoint(x: courseX(45), y: groundY), size: CGSize(width: courseLen(80), height: 30))
 
         movingPlatform = createPlatform(at: CGPoint(x: courseX(160), y: groundY + 80), size: CGSize(width: courseLen(55), height: 20))
         movingPlatform.name = "moving"
 
-        createPlatform(at: CGPoint(x: courseX(260), y: groundY + 40), size: CGSize(width: courseLen(60), height: 25))
+        _ = createPlatform(at: CGPoint(x: courseX(260), y: groundY + 40), size: CGSize(width: courseLen(60), height: 25))
 
-        createPlatform(at: CGPoint(x: courseX(designSize.width - 45), y: groundY), size: CGSize(width: courseLen(70), height: 30))
+        _ = createPlatform(at: CGPoint(x: courseX(designSize.width - 45), y: groundY), size: CGSize(width: courseLen(70), height: 30))
         createExitDoor(at: CGPoint(x: courseX(designSize.width - 35), y: groundY + 50))
 
         // Death zone — stays full-width so it always catches falls regardless of

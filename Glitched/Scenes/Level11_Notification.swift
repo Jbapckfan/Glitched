@@ -37,6 +37,12 @@ final class NotificationScene: BaseLevelScene, SKPhysicsContactDelegate {
     private var bellIcon: SKNode!
     private var waitingIndicator: SKNode?
     private var fourthWallLabel: SKLabelNode?
+    private let designWidth: CGFloat = 390
+
+    private var courseScale: CGFloat { min(1.0, size.width / designWidth) }
+    private var courseOriginX: CGFloat { (size.width - designWidth * courseScale) / 2 }
+    private func courseX(_ logicalX: CGFloat) -> CGFloat { courseOriginX + logicalX * courseScale }
+    private func courseLen(_ logical: CGFloat) -> CGFloat { logical * courseScale }
 
     // MARK: - Configuration
 
@@ -196,20 +202,19 @@ final class NotificationScene: BaseLevelScene, SKPhysicsContactDelegate {
     private func buildLevel() {
         let groundY: CGFloat = 160
 
-        // Layout fits a 390-pt iPhone canvas. Gaps between platforms stay
-        // under the 115-pt max jump range; locked doors (65-pt tall) block
-        // forward travel because the player's 72-pt jump peak can't clear
-        // them even with the gap open.
-        createPlatform(at: CGPoint(x: 50, y: groundY), size: CGSize(width: 80, height: 30))
+        // Layout fits a 390-pt logical course and is centered on wider devices.
+        // Locked doors block forward travel until the notification event unlocks
+        // each segment; the final platform no longer drifts to the iPad edge.
+        createPlatform(at: CGPoint(x: courseX(50), y: groundY), size: CGSize(width: courseLen(80), height: 30))
 
-        createPlatform(at: CGPoint(x: 160, y: groundY), size: CGSize(width: 60, height: 30))
-        doors.append(createLockedDoor(at: CGPoint(x: 190, y: groundY + 50), index: 0))
+        createPlatform(at: CGPoint(x: courseX(160), y: groundY), size: CGSize(width: courseLen(60), height: 30))
+        doors.append(createLockedDoor(at: CGPoint(x: courseX(190), y: groundY + 50), index: 0))
 
-        createPlatform(at: CGPoint(x: 260, y: groundY), size: CGSize(width: 60, height: 30))
-        doors.append(createLockedDoor(at: CGPoint(x: 290, y: groundY + 50), index: 1))
+        createPlatform(at: CGPoint(x: courseX(260), y: groundY), size: CGSize(width: courseLen(60), height: 30))
+        doors.append(createLockedDoor(at: CGPoint(x: courseX(290), y: groundY + 50), index: 1))
 
-        createPlatform(at: CGPoint(x: size.width - 45, y: groundY), size: CGSize(width: 70, height: 30))
-        createExitDoor(at: CGPoint(x: size.width - 35, y: groundY + 50))
+        createPlatform(at: CGPoint(x: courseX(345), y: groundY), size: CGSize(width: courseLen(70), height: 30))
+        createExitDoor(at: CGPoint(x: courseX(355), y: groundY + 50))
 
         // Death zone
         let deathZone = SKNode()
@@ -243,10 +248,10 @@ final class NotificationScene: BaseLevelScene, SKPhysicsContactDelegate {
         door.name = "locked_door_\(index)"
         addChild(door)
 
-        // Door frame — 85 pt tall so the top (y ≈ 252 above a plat at y=160)
-        // sits above the player's jump-apex body bottom (~247), guaranteeing
-        // the door cannot be cleared with a running jump before it unlocks.
-        let frame = SKShapeNode(rectOf: CGSize(width: 45, height: 85))
+        // Door frame/body must exceed Bit's audited ~91 pt jump apex from the
+        // platform top so locked doors cannot be cleared before they unlock.
+        let doorSize = CGSize(width: 45, height: 115)
+        let frame = SKShapeNode(rectOf: doorSize)
         frame.fillColor = fillColor
         frame.strokeColor = strokeColor
         frame.lineWidth = lineWidth * 1.2
@@ -274,7 +279,7 @@ final class NotificationScene: BaseLevelScene, SKPhysicsContactDelegate {
 
         // Blocking physics — must match frame height.
         let blocker = SKNode()
-        blocker.physicsBody = SKPhysicsBody(rectangleOf: CGSize(width: 45, height: 85))
+        blocker.physicsBody = SKPhysicsBody(rectangleOf: doorSize)
         blocker.physicsBody?.isDynamic = false
         blocker.physicsBody?.categoryBitMask = PhysicsCategory.ground
         blocker.name = "door_blocker"
@@ -379,7 +384,7 @@ final class NotificationScene: BaseLevelScene, SKPhysicsContactDelegate {
     // MARK: - Setup
 
     private func setupBit() {
-        spawnPoint = CGPoint(x: 50, y: 200)
+        spawnPoint = CGPoint(x: courseX(50), y: 200)
         bit = BitCharacter.make()
         bit.position = spawnPoint
         addChild(bit)
@@ -585,7 +590,8 @@ final class NotificationScene: BaseLevelScene, SKPhysicsContactDelegate {
     override func handleGameInput(_ event: GameInputEvent) {
         switch event {
         case .notificationTapped(let id, let isCorrect):
-            if id == pendingNotificationId && isCorrect {
+            let isFallbackTap = id == "fallback" && AccessibilityManager.shared.needsFallbackUI(for: .notification)
+            if isCorrect && (id == pendingNotificationId || isFallbackTap) {
                 unlockCurrentDoor()
             }
         default:
@@ -666,6 +672,8 @@ final class NotificationScene: BaseLevelScene, SKPhysicsContactDelegate {
     }
 
     private func handleExit() {
+        guard GameState.shared.levelState == .playing, doorStates.allSatisfy({ $0 }) else { return }
+
         succeedLevel()
         bit.removeAllActions()
         bit.run(.sequence([.fadeOut(withDuration: 0.5), .run { [weak self] in self?.transitionToNextLevel() }]))

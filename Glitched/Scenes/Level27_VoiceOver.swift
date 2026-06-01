@@ -19,8 +19,12 @@ final class VoiceOverScene: BaseLevelScene, SKPhysicsContactDelegate {
     private var shimmerNodes: [SKShapeNode] = []
 
     private var isVoiceOverActive = false
+    private var voiceOverHasRevealedPath = false
     private var deathCount = 0
     private var hasFallbackShown = false
+    private var previousViewIsAccessibilityElement = false
+    private var previousViewAccessibilityLabel: String?
+    private var previousViewAccessibilityTraits: UIAccessibilityTraits?
 
     override func configureScene() {
         levelID = LevelID(world: .world4, index: 27)
@@ -37,6 +41,21 @@ final class VoiceOverScene: BaseLevelScene, SKPhysicsContactDelegate {
         buildLevel()
         showInstructionPanel()
         setupBit()
+    }
+
+    override func didMove(to view: SKView) {
+        super.didMove(to: view)
+
+        // VoiceOver normally steals single-finger touches for cursor navigation.
+        // This level is still a real-time platformer, so tell iOS the SpriteKit
+        // view supports direct interaction while VoiceOver is active.
+        previousViewIsAccessibilityElement = view.isAccessibilityElement
+        previousViewAccessibilityLabel = view.accessibilityLabel
+        previousViewAccessibilityTraits = view.accessibilityTraits
+        view.isAccessibilityElement = true
+        view.accessibilityLabel = "Glitched VoiceOver level"
+        view.accessibilityTraits.insert(.allowsDirectInteraction)
+        updateAccessibilityFrames()
     }
 
     private func setupBackground() {
@@ -153,6 +172,7 @@ final class VoiceOverScene: BaseLevelScene, SKPhysicsContactDelegate {
         // Accessibility
         platform.isAccessibilityElement = true
         platform.accessibilityLabel = "STEP HERE"
+        platform.accessibilityTraits = [.staticText, .allowsDirectInteraction]
         platform.accessibilityFrame = CGRect(
             x: position.x - size.width / 2,
             y: position.y - size.height / 2,
@@ -275,9 +295,27 @@ final class VoiceOverScene: BaseLevelScene, SKPhysicsContactDelegate {
         isVoiceOverActive = isEnabled
 
         if isEnabled {
+            voiceOverHasRevealedPath = true
             activateVoiceOverHints()
-        } else {
+        } else if !voiceOverHasRevealedPath {
             deactivateVoiceOverHints()
+        }
+    }
+
+    private func updateAccessibilityFrames() {
+        guard let view = view else { return }
+
+        for platform in invisiblePlatforms {
+            let frame = platform.calculateAccumulatedFrame()
+            let topLeft = convertPoint(toView: CGPoint(x: frame.minX, y: frame.maxY))
+            let bottomRight = convertPoint(toView: CGPoint(x: frame.maxX, y: frame.minY))
+            let viewRect = CGRect(
+                x: min(topLeft.x, bottomRight.x),
+                y: min(topLeft.y, bottomRight.y),
+                width: abs(bottomRight.x - topLeft.x),
+                height: abs(bottomRight.y - topLeft.y)
+            )
+            platform.accessibilityFrame = view.convert(viewRect, to: nil)
         }
     }
 
@@ -424,6 +462,11 @@ final class VoiceOverScene: BaseLevelScene, SKPhysicsContactDelegate {
         playerController.update()
     }
 
+    override func didChangeSize(_ oldSize: CGSize) {
+        super.didChangeSize(oldSize)
+        updateAccessibilityFrames()
+    }
+
     // MARK: - Physics
 
     func didBegin(_ contact: SKPhysicsContact) {
@@ -474,6 +517,11 @@ final class VoiceOverScene: BaseLevelScene, SKPhysicsContactDelegate {
 
     override func willMove(from view: SKView) {
         super.willMove(from: view)
+        view.isAccessibilityElement = previousViewIsAccessibilityElement
+        view.accessibilityLabel = previousViewAccessibilityLabel
+        if let previousViewAccessibilityTraits {
+            view.accessibilityTraits = previousViewAccessibilityTraits
+        }
         DeviceManagerCoordinator.shared.deactivateAll()
     }
 }

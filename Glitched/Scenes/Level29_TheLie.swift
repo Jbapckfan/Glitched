@@ -51,10 +51,6 @@ final class TheLieScene: BaseLevelScene, SKPhysicsContactDelegate {
         physicsWorld.gravity = CGVector(dx: 0, dy: -14)
         physicsWorld.contactDelegate = self
 
-        // Uses appBackgrounding as placeholder mechanic (level has no real device mechanic)
-        AccessibilityManager.shared.registerMechanics([.appBackgrounding])
-        DeviceManagerCoordinator.shared.configure(for: [.appBackgrounding])
-
         setupBackground()
         setupLevelTitle()
         buildLevel()

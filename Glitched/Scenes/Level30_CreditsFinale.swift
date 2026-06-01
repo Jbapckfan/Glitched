@@ -45,10 +45,6 @@ final class CreditsFinaleScene: BaseLevelScene, SKPhysicsContactDelegate {
         physicsWorld.gravity = CGVector(dx: 0, dy: -14)
         physicsWorld.contactDelegate = self
 
-        // No specific mechanic - this is the finale
-        AccessibilityManager.shared.registerMechanics([.appBackgrounding])
-        DeviceManagerCoordinator.shared.configure(for: [.appBackgrounding])
-
         setupWorldContainer()
         setupBackground()
         setupLevelTitle()

@@ -12,16 +12,19 @@ final class MicrophoneManager: DeviceManager {
 
     private let engine = AVAudioEngine()
     private var isRunning = false
+    private var wantsCapture = false
 
     private init() {}
 
     func activate() {
+        wantsCapture = true
         guard !isRunning else { return }
 
         AVAudioSession.sharedInstance().requestRecordPermission { [weak self] granted in
             DispatchQueue.main.async {
+                guard let self, self.wantsCapture else { return }
                 if granted {
-                    self?.startCapture()
+                    self.startCapture()
                 } else {
                     AccessibilityManager.shared.forceHardwareFallback(for: .microphone)
                     NotificationCenter.default.post(name: .envPermissionDenied, object: nil)
@@ -31,6 +34,7 @@ final class MicrophoneManager: DeviceManager {
     }
 
     func deactivate() {
+        wantsCapture = false
         guard isRunning else { return }
         engine.inputNode.removeTap(onBus: 0)
         engine.stop()
@@ -39,6 +43,8 @@ final class MicrophoneManager: DeviceManager {
     }
 
     private func startCapture() {
+        guard wantsCapture else { return }
+
         do {
             let session = AVAudioSession.sharedInstance()
             try session.setCategory(.record, mode: .measurement)

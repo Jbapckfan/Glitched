@@ -271,20 +271,21 @@ final class FlashlightScene: BaseLevelScene, SKPhysicsContactDelegate {
         // Stalactites hanging from ceiling — must hold phone vertical to see them
         let stalactitePositions: [(x: CGFloat, length: CGFloat, gap: CGFloat)] = [
             (x: 440, length: 140, gap: 80),
-            (x: 520, length: 160, gap: 60),
+            (x: 520, length: 160, gap: 80),
             (x: 590, length: 120, gap: 100),
-            (x: 660, length: 180, gap: 40),
+            (x: 660, length: 180, gap: 80),
             (x: 740, length: 100, gap: 120),
-            (x: 820, length: 170, gap: 50),
+            (x: 820, length: 170, gap: 80),
             (x: 880, length: 130, gap: 90),
-            (x: 950, length: 150, gap: 70),
+            (x: 950, length: 150, gap: 80),
         ]
 
         for data in stalactitePositions {
             createStalactiteHazard(
                 at: CGPoint(x: data.x, y: topSafeY - 15),
                 length: data.length,
-                gapFromFloor: data.gap
+                gapFromFloor: data.gap,
+                floorY: groundY
             )
         }
 
@@ -374,7 +375,8 @@ final class FlashlightScene: BaseLevelScene, SKPhysicsContactDelegate {
             createStalactiteHazard(
                 at: CGPoint(x: data.x, y: topSafeY - 15),
                 length: data.length,
-                gapFromFloor: 70
+                gapFromFloor: 70,
+                floorY: groundY
             )
         }
 
@@ -588,9 +590,10 @@ final class FlashlightScene: BaseLevelScene, SKPhysicsContactDelegate {
 
     // MARK: - Stalactite Hazard Factory
 
-    private func createStalactiteHazard(at position: CGPoint, length: CGFloat, gapFromFloor: CGFloat) {
+    private func createStalactiteHazard(at position: CGPoint, length: CGFloat, gapFromFloor: CGFloat, floorY: CGFloat) {
         let container = SKNode()
-        container.position = position
+        let platformTopY = floorY + 20
+        container.position = CGPoint(x: position.x, y: platformTopY + gapFromFloor + length)
         container.zPosition = 20
         levelContainer.addChild(container)
 

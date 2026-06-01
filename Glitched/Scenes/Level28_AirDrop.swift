@@ -31,6 +31,12 @@ final class AirDropScene: BaseLevelScene, SKPhysicsContactDelegate {
     private var keyboardNode: SKNode?
     private var terminalScreen: SKNode?
     private var keyButtons: [SKNode] = []
+    private let designWidth: CGFloat = 390
+
+    private var courseScale: CGFloat { min(1.0, size.width / designWidth) }
+    private var courseOriginX: CGFloat { (size.width - designWidth * courseScale) / 2 }
+    private func courseX(_ logicalX: CGFloat) -> CGFloat { courseOriginX + logicalX * courseScale }
+    private func courseLen(_ logical: CGFloat) -> CGFloat { logical * courseScale }
 
     override func configureScene() {
         levelID = LevelID(world: .world4, index: 28)
@@ -92,19 +98,19 @@ final class AirDropScene: BaseLevelScene, SKPhysicsContactDelegate {
         let groundY: CGFloat = 160
 
         // Start platform
-        createPlatform(at: CGPoint(x: 80, y: groundY), size: CGSize(width: 120, height: 30))
+        createPlatform(at: CGPoint(x: courseX(80), y: groundY), size: CGSize(width: courseLen(120), height: 30))
 
         // Middle platform with terminal
-        createPlatform(at: CGPoint(x: size.width / 2, y: groundY), size: CGSize(width: 180, height: 30))
+        createPlatform(at: CGPoint(x: courseX(195), y: groundY), size: CGSize(width: courseLen(180), height: 30))
 
         // Door platform
-        createPlatform(at: CGPoint(x: size.width - 80, y: groundY), size: CGSize(width: 120, height: 30))
+        createPlatform(at: CGPoint(x: courseX(310), y: groundY), size: CGSize(width: courseLen(120), height: 30))
 
         // Terminal screen with code
-        createTerminalScreen(at: CGPoint(x: size.width / 2, y: groundY + 90))
+        createTerminalScreen(at: CGPoint(x: courseX(195), y: groundY + 90))
 
         // Locked door
-        createLockedDoor(at: CGPoint(x: size.width - 60, y: groundY + 50))
+        createLockedDoor(at: CGPoint(x: courseX(330), y: groundY + 50))
 
         // Death zone
         let death = SKNode()
@@ -277,7 +283,7 @@ final class AirDropScene: BaseLevelScene, SKPhysicsContactDelegate {
     }
 
     private func setupBit() {
-        spawnPoint = CGPoint(x: 80, y: 200)
+        spawnPoint = CGPoint(x: courseX(80), y: 200)
         bit = BitCharacter.make()
         bit.position = spawnPoint
         addChild(bit)
@@ -519,7 +525,8 @@ final class AirDropScene: BaseLevelScene, SKPhysicsContactDelegate {
     override func handleGameInput(_ event: GameInputEvent) {
         switch event {
         case .airdropReceived(let code):
-            if code == doorCode {
+            let isFallbackCode = code == "GLITCH" && AccessibilityManager.shared.needsFallbackUI(for: .airdrop)
+            if code == doorCode || isFallbackCode {
                 unlockDoor()
             }
         default:

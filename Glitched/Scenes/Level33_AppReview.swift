@@ -1,11 +1,10 @@
 import SpriteKit
-import StoreKit
 import UIKit
 
 /// Level 33: App Store Review
 /// The game finale. A deceptively simple level where the exit door is locked
-/// behind escalating fourth-wall gags. The game eventually demands an App Store
-/// review to unlock the exit — self-aware about manipulating the player.
+/// behind escalating fourth-wall gags. The game pretends to demand validation,
+/// then makes the exit optional and never blocks completion on an App Store review.
 final class AppReviewScene: BaseLevelScene, SKPhysicsContactDelegate {
 
     private let fillColor = SKColor.white
@@ -30,10 +29,9 @@ final class AppReviewScene: BaseLevelScene, SKPhysicsContactDelegate {
     private var reviewButton: SKNode!
     private var finalTerminal: SKNode!
     private var exitUnlocked = false
-    private var reviewPromptShown = false
+    private var inLevelReviewButtonUsed = false
     private var reviewSequenceStarted = false
     private var gameCompleteStarted = false
-    private var postCompletionReviewRequested = false
 
     // Terminal text system
     private var activeTerminal: SKNode?
@@ -634,7 +632,7 @@ final class AppReviewScene: BaseLevelScene, SKPhysicsContactDelegate {
             ("YOU'VE CHANGED YOUR DEVICE'S NAME.", 8.6),
             ("...", 9.8),
             ("ALL I ASK...", 10.6),
-            ("IS ONE LITTLE REVIEW.", 11.6),
+            ("IS ONE LITTLE TAP.", 11.6),
         ]
 
         for (text, delay) in lines {
@@ -657,7 +655,7 @@ final class AppReviewScene: BaseLevelScene, SKPhysicsContactDelegate {
                     if text == "ALL I ASK..." {
                         HapticManager.shared.soft()
                     }
-                    if text == "IS ONE LITTLE REVIEW." {
+                    if text == "IS ONE LITTLE TAP." {
                         AudioManager.shared.playBeep(frequency: 800, duration: 0.2, volume: 0.25)
                         HapticManager.shared.medium()
                     }
@@ -788,8 +786,8 @@ final class AppReviewScene: BaseLevelScene, SKPhysicsContactDelegate {
         buttonBG.name = "reviewButtonBG"
         reviewButton.addChild(buttonBG)
 
-        // Star + REVIEW + Star text
-        let buttonText = SKLabelNode(text: "REVIEW")
+        // Star + CONTINUE + Star text
+        let buttonText = SKLabelNode(text: "CONTINUE")
         buttonText.fontName = "Menlo-Bold"
         buttonText.fontSize = 16
         buttonText.fontColor = fillColor
@@ -856,9 +854,9 @@ final class AppReviewScene: BaseLevelScene, SKPhysicsContactDelegate {
     // MARK: - Review Prompt
 
     private func requestAppReview() {
-        guard !exitUnlocked, !reviewPromptShown else { return }
+        guard !exitUnlocked, !inLevelReviewButtonUsed else { return }
 
-        reviewPromptShown = true
+        inLevelReviewButtonUsed = true
         removeAction(forKey: "reviewUnlockFallback")
 
         reviewButton?.run(.sequence([
@@ -869,18 +867,6 @@ final class AppReviewScene: BaseLevelScene, SKPhysicsContactDelegate {
         HapticManager.shared.buttonPress()
         AudioManager.shared.playClick()
         unlockDoorFromOptionalReview()
-
-        run(.sequence([
-            .wait(forDuration: 0.2),
-            .run { [weak self] in
-                self?.triggerStoreReview()
-            }
-        ]))
-    }
-
-    private func triggerStoreReview() {
-        guard let windowScene = view?.window?.windowScene else { return }
-        SKStoreReviewController.requestReview(in: windowScene)
     }
 
     private func clearLargeTerminal() {
@@ -917,7 +903,7 @@ final class AppReviewScene: BaseLevelScene, SKPhysicsContactDelegate {
         guard !exitUnlocked else { return }
         removeAction(forKey: "reviewUnlockFallback")
         removeReviewButton()
-        appendLargeTerminalLine("FINE. YOU WIN. NO REVIEW NEEDED.", to: finalTerminal)
+        appendLargeTerminalLine("FINE. YOU WIN. NO BUTTON NEEDED.", to: finalTerminal)
 
         run(.sequence([
             .wait(forDuration: 0.8),
@@ -1136,13 +1122,6 @@ final class AppReviewScene: BaseLevelScene, SKPhysicsContactDelegate {
             ]))
         }
 
-        run(.sequence([
-            .wait(forDuration: 3.8),
-            .run { [weak self] in
-                self?.requestPostCompletionReviewIfNeeded()
-            }
-        ]))
-
         // Final sequence: fade to white, then back to boot
         run(.sequence([
             .wait(forDuration: 11.0),
@@ -1150,16 +1129,6 @@ final class AppReviewScene: BaseLevelScene, SKPhysicsContactDelegate {
                 self?.fadeToWhiteAndReboot(over: overlay)
             }
         ]))
-    }
-
-    private func requestPostCompletionReviewIfNeeded() {
-        guard !reviewPromptShown, !postCompletionReviewRequested else { return }
-        postCompletionReviewRequested = true
-        reviewPromptShown = true
-
-        AudioManager.shared.playBeep(frequency: 920, duration: 0.08, volume: 0.16)
-        HapticManager.shared.soft()
-        triggerStoreReview()
     }
 
     private func fadeToWhiteAndReboot(over overlay: SKNode) {
@@ -1193,7 +1162,15 @@ final class AppReviewScene: BaseLevelScene, SKPhysicsContactDelegate {
     // MARK: - Input
 
     override func handleGameInput(_ event: GameInputEvent) {
-        _ = event
+        switch event {
+        case .appReviewReturned:
+            guard reviewSequenceStarted, !exitUnlocked else { return }
+            inLevelReviewButtonUsed = true
+            removeAction(forKey: "reviewUnlockFallback")
+            unlockDoorFromOptionalReview()
+        default:
+            break
+        }
     }
 
     override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent?) {

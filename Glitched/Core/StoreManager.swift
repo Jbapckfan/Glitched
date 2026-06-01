@@ -10,6 +10,7 @@ final class StoreManager: ObservableObject {
 
     @Published private(set) var products: [Product] = []
     @Published private(set) var purchasedProductIDs: Set<String> = []
+    @Published private(set) var lastErrorMessage: String?
 
     private var updatesTask: Task<Void, Never>?
 
@@ -47,34 +48,43 @@ final class StoreManager: ObservableObject {
                 Self.devCommentaryProductID
             ])
             products = loaded.sorted { $0.id < $1.id }
+            lastErrorMessage = nil
             await refreshEntitlements()
         } catch {
-            print("StoreManager product load failed: \(error)")
+            setStoreError("Could not load purchases. Check your connection and try again.", error: error)
         }
     }
 
     func purchase(_ product: Product) async throws -> Transaction {
-        let result = try await product.purchase()
+        do {
+            let result = try await product.purchase()
 
-        switch result {
-        case .success(let verification):
-            let transaction = try checkVerified(verification)
-            await transaction.finish()
-            await refreshEntitlements()
-            return transaction
-        case .userCancelled, .pending:
-            throw StoreError.purchaseNotCompleted
-        @unknown default:
-            throw StoreError.purchaseNotCompleted
+            switch result {
+            case .success(let verification):
+                let transaction = try checkVerified(verification)
+                await transaction.finish()
+                await refreshEntitlements()
+                lastErrorMessage = nil
+                return transaction
+            case .userCancelled, .pending:
+                throw StoreError.purchaseNotCompleted
+            @unknown default:
+                throw StoreError.purchaseNotCompleted
+            }
+        } catch {
+            setStoreError("Purchase could not be completed. Try again or restore purchases.", error: error)
+            throw error
         }
     }
 
-    func restorePurchases() async {
+    func restorePurchases() async throws {
         do {
             try await AppStore.sync()
             await refreshEntitlements()
+            lastErrorMessage = nil
         } catch {
-            print("StoreManager restore failed: \(error)")
+            setStoreError("Restore failed. Check your connection and try again.", error: error)
+            throw error
         }
     }
 
@@ -117,8 +127,22 @@ final class StoreManager: ObservableObject {
         }
     }
 
-    enum StoreError: Error {
+    private func setStoreError(_ message: String, error: Error) {
+        lastErrorMessage = message
+        print("StoreManager error: \(message) \(error)")
+    }
+
+    enum StoreError: Error, LocalizedError {
         case failedVerification
         case purchaseNotCompleted
+
+        var errorDescription: String? {
+            switch self {
+            case .failedVerification:
+                return "The purchase could not be verified."
+            case .purchaseNotCompleted:
+                return "The purchase was not completed."
+            }
+        }
     }
 }

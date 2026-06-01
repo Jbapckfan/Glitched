@@ -66,16 +66,14 @@ struct LevelHeaderHUD: View {
                                 y: basePosition.y + value.translation.height
                             )
 
-                            // Post event to bus
-                            InputEventBus.shared.post(
-                                .hudDragCompleted(
-                                    elementID: "levelHeader",
-                                    screenPosition: finalPosition
-                                )
-                            )
-
                             // Check if dropped far enough (below top third of screen)
                             if finalPosition.y > geometry.size.height / 3 {
+                                InputEventBus.shared.post(
+                                    .hudDragCompleted(
+                                        elementID: "levelHeader",
+                                        screenPosition: finalPosition
+                                    )
+                                )
                                 withAnimation(.easeOut(duration: 0.2)) {
                                     hasDropped = true
                                 }
@@ -92,20 +90,58 @@ struct LevelHeaderHUD: View {
     }
 }
 
+struct PauseControlButton: View {
+    var body: some View {
+        Button {
+            GameState.shared.togglePause()
+        } label: {
+            HStack(spacing: 5) {
+                Rectangle()
+                    .fill(VisualConstants.Colors.foregroundUI)
+                    .frame(width: 4, height: 16)
+                Rectangle()
+                    .fill(VisualConstants.Colors.foregroundUI)
+                    .frame(width: 4, height: 16)
+            }
+            .frame(width: 44, height: 44)
+            .background(
+                Rectangle()
+                    .fill(VisualConstants.Colors.backgroundUI.opacity(0.85))
+                    .overlay(
+                        Rectangle()
+                            .strokeBorder(VisualConstants.Colors.accentUI, lineWidth: 2)
+                    )
+                    .shadow(color: VisualConstants.Colors.accentUI.opacity(0.35), radius: 6)
+            )
+        }
+        .accessibilityLabel(Text("Pause"))
+        .accessibilityHint(Text("Opens the pause menu with resume, reboot, and return to map."))
+    }
+}
+
 struct HUDLayer: View {
     let levelID: LevelID
 
     var body: some View {
         ZStack {
-            switch (levelID.world, levelID.index) {
-            case (.world1, 1):
-                // LevelHeaderHUD handles its own safe-area positioning
-                LevelHeaderHUD(levelID: levelID)
-            default:
-                EmptyView()
+            ZStack {
+                switch (levelID.world, levelID.index) {
+                case (.world1, 1):
+                    LevelHeaderHUD(levelID: levelID)
+                default:
+                    EmptyView()
+                }
+            }
+            .allowsHitTesting(levelID == LevelID(world: .world1, index: 1))
+
+            GeometryReader { geometry in
+                HStack {
+                    Spacer()
+                    PauseControlButton()
+                }
+                .padding(.top, max(12, geometry.safeAreaInsets.top + 8))
+                .padding(.trailing, max(16, geometry.safeAreaInsets.trailing + 12))
             }
         }
-        // Allow touches to pass through to the SpriteKit view below
-        .allowsHitTesting(levelID == LevelID(world: .world1, index: 1))
     }
 }

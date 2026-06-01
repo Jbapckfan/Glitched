@@ -40,9 +40,17 @@ class BaseLevelScene: SKScene {
         let isTallPhone = shortSide >= 375 && shortSide <= 500 && longSide >= 800
         let isPortrait = size.height >= size.width
         let isPhone = UIDevice.current.userInterfaceIdiom == .phone || isTallPhone
-        guard isPhone && isTallPhone && isPortrait else { return .zero }
+        if isPhone && isTallPhone && isPortrait {
+            return UIEdgeInsets(top: 59, left: 0, bottom: 34, right: 0)
+        }
 
-        return UIEdgeInsets(top: 59, left: 0, bottom: 34, right: 0)
+        let isPad = UIDevice.current.userInterfaceIdiom == .pad
+        let isLargeCanvas = shortSide >= 700
+        if isPad || isLargeCanvas {
+            return UIEdgeInsets(top: 24, left: 0, bottom: 20, right: 0)
+        }
+
+        return .zero
     }
 
     // Juice system references
@@ -55,7 +63,11 @@ class BaseLevelScene: SKScene {
 
     // FIX #13: Dynamic difficulty hint timer
     private var noProgressTimer: TimeInterval = 0
-    private let noProgressHintDelay: TimeInterval = 18.0
+    private let baseNoProgressHintDelay: TimeInterval = 18.0
+    private var noProgressHintDelay: TimeInterval {
+        let extended = ProgressManager.shared.load().settings.extendedHintTimers
+        return extended ? baseNoProgressHintDelay * 1.75 : baseNoProgressHintDelay
+    }
     private var struggleCount = 0
     private var hintShown = false
     private var playStartedAt: Date?
@@ -150,6 +162,11 @@ class BaseLevelScene: SKScene {
         tint.strokeColor = .clear
         tint.position = CGPoint(x: size.width / 2, y: size.height / 2)
         container.addChild(tint)
+
+        if ProgressManager.shared.load().settings.highContrastMode {
+            tint.fillColor = .clear
+            return
+        }
 
         switch levelID.world {
         case .world0:
@@ -466,18 +483,8 @@ class BaseLevelScene: SKScene {
     func difficultyHintDidShow() {}
 
     func topSafeAreaY(offset: CGFloat, minimumPadding: CGFloat = 16) -> CGFloat {
-        let safeTopInset = view?.safeAreaInsets.top ?? estimatedTopSafeAreaInset()
+        let safeTopInset = max(effectiveTopSafeInset, view?.safeAreaInsets.top ?? 0)
         return size.height - max(offset, safeTopInset + minimumPadding)
-    }
-
-    private func estimatedTopSafeAreaInset() -> CGFloat {
-        // SpriteKit scenes are sometimes configured before SKView has final
-        // safeAreaInsets. Keep top UI clear of Dynamic Island/notch devices,
-        // including the height of compact labels that extend above their anchor.
-        if min(size.width, size.height) < 700 {
-            return 86
-        }
-        return 24
     }
 
     private func showDifficultyHintIfNeeded() {

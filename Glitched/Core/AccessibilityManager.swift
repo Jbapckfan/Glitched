@@ -72,12 +72,17 @@ final class AccessibilityManager: ObservableObject {
     }
 
     func forceHardwareFallback(for mechanic: MechanicType) {
+        objectWillChange.send()
         forcedFallbacks.insert(mechanic)
     }
 
     func usesHardware(for mechanic: MechanicType) -> Bool {
         if hardwareFreeMode { return false }
+        #if targetEnvironment(simulator)
+        return false
+        #else
         return !forcedFallbacks.contains(mechanic)
+        #endif
     }
 
     func needsFallbackUI(for mechanic: MechanicType) -> Bool {

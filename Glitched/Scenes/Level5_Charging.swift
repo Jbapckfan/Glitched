@@ -463,7 +463,10 @@ final class ChargingScene: BaseLevelScene, SKPhysicsContactDelegate {
             let progress = elapsed / 1.0
             let newHeight = 15 + progress * 65
             let newY = -30 + progress * 32.5
-            self.batteryFill.path = SKShapeNode(rectOf: CGSize(width: 40, height: newHeight)).path
+            self.batteryFill.path = CGPath(
+                rect: CGRect(x: -20, y: -newHeight / 2, width: 40, height: newHeight),
+                transform: nil
+            )
             self.batteryFill.position.y = newY
             self.batteryFill.fillColor = self.strokeColor
         }

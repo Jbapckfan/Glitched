@@ -25,6 +25,15 @@ final class AppSwitcherScene: BaseLevelScene, SKPhysicsContactDelegate {
     private let basePeekTime: TimeInterval = 5.0
     private var peekCount = 0
     private var hasShownFourthWall = false
+    private let designWidth: CGFloat = 390
+
+    // Center a phone-sized gameplay course on wider devices. The hazard stones
+    // and final exit must share one coordinate system; otherwise iPad creates an
+    // impossible final gap from the last fixed stone to the size.width-pinned exit.
+    private var courseScale: CGFloat { min(1.0, size.width / designWidth) }
+    private var courseOriginX: CGFloat { (size.width - designWidth * courseScale) / 2 }
+    private func courseX(_ logicalX: CGFloat) -> CGFloat { courseOriginX + logicalX * courseScale }
+    private func courseLen(_ logical: CGFloat) -> CGFloat { logical * courseScale }
 
     override func configureScene() {
         levelID = LevelID(world: .world2, index: 18)
@@ -76,16 +85,16 @@ final class AppSwitcherScene: BaseLevelScene, SKPhysicsContactDelegate {
     private func buildLevel() {
         let groundY: CGFloat = 160
 
-        // Fits a 390-pt iPhone canvas. Stepping stones are ≤ 25 pt apart
-        // with 30-pt rise/drop — well inside the 72-pt jump height.
-        createPlatform(at: CGPoint(x: 45, y: groundY), size: CGSize(width: 80, height: 30))
+        // Fits a 390-pt logical course. Stepping stones are ≤ 25 pt apart
+        // with 30-pt rise/drop — well inside the 91-pt jump height.
+        createPlatform(at: CGPoint(x: courseX(45), y: groundY), size: CGSize(width: courseLen(80), height: 30))
 
-        createPlatform(at: CGPoint(x: 125, y: groundY + 30), size: CGSize(width: 55, height: 20))
-        createPlatform(at: CGPoint(x: 200, y: groundY + 60), size: CGSize(width: 55, height: 20))
-        createPlatform(at: CGPoint(x: 275, y: groundY + 30), size: CGSize(width: 55, height: 20))
+        createPlatform(at: CGPoint(x: courseX(125), y: groundY + 30), size: CGSize(width: courseLen(55), height: 20))
+        createPlatform(at: CGPoint(x: courseX(200), y: groundY + 60), size: CGSize(width: courseLen(55), height: 20))
+        createPlatform(at: CGPoint(x: courseX(275), y: groundY + 30), size: CGSize(width: courseLen(55), height: 20))
 
-        createPlatform(at: CGPoint(x: size.width - 45, y: groundY), size: CGSize(width: 80, height: 30))
-        createExitDoor(at: CGPoint(x: size.width - 35, y: groundY + 50))
+        createPlatform(at: CGPoint(x: courseX(345), y: groundY), size: CGSize(width: courseLen(80), height: 30))
+        createExitDoor(at: CGPoint(x: courseX(355), y: groundY + 50))
 
         // Death zone
         let death = SKNode()
@@ -118,9 +127,9 @@ final class AppSwitcherScene: BaseLevelScene, SKPhysicsContactDelegate {
         // Positions and oscillation ranges fit a 390-pt iPhone canvas and
         // are kept clear of the exit plateau on narrow iPhones (≥375 pt).
         let hazardData: [(pos: CGPoint, range: CGFloat, speed: TimeInterval)] = [
-            (CGPoint(x: 130, y: 235), 40, 0.8),
-            (CGPoint(x: 200, y: 265), 50, 0.6),
-            (CGPoint(x: 275, y: 240), 45, 0.7)
+            (CGPoint(x: courseX(130), y: 235), courseLen(40), 0.8),
+            (CGPoint(x: courseX(200), y: 265), courseLen(50), 0.6),
+            (CGPoint(x: courseX(275), y: 240), courseLen(45), 0.7)
         ]
 
         for (index, data) in hazardData.enumerated() {
@@ -230,7 +239,7 @@ final class AppSwitcherScene: BaseLevelScene, SKPhysicsContactDelegate {
     }
 
     private func setupBit() {
-        spawnPoint = CGPoint(x: 45, y: 200)
+        spawnPoint = CGPoint(x: courseX(45), y: 200)
         bit = BitCharacter.make()
         bit.position = spawnPoint
         addChild(bit)

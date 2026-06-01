@@ -43,6 +43,12 @@ final class TimeOfDayScene: BaseLevelScene, SKPhysicsContactDelegate {
     // Override toggle
     private var toggleButton: SKNode?
     private var toggleIndex = 0
+    private let designWidth: CGFloat = 390
+
+    private var courseScale: CGFloat { min(1.0, size.width / designWidth) }
+    private var courseOriginX: CGFloat { (size.width - designWidth * courseScale) / 2 }
+    private func courseX(_ logicalX: CGFloat) -> CGFloat { courseOriginX + logicalX * courseScale }
+    private func courseLen(_ logical: CGFloat) -> CGFloat { logical * courseScale }
 
     override func configureScene() {
         levelID = LevelID(world: .world3, index: 25)
@@ -122,16 +128,16 @@ final class TimeOfDayScene: BaseLevelScene, SKPhysicsContactDelegate {
     private func buildLevel() {
         let groundY: CGFloat = 160
 
-        // Fits a 390-pt iPhone canvas. Each gap ≤ 17.5 pt with rises ≤ 20 pt —
-        // well under the 72-pt max jump height.
-        createPlatform(at: CGPoint(x: 45, y: groundY), size: CGSize(width: 80, height: 30))
+        // Fits a 390-pt logical course and is centered on wider devices. Each
+        // rise is <= 40 pt, well under the corrected ~91-pt jump apex.
+        createPlatform(at: CGPoint(x: courseX(45), y: groundY), size: CGSize(width: courseLen(80), height: 30))
 
-        createPlatform(at: CGPoint(x: 130, y: groundY + 20), size: CGSize(width: 65, height: 25))
-        createPlatform(at: CGPoint(x: 215, y: groundY + 40), size: CGSize(width: 70, height: 25))
-        createPlatform(at: CGPoint(x: 290, y: groundY + 25), size: CGSize(width: 50, height: 25))
+        createPlatform(at: CGPoint(x: courseX(130), y: groundY + 20), size: CGSize(width: courseLen(65), height: 25))
+        createPlatform(at: CGPoint(x: courseX(215), y: groundY + 40), size: CGSize(width: courseLen(70), height: 25))
+        createPlatform(at: CGPoint(x: courseX(290), y: groundY + 25), size: CGSize(width: courseLen(50), height: 25))
 
-        createPlatform(at: CGPoint(x: size.width - 40, y: groundY), size: CGSize(width: 70, height: 30))
-        createExitDoor(at: CGPoint(x: size.width - 30, y: groundY + 50))
+        createPlatform(at: CGPoint(x: courseX(350), y: groundY), size: CGSize(width: courseLen(70), height: 30))
+        createExitDoor(at: CGPoint(x: courseX(360), y: groundY + 50))
 
         // Death zone
         let death = SKNode()
@@ -330,7 +336,7 @@ final class TimeOfDayScene: BaseLevelScene, SKPhysicsContactDelegate {
     }
 
     private func setupBit() {
-        spawnPoint = CGPoint(x: 45, y: 200)
+        spawnPoint = CGPoint(x: courseX(45), y: 200)
         bit = BitCharacter.make()
         bit.position = spawnPoint
         addChild(bit)
@@ -348,7 +354,6 @@ final class TimeOfDayScene: BaseLevelScene, SKPhysicsContactDelegate {
     }
 
     private func applyTimeMode(_ mode: TimeMode) {
-        let previousMode = currentMode
         currentMode = mode
 
         switch mode {

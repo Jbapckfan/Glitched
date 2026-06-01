@@ -172,8 +172,6 @@ final class MetaFinaleScene: BaseLevelScene, SKPhysicsContactDelegate {
     }
 
     private func revealLevel() {
-        hasShownIntro = true
-
         // Flash to white
         JuiceManager.shared.flash(color: .white, duration: 0.3)
         backgroundColor = fillColor
@@ -195,6 +193,7 @@ final class MetaFinaleScene: BaseLevelScene, SKPhysicsContactDelegate {
         warningOverlay?.position = CGPoint(x: size.width / 2, y: size.height / 2)
         addChild(warningOverlay!)
 
+        hasShownIntro = true
         checkIfReinstalled()
     }
 
@@ -632,6 +631,11 @@ final class MetaFinaleScene: BaseLevelScene, SKPhysicsContactDelegate {
     override func handleGameInput(_ event: GameInputEvent) {
         switch event {
         case .appReinstallDetected:
+            guard hasShownIntro,
+                  corruptionWall != nil,
+                  !corruptionBlocks.isEmpty,
+                  hintLabel != nil,
+                  progressSavedLabel != nil else { return }
             clearCorruption()
         default:
             break

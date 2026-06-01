@@ -267,7 +267,6 @@ final class MultiTouchScene: BaseLevelScene, SKPhysicsContactDelegate {
 
     private func buildSection3() {
         // Four plates positioned near screen edges/corners
-        let margin: CGFloat = 50
         let positions: [CGPoint] = [
             CGPoint(x: size.width * 0.80, y: size.height * 0.25),
             CGPoint(x: size.width * 0.92, y: size.height * 0.50),
@@ -307,13 +306,14 @@ final class MultiTouchScene: BaseLevelScene, SKPhysicsContactDelegate {
 
     private func createPressurePlate(at position: CGPoint, group: Int) -> PressurePlate {
         let radius: CGFloat = 28
+        let cameraPosition = cameraLocalPoint(fromScenePoint: position)
 
         let glowRing = SKShapeNode(circleOfRadius: radius + 4)
         glowRing.fillColor = .clear
         glowRing.strokeColor = strokeColor.withAlphaComponent(0.3)
         glowRing.lineWidth = 1.5
         glowRing.glowWidth = 3
-        glowRing.position = position
+        glowRing.position = cameraPosition
         glowRing.zPosition = 500
         gameCamera.addChild(glowRing)
 
@@ -321,7 +321,7 @@ final class MultiTouchScene: BaseLevelScene, SKPhysicsContactDelegate {
         plate.fillColor = fillColor.withAlphaComponent(0.05)
         plate.strokeColor = strokeColor.withAlphaComponent(0.4)
         plate.lineWidth = lineWidth
-        plate.position = position
+        plate.position = cameraPosition
         plate.zPosition = 501
         gameCamera.addChild(plate)
 
@@ -331,7 +331,7 @@ final class MultiTouchScene: BaseLevelScene, SKPhysicsContactDelegate {
         pulseRing.strokeColor = VisualConstants.Colors.accent
         pulseRing.lineWidth = 1
         pulseRing.alpha = 0
-        pulseRing.position = position
+        pulseRing.position = cameraPosition
         pulseRing.zPosition = 499
         gameCamera.addChild(pulseRing)
 
@@ -397,17 +397,19 @@ final class MultiTouchScene: BaseLevelScene, SKPhysicsContactDelegate {
 
     private func createCircuitConnections(from sources: [CGPoint], to dest: CGPoint, group: Int) -> [SKShapeNode] {
         var lines: [SKShapeNode] = []
+        let cameraDestination = cameraLocalPoint(fromScenePoint: dest)
 
         for source in sources {
+            let cameraSource = cameraLocalPoint(fromScenePoint: source)
             let line = SKShapeNode()
             let path = CGMutablePath()
 
             // Right-angle routed connection (circuit board style)
-            let midX = (source.x + dest.x) / 2
-            path.move(to: source)
-            path.addLine(to: CGPoint(x: midX, y: source.y))
-            path.addLine(to: CGPoint(x: midX, y: dest.y))
-            path.addLine(to: dest)
+            let midX = (cameraSource.x + cameraDestination.x) / 2
+            path.move(to: cameraSource)
+            path.addLine(to: CGPoint(x: midX, y: cameraSource.y))
+            path.addLine(to: CGPoint(x: midX, y: cameraDestination.y))
+            path.addLine(to: cameraDestination)
 
             line.path = path
             line.strokeColor = strokeColor.withAlphaComponent(0.08)
@@ -419,6 +421,10 @@ final class MultiTouchScene: BaseLevelScene, SKPhysicsContactDelegate {
         }
 
         return lines
+    }
+
+    private func cameraLocalPoint(fromScenePoint point: CGPoint) -> CGPoint {
+        gameCamera.convert(point, from: self)
     }
 
     // MARK: - Platform Factory
@@ -462,7 +468,7 @@ final class MultiTouchScene: BaseLevelScene, SKPhysicsContactDelegate {
         label.fontSize = 10
         label.fontColor = strokeColor.withAlphaComponent(0.6)
         label.verticalAlignmentMode = .center
-        label.position = CGPoint(x: size.width * 0.25, y: size.height * 0.85)
+        label.position = cameraLocalPoint(fromScenePoint: CGPoint(x: size.width * 0.25, y: size.height * 0.85))
         label.zPosition = 600
         gameCamera.addChild(label)
         instructionLabel = label
@@ -519,6 +525,39 @@ final class MultiTouchScene: BaseLevelScene, SKPhysicsContactDelegate {
         for touch in touches {
             if let idx = trackedTouches.removeValue(forKey: touch) { deactivatePlate(at: idx); removeCloneGhost(for: touch) }
             if touch == movementTouch { playerController.cancel(); movementTouch = nil }
+        }
+        evaluatePlateGroups()
+    }
+
+    override func handleGameInput(_ event: GameInputEvent) {
+        switch event {
+        case .multiTouch(let count, _):
+            activateNextFallbackGroup(touchCount: count)
+        default:
+            break
+        }
+    }
+
+    private func activateNextFallbackGroup(touchCount: Int) {
+        let nextGroup: Int
+        if !section1Complete {
+            nextGroup = 1
+        } else if !section2Complete {
+            nextGroup = 2
+        } else if !section3Complete {
+            nextGroup = 3
+        } else {
+            return
+        }
+
+        let plateIndices = pressurePlates.indices.filter { pressurePlates[$0].group == nextGroup }
+        guard touchCount >= plateIndices.count else {
+            showCommentary("NEED \(plateIndices.count) CONTACTS.")
+            return
+        }
+
+        for index in plateIndices where !pressurePlates[index].isActive {
+            activatePlate(at: index)
         }
         evaluatePlateGroups()
     }

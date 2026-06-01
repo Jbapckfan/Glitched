@@ -55,9 +55,6 @@ struct GlitchedApp: App {
 
         UNUserNotificationCenter.current().delegate = notificationDelegate
 
-        // FIX #15: Authenticate with Game Center on launch
-        GameCenterManager.shared.authenticate()
-
         // FIX #17: Start screen recording detection
         _ = ScreenRecordingDetector.shared
     }
@@ -78,6 +75,9 @@ struct GlitchedApp: App {
                 .environmentObject(gameState)
                 .preferredColorScheme(forceDarkMode ? .dark : nil)
                 .statusBarHidden(true)
+                .task {
+                    GameCenterManager.shared.authenticate()
+                }
             } else {
                 // FIX #12: Show permissions overview on first launch
                 PermissionsPreflightView(hasSeenPreflight: $hasSeenPreflight)

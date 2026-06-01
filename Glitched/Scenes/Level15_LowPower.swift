@@ -22,6 +22,12 @@ final class LowPowerScene: BaseLevelScene, SKPhysicsContactDelegate {
     private var platformSurfaces: [(shape: SKShapeNode, size: CGSize)] = []  // Track platforms for visual degradation
     private var fourthWallLabel: SKLabelNode?
     private var hasShownFourthWall = false
+    private let designWidth: CGFloat = 390
+
+    private var courseScale: CGFloat { min(1.0, size.width / designWidth) }
+    private var courseOriginX: CGFloat { (size.width - designWidth * courseScale) / 2 }
+    private func courseX(_ logicalX: CGFloat) -> CGFloat { courseOriginX + logicalX * courseScale }
+    private func courseLen(_ logical: CGFloat) -> CGFloat { logical * courseScale }
 
     override func configureScene() {
         levelID = LevelID(world: .world2, index: 15)
@@ -77,7 +83,8 @@ final class LowPowerScene: BaseLevelScene, SKPhysicsContactDelegate {
     private func buildLevel() {
         let groundY: CGFloat = 160
 
-        // Fits a 390-pt iPhone canvas. Three gravity-gated sections:
+        // Fits a 390-pt logical course, centered on wider devices. Three
+        // gravity-gated sections:
         //   1. Start: reachable via normal gravity.
         //   2. Narrow drop: a 32-pt gap between ledges (> 22-pt player body
         //      width) passable in normal gravity only — low gravity floats
@@ -87,22 +94,22 @@ final class LowPowerScene: BaseLevelScene, SKPhysicsContactDelegate {
         //      chasm is only crossable with Low Power active.
 
         // === SECTION 1: Start (normal gravity) ===
-        createPlatform(at: CGPoint(x: 45, y: groundY), size: CGSize(width: 70, height: 30))
-        createPlatform(at: CGPoint(x: 135, y: groundY + 40), size: CGSize(width: 55, height: 25))
+        createPlatform(at: CGPoint(x: courseX(45), y: groundY), size: CGSize(width: courseLen(70), height: 30))
+        createPlatform(at: CGPoint(x: courseX(135), y: groundY + 40), size: CGSize(width: courseLen(55), height: 25))
 
         // === SECTION 2: Narrow drop (NEEDS NORMAL GRAVITY) ===
-        createPlatform(at: CGPoint(x: 205, y: groundY + 80), size: CGSize(width: 50, height: 20))
+        createPlatform(at: CGPoint(x: courseX(205), y: groundY + 80), size: CGSize(width: courseLen(50), height: 20))
         // 32-pt gap between ledges — leaves 10 pt of clearance for Bit's
         // 22-pt physics body, tight but reliably passable when falling.
-        createPlatform(at: CGPoint(x: 183, y: groundY + 20), size: CGSize(width: 15, height: 15))
-        createPlatform(at: CGPoint(x: 230, y: groundY + 20), size: CGSize(width: 15, height: 15))
-        createPlatform(at: CGPoint(x: 205, y: groundY - 30), size: CGSize(width: 50, height: 20))
+        createPlatform(at: CGPoint(x: courseX(183), y: groundY + 20), size: CGSize(width: courseLen(15), height: 15))
+        createPlatform(at: CGPoint(x: courseX(230), y: groundY + 20), size: CGSize(width: courseLen(15), height: 15))
+        createPlatform(at: CGPoint(x: courseX(205), y: groundY - 30), size: CGSize(width: courseLen(50), height: 20))
 
         // === SECTION 3: Wide chasm (NEEDS LOW GRAVITY) ===
         // Catch right edge = 230, section-3 left edge = 327.5 → 97.5-pt gap
         // with a 70-pt rise. At rise 70 pt the normal jump tops out at
         // ~78 pt horizontal, so this chasm is unjumpable without Low Power.
-        createPlatform(at: CGPoint(x: 350, y: groundY + 40), size: CGSize(width: 45, height: 20))
+        createPlatform(at: CGPoint(x: courseX(350), y: groundY + 40), size: CGSize(width: courseLen(45), height: 20))
 
         // Low-gravity "ceiling" spanning x=317.5..322.5 at y=390..460.
         // A low-gravity jump launched from the stepup (y=200, top=212.5)
@@ -110,7 +117,7 @@ final class LowPowerScene: BaseLevelScene, SKPhysicsContactDelegate {
         // section 3. The intended catch→section 3 arc stays below y=382
         // when crossing x=320 and passes under the wall cleanly.
         let ceilingGuard = SKNode()
-        ceilingGuard.position = CGPoint(x: 320, y: 425)
+        ceilingGuard.position = CGPoint(x: courseX(320), y: 425)
         ceilingGuard.name = "low_power_ceiling"
         ceilingGuard.physicsBody = SKPhysicsBody(rectangleOf: CGSize(width: 5, height: 70))
         ceilingGuard.physicsBody?.isDynamic = false
@@ -128,7 +135,7 @@ final class LowPowerScene: BaseLevelScene, SKPhysicsContactDelegate {
         // Exit sits on section 3. The 97.5-pt catch-to-section-3 gap blocks
         // reaching the exit until Low Power has been engaged, so the exit
         // can't be triggered before the gravity puzzle has been solved.
-        createExitDoor(at: CGPoint(x: 350, y: groundY + 90))
+        createExitDoor(at: CGPoint(x: courseX(350), y: groundY + 90))
 
         // Death zone
         let death = SKNode()
@@ -269,7 +276,7 @@ final class LowPowerScene: BaseLevelScene, SKPhysicsContactDelegate {
     }
 
     private func setupBit() {
-        spawnPoint = CGPoint(x: 45, y: 200)
+        spawnPoint = CGPoint(x: courseX(45), y: 200)
         bit = BitCharacter.make()
         bit.position = spawnPoint
         addChild(bit)
