@@ -148,8 +148,16 @@ final class DarkModeScene: BaseLevelScene, SKPhysicsContactDelegate {
     }
 
     private func drawMoonDecoration() {
-        // Large moon in background
-        let moonPos = CGPoint(x: size.width - 100, y: topSafeY - 90)
+        // Large moon in background.
+        // HUD-OVERLAP FIX: the old (width-100, topSafeY-90) center put the crescent's
+        // radius-40 outer + inner cutout into the top-right PAUSE zone (x[width-90,width],
+        // y[topSafeY-115, topSafeY]) — the line-art ran under the pause button on
+        // iPhone 390/402 and iPad 1024. Lower the moon to top topSafeY-135 (so its
+        // highest point, my+40, sits ~20pt below the pause zone's bottom edge at
+        // topSafeY-115) and pull it 15pt further inboard. The moon now clears the
+        // pause zone vertically on every device while staying in the upper-right sky
+        // motif. Decorative only (zPosition < 0) — no physics/mechanic touched.
+        let moonPos = CGPoint(x: size.width - 115, y: topSafeY - 175)
 
         // Moon crescent
         let moonOuter = SKShapeNode(circleOfRadius: 40)
@@ -878,9 +886,9 @@ final class DarkModeScene: BaseLevelScene, SKPhysicsContactDelegate {
     // MARK: - Hidden Dark Mode Text
 
     private func createHiddenDarkText() {
-        // Easter-egg text sits on the floor near the start area; anchor to the
-        // bottom-derived groundY (was hardcoded y=130/115 for an old short canvas).
-        let textX = size.width * 0.12 + courseOffsetX + 30
+        // Easter-egg text sits on the floor; centered so it clears the bottom-LEFT
+        // hardware-fallback pill (was left-anchored at ~x77 on iPhone, overlapping it).
+        let textX = size.width / 2
         hiddenDarkText = SKLabelNode(text: "PSST. BETWEEN YOU AND ME...")
         hiddenDarkText?.fontName = "Menlo-Bold"
         hiddenDarkText?.fontSize = 10

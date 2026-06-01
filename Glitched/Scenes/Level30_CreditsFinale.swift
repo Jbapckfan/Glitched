@@ -83,14 +83,30 @@ final class CreditsFinaleScene: BaseLevelScene, SKPhysicsContactDelegate {
     }
 
     private func setupLevelTitle() {
+        // HUD-OVERLAP FIX (a): this level scrolls a centered vertical ladder of bright
+        // white credit "platforms" upward. When the SK title was scene-anchored at
+        // topSafeY-30 (scene-y 755 on iPhone 390), it sat only ~2.5pt above the
+        // "SPECIAL THANKS / YOUR DEVICE" credit box (scene-y[771.5,796.5]) — reading as
+        // an overlap — and, being scene-anchored, it scrolled out of the band while the
+        // course scrolled through it. Anchor the title to the CAMERA (stable HUD, like
+        // Level31) and drop it BELOW the top-right pause band so it never shares a screen
+        // row with the pause button or the bright credit boxes:
+        //   iPhone 390 (topSafeY 785, cam@422): scene-y 665 -> screen-top ~179, glyph
+        //     band ~[165,193]; pause bottom ~155, so 10pt below pause. x[80,~210] is the
+        //     top-LEFT column, clear of the pause column x[290,390].
+        //   iPad 1024 (topSafeY 1342, cam@683): scene-y 1222 -> screen-top ~144, glyph
+        //     ~[130,158]; pause bottom ~120, so 10pt below pause; x clear of pause[924,1024].
         let title = SKLabelNode(text: "LEVEL 30")
         title.fontName = "Helvetica-Bold"
         title.fontSize = 28
         title.fontColor = fillColor
-        title.position = CGPoint(x: 80, y: topSafeY - 30)
+        // Camera-local: camera sits at (size.width/2, size.height/2) at t=0, so a scene-y
+        // of (topSafeY-120) and a scene-x of 80 map to these local offsets.
+        title.position = CGPoint(x: 80 - size.width / 2,
+                                 y: (topSafeY - 120) - size.height / 2)
         title.horizontalAlignmentMode = .left
         title.zPosition = 100
-        addChild(title)
+        gameCamera?.addChild(title)
     }
 
     private func buildLevel() {
@@ -101,23 +117,40 @@ final class CreditsFinaleScene: BaseLevelScene, SKPhysicsContactDelegate {
         // Center-to-center == top-to-top rise (all platforms 25pt thick).
         // Bit's jump peak ≈ maxJumpVelocity² / (2·g) ≈ 620² / 4200 ≈ 91pt.
         // 76pt leaves ~15pt (~16%) margin for imperfect apex timing.
+        // NOTE: the jump MECHANIC is governed entirely by this 76pt VERTICAL spacing —
+        // left untouched. Only the horizontal footprint (zigzag offset + box width) is
+        // tightened below to keep the bright white credit boxes out of the top-right
+        // pause column; landing tolerance stays generous at these sizes.
         let verticalSpacing: CGFloat = 76
+
+        // HUD-OVERLAP FIX (b): the old 180-wide boxes at ±60 zigzag put the right-column
+        // rungs (e.g. "BUGS REMAINING / THIS ONE") at x[165,345] on iPhone 390 — their
+        // right edge (345) reached into the screen-pinned PAUSE column (x[290,390]), and
+        // at t=0 those rungs render inside the pause band (scene-y[689,777]). Shrink the
+        // zigzag to ±30 and box width to 110 so every right rung is x[170,280] (center
+        // 225) — right edge 280 < pause-left 290, clearing the pause column on every
+        // device — while keeping the ladder visibly off-center for the climb.
+        let zigzagOffset: CGFloat = 30
+        let platformWidth: CGFloat = 110
+        // Centered anchor/finale platforms also narrowed to 150 so their x[w/2-75, w/2+75]
+        // (iPhone 390: [120,270]) clears the pause column too.
+        let centeredWidth: CGFloat = 150
 
         // Starting platform
         createCreditPlatform(
             at: CGPoint(x: size.width / 2, y: startY),
             role: "GLITCHED",
             name: "THE FINAL LEVEL",
-            width: 200
+            width: centeredWidth
         )
 
         // Credit platforms in zigzag pattern going upward
         for (i, credit) in credits.enumerated() {
-            let xOffset: CGFloat = (i % 2 == 0) ? -60 : 60
+            let xOffset: CGFloat = (i % 2 == 0) ? -zigzagOffset : zigzagOffset
             let x = size.width / 2 + xOffset
             let y = startY + CGFloat(i + 1) * verticalSpacing
 
-            createCreditPlatform(at: CGPoint(x: x, y: y), role: credit.role, name: credit.name, width: 180)
+            createCreditPlatform(at: CGPoint(x: x, y: y), role: credit.role, name: credit.name, width: platformWidth)
         }
 
         // "THANK YOU FOR PLAYING" platform at the top with exit
@@ -126,7 +159,7 @@ final class CreditsFinaleScene: BaseLevelScene, SKPhysicsContactDelegate {
             at: CGPoint(x: size.width / 2, y: topY),
             role: "THANK YOU",
             name: "FOR PLAYING",
-            width: 220
+            width: centeredWidth
         )
 
         // Exit door on top platform
@@ -313,19 +346,22 @@ final class CreditsFinaleScene: BaseLevelScene, SKPhysicsContactDelegate {
 
     private func showInstructionPanel() {
         let panel = SKNode()
-        // The 280-wide discovery panel (x ≈ [w/2-140, w/2+140] -> [55,335] on iPhone
-        // 390) shares an x-column with the top-left LEVEL title (x[80,~203]) and the
-        // top-right PAUSE zone (x[w-88, w]). At the old topSafeY-90 center its 80-tall
-        // box top (topSafeY-50) sat only ~6pt under the title band bottom (~topSafeY-44)
-        // and clipped the pause column. Drop it well BELOW the title/pause band: 80-tall
-        // box (y±40) centered at topSafeY-170 spans [topSafeY-210, topSafeY-130], an
-        // 86pt vertical gap below the title — zero rect overlap with TITLE or PAUSE on
-        // iPhone 390/402 and iPad 1024, and still above the gameplay course below.
-        panel.position = CGPoint(x: size.width / 2, y: topSafeY - 170)
+        // Camera-anchor the discovery panel (like the title) so it stays a stable HUD in
+        // the reserved-clear band instead of scrolling with the centered credit ladder.
+        // Stack it just BELOW the camera-anchored title and BELOW the top pause band:
+        //   iPhone 390 (topSafeY 785, cam@422): scene-y 610 -> screen-top ~234; 80-tall
+        //     box -> screen-y[194,274]. Pause bottom ~155 and title glyph bottom ~193 are
+        //     both above the box top (194) -> no overlap. Box narrowed to 240 -> x[75,315];
+        //     its y-band sits entirely below the pause band, so the 315 right edge never
+        //     meets the pause column.
+        //   iPad 1024 (topSafeY 1342, cam@683): scene-y 1167 -> screen-top ~199, box
+        //     [159,239], below pause bottom ~120; centered x[392,632] nowhere near pause.
+        panel.position = CGPoint(x: 0,
+                                 y: (topSafeY - 175) - size.height / 2)
         panel.zPosition = 300
-        addChild(panel)
+        gameCamera?.addChild(panel)
 
-        let bg = SKShapeNode(rectOf: CGSize(width: 280, height: 80), cornerRadius: 8)
+        let bg = SKShapeNode(rectOf: CGSize(width: 240, height: 80), cornerRadius: 8)
         bg.fillColor = fillColor
         bg.strokeColor = fillColor
         panel.addChild(bg)

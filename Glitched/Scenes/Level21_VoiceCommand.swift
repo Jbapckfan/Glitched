@@ -352,11 +352,20 @@ final class VoiceCommandScene: BaseLevelScene, SKPhysicsContactDelegate {
 
     private func showInstructionPanel() {
         let panel = SKNode()
-        panel.position = CGPoint(x: size.width / 2, y: topSafeY - 90)
+        // Drop the panel BELOW the reserved top-right pause-button zone (which
+        // extends down to ~topSafeY-115). The box is 80 pt tall, so a center at
+        // topSafeY-160 puts its top edge at topSafeY-120 — clear of the pause
+        // button bottom. It is also narrowed (320 -> 260) and stays centered, so
+        // on iPhone 390 the box spans x[65,325]: its right edge (325) clears the
+        // top-right pause column (x[300,390] / mic at x~335-377) and its left
+        // edge (65) clears the top-left LEVEL 21 title. On iPad (1024) the panel
+        // is centered with even more margin. Still above the gameplay/Bit, and
+        // fades out after 5 s as before — the mechanic is unchanged.
+        panel.position = CGPoint(x: size.width / 2, y: topSafeY - 160)
         panel.zPosition = 300
         addChild(panel)
 
-        let bg = SKShapeNode(rectOf: CGSize(width: 320, height: 80), cornerRadius: 8)
+        let bg = SKShapeNode(rectOf: CGSize(width: 260, height: 80), cornerRadius: 8)
         bg.fillColor = fillColor
         bg.strokeColor = strokeColor
         panel.addChild(bg)

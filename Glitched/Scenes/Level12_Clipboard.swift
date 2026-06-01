@@ -221,20 +221,24 @@ final class ClipboardScene: BaseLevelScene, SKPhysicsContactDelegate {
     }
 
     private func showInstructionPanel() {
-        // OVERLAP FIX: the panel was centered at topSafeY-70 (top edge topSafeY-40),
-        // which sits inside the TITLE band. With the 240-wide bg, on iPhone 390 the
-        // panel spanned x[75,315] — fully covering the title's x[80,~204] — and its
-        // top edge (topSafeY-40) was only ~6pt below the title glyphs (baseline
-        // topSafeY-30), a fragile near-collision. Drop the panel fully below the title
-        // band: center at topSafeY-120 puts the 60-tall bg's top edge at topSafeY-90
-        // (>= the spec's topSafeY-90 floor), clearing TITLE and the top-right PAUSE
-        // zone entirely while staying well above the terminal/course.
+        // OVERLAP FIX (PAUSE button): the panel was centered at topSafeY-120 with a
+        // 240-wide bg, so on iPhone 390 it spanned x[75,315] and its 60-tall top edge
+        // sat at topSafeY-90. The top-right PAUSE button reserves ~88x88 at x[300,390]
+        // from the top down to ~topSafeY-115. The panel's right edge (315) was inside
+        // the pause column (x>=300) AND its top edge (topSafeY-90) was above the pause
+        // bottom (topSafeY-115), so the panel clipped the pause button. Two-part fix:
+        //   1) Drop the panel: center at topSafeY-155 puts the 60-tall top edge at
+        //      topSafeY-125 — below the spec's topSafeY-120 floor (clear of pause bottom).
+        //   2) Narrow to 200 wide so on iPhone 390 (center x=195) the right edge is 295,
+        //      clearing the pause column's left edge at x=300.
+        // The text "EXTRACT & RETURN" (~136pt) stays comfortably inside 200pt, and at
+        // topSafeY-155 the panel is still far above the terminal (y=260) and course.
         let panel = SKNode()
-        panel.position = CGPoint(x: size.width / 2, y: topSafeY - 120)
+        panel.position = CGPoint(x: size.width / 2, y: topSafeY - 155)
         panel.zPosition = 300
         addChild(panel)
 
-        let bg = SKShapeNode(rectOf: CGSize(width: 240, height: 60), cornerRadius: 8)
+        let bg = SKShapeNode(rectOf: CGSize(width: 200, height: 60), cornerRadius: 8)
         bg.fillColor = fillColor
         bg.strokeColor = strokeColor
         bg.lineWidth = lineWidth

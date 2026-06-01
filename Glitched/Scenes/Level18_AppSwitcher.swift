@@ -212,30 +212,55 @@ final class AppSwitcherScene: BaseLevelScene, SKPhysicsContactDelegate {
 
     private func showInstructionPanel() {
         let panel = SKNode()
-        // Drop the centered 280-wide panel low enough that its top edge clears
-        // the top-trailing PAUSE button (its bottom-left corner clipped the panel
-        // on iPhone 390x844). topSafeY-98 keeps it below the title band too.
-        panel.position = CGPoint(x: size.width / 2, y: topSafeY - 98)
+        // Systemic HUD fix: the centered instruction panel previously sat at
+        // topSafeY-98 and was 280pt wide. Its TOP edge (topSafeY-58) was inside
+        // the top-trailing PAUSE reserved zone (~88x88, bottom ~topSafeY-115),
+        // and its right edge (x=335 on iPhone 390) plus the overflowing first
+        // line ran UNDER the pause button. Fix per the rule: drop the panel so
+        // its TOP edge is at/below topSafeY-120 (clear of the pause bottom),
+        // narrow the box to 200pt so it stays out of the top-right pause column
+        // and the top-left title, and wrap the long first line so the text
+        // stays inside the box. Box height 90 -> top edge = (topSafeY-165)+45 =
+        // topSafeY-120; on iPhone 390 the box spans x[95,295], well clear of the
+        // pause column x[300,390]. Still far above the gameplay (Bit spawns y=200,
+        // platforms top out ~y=295; the box bottom sits ~y=575 on iPhone 390).
+        panel.position = CGPoint(x: size.width / 2, y: topSafeY - 165)
         panel.zPosition = 300
         addChild(panel)
 
-        let bg = SKShapeNode(rectOf: CGSize(width: 280, height: 80), cornerRadius: 8)
+        let bg = SKShapeNode(rectOf: CGSize(width: 200, height: 90), cornerRadius: 8)
         bg.fillColor = fillColor
         bg.strokeColor = strokeColor
         panel.addChild(bg)
 
-        let text1 = SKLabelNode(text: "THE WORLD HOLDS ITS BREATH WHEN YOU LOOK AWAY")
-        text1.fontName = "Menlo-Bold"
-        text1.fontSize = 11
-        text1.fontColor = strokeColor
-        text1.position = CGPoint(x: 0, y: 10)
-        panel.addChild(text1)
+        // Wrapped so no line overflows the narrowed 200pt box (was a single
+        // 45-char line that overran the old 280pt box into the pause column).
+        let line1a = SKLabelNode(text: "THE WORLD HOLDS")
+        line1a.fontName = "Menlo-Bold"
+        line1a.fontSize = 11
+        line1a.fontColor = strokeColor
+        line1a.position = CGPoint(x: 0, y: 26)
+        panel.addChild(line1a)
+
+        let line1b = SKLabelNode(text: "ITS BREATH WHEN")
+        line1b.fontName = "Menlo-Bold"
+        line1b.fontSize = 11
+        line1b.fontColor = strokeColor
+        line1b.position = CGPoint(x: 0, y: 12)
+        panel.addChild(line1b)
+
+        let line1c = SKLabelNode(text: "YOU LOOK AWAY")
+        line1c.fontName = "Menlo-Bold"
+        line1c.fontSize = 11
+        line1c.fontColor = strokeColor
+        line1c.position = CGPoint(x: 0, y: -2)
+        panel.addChild(line1c)
 
         let text2 = SKLabelNode(text: "PLAN YOUR MOVES CAREFULLY")
         text2.fontName = "Menlo"
-        text2.fontSize = 10
+        text2.fontSize = 9
         text2.fontColor = strokeColor
-        text2.position = CGPoint(x: 0, y: -10)
+        text2.position = CGPoint(x: 0, y: -24)
         panel.addChild(text2)
 
         panel.run(.sequence([.wait(forDuration: 5), .fadeOut(withDuration: 0.5), .removeFromParent()]))

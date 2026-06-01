@@ -311,17 +311,24 @@ final class FocusModeScene: BaseLevelScene, SKPhysicsContactDelegate {
 
     private func showInstructionPanel() {
         let panel = SKNode()
-        // Centered 280-wide t=0 discovery panel. On iPhone 390 (x[55,335]) the
-        // old center y=T-90 put the panel top at T-50, poking into the top-right
-        // PAUSE column (pause bottom ~T-56). Lowered the center to T-110 so the
-        // panel spans y[T-150,T-70]: fully below the title band (title bottom
-        // T-8) AND below the pause button's bottom edge -> zero overlap with
-        // TITLE or PAUSE on iPhone 390/402 and iPad 1024.
-        panel.position = CGPoint(x: size.width / 2, y: topSafeY - 110)
+        // Centered discovery panel. The reserved top-right PAUSE zone (~88x88,
+        // iPhone 390 x[300,390]) extends DOWN to ~T-115. The previous center
+        // y=T-110 left the 80-tall box spanning y[T-150,T-70], so its TOP edge
+        // (T-70) sat well inside the pause band AND its right edge (280-wide ->
+        // x[55,335]) crossed into the pause column [300,390] -> the
+        // "THE NOISE NEVER STOPS" line ran under the PAUSE button.
+        // Fix (systemic rule): drop the center to T-160 so the box spans
+        // y[T-200,T-120] -> TOP edge at T-120, at/below the pause button bottom
+        // (~T-115) -> clear of PAUSE; and narrow the box 280 -> 240 so on
+        // iPhone 390 it spans x[75,315] (right edge no longer reaches the
+        // pause column, and being below T-120 clears it vertically anyway).
+        // Bottom edge T-200 stays well above the hazards (y 260-310) and Bit
+        // (spawn y 200) on iPhone 390/402 and iPad 1024 -> above gameplay.
+        panel.position = CGPoint(x: size.width / 2, y: topSafeY - 160)
         panel.zPosition = 300
         addChild(panel)
 
-        let bg = SKShapeNode(rectOf: CGSize(width: 280, height: 80), cornerRadius: 8)
+        let bg = SKShapeNode(rectOf: CGSize(width: 240, height: 80), cornerRadius: 8)
         bg.fillColor = fillColor
         bg.strokeColor = strokeColor
         panel.addChild(bg)

@@ -110,6 +110,19 @@ class BaseLevelScene: SKScene {
         guard size.width > 1, size.height > 1 else { return }
         hasConfigured = true
 
+        // CRASH FIX (root cause): configureScene can be reached via didChangeSize BEFORE
+        // didMove, so ensure the camera/effects/events/juice exist first — otherwise a
+        // level that touches the IUO gameCamera in configureScene traps (hit on L22; L0/L32
+        // had the same latent hazard). Idempotent: the gameCamera==nil guard (same as
+        // didMove's) makes this run exactly once regardless of which path arrives first.
+        if gameCamera == nil {
+            backgroundColor = .white
+            setupCamera()
+            setupVisualEffects()
+            subscribeToEvents()
+            JuiceManager.shared.setScene(self)
+        }
+
         configureScene()
         if atmosphereNode == nil {
             setupBackgroundAtmosphereForCurrentWorld()

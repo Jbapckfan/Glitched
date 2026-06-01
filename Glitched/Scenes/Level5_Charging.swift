@@ -88,22 +88,49 @@ final class ChargingScene: BaseLevelScene, SKPhysicsContactDelegate {
         // Power lines
         drawPowerLines()
 
-        // Electrical panels.
-        // Lowered to topSafeY-150 (top edge topSafeY-110) so the RIGHT panel's
-        // top stays clear of the reserved top-right PAUSE zone (its bottom edge
-        // sits at topSafeY-96 on every target device). Symmetric on the left.
-        drawElectricalPanel(at: CGPoint(x: 50, y: topSafeY - 150))
-        drawElectricalPanel(at: CGPoint(x: size.width - 50, y: topSafeY - 150))
+        // Electrical panels (the dial/knob mechanic HUD widgets).
+        //
+        // The RIGHT panel is the one the audit flagged: at the old center
+        // (x size.width-50, y topSafeY-150) its 60x80 box spanned
+        //   x [size.width-80, size.width-20]  -> on iPhone 390: [310, 370]
+        //   y top edge topSafeY-110
+        // Both axes intruded on the reserved top-right PAUSE 88x88 zone, which
+        // on iPhone 390 occupies x [300, 390] (i.e. x >= size.width-90) and runs
+        // from the top down to ~topSafeY-115. So the box's right half sat under
+        // the pause column AND its top edge (topSafeY-110) poked ~5pt into the
+        // reserved vertical band — that is the overlap in the screenshot.
+        //
+        // FIX (down + left), keeping the mechanic unchanged:
+        //   center -> (x size.width-130, y topSafeY-170)  for the RIGHT panel
+        //   box (60x80) now spans
+        //     x [size.width-160, size.width-100] -> iPhone 390: [230, 290]
+        //        right edge size.width-100 is 10pt LEFT of the pause column
+        //        start (size.width-90), so it never enters x>=size.width-90.
+        //     y top edge topSafeY-130, a clear 15pt below the topSafeY-115
+        //        reserved-band bottom (and 30pt below the pause bottom at
+        //        topSafeY-100).
+        //   Verified non-overlapping on iPhone 390x844 / 402x874 and iPad
+        //   1024x1366 (pause column is anchored to the right edge on all three,
+        //   so the size.width-relative inset holds everywhere).
+        // The LEFT panel is moved down symmetrically (it never touched the pause
+        // column, but matching keeps the two widgets visually level).
+        drawElectricalPanel(at: CGPoint(x: 50, y: topSafeY - 170))
+        drawElectricalPanel(at: CGPoint(x: size.width - 130, y: topSafeY - 170))
 
         // Lightning bolt decorations.
-        // The LEFT bolt is dropped to topSafeY-150 so it no longer pokes into the
-        // top-left TITLE band ("LEVEL 5" + underline, ~y[topSafeY-44, topSafeY-8]).
-        // The RIGHT bolt is dropped to topSafeY-180 so it clears the reserved
-        // top-right PAUSE 88x88 zone. Both are inset to x=120 / width-120 so they
-        // sit beside (not stacked on) their electrical panels. Verified
-        // non-overlapping on iPhone 390x844 / 402x874 and iPad 1024x1366.
-        drawLightningBolt(at: CGPoint(x: 120, y: topSafeY - 150))
-        drawLightningBolt(at: CGPoint(x: size.width - 120, y: topSafeY - 180))
+        // The LEFT bolt is dropped to topSafeY-170 so it no longer pokes into the
+        // top-left TITLE band ("LEVEL 5" + underline, ~y[topSafeY-44, topSafeY-8])
+        // and stays beside its (now-lowered) left panel.
+        // The RIGHT bolt is moved to x=size.width-185 so it sits BESIDE the
+        // relocated right panel (panel box now spans x [size.width-160,
+        // size.width-100]) instead of on top of it, and is dropped to
+        // topSafeY-180. The bolt's narrow ~16pt-wide glyph centred at
+        // size.width-185 spans x ~[size.width-193, size.width-177] -> iPhone 390:
+        // [197, 213], far clear of both the pause column (x >= size.width-90) and
+        // the panel box. Verified non-overlapping on iPhone 390x844 / 402x874 and
+        // iPad 1024x1366.
+        drawLightningBolt(at: CGPoint(x: 120, y: topSafeY - 170))
+        drawLightningBolt(at: CGPoint(x: size.width - 185, y: topSafeY - 180))
     }
 
     private func drawPowerLines() {

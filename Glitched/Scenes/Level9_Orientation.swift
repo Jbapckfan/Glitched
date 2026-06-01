@@ -779,18 +779,25 @@ final class OrientationScene: BaseLevelScene, SKPhysicsContactDelegate {
     /// never says "rotate"; the explicit clue is reserved for hintText() at 18s.
     private func showDiscoveryPanel() {
         let panel = SKNode()
-        // Sit the 280x60 panel BELOW the reserved TITLE band. At the old
-        // topSafeY-70 (center) the 60pt-tall panel spanned y[topSafeY-100,
-        // topSafeY-40] and, being 280 wide & centered, spanned x[55,335] on iPhone
-        // 390 -> overlapping both the title (x[80,~194], baseline topSafeY-44) and
-        // the top-right pause column. Dropping the center to topSafeY-125 puts the
-        // panel's TOP edge at topSafeY-95 (<= the required topSafeY-90), fully
-        // under the title's bottom and vertically clear of the ~44pt pause button.
-        panel.position = CGPoint(x: size.width / 2, y: topSafeY - 125)
+        // Sit the panel BELOW the reserved TITLE band AND below the top-right
+        // PAUSE column. The prior center topSafeY-125 put the 280x60 box at top
+        // edge topSafeY-95 -> still inside the pause button's vertical band
+        // (top..topSafeY-115), and 280-wide+centered spanned x[55,335] on iPhone
+        // 390 so its right edge ran into the reserved pause column x[300,390]:
+        // the pause button's lower-left sat over the panel's top-right corner.
+        // FIX (both axes): (1) drop the center to topSafeY-148 so the 60pt box's
+        // TOP edge is at topSafeY-118 (<= the pause bottom topSafeY-115), making
+        // it fully clear of the pause button VERTICALLY; (2) narrow the box to
+        // 240 so on iPhone 390 it spans x[75,315] and on 402 x[81,321] — its right
+        // edge no longer crosses deep into the pause column, and its left edge
+        // stays clear of the title (x from 80). On iPad 1024 (center 512) the box
+        // spans x[392,632], nowhere near either the title (left) or pause (right).
+        // The 28-char line still fits 240 at 11pt Menlo-Bold (~185pt wide).
+        panel.position = CGPoint(x: size.width / 2, y: topSafeY - 148)
         panel.zPosition = 300
         addChild(panel)
 
-        let bg = SKShapeNode(rectOf: CGSize(width: 280, height: 60), cornerRadius: 8)
+        let bg = SKShapeNode(rectOf: CGSize(width: 240, height: 60), cornerRadius: 8)
         bg.fillColor = fillColor
         bg.strokeColor = strokeColor
         panel.addChild(bg)
@@ -981,10 +988,12 @@ final class OrientationScene: BaseLevelScene, SKPhysicsContactDelegate {
     /// never overlaps the TITLE, the top-right PAUSE zone, or the discovery panel.
     private func showEarlyRotateCue() {
         let cue = SKNode()
-        // Center at topSafeY-185 (34pt tall -> y[topSafeY-202, topSafeY-168]) so it
-        // clears the discovery panel (bottom at topSafeY-155) with comfortable
-        // margin during the brief 3-5s window where both can be visible.
-        cue.position = CGPoint(x: size.width / 2, y: topSafeY - 185)
+        // Center at topSafeY-200 (34pt tall -> y[topSafeY-217, topSafeY-183]) so it
+        // clears the now-lowered discovery panel (bottom at topSafeY-178) with a
+        // 5pt margin during the brief 3-5s window where both can be visible. (The
+        // discovery panel was dropped to clear the top-right pause column, so this
+        // cue follows it down to preserve the vertical separation.)
+        cue.position = CGPoint(x: size.width / 2, y: topSafeY - 200)
         cue.zPosition = 320
         cue.alpha = 0
         addChild(cue)

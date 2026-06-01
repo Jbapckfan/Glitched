@@ -324,26 +324,33 @@ final class TimeOfDayScene: BaseLevelScene, SKPhysicsContactDelegate {
     }
 
     private func showInstructionPanel() {
+        // Systemic HUD-overlap fix: the panel's top edge must clear the global
+        // top-right PAUSE button (reserved zone bottom ~topSafeY-115). With a
+        // box height of 76 (half-height 38), centering at topSafeY-160 puts the
+        // TOP edge at topSafeY-122 — below the pause band. Also narrow the box
+        // to 300 (from 340) and shrink the text one step so neither the box nor
+        // its longest line (~205pt) reaches the pause column or the title. The
+        // panel auto-removes after 6s, so this only affects the intro overlay.
         let panel = SKNode()
-        panel.position = CGPoint(x: size.width / 2, y: topSafeY - 90)
+        panel.position = CGPoint(x: size.width / 2, y: topSafeY - 160)
         panel.zPosition = 300
         addChild(panel)
 
-        let bg = SKShapeNode(rectOf: CGSize(width: 340, height: 80), cornerRadius: 8)
+        let bg = SKShapeNode(rectOf: CGSize(width: 300, height: 76), cornerRadius: 8)
         bg.fillColor = fillColor
         bg.strokeColor = strokeColor
         panel.addChild(bg)
 
         let text1 = SKLabelNode(text: "THE WORLD CHANGES WITH THE CLOCK")
         text1.fontName = "Menlo-Bold"
-        text1.fontSize = 11
+        text1.fontSize = 10
         text1.fontColor = strokeColor
         text1.position = CGPoint(x: 0, y: 12)
         panel.addChild(text1)
 
         let text2 = SKLabelNode(text: "NIGHT BRINGS PEACE. DAY BRINGS DANGER.")
         text2.fontName = "Menlo"
-        text2.fontSize = 10
+        text2.fontSize = 9
         text2.fontColor = strokeColor
         text2.position = CGPoint(x: 0, y: -8)
         panel.addChild(text2)
@@ -585,11 +592,13 @@ final class TimeOfDayScene: BaseLevelScene, SKPhysicsContactDelegate {
         label.fontName = "Menlo"
         label.fontSize = 8
         label.fontColor = currentMode == .day ? strokeColor.withAlphaComponent(0.5) : fillColor.withAlphaComponent(0.5)
-        // Raise the commentary line above the bottom CYCLE TIME toggle button
-        // (which occupies y[35,65]); at y=30 the ~310pt-wide label overlapped
-        // the button's right half on narrow phones. y=78 keeps it clear while
-        // still sitting below the playfield platforms (groundY 160).
-        label.position = CGPoint(x: size.width / 2, y: 78)
+        // This commentary line is centered; at y=78 its left half still ran
+        // under the global bottom-left night/moon toggle circle (~r44, top
+        // edge ~y96). Raise it to y=120 so its baseline clears that toggle's
+        // top while staying below the playfield platforms (groundY 160) and
+        // above the bottom-right CYCLE TIME button (y[35,65]). Centered, so it
+        // also clears both bottom corners on iPad's wider layout.
+        label.position = CGPoint(x: size.width / 2, y: 120)
         label.zPosition = 150
         addChild(label)
         fourthWallLabel = label

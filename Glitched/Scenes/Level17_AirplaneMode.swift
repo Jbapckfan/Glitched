@@ -257,14 +257,26 @@ final class AirplaneModeScene: BaseLevelScene, SKPhysicsContactDelegate {
     }
 
     private func showInstructionPanel() {
-        // Centered 280-wide panel: x ≈ [w/2-140, w/2+140] (iPhone 390 → x[55,335]).
-        // That column overlaps both the title (top-left) and the airplane HUD
-        // indicator (top-right, now at width-118). Drop the panel a full band
-        // below the title/HUD row so its top edge (center+40) sits clear of the
-        // title baseline AND the indicator's ON/OFF status label. Panel spans
-        // y[topSafeY-150, topSafeY-70]; title/HUD live at y >= topSafeY-50.
+        // Centered 280-wide panel: x ≈ [w/2-140, w/2+140] (iPhone 390 → x[55,335],
+        // right edge inside the top-right pause column x>=300). The PREVIOUS
+        // center (topSafeY-110) put the box top edge at topSafeY-70 — that is
+        // ABOVE the pause button's bottom (~topSafeY-115), so the box's
+        // top-right corner ran UNDER the global pause button.
+        //
+        // SYSTEMIC FIX: drop the panel so its TOP edge sits well below the
+        // pause-button bottom (~topSafeY-115). With an 80-tall box the top
+        // edge = center + 40, so center = topSafeY-175 → top edge at
+        // topSafeY-135, a comfortable 20pt below the pause-button bottom.
+        // Now the box occupies the band y[topSafeY-215, topSafeY-135], a
+        // different vertical band than the pause button (which ends at
+        // ~topSafeY-115) and the title (top of screen), so the x-overlap with
+        // the pause column is harmless — they never share a row.
+        // Still far above gameplay: highest geometry is the exit door top at
+        // ~y=380, and topSafeY is near the screen top (~800 on iPhone), so the
+        // panel bottom (topSafeY-215 ≈ 585) clears Bit/platforms with wide
+        // margin on both iPhone 390/402 and iPad 1024.
         let panel = SKNode()
-        panel.position = CGPoint(x: size.width / 2, y: topSafeY - 110)
+        panel.position = CGPoint(x: size.width / 2, y: topSafeY - 175)
         panel.zPosition = 300
         addChild(panel)
 

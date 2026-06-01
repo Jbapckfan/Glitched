@@ -287,18 +287,25 @@ final class FaceIDScene: BaseLevelScene, SKPhysicsContactDelegate {
 
     private func showInstructionPanel() {
         let panel = SKNode()
-        panel.position = CGPoint(x: size.width / 2, y: topSafeY - 90)
+        // Dropped below the reserved top-right PAUSE zone (which spans down to
+        // ~topSafeY-115). With box height 80, a center at topSafeY-165 puts the
+        // panel's TOP edge at topSafeY-125 — clear of the pause button's bottom.
+        // The box is also narrowed (280 -> 220) so on iPhone 390 its right edge
+        // (195 + 110 = 305) does not push into the top-right pause column, and its
+        // left edge (85) stays clear of the top-left title. Still well above the
+        // gameplay/Bit and the vault door (y=230).
+        panel.position = CGPoint(x: size.width / 2, y: topSafeY - 165)
         panel.zPosition = 300
         addChild(panel)
 
-        let bg = SKShapeNode(rectOf: CGSize(width: 280, height: 80), cornerRadius: 8)
+        let bg = SKShapeNode(rectOf: CGSize(width: 220, height: 80), cornerRadius: 8)
         bg.fillColor = fillColor
         bg.strokeColor = strokeColor
         panel.addChild(bg)
 
         let text1 = SKLabelNode(text: "VAULT REQUIRES IDENTITY")
         text1.fontName = "Menlo-Bold"
-        text1.fontSize = 12
+        text1.fontSize = 11
         text1.fontColor = strokeColor
         text1.position = CGPoint(x: 0, y: 10)
         panel.addChild(text1)

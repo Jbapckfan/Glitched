@@ -264,7 +264,7 @@ final class TimeTravelScene: BaseLevelScene, SKPhysicsContactDelegate {
         // pause button's bottom). Zero rect overlap with TITLE or PAUSE on
         // iPhone 390/402 and iPad 1024, while staying horizontally centred and
         // clear of the left-anchored title column.
-        instructionPanel?.position = CGPoint(x: size.width / 2, y: topSafeY - 130)
+        instructionPanel?.position = CGPoint(x: size.width / 2, y: topSafeY - 155)
     }
 
     override func didUpdateSafeArea() {
@@ -722,7 +722,7 @@ final class TimeTravelScene: BaseLevelScene, SKPhysicsContactDelegate {
         // insets are known. Seeded at the same below-the-title anchor used by
         // repositionTopHUD (topSafeY - 130) so it never flashes over the TITLE
         // band or the top-right PAUSE reserve before the first layout pass.
-        instructionPanel?.position = CGPoint(x: size.width / 2, y: topSafeY - 130)
+        instructionPanel?.position = CGPoint(x: size.width / 2, y: topSafeY - 155)
         instructionPanel?.zPosition = 300
         addChild(instructionPanel!)
 

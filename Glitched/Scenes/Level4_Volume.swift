@@ -659,14 +659,25 @@ final class VolumeScene: BaseLevelScene, SKPhysicsContactDelegate {
 
     private func createVolumeIndicator() {
         volumeIndicator = SKNode()
-        // iPad-class (minWH >= 700): the widget is scaled up (visualScale 1.25) and
-        // anchored top-trailing; at offset 70 its top-right corner intruded into the
-        // reserved top-RIGHT pause-button zone (x[964,1008] y[1290,1334] on 1024x1366).
-        // Lower the iPad offset to 140 so the widget's top edge clears the pause zone
-        // with margin. Phones already sit well below (offset 170), so leave them.
+        // SHIPPING-HUD OVERLAP FIX: the global PAUSE button reserves the top-RIGHT
+        // ~88x88 square (HUDZones.pauseReservedZone). Anchored at x = size.width -
+        // 70*scale, the 100x60 panel's right half landed UNDER the pause column on
+        // every device (iPhone 390: panel x-span [270,370] vs pause x[286,374];
+        // iPad 1024: even after the prior offset tweak the boxes still kissed the
+        // pause-zone bottom). Vertical-only nudges weren't enough because the panel
+        // was still horizontally inside the pause column.
+        //
+        // Reliable fix = move the widget fully LEFT out of the pause column AND down
+        // below the pause-zone bottom (~topSafeY-96), keeping it well above the
+        // gameplay ground (activeGroundY).
+        //   - extra left shift of 110*scale clears the pause x-band:
+        //       iPhone 390: center x = 390 - 180 = 210, panel x-span [160,260]  (< pause-left 286)
+        //       iPad 1024 : center x = 1024 - 225 = 799, panel x-span [736.5,861.5] (< pause-left 920)
+        //   - offset 178 (phone) / 168 (iPad) puts the panel TOP edge below the
+        //     pause-zone bottom with margin (and below the top-left LEVEL title band).
         volumeIndicator.position = CGPoint(
-            x: size.width - 70 * visualScale,
-            y: topSafeAreaY(offset: min(size.width, size.height) < 700 ? 170 : 140)
+            x: size.width - (70 + 110) * visualScale,
+            y: topSafeAreaY(offset: min(size.width, size.height) < 700 ? 178 : 168)
         )
         volumeIndicator.setScale(visualScale)
         volumeIndicator.zPosition = 200

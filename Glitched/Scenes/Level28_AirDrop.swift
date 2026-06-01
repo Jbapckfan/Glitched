@@ -294,17 +294,23 @@ final class AirDropScene: BaseLevelScene, SKPhysicsContactDelegate {
     }
 
     private func showInstructionPanel() {
-        // Lower the panel so its TOP edge sits at ~topSafeY-92, fully below BOTH the
-        // top-left TITLE band (bottom ~topSafeY-36) and the reserved top-right PAUSE
-        // zone (bottom ~topSafeY-88). The 84-tall panel is centered, so center=topSafeY-134
-        // => top=topSafeY-92. This removes the iPhone 390/402 collision where the 320-wide
-        // centered panel's right edge (x~355/361) reached into the pause column (x>=302/314).
+        // Lower the panel so its TOP edge sits at ~topSafeY-122, fully below the reserved
+        // top-right PAUSE zone (bottom ~topSafeY-88) AND the top-left TITLE band
+        // (bottom ~topSafeY-44). The 84-tall panel is centered, so center=topSafeY-164
+        // => top=topSafeY-122. Previously top sat at topSafeY-92, which was ABOVE the
+        // pause bottom, so the panel's top-right corner ran UNDER the pause button on
+        // iPhone 390/402 (320-wide centered box right edge x~355/361 reached the pause
+        // column x>=300/314). We also narrow the box 320->300 (right edge x~345/351),
+        // and since the whole box now sits below the pause-button bottom, no part of it
+        // shares the pause column's vertical band. The longest line ("SHARE THE
+        // TRANSMISSION TO DECODE IT," 37 chars * ~5.4pt Menlo-9 = ~200pt) fits the
+        // 300-wide box with ~50pt of margin per side and stays clear of the title.
         let panel = SKNode()
-        panel.position = CGPoint(x: size.width / 2, y: topSafeY - 134)
+        panel.position = CGPoint(x: size.width / 2, y: topSafeY - 164)
         panel.zPosition = 300
         addChild(panel)
 
-        let bg = SKShapeNode(rectOf: CGSize(width: 320, height: 84), cornerRadius: 8)
+        let bg = SKShapeNode(rectOf: CGSize(width: 300, height: 84), cornerRadius: 8)
         bg.fillColor = fillColor
         bg.strokeColor = strokeColor
         panel.addChild(bg)

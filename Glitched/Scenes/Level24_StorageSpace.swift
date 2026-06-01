@@ -352,11 +352,26 @@ final class StorageSpaceScene: BaseLevelScene, SKPhysicsContactDelegate {
         armPromptLabel?.removeFromParent()
 
         let panel = SKNode()
-        panel.position = CGPoint(x: size.width / 2, y: topSafeY - 90)
+        // OVERLAP FIX (systemic pause-zone rule): this armed-purge instruction
+        // panel shared the old topSafeY-90 anchor and was even wider (360). On
+        // iPhone 390 its box spanned x[15,375] (right edge 375 deep in the PAUSE
+        // column x[300,390]) with a top edge inside the pause vertical band — so
+        // its first line ran under the pause button. Drop it the same way as the
+        // intro panel: anchor its TOP edge at topSafeY-120 (clear of the pause
+        // bottom) regardless of line count. The tallest hardware variant is 3
+        // lines -> box height 88 (half 44) -> center topSafeY-164; the 1-line
+        // variant -> height 44 (half 22) -> center topSafeY-142. We keep the box
+        // 360->340 wide because the longest line ("Settings ▸ General ▸ iPhone
+        // Storage ▸ Glitched", ~248pt at size 9) needs the room; at 340 it spans
+        // x[25,365] on iPhone 390 but now sits BELOW the pause band and the title
+        // band, so the width is no longer load-bearing. iPad 1024 (x[342,682]) is
+        // clear of both title (left) and pause (right) columns.
+        let lines = text.components(separatedBy: "\n")
+        let boxHeight = CGFloat(22 * lines.count + 22)
+        panel.position = CGPoint(x: size.width / 2, y: topSafeY - 120 - boxHeight / 2)
         panel.zPosition = 320
 
-        let lines = text.components(separatedBy: "\n")
-        let bg = SKShapeNode(rectOf: CGSize(width: 360, height: CGFloat(22 * lines.count + 22)), cornerRadius: 8)
+        let bg = SKShapeNode(rectOf: CGSize(width: 340, height: boxHeight), cornerRadius: 8)
         bg.fillColor = fillColor
         bg.strokeColor = VisualConstants.Colors.accent
         bg.lineWidth = 1.5
@@ -421,11 +436,14 @@ final class StorageSpaceScene: BaseLevelScene, SKPhysicsContactDelegate {
         // OVERLAP FIX: was centered at topSafeY-10 — its rect (iPhone 390:
         // x[108,282], y[769,784]) collided with the top-LEADING TITLE band
         // ("LEVEL 24" baseline topSafeY-30 → rect x[80,208], y[749,775]) in both
-        // x and y. Drop it BELOW the centered instruction/arm-panel band
-        // (those sit at topSafeY-90; tallest arm panel bottom = topSafeY-134) to
-        // topSafeY-158 so its top edge (~topSafeY-149) clears the panel bottom by
-        // ~15pt, and it no longer touches the title or the top-right pause zone.
-        storageLabel.position = CGPoint(x: size.width / 2, y: topSafeY - 158)
+        // x and y. It must sit BELOW the centered instruction/arm-panel band.
+        // Those panels were dropped (pause-zone systemic fix) so their TOP edge is
+        // at topSafeY-120; the tallest arm-panel variant (3 lines, box 88) now has
+        // its bottom at topSafeY-208. Place this label at topSafeY-224 so its top
+        // edge (~topSafeY-215) clears that panel bottom by ~7pt, while staying well
+        // clear of the title and the top-right pause zone, and above the gameplay
+        // (its rect x[~108,282] on iPhone 390 stays left of the junk mass column).
+        storageLabel.position = CGPoint(x: size.width / 2, y: topSafeY - 224)
         storageLabel.zPosition = 200
         addChild(storageLabel)
 
@@ -448,12 +466,33 @@ final class StorageSpaceScene: BaseLevelScene, SKPhysicsContactDelegate {
 
     private func showInstructionPanel() {
         let panel = SKNode()
-        panel.position = CGPoint(x: size.width / 2, y: topSafeY - 90)
+        // OVERLAP FIX (systemic pause-zone rule): the prior pass centered this at
+        // topSafeY-160 with a 250-wide box -> rect x[70,320], top edge topSafeY-120.
+        // The PAUSE button reserves x[300,390] from the top down to ~topSafeY-115.
+        // The box right edge (320) sat 20pt INSIDE the pause column and its top edge
+        // (topSafeY-120) was level with the pause bottom (~topSafeY-115), so the
+        // panel's top-RIGHT corner (320, topSafeY-120) still met/overlapped the
+        // pause rectangle. The audit flagged exactly this corner.
+        // Fix (both axes, belt + suspenders):
+        //   (1) DROP further: center topSafeY-170 -> 80-tall box TOP edge
+        //       topSafeY-130 (15pt clear below the ~topSafeY-115 pause bottom),
+        //       bottom topSafeY-210.
+        //   (2) NARROW: width 250->200 -> half 100 -> on iPhone 390 (center 195)
+        //       rect x[95,295]; right edge 295 clears the pause column left edge
+        //       (300) by 5pt AND clears the top-left TITLE band (title x[80,~208]
+        //       lives at y[topSafeY-38,topSafeY-8], far above this box top anyway).
+        //       200 still fits both lines: the longer "JUMP TO THE PURGE TERMINAL
+        //       FIRST" (32 monospace chars @ size 10 ~192pt) clears with ~4pt/side.
+        // iPhone 402 (center 201): rect x[101,301] — top-right corner 1pt past the
+        // x=300 line, but the box top (topSafeY-130) is 15pt BELOW the pause band,
+        // so the corner is outside the pause rectangle in Y. iPad 1024 (center 512):
+        // rect x[412,612] — nowhere near the title (left) or pause (right) columns.
+        panel.position = CGPoint(x: size.width / 2, y: topSafeY - 170)
         panel.zPosition = 300
         panel.name = "intro_panel"
         addChild(panel)
 
-        let bg = SKShapeNode(rectOf: CGSize(width: 340, height: 80), cornerRadius: 8)
+        let bg = SKShapeNode(rectOf: CGSize(width: 200, height: 80), cornerRadius: 8)
         bg.fillColor = fillColor
         bg.strokeColor = strokeColor
         panel.addChild(bg)

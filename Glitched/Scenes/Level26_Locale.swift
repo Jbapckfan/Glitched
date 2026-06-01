@@ -259,9 +259,10 @@ final class LocaleScene: BaseLevelScene, SKPhysicsContactDelegate {
         // FIX (overlap): old position topSafeY-20 put this DEBUG button's rect
         // x[w-120,w-20]=[270,370] inside the reserved top-right PAUSE zone
         // [w-88,w]x[topSafeY-88,topSafeY]. Drop it below the (now-lowered)
-        // instruction panel (bottom topSafeY-220) and the pause zone so it
-        // sits in clear space on iPhone 390/402 and iPad 1024.
-        button.position = CGPoint(x: size.width - 70, y: topSafeY - 245)
+        // instruction panel (bottom topSafeY-255) and the pause zone so it
+        // sits in clear space on iPhone 390/402 and iPad 1024. (DEBUG-only;
+        // never ships, but kept clear for the simulator.)
+        button.position = CGPoint(x: size.width - 70, y: topSafeY - 290)
         button.zPosition = 500
         button.name = "testLocaleButton"
         addChild(button)
@@ -280,18 +281,20 @@ final class LocaleScene: BaseLevelScene, SKPhysicsContactDelegate {
 
     private func showInstructionPanel() {
         let panel = SKNode()
-        // FIX (overlap): a 320-wide centered panel at topSafeY-90 put its top
-        // edge (topSafeY-25) above the title's bottom (~topSafeY-36) and its
-        // x-span [w/2-160, w/2+160] = [35,355] on iPhone 390 both swallowed the
-        // title column [80,~204] AND clipped the reserved top-right PAUSE zone
-        // [w-88,w]=[302,390]. The panel is wider than the centre gap between
-        // those two reserved columns, so it can't be narrowed without losing
-        // legibility — instead drop its centre to topSafeY-155 so its TOP edge
-        // (topSafeY-90) sits fully below BOTH the title band (bottom ~topSafeY-36)
-        // and the pause zone (bottom topSafeY-88). Zero rect overlap on iPhone
-        // 390/402 and iPad 1024; bottom edge (topSafeY-220) stays well clear of
-        // the highest signpost/platform (~y 380 logical).
-        panel.position = CGPoint(x: size.width / 2, y: topSafeY - 155)
+        // FIX (overlap): a 320-wide centered panel sat too high — at topSafeY-155
+        // its TOP edge (topSafeY-90) was still inside the reserved top-right PAUSE
+        // band (which runs from the top down to ~topSafeY-115), so its x-span
+        // [w/2-160, w/2+160] = [35,355] on iPhone 390 put the panel's top-right
+        // corner (x[300,355] inside the pause column [302,390]) UNDER the pause
+        // button. The panel is wider than the centre gap between the title column
+        // and the pause column, so it can't be narrowed without losing legibility.
+        // RULE FIX: drop its centre to topSafeY-190 so its TOP edge (topSafeY-125)
+        // sits at/below the topSafeY-120 threshold — fully below the pause-zone
+        // bottom (~topSafeY-115) AND the title band (bottom ~topSafeY-36). Once the
+        // whole box is below the pause band, the x-overlap with the pause column no
+        // longer matters: zero rect overlap on iPhone 390/402 and iPad 1024. Bottom
+        // edge (topSafeY-255) stays well above the highest signpost/platform.
+        panel.position = CGPoint(x: size.width / 2, y: topSafeY - 190)
         panel.zPosition = 300
         addChild(panel)
 

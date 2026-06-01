@@ -306,28 +306,72 @@ final class LowPowerScene: BaseLevelScene, SKPhysicsContactDelegate {
     }
 
     private func showInstructionPanel() {
+        // Reserved-zone clearance: the global PAUSE button owns an ~88pt-wide
+        // top-right column down to ~topSafeY-115, and the TITLE owns the top-left.
+        // The old panel sat at y = topSafeY-90 (box top at topSafeY-50) and was
+        // 280pt wide (half-width 140 -> right edge size.width/2+140 = 335 on
+        // iPhone 390), so its top-right corner and overflowing text ran UNDER the
+        // pause button. Fix per the systemic rule: (1) drop the panel so its TOP
+        // edge clears the pause-button bottom, and (2) narrow the box so neither
+        // edge reaches the pause column or the title.
+        //
+        // Internal-overlap fix: the two labels were colliding. text1 sat baseline
+        // y=10 (default .baseline alignment) and text2 (36-char body) wrapped to two
+        // 10pt lines whose TOP line rose to ~y=9 — straight into text1's glyphs. We
+        // now (a) pin both labels to .center vertical alignment for deterministic
+        // placement, (b) open a 21pt clear vertical gap between them (centers at
+        // +16 / -16), and (c) keep the body to ONE line so it can't wrap up into the
+        // heading. That needs more box height, so we GROW THE BOX DOWNWARD ONLY:
+        // height 70 -> 84 while holding the TOP edge fixed at topSafeY-120 (the same
+        // 5pt-below-pause clearance the original solved for). center.y therefore
+        // moves from topSafeY-155 to topSafeY-162 (top still topSafeY-120, bottom
+        // topSafeY-204 — still far above the gameplay: Section-3 shelf top y=360).
+        // Width is UNCHANGED (240) so the carefully-tuned pause/title clearance from
+        // the original layout is preserved untouched.
+        let panelWidth: CGFloat = 240
+        let panelHeight: CGFloat = 84
         let panel = SKNode()
-        panel.position = CGPoint(x: size.width / 2, y: topSafeY - 90)
+        panel.position = CGPoint(x: size.width / 2, y: topSafeY - 162)
         panel.zPosition = 300
         addChild(panel)
 
-        let bg = SKShapeNode(rectOf: CGSize(width: 280, height: 80), cornerRadius: 8)
+        let bg = SKShapeNode(rectOf: CGSize(width: panelWidth, height: panelHeight), cornerRadius: 8)
         bg.fillColor = fillColor
         bg.strokeColor = strokeColor
         panel.addChild(bg)
 
+        // Cap text width to the inner box (panelWidth - 24pt padding). Both labels
+        // are single-line and centered vertically so their on-screen boxes are
+        // deterministic (no baseline/wrap ambiguity).
+        let textMaxWidth = panelWidth - 24
+
+        // HEADING — center at y=+16. At fontSize 12 (Menlo-Bold, monospace) the
+        // 23-char string renders ~166pt wide, comfortably inside the 216pt inner box
+        // (no wrap). Visual band ≈ [+10, +22].
         let text1 = SKLabelNode(text: "CONSERVE ENERGY. FLOAT.")
         text1.fontName = "Menlo-Bold"
         text1.fontSize = 12
         text1.fontColor = strokeColor
-        text1.position = CGPoint(x: 0, y: 10)
+        text1.horizontalAlignmentMode = .center
+        text1.verticalAlignmentMode = .center
+        text1.preferredMaxLayoutWidth = textMaxWidth
+        text1.numberOfLines = 1
+        text1.position = CGPoint(x: 0, y: 16)
         panel.addChild(text1)
 
+        // BODY — center at y=-16, a clear 21pt below the heading's bottom. fontSize
+        // dropped 10 -> 9 so the 36-char string renders ~195pt (< 216 inner box) and
+        // stays on ONE line; numberOfLines forced to 1 so it can never wrap upward
+        // into the heading again. Visual band ≈ [-21, -11].
         let text2 = SKLabelNode(text: "THE LESS I SPEND, THE LIGHTER WE GET")
         text2.fontName = "Menlo"
-        text2.fontSize = 10
+        text2.fontSize = 9
         text2.fontColor = strokeColor
-        text2.position = CGPoint(x: 0, y: -10)
+        text2.horizontalAlignmentMode = .center
+        text2.verticalAlignmentMode = .center
+        text2.preferredMaxLayoutWidth = textMaxWidth
+        text2.numberOfLines = 1
+        text2.position = CGPoint(x: 0, y: -16)
         panel.addChild(text2)
 
         panel.run(.sequence([.wait(forDuration: 5), .fadeOut(withDuration: 0.5), .removeFromParent()]))

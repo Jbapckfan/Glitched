@@ -333,21 +333,31 @@ final class AppReviewScene: BaseLevelScene, SKPhysicsContactDelegate {
 
     private func showIntroPanel() {
         let panel = SKNode()
-        // HUD overlap fix: this centered t=0 instruction panel (280 wide) spans the
-        // same horizontal band as the top-leading "LEVEL 33" title. At the previous
-        // y = topSafeY-100 its top edge sat at ~topSafeY-65, level with the subtitle's
-        // bottom -- a vertical near-collision. Drop the panel so its top edge is at
-        // topSafeY-95 (<= topSafeY-90), fully BELOW the title band, on iPhone
-        // 390x844 / 402x874 and iPad 1024x1366. Panel height is 70 (half = 35), so
-        // center y = topSafeY-130 puts the top at topSafeY-95 with ~31pt clearance.
-        panel.position = CGPoint(x: size.width / 2, y: topSafeY - 130)
+        // HUD overlap fix (top-right PAUSE button). The earlier placement kept the
+        // 280-wide panel centered with its top edge at ~topSafeY-95. On iPhone 390
+        // (center x = 195) a 280-wide box reaches right edge 195+140 = 335, which
+        // sits INSIDE the reserved top-right pause column x[300,390]; and at top
+        // edge topSafeY-95 it was only ~20pt below the pause bottom (~topSafeY-115).
+        // The audit caught the panel's top-right corner clipping the pause button.
+        //
+        // Apply the systemic rule with BOTH levers:
+        //   1) Move DOWN. Panel height 70 (half = 35). Center y = topSafeY-160 puts
+        //      the TOP edge at topSafeY-125, i.e. >=5pt below the pause bottom
+        //      (~topSafeY-115) and well past the topSafeY-120 target. Still high
+        //      above the ground (groundY 120) and Bit, so gameplay is unaffected.
+        //   2) NARROW 280 -> 200. Half-width = 100, so on iPhone 390 the right edge
+        //      lands at 195+100 = 295 (< 300, clear of the pause column) and the
+        //      left edge at 195-100 = 95 (clear of the top-left title, which also
+        //      sits in a higher band now). On 402 and iPad 1024 the larger center
+        //      x only increases the right-edge margin, so both stay clear there too.
+        panel.position = CGPoint(x: size.width / 2, y: topSafeY - 160)
         panel.zPosition = 300
         addChild(panel)
         introSign = panel
 
-        // Narrowed 300 -> 280 to match the reserved discovery-panel width and keep
-        // both edges inside the safe area on a 320pt-class device.
-        let bg = SKShapeNode(rectOf: CGSize(width: 280, height: 70), cornerRadius: 8)
+        // 200 wide keeps the right edge clear of the pause column on the narrowest
+        // shipping device (iPhone 390) while the long second line still fits at 9pt.
+        let bg = SKShapeNode(rectOf: CGSize(width: 200, height: 70), cornerRadius: 8)
         bg.fillColor = fillColor
         bg.strokeColor = strokeColor
         bg.lineWidth = lineWidth
@@ -357,15 +367,26 @@ final class AppReviewScene: BaseLevelScene, SKPhysicsContactDelegate {
         text1.fontName = "Menlo-Bold"
         text1.fontSize = 14
         text1.fontColor = strokeColor
-        text1.position = CGPoint(x: 0, y: 12)
+        text1.position = CGPoint(x: 0, y: 16)
         panel.addChild(text1)
 
-        let text2 = SKLabelNode(text: "JUST GET TO THE EXIT. HOW HARD CAN IT BE?")
+        // The old single line ("JUST GET TO THE EXIT. HOW HARD CAN IT BE?") is 41
+        // monospaced chars ~= 221pt at 9pt Menlo, which overflows the narrowed
+        // 200-wide box. Wrap it onto two centered lines (each <= ~120pt) so the
+        // text stays fully inside the box and nowhere near the pause column / title.
+        let text2 = SKLabelNode(text: "JUST GET TO THE EXIT.")
         text2.fontName = "Menlo"
         text2.fontSize = 9
         text2.fontColor = strokeColor
-        text2.position = CGPoint(x: 0, y: -8)
+        text2.position = CGPoint(x: 0, y: -2)
         panel.addChild(text2)
+
+        let text3 = SKLabelNode(text: "HOW HARD CAN IT BE?")
+        text3.fontName = "Menlo"
+        text3.fontSize = 9
+        text3.fontColor = strokeColor
+        text3.position = CGPoint(x: 0, y: -18)
+        panel.addChild(text3)
 
         panel.run(.sequence([
             .wait(forDuration: 5),

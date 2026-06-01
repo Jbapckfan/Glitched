@@ -366,13 +366,33 @@ final class VoiceOverScene: BaseLevelScene, SKPhysicsContactDelegate {
 
     #if DEBUG
     private func createTestButton() {
-        // BOTTOM-LEFT. The top-trailing ~88x88 column is the reserved PAUSE zone and
-        // the old (size.width - 75, topSafeY - 20) placement (110x30) sat directly in
-        // it, overlapping the pause button on iPhone 390/402 and iPad 1024. Anchor
-        // this DEBUG-only affordance to the bottom-left safe area instead — clear of
-        // the pause button, the title band, the bottom-trailing "CAN'T DO THIS?"
-        // fallback, the start platform (y~160), and the exit door on the right.
-        let buttonPos = CGPoint(x: 75, y: bottomSafeY + 24)
+        // BOTTOM area, OFFSET RIGHT of the bottom-leading accessibility column.
+        //
+        // The top-trailing ~88x88 column is the reserved PAUSE zone; the old
+        // (size.width - 75, topSafeY - 20) placement sat in it. We moved this
+        // DEBUG-only affordance to the bottom safe area, but the previous
+        // bottom-left anchor (x:75, y:bottomSafeY+24) collided with the
+        // always-present purple accessibility (.voiceOver) fallback circle that
+        // AccessibilityOverlay pins to the bottom-LEADING edge: that circle is
+        // ~51pt across (SF Symbol @26 + 10pt padding) sitting in a row with
+        // .padding(.bottom, 40) / .padding(.horizontal, 20), so in scene coords it
+        // occupies roughly x[20,71], y[bottomSafeY+40, bottomSafeY+91]. The old
+        // 110x30 pill at (75, bottomSafeY+24) spanned x[20,130], y[bottomSafeY+9,
+        // bottomSafeY+39] — its TOP edge (bottomSafeY+39) was flush under the
+        // circle's bottom (bottomSafeY+40) AND overlapped it horizontally on
+        // x[20,71]. Two bottom-left affordances stacked on top of each other.
+        //
+        // FIX: slide this pill RIGHT so it clears the circle's right edge (x~71)
+        // with a real gap, and keep it in the low band. New center (150,
+        // bottomSafeY+22): pill spans x[95,205] (24pt horizontal gap from the
+        // circle) and y[bottomSafeY+7, bottomSafeY+37] (its top now sits 3pt BELOW
+        // the circle's bottom too — separated on BOTH axes). On iPhone 390/402 the
+        // right edge (205) is well clear of the right half (start platform/exit
+        // door live at the screen edges, x<=100 and x>=width-100); on iPad 1024 the
+        // far-left accessibility column and this pill are the only bottom-leading
+        // items and the gap holds. Still above gameplay (stones at y>=160) and the
+        // home indicator (bottomSafeY). Mechanic unchanged.
+        let buttonPos = CGPoint(x: 150, y: bottomSafeY + 22)
 
         let button = SKShapeNode(rectOf: CGSize(width: 110, height: 30), cornerRadius: 6)
         button.fillColor = strokeColor
@@ -395,12 +415,23 @@ final class VoiceOverScene: BaseLevelScene, SKPhysicsContactDelegate {
     #endif
 
     private func showInstructionPanel() {
+        // The always-on top-right PAUSE button reserves the top-trailing zone
+        // (bottom edge ~topSafeY-115) and the top-left TITLE sits at topSafeY-30.
+        // The old center at topSafeY-90 put this 84-tall box's TOP edge at
+        // topSafeY-48 — straight up inside the pause button's vertical band (its
+        // right edge also reached the pause column on iPhone 390/402). Drop the
+        // panel so its TOP edge clears topSafeY-120, and narrow the box from 320
+        // to 300 so neither it nor its text reaches the pause column / title.
+        // Center.y = (topSafeY - 128) - 42 = topSafeY - 170  (top edge = topSafeY-128).
+        // Still well above gameplay (Bit spawns y~200; stones at y>=160).
+        let panelHeight: CGFloat = 84
+        let panelWidth: CGFloat = 300
         let panel = SKNode()
-        panel.position = CGPoint(x: size.width / 2, y: topSafeY - 90)
+        panel.position = CGPoint(x: size.width / 2, y: topSafeY - 170)
         panel.zPosition = 300
         addChild(panel)
 
-        let bg = SKShapeNode(rectOf: CGSize(width: 320, height: 84), cornerRadius: 8)
+        let bg = SKShapeNode(rectOf: CGSize(width: panelWidth, height: panelHeight), cornerRadius: 8)
         bg.fillColor = fillColor
         bg.strokeColor = strokeColor
         panel.addChild(bg)
