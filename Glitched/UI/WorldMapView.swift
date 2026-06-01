@@ -1,5 +1,6 @@
 import SwiftUI
 import StoreKit
+import GameKit
 
 struct WorldMapView: View {
     @ObservedObject private var gameState = GameState.shared
@@ -11,6 +12,10 @@ struct WorldMapView: View {
     @State private var isPurchasing = false
     @State private var isRestoring = false
     @State private var storeMessage: String?
+    /// Mirrors GKLocalPlayer authentication so the Game Center entry point only
+    /// appears once the player is signed in. Refreshed on appear and when
+    /// GameKit posts its authentication-changed notification.
+    @State private var isGameCenterAuthenticated = GKLocalPlayer.local.isAuthenticated
 
     private let background = Color(red: 13 / 255, green: 13 / 255, blue: 13 / 255)
 
@@ -93,23 +98,68 @@ struct WorldMapView: View {
 
             Spacer()
 
-            Button {
-                showingSettings = true
-            } label: {
-                Image(systemName: "gearshape.fill")
-                    .font(.system(size: 18, weight: .semibold))
-                    .foregroundStyle(Color.cyan)
-                    .frame(width: 44, height: 44)
-                    .background(
-                        RoundedRectangle(cornerRadius: 14)
-                            .fill(Color.white.opacity(0.04))
-                            .overlay(
-                                RoundedRectangle(cornerRadius: 14)
-                                    .stroke(Color.white.opacity(0.08), lineWidth: 1)
-                            )
-                    )
+            VStack(alignment: .trailing, spacing: 10) {
+                Button {
+                    showingSettings = true
+                } label: {
+                    Image(systemName: "gearshape.fill")
+                        .font(.system(size: 18, weight: .semibold))
+                        .foregroundStyle(Color.cyan)
+                        .frame(width: 44, height: 44)
+                        .background(
+                            RoundedRectangle(cornerRadius: 14)
+                                .fill(Color.white.opacity(0.04))
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: 14)
+                                        .stroke(Color.white.opacity(0.08), lineWidth: 1)
+                                )
+                        )
+                }
+
+                if isGameCenterAuthenticated {
+                    leaderboardsButton
+                }
             }
         }
+        .onAppear { refreshGameCenterAuthState() }
+        .onReceive(
+            NotificationCenter.default.publisher(for: .GKPlayerAuthenticationDidChangeNotificationName)
+        ) { _ in
+            refreshGameCenterAuthState()
+        }
+    }
+
+    /// Line-art / terminal-style entry point into the native Game Center
+    /// dashboard. Only shown while the local player is authenticated; the
+    /// underlying present call is itself a no-op when unauthenticated.
+    private var leaderboardsButton: some View {
+        Button {
+            GameCenterManager.shared.presentGameCenter()
+        } label: {
+            HStack(spacing: 6) {
+                Image(systemName: "trophy")
+                    .font(.system(size: 12, weight: .semibold))
+                Text("LEADERBOARDS")
+                    .font(.custom(VisualConstants.Fonts.secondary, size: 10))
+                    .tracking(1.5)
+            }
+            .foregroundStyle(Color.cyan)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
+            .background(
+                RoundedRectangle(cornerRadius: 12)
+                    .fill(Color.white.opacity(0.04))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 12)
+                            .stroke(Color.cyan.opacity(0.45), lineWidth: 1)
+                    )
+            )
+        }
+        .accessibilityLabel("Game Center leaderboards and achievements")
+    }
+
+    private func refreshGameCenterAuthState() {
+        isGameCenterAuthenticated = GKLocalPlayer.local.isAuthenticated
     }
 
     private var lockedWorldBanner: some View {

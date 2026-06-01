@@ -6,7 +6,6 @@ final class StoreManager: ObservableObject {
     static let shared = StoreManager()
 
     static let fullGameProductID = "com.glitched.app.fullgame"
-    static let devCommentaryProductID = "com.glitched.app.devcommentary"
 
     @Published private(set) var products: [Product] = []
     @Published private(set) var purchasedProductIDs: Set<String> = []
@@ -44,8 +43,7 @@ final class StoreManager: ObservableObject {
     func loadProducts() async {
         do {
             let loaded = try await Product.products(for: [
-                Self.fullGameProductID,
-                Self.devCommentaryProductID
+                Self.fullGameProductID
             ])
             products = loaded.sorted { $0.id < $1.id }
             lastErrorMessage = nil
@@ -66,11 +64,21 @@ final class StoreManager: ObservableObject {
                 await refreshEntitlements()
                 lastErrorMessage = nil
                 return transaction
-            case .userCancelled, .pending:
+            case .userCancelled:
+                // Not a failure: the user backed out. Don't surface a scary error.
+                lastErrorMessage = "Purchase canceled."
+                throw StoreError.purchaseNotCompleted
+            case .pending:
+                // Not a failure: awaiting external approval (e.g. Ask to Buy).
+                lastErrorMessage = "Pending approval."
                 throw StoreError.purchaseNotCompleted
             @unknown default:
                 throw StoreError.purchaseNotCompleted
             }
+        } catch StoreError.purchaseNotCompleted {
+            // Cancelled/pending already set a neutral message above; rethrow without
+            // populating the error surface that WorldMapView/SettingsView show.
+            throw StoreError.purchaseNotCompleted
         } catch {
             setStoreError("Purchase could not be completed. Try again or restore purchases.", error: error)
             throw error

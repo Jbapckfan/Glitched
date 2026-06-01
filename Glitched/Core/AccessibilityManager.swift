@@ -93,4 +93,36 @@ final class AccessibilityManager: ObservableObject {
     var showsFallbackOverlay: Bool {
         hardwareFreeMode || activeMechanics.contains(where: needsFallbackUI(for:))
     }
+
+    /// Active mechanics on the current level that are STILL gated behind a real
+    /// hardware action (no fallback surfaced yet). On a release device this is the
+    /// set a player gets stuck on if they can't/won't perform the hardware action.
+    /// Empty in Hardware-Free Mode or the simulator, where every mechanic already
+    /// routes through the on-screen fallback overlay.
+    var hardwareGatedMechanics: [MechanicType] {
+        activeMechanics.filter(usesHardware(for:))
+    }
+
+    /// True when the current level has at least one mechanic still waiting on a
+    /// real hardware action. Used to surface the release-build "can't do this?"
+    /// escape hatch so a hardware action is never the sole path to completion.
+    var hasActiveHardwareGatedMechanic: Bool {
+        !hardwareGatedMechanics.isEmpty
+    }
+
+    /// Release-build softlock escape hatch. Forces the software fallback for every
+    /// active mechanic that is still hardware-gated, which flips `needsFallbackUI`
+    /// true for them and surfaces their controls in `AccessibilityOverlay` — WITHOUT
+    /// requiring the global Hardware-Free Mode setting to have been pre-toggled.
+    /// Returns true if it surfaced anything (i.e. there was something to unblock).
+    @discardableResult
+    func forceFallbackForActiveHardwareMechanics() -> Bool {
+        let gated = hardwareGatedMechanics
+        guard !gated.isEmpty else { return false }
+        objectWillChange.send()
+        for mechanic in gated {
+            forcedFallbacks.insert(mechanic)
+        }
+        return true
+    }
 }

@@ -84,7 +84,6 @@ struct SettingsView: View {
                             .disabled(restoringPurchases)
 
                             statusRow("FULL GAME", unlocked: store.isUnlocked(StoreManager.fullGameProductID))
-                            statusRow("DEV COMMENTARY", unlocked: store.isUnlocked(StoreManager.devCommentaryProductID))
 
                             if let storeMessage {
                                 Text(storeMessage)

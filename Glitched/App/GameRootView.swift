@@ -48,6 +48,20 @@ struct GameRootView: View {
                 AccessibilityOverlay()
             }
 
+            // P1 SOFTLOCK FIX: Release-build escape hatch for hardware-gated levels.
+            // The per-mechanic fallback controls above only render once a mechanic
+            // is no longer hardware-gated (Hardware-Free Mode, simulator, or a forced
+            // fallback). On a release device a player who can't/won't perform the
+            // real hardware action would otherwise be softlocked. This affordance
+            // surfaces a "can't do this?" button on hardware-gated levels — and
+            // auto-surfaces the fallback after a no-progress interval (tied to the
+            // same hint-timer delay) — so every level keeps a working path to
+            // completion WITHOUT pre-toggling the global Hardware-Free Mode setting.
+            // It hides itself once the overlay is showing (nothing left to unblock).
+            if !accessibility.showsFallbackOverlay && accessibility.hasActiveHardwareGatedMechanic {
+                HardwareFallbackEscapeHatch(levelID: gameState.currentLevelID)
+            }
+
             // Pause menu (FIX #6: uses UIState enum now)
             if gameState.uiState == .paused {
                 PauseMenuView()
@@ -453,6 +467,81 @@ struct AccessibilityOverlay: View {
                 .background(Capsule().fill(Color.pink.opacity(0.7)))
         }
         .accessibilityLabel(Text("Voice command \(label)"))
+    }
+}
+
+// P1 SOFTLOCK FIX: Persistent + auto-surfacing release-build escape hatch for
+// hardware-gated levels. Calls `AccessibilityManager.forceFallbackForActiveHardwareMechanics`,
+// which flips the level's active mechanic(s) into the existing `AccessibilityOverlay`
+// fallback path — so the player gets the same on-screen controls Hardware-Free Mode
+// would have given them, but WITHOUT having had to pre-toggle that global setting.
+struct HardwareFallbackEscapeHatch: View {
+    let levelID: LevelID
+
+    @ObservedObject private var accessibility = AccessibilityManager.shared
+
+    // Mirrors BaseLevelScene's FIX #13 hint-timer delay (base 18s, x1.75 with the
+    // "extended hint timers" accessibility setting). When the player makes no
+    // progress for this long on a hardware-gated level, we auto-surface the
+    // fallback so a real hardware action is never the SOLE path to completion.
+    private static let baseNoProgressHintDelay: TimeInterval = 18.0
+    private var autoSurfaceDelay: TimeInterval {
+        let extended = ProgressManager.shared.load().settings.extendedHintTimers
+        return extended ? Self.baseNoProgressHintDelay * 1.75 : Self.baseNoProgressHintDelay
+    }
+
+    @State private var autoSurfaceTask: DispatchWorkItem?
+
+    var body: some View {
+        VStack {
+            Spacer()
+            Button(action: surfaceFallback) {
+                HStack(spacing: 6) {
+                    Image(systemName: "questionmark.circle")
+                        .font(.system(size: 13, weight: .semibold))
+                    Text("CAN'T DO THIS?")
+                        .font(.custom(VisualConstants.Fonts.main, size: 11))
+                        .tracking(1)
+                }
+                .foregroundColor(.white)
+                .padding(.horizontal, 14)
+                .padding(.vertical, 10)
+                .background(
+                    Capsule()
+                        .fill(Color.black.opacity(0.55))
+                        .overlay(Capsule().strokeBorder(Color.white.opacity(0.35), lineWidth: 1))
+                )
+            }
+            .accessibilityLabel(Text("Can't perform the device action"))
+            .accessibilityHint(Text("Shows on-screen buttons to complete this level without the hardware action."))
+            // Place above the bottom safe area / home indicator, clear of the
+            // AccessibilityOverlay row which lives slightly higher when shown.
+            .padding(.bottom, 96)
+        }
+        // Reschedule the auto-surface whenever the level changes so a fresh
+        // hardware-gated level starts its own no-progress countdown.
+        .onChange(of: levelID) { _ in scheduleAutoSurface() }
+        .onAppear { scheduleAutoSurface() }
+        .onDisappear { autoSurfaceTask?.cancel() }
+    }
+
+    private func surfaceFallback() {
+        autoSurfaceTask?.cancel()
+        autoSurfaceTask = nil
+        accessibility.forceFallbackForActiveHardwareMechanics()
+    }
+
+    private func scheduleAutoSurface() {
+        autoSurfaceTask?.cancel()
+        let task = DispatchWorkItem {
+            // Re-check at fire time: the player may have completed the action via
+            // real hardware (overlay no longer needed) or already tapped the hatch.
+            if accessibility.hasActiveHardwareGatedMechanic {
+                accessibility.forceFallbackForActiveHardwareMechanics()
+            }
+        }
+        autoSurfaceTask = task
+        DispatchQueue.main.asyncAfter(deadline: .now() + autoSurfaceDelay, execute: task)
     }
 }
 

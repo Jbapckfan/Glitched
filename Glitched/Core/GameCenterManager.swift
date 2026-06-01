@@ -15,6 +15,13 @@ final class GameCenterManager {
 
     private init() {}
 
+    /// Whether the local player is currently authenticated with Game Center.
+    /// Backed by GameKit's own state so UI can gate Game Center affordances
+    /// even before our authenticate() completion flips the internal flag.
+    var isPlayerAuthenticated: Bool {
+        GKLocalPlayer.local.isAuthenticated
+    }
+
     private var shouldAuthenticateInCurrentBuild: Bool {
         if let override = Bundle.main.object(forInfoDictionaryKey: "GLITCHED_ENABLE_GAME_CENTER") as? NSNumber {
             return override.boolValue
@@ -72,26 +79,57 @@ final class GameCenterManager {
 
     // MARK: - Achievement IDs
 
+    /// These identifiers MUST be registered in App Store Connect (Features ->
+    /// Game Center -> Achievements) using the exact reverse-DNS strings below.
     enum Achievement: String {
-        // World completion
-        case completeWorld1 = "glitched.world1.complete"
-        case completeWorld2 = "glitched.world2.complete"
-        case completeWorld3 = "glitched.world3.complete"
-        case completeWorld4 = "glitched.world4.complete"
-        case completeAllWorlds = "glitched.all.complete"
+        // World completion (one per campaign world).
+        case completeWorld1 = "com.glitched.world1_complete"
+        case completeWorld2 = "com.glitched.world2_complete"
+        case completeWorld3 = "com.glitched.world3_complete"
+        case completeWorld4 = "com.glitched.world4_complete"
+        case completeWorld5 = "com.glitched.world5_complete"
 
-        // Speedrun
-        case speedrunWorld1 = "glitched.world1.speedrun"
-        case speedrunWorld2 = "glitched.world2.speedrun"
-        case speedrunWorld3 = "glitched.world3.speedrun"
-        case speedrunWorld4 = "glitched.world4.speedrun"
+        // Completed every campaign world.
+        case allWorlds = "com.glitched.all_worlds"
 
-        // No-hint
-        case noHintWorld1 = "glitched.world1.nohint"
-        case noHintWorld2 = "glitched.world2.nohint"
-        case noHintWorld3 = "glitched.world3.nohint"
-        case noHintWorld4 = "glitched.world4.nohint"
-        case noHintAll = "glitched.all.nohint"
+        // Completed a world (or the whole game) without ever using a hint.
+        case noHint = "com.glitched.no_hint"
+
+        /// Maps a campaign world to its completion achievement.
+        /// Returns nil for the tutorial world, which has no achievement.
+        static func completion(for world: World) -> Achievement? {
+            switch world {
+            case .world0: return nil
+            case .world1: return .completeWorld1
+            case .world2: return .completeWorld2
+            case .world3: return .completeWorld3
+            case .world4: return .completeWorld4
+            case .world5: return .completeWorld5
+            }
+        }
+    }
+
+    // MARK: - Leaderboard IDs
+
+    /// These identifiers MUST be registered in App Store Connect (Features ->
+    /// Game Center -> Leaderboards) using the exact reverse-DNS strings below.
+    /// Time leaderboards are submitted in centiseconds (see reportTime) so they
+    /// can be configured as integer "Low score is best" boards.
+    enum Leaderboard {
+        /// Total best time across every campaign level.
+        static let fastestTotal = "com.glitched.fastest_total"
+
+        /// Per-world best aggregate time. Returns nil for the tutorial world.
+        static func time(for world: World) -> String? {
+            switch world {
+            case .world0: return nil
+            case .world1: return "com.glitched.world1_time"
+            case .world2: return "com.glitched.world2_time"
+            case .world3: return "com.glitched.world3_time"
+            case .world4: return "com.glitched.world4_time"
+            case .world5: return "com.glitched.world5_time"
+            }
+        }
     }
 
     // MARK: - Report Achievement
@@ -114,44 +152,25 @@ final class GameCenterManager {
 
     // MARK: - World Completion Helpers
 
-    /// Call when a world is fully completed
+    /// Call when a single campaign world is fully completed. Reports only that
+    /// world's completion achievement. The "all worlds" achievement is reported
+    /// separately via `reportAllWorldsCompleted()` so it never fires off the
+    /// back of finishing just one world (the previous wiring incorrectly fired
+    /// the all-worlds achievement whenever World 5 was completed).
     func reportWorldCompleted(_ world: World) {
-        switch world {
-        case .world0: break
-        case .world1: reportAchievement(.completeWorld1)
-        case .world2: reportAchievement(.completeWorld2)
-        case .world3: reportAchievement(.completeWorld3)
-        case .world4:
-            reportAchievement(.completeWorld4)
-        case .world5:
-            reportAchievement(.completeAllWorlds)
-        }
+        guard let achievement = Achievement.completion(for: world) else { return }
+        reportAchievement(achievement)
     }
 
-    /// Call when a world is completed under the speedrun threshold
-    func reportSpeedrun(_ world: World) {
-        switch world {
-        case .world0: break
-        case .world1: reportAchievement(.speedrunWorld1)
-        case .world2: reportAchievement(.speedrunWorld2)
-        case .world3: reportAchievement(.speedrunWorld3)
-        case .world4: reportAchievement(.speedrunWorld4)
-        case .world5: break
-        }
+    /// Call only once every campaign world has actually been completed.
+    func reportAllWorldsCompleted() {
+        reportAchievement(.allWorlds)
     }
 
-    /// Call when a world is completed without using any hints
-    func reportNoHintCompletion(_ world: World) {
-        switch world {
-        case .world0: break
-        case .world1: reportAchievement(.noHintWorld1)
-        case .world2: reportAchievement(.noHintWorld2)
-        case .world3: reportAchievement(.noHintWorld3)
-        case .world4:
-            reportAchievement(.noHintWorld4)
-        case .world5:
-            reportAchievement(.noHintAll)
-        }
+    /// Call when a world (or the entire campaign) is completed without ever
+    /// using a hint. There is a single global no-hint achievement.
+    func reportNoHintCompletion() {
+        reportAchievement(.noHint)
     }
 
     // MARK: - Leaderboard
@@ -165,6 +184,63 @@ final class GameCenterManager {
             }
         }
     }
+
+    /// Submits a completion time to a leaderboard. Times are stored in
+    /// centiseconds so the board can be an integer "Low score is best" board
+    /// with two decimal places. Non-positive times are ignored.
+    func reportTime(_ seconds: Double, leaderboardID: String) {
+        guard seconds > 0, seconds.isFinite else { return }
+        let centiseconds = Int((seconds * 100).rounded())
+        reportScore(centiseconds, leaderboardID: leaderboardID)
+    }
+
+    /// Submits the aggregate best time for a world to its time leaderboard.
+    func reportWorldTime(_ seconds: Double, world: World) {
+        guard let leaderboardID = Leaderboard.time(for: world) else { return }
+        reportTime(seconds, leaderboardID: leaderboardID)
+    }
+
+    /// Submits the aggregate best time across the whole campaign.
+    func reportTotalTime(_ seconds: Double) {
+        reportTime(seconds, leaderboardID: Leaderboard.fastestTotal)
+    }
+
+    // MARK: - Game Center UI
+
+    #if canImport(UIKit)
+    /// Retains the dashboard delegate for the lifetime of the presented
+    /// controller so it isn't deallocated mid-presentation.
+    private var dashboardDelegate: GameCenterDashboardDelegate?
+
+    /// Presents the native Game Center dashboard (leaderboards + achievements).
+    /// Safe to call when unauthenticated: it simply no-ops so callers can wire
+    /// the button without additional guards.
+    func presentGameCenter() {
+        guard isPlayerAuthenticated else {
+            print("GameCenterManager: Ignoring dashboard request; player is not authenticated.")
+            return
+        }
+
+        DispatchQueue.main.async {
+            guard let presenter = self.topViewController() else {
+                print("GameCenterManager: Could not find a presenter for the Game Center dashboard.")
+                return
+            }
+
+            let dashboard = GKGameCenterViewController(state: .leaderboards)
+            let delegate = GameCenterDashboardDelegate { [weak self] in
+                self?.dashboardDelegate = nil
+            }
+            self.dashboardDelegate = delegate
+            dashboard.gameCenterDelegate = delegate
+            presenter.present(dashboard, animated: true)
+        }
+    }
+    #else
+    func presentGameCenter() {
+        print("GameCenterManager: Game Center dashboard is unavailable on this platform.")
+    }
+    #endif
 
     private func disableGameCenter(_ message: String) {
         isAuthenticated = false
@@ -202,3 +278,20 @@ final class GameCenterManager {
     }
     #endif
 }
+
+#if canImport(UIKit)
+/// Dismisses the Game Center dashboard when the player taps Done.
+private final class GameCenterDashboardDelegate: NSObject, GKGameCenterControllerDelegate {
+    private let onFinish: () -> Void
+
+    init(onFinish: @escaping () -> Void) {
+        self.onFinish = onFinish
+    }
+
+    func gameCenterViewControllerDidFinish(_ gameCenterViewController: GKGameCenterViewController) {
+        gameCenterViewController.dismiss(animated: true) { [onFinish] in
+            onFinish()
+        }
+    }
+}
+#endif
