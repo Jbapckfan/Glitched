@@ -407,7 +407,17 @@ final class DarkModeScene: BaseLevelScene, SKPhysicsContactDelegate {
         light1Point = CGPoint(x: light1X, y: light1Y)
 
         // Door platform (always solid) — rightmost element, at the top of the climb.
-        let doorPlatformY = groundY + step * 3.30
+        //
+        // BYPASS FIX: the multiplier was 3.30, which put the door platform top only
+        // ~95pt above the rest-ledge top — a razor-thin ~4pt margin over Bit's audited
+        // ~91pt jump apex (no clampVelocity here, so the 620 cap, not the 500 clamp,
+        // governs). That let a dark-only player jump rest -> door directly, skipping the
+        // light1 platform and the required dark->light mode flip. Raising the multiplier
+        // to 3.55 lifts the door top to ~107.5pt above the rest top (≈16.5pt > apex),
+        // so the rest-ledge can no longer be jump-skipped. The intended path is
+        // unaffected: rest -> light1 (~45pt rise) then light1 -> door (~62.5pt rise),
+        // both comfortably within reach.
+        let doorPlatformY = groundY + step * 3.55
         let doorPlatform = createPlatform(
             at: CGPoint(x: doorX, y: doorPlatformY),
             size: CGSize(width: 140, height: 35)

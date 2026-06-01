@@ -123,7 +123,15 @@ final class ClipboardScene: BaseLevelScene, SKPhysicsContactDelegate {
 
         // Door frame/body must exceed Bit's audited ~91 pt jump apex from the
         // platform top so the locked door cannot be cleared before unlock.
-        let doorSize = CGSize(width: 45, height: 115)
+        //
+        // BYPASS FIX: at height 115 the door center (groundY+50) put the door top at
+        // groundY+107.5 — only ~1.5pt above Bit's jump apex from the platform top
+        // (groundY+15 +91 = groundY+106; no clampVelocity here, so the 620 cap governs).
+        // That razor-thin margin let the locked door be jump-cleared. Height 145 lifts
+        // the door top to groundY+122.5 (~16.5pt > apex) so it can no longer be cleared
+        // before unlock. The blocker's physics body is removed entirely on unlock, so
+        // completability is unaffected.
+        let doorSize = CGSize(width: 45, height: 145)
         let frame = SKShapeNode(rectOf: doorSize)
         frame.fillColor = fillColor
         frame.strokeColor = strokeColor

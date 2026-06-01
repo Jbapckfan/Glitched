@@ -72,8 +72,12 @@ final class AccessibilityManager: ObservableObject {
     }
 
     func forceHardwareFallback(for mechanic: MechanicType) {
-        objectWillChange.send()
+        // Thread-safe SwiftUI publish: this type is not @MainActor, so hop the
+        // objectWillChange notification to the main actor. The state mutation stays
+        // synchronous so usesHardware/needsFallbackUI reflect the change immediately;
+        // only the SwiftUI update is dispatched to main (fallback semantics unchanged).
         forcedFallbacks.insert(mechanic)
+        notifyChangeOnMain()
     }
 
     func usesHardware(for mechanic: MechanicType) -> Bool {
@@ -119,10 +123,25 @@ final class AccessibilityManager: ObservableObject {
     func forceFallbackForActiveHardwareMechanics() -> Bool {
         let gated = hardwareGatedMechanics
         guard !gated.isEmpty else { return false }
-        objectWillChange.send()
         for mechanic in gated {
             forcedFallbacks.insert(mechanic)
         }
+        // Thread-safe SwiftUI publish — see forceHardwareFallback(for:). Mutation is
+        // synchronous; only the objectWillChange notification hops to the main actor.
+        notifyChangeOnMain()
         return true
+    }
+
+    /// Emit objectWillChange on the main actor. SwiftUI requires its change
+    /// notifications on the main thread, and this type is not @MainActor, so these
+    /// publishes (which can fire from a SpriteKit scene/background context) are hopped.
+    private func notifyChangeOnMain() {
+        if Thread.isMainThread {
+            objectWillChange.send()
+        } else {
+            DispatchQueue.main.async { [weak self] in
+                self?.objectWillChange.send()
+            }
+        }
     }
 }

@@ -1,10 +1,22 @@
 import SpriteKit
 import UIKit
 
-/// Level 28: Share to Unlock
-/// Concept: A locked door displays a code. Player shares the code via the system share sheet
-/// (any sharing method counts — not limited to AirDrop), then taps it back in via in-game
-/// keyboard to unlock the door. The mechanic is intentionally "sharing" not specifically AirDrop.
+/// Level 28: Share to Decode
+///
+/// PUZZLE (Wave-2b rework — was a hollow one-tap ceremony):
+/// The terminal shows a SCRAMBLED 6-symbol transmission plus a visible shift rule
+/// (e.g. "ROTATE -5"). The plaintext code is NEVER printed on screen. To learn it you
+/// must SHARE the transmission via the system share sheet (AirDrop / Messages / Notes):
+/// the share payload is the *decoded* code, so sending it to yourself and reading it
+/// back is the diegetic "decode" step. Then type the decoded code on an in-game keypad
+/// that is salted with DISTRACTOR keys (the ciphertext symbols and other alphabet
+/// symbols), so input requires actually knowing the answer — not just tapping every key.
+///
+/// The locked door's body exceeds Bit's audited ~91 pt jump apex, so the door cannot be
+/// cleared without unlocking. Completable on iPhone + iPad via the real share flow, OR
+/// via the Wave-2b "CAN'T DO THIS?" fallback, which routes through `handleGameInput` to
+/// REVEAL the decoded code on the terminal (and open the keypad) — the player still has
+/// to type it among the distractors, so the fallback aids the puzzle rather than skipping it.
 final class AirDropScene: BaseLevelScene, SKPhysicsContactDelegate {
 
     private let fillColor = SKColor.white
@@ -15,22 +27,27 @@ final class AirDropScene: BaseLevelScene, SKPhysicsContactDelegate {
     private var playerController: PlayerController!
     private var spawnPoint: CGPoint = .zero
 
-    // Code/door state
-    private let codeCharacters = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
+    // Code / cipher state. `doorCode` is the secret plaintext; `cipherText` is what the
+    // terminal shows; `shift` is the visible rule that maps one to the other.
     private var doorCode: String = ""
+    private var cipherText: String = ""
+    private var shift: Int = 0
+
     private var enteredCode: String = ""
     private var doorUnlocked = false
-    private var hasShared = false
+    private var codeRevealed = false   // true once share/fallback has exposed the plaintext
 
     // UI nodes
-    private var codeDisplayLabel: SKLabelNode!
+    private var cipherDisplayLabel: SKLabelNode!
+    private var ruleLabel: SKLabelNode!
+    private var decodedLabel: SKLabelNode!      // shows the decoded code AFTER share/fallback
     private var enteredCodeLabel: SKLabelNode!
+    private var statusLabel: SKLabelNode!
     private var doorBlocker: SKNode?
     private var doorFrame: SKShapeNode!
     private var shareButton: SKNode?
     private var keyboardNode: SKNode?
     private var terminalScreen: SKNode?
-    private var keyButtons: [SKNode] = []
     private let designWidth: CGFloat = 390
 
     private var courseScale: CGFloat { min(1.0, size.width / designWidth) }
@@ -48,8 +65,11 @@ final class AirDropScene: BaseLevelScene, SKPhysicsContactDelegate {
         AccessibilityManager.shared.registerMechanics([.airdrop])
         DeviceManagerCoordinator.shared.configure(for: [.airdrop])
 
-        // Generate 6-character code
-        doorCode = generateCode(length: 6)
+        // Generate the secret plaintext + a non-trivial shift, then derive the
+        // scrambled ciphertext the terminal will display. The manager owns the same
+        // values so the share payload / fallback carry the matching decoded answer.
+        generatePuzzle()
+        AirDropManager.shared.prepare(plaintext: doorCode, ciphertext: cipherText, shift: shift)
 
         setupBackground()
         setupLevelTitle()
@@ -58,13 +78,21 @@ final class AirDropScene: BaseLevelScene, SKPhysicsContactDelegate {
         setupBit()
     }
 
-    private func generateCode(length: Int) -> String {
-        let chars = Array(codeCharacters)
-        return String((0..<length).map { _ in chars.randomElement()! })
+    private func generatePuzzle() {
+        let alphabet = AirDropManager.alphabet
+        doorCode = String((0..<6).map { _ in alphabet.randomElement()! })
+        // Shift in 3...(n-3): never 0 (would make cipher == plaintext) and never tiny,
+        // so the scramble is always visibly different from the answer.
+        shift = Int.random(in: 3...(alphabet.count - 3))
+        cipherText = AirDropManager.encode(doorCode, shift: shift)
+        // Guard against the (astronomically unlikely) degenerate case.
+        if cipherText == doorCode {
+            cipherText = AirDropManager.encode(doorCode, shift: shift + 1)
+            shift += 1
+        }
     }
 
     private func setupBackground() {
-        // Signal wave decorations
         for i in 0..<5 {
             let arc = SKShapeNode()
             let path = CGMutablePath()
@@ -97,22 +125,16 @@ final class AirDropScene: BaseLevelScene, SKPhysicsContactDelegate {
     private func buildLevel() {
         let groundY: CGFloat = 160
 
-        // Start platform
         createPlatform(at: CGPoint(x: courseX(80), y: groundY), size: CGSize(width: courseLen(120), height: 30))
-
-        // Middle platform with terminal
         createPlatform(at: CGPoint(x: courseX(195), y: groundY), size: CGSize(width: courseLen(180), height: 30))
-
-        // Door platform
         createPlatform(at: CGPoint(x: courseX(310), y: groundY), size: CGSize(width: courseLen(120), height: 30))
 
-        // Terminal screen with code
-        createTerminalScreen(at: CGPoint(x: courseX(195), y: groundY + 90))
+        createTerminalScreen(at: CGPoint(x: courseX(195), y: groundY + 110))
 
-        // Locked door
-        createLockedDoor(at: CGPoint(x: courseX(330), y: groundY + 50))
+        // Locked door — body is 120 pt tall, well above Bit's ~91 pt jump apex from
+        // the platform top, so it cannot be cleared without unlocking.
+        createLockedDoor(at: CGPoint(x: courseX(330), y: groundY + 75))
 
-        // Death zone
         let death = SKNode()
         death.position = CGPoint(x: size.width / 2, y: -50)
         death.physicsBody = SKPhysicsBody(rectangleOf: CGSize(width: size.width * 2, height: 100))
@@ -143,56 +165,75 @@ final class AirDropScene: BaseLevelScene, SKPhysicsContactDelegate {
         terminalScreen!.position = position
         terminalScreen!.zPosition = 50
 
-        // Screen background
-        let screenBG = SKShapeNode(rectOf: CGSize(width: 160, height: 100), cornerRadius: 4)
+        let screenBG = SKShapeNode(rectOf: CGSize(width: 188, height: 138), cornerRadius: 4)
         screenBG.fillColor = strokeColor
         screenBG.strokeColor = strokeColor
         screenBG.lineWidth = 2
         terminalScreen!.addChild(screenBG)
 
-        // Screen bezel
-        let bezel = SKShapeNode(rectOf: CGSize(width: 168, height: 108), cornerRadius: 6)
+        let bezel = SKShapeNode(rectOf: CGSize(width: 196, height: 146), cornerRadius: 6)
         bezel.fillColor = .clear
         bezel.strokeColor = strokeColor
         bezel.lineWidth = 3
         terminalScreen!.addChild(bezel)
 
-        // "TRANSMISSION CODE" header
-        let header = SKLabelNode(text: "TRANSMISSION CODE")
+        let header = SKLabelNode(text: "SCRAMBLED TRANSMISSION")
         header.fontName = "Menlo-Bold"
-        header.fontSize = 9
+        header.fontSize = 8
         header.fontColor = fillColor
-        header.position = CGPoint(x: 0, y: 30)
+        header.position = CGPoint(x: 0, y: 50)
         terminalScreen!.addChild(header)
 
-        // Code display
-        codeDisplayLabel = SKLabelNode(text: doorCode)
-        codeDisplayLabel.fontName = "Menlo-Bold"
-        codeDisplayLabel.fontSize = 18
-        codeDisplayLabel.fontColor = fillColor
-        codeDisplayLabel.position = CGPoint(x: 0, y: 5)
-        terminalScreen!.addChild(codeDisplayLabel)
-
-        // Blink cursor effect on code
-        codeDisplayLabel.run(.repeatForever(.sequence([
-            .fadeAlpha(to: 0.6, duration: 0.5),
+        // The scrambled ciphertext — this is all the player can read for free.
+        cipherDisplayLabel = SKLabelNode(text: cipherText)
+        cipherDisplayLabel.fontName = "Menlo-Bold"
+        cipherDisplayLabel.fontSize = 20
+        cipherDisplayLabel.fontColor = fillColor
+        cipherDisplayLabel.position = CGPoint(x: 0, y: 28)
+        terminalScreen!.addChild(cipherDisplayLabel)
+        cipherDisplayLabel.run(.repeatForever(.sequence([
+            .fadeAlpha(to: 0.55, duration: 0.5),
             .fadeAlpha(to: 1.0, duration: 0.5)
         ])))
 
-        // Share button
+        // Visible transform rule. Sharing performs this rotation for you.
+        ruleLabel = SKLabelNode(text: "RULE: ROTATE BACK \(shift)")
+        ruleLabel.fontName = "Menlo"
+        ruleLabel.fontSize = 9
+        ruleLabel.fontColor = fillColor
+        ruleLabel.position = CGPoint(x: 0, y: 8)
+        terminalScreen!.addChild(ruleLabel)
+
+        // Decoded-code slot. Empty until the player SHARES (or uses the fallback);
+        // sharing is the only way to populate it. Underscores until then.
+        let decodedHeader = SKLabelNode(text: "DECODED:")
+        decodedHeader.fontName = "Menlo-Bold"
+        decodedHeader.fontSize = 8
+        decodedHeader.fontColor = fillColor
+        decodedHeader.position = CGPoint(x: 0, y: -12)
+        terminalScreen!.addChild(decodedHeader)
+
+        decodedLabel = SKLabelNode(text: "??????")
+        decodedLabel.fontName = "Menlo-Bold"
+        decodedLabel.fontSize = 16
+        decodedLabel.fontColor = fillColor
+        decodedLabel.position = CGPoint(x: 0, y: -30)
+        terminalScreen!.addChild(decodedLabel)
+
+        // Share button (the decode action).
         let shareBtnNode = SKNode()
-        shareBtnNode.position = CGPoint(x: 0, y: -25)
+        shareBtnNode.position = CGPoint(x: 0, y: -54)
         shareBtnNode.name = "shareButton"
 
-        let shareBG = SKShapeNode(rectOf: CGSize(width: 80, height: 24), cornerRadius: 4)
+        let shareBG = SKShapeNode(rectOf: CGSize(width: 120, height: 24), cornerRadius: 4)
         shareBG.fillColor = fillColor
         shareBG.strokeColor = fillColor
         shareBG.name = "shareButton"
         shareBtnNode.addChild(shareBG)
 
-        let shareLabel = SKLabelNode(text: "SHARE")
+        let shareLabel = SKLabelNode(text: "SHARE TO DECODE")
         shareLabel.fontName = "Menlo-Bold"
-        shareLabel.fontSize = 10
+        shareLabel.fontSize = 9
         shareLabel.fontColor = strokeColor
         shareLabel.verticalAlignmentMode = .center
         shareLabel.name = "shareButton"
@@ -209,23 +250,23 @@ final class AirDropScene: BaseLevelScene, SKPhysicsContactDelegate {
         door.position = position
         door.name = "doorContainer"
 
-        doorFrame = SKShapeNode(rectOf: CGSize(width: 40, height: 60))
+        let doorSize = CGSize(width: 44, height: 120)
+        doorFrame = SKShapeNode(rectOf: doorSize)
         doorFrame.fillColor = fillColor
         doorFrame.strokeColor = strokeColor
         doorFrame.lineWidth = lineWidth
         door.addChild(doorFrame)
 
-        // Lock icon
-        let lockBody = SKShapeNode(rectOf: CGSize(width: 12, height: 10), cornerRadius: 2)
+        let lockBody = SKShapeNode(rectOf: CGSize(width: 14, height: 12), cornerRadius: 2)
         lockBody.fillColor = strokeColor
         lockBody.strokeColor = strokeColor
-        lockBody.position = CGPoint(x: 0, y: -3)
+        lockBody.position = CGPoint(x: 0, y: -4)
         lockBody.name = "lockIcon"
         door.addChild(lockBody)
 
         let lockShackle = SKShapeNode()
         let shacklePath = CGMutablePath()
-        shacklePath.addArc(center: CGPoint(x: 0, y: 5), radius: 6,
+        shacklePath.addArc(center: CGPoint(x: 0, y: 6), radius: 7,
                            startAngle: 0, endAngle: .pi, clockwise: false)
         lockShackle.path = shacklePath
         lockShackle.strokeColor = strokeColor
@@ -234,17 +275,15 @@ final class AirDropScene: BaseLevelScene, SKPhysicsContactDelegate {
         lockShackle.name = "lockIcon"
         door.addChild(lockShackle)
 
-        // Door blocker (physics)
         doorBlocker = SKNode()
-        doorBlocker?.physicsBody = SKPhysicsBody(rectangleOf: CGSize(width: 40, height: 60))
+        doorBlocker?.physicsBody = SKPhysicsBody(rectangleOf: doorSize)
         doorBlocker?.physicsBody?.isDynamic = false
         doorBlocker?.physicsBody?.categoryBitMask = PhysicsCategory.ground
         door.addChild(doorBlocker!)
 
         addChild(door)
 
-        // Exit trigger (behind door)
-        let exit = SKSpriteNode(color: .clear, size: CGSize(width: 40, height: 60))
+        let exit = SKSpriteNode(color: .clear, size: CGSize(width: 44, height: 120))
         exit.position = position
         exit.physicsBody = SKPhysicsBody(rectangleOf: exit.size)
         exit.physicsBody?.isDynamic = false
@@ -260,26 +299,33 @@ final class AirDropScene: BaseLevelScene, SKPhysicsContactDelegate {
         panel.zPosition = 300
         addChild(panel)
 
-        let bg = SKShapeNode(rectOf: CGSize(width: 300, height: 80), cornerRadius: 8)
+        let bg = SKShapeNode(rectOf: CGSize(width: 320, height: 84), cornerRadius: 8)
         bg.fillColor = fillColor
         bg.strokeColor = strokeColor
         panel.addChild(bg)
 
-        let text1 = SKLabelNode(text: "SHARE THE CODE. RECEIVE IT BACK.")
+        let text1 = SKLabelNode(text: "THE CODE IS SCRAMBLED.")
         text1.fontName = "Menlo-Bold"
         text1.fontSize = 11
         text1.fontColor = strokeColor
-        text1.position = CGPoint(x: 0, y: 10)
+        text1.position = CGPoint(x: 0, y: 16)
         panel.addChild(text1)
 
-        let text2 = SKLabelNode(text: "THE DOOR LISTENS.")
+        let text2 = SKLabelNode(text: "SHARE THE TRANSMISSION TO DECODE IT,")
         text2.fontName = "Menlo"
-        text2.fontSize = 10
+        text2.fontSize = 9
         text2.fontColor = strokeColor
-        text2.position = CGPoint(x: 0, y: -10)
+        text2.position = CGPoint(x: 0, y: -2)
         panel.addChild(text2)
 
-        panel.run(.sequence([.wait(forDuration: 6), .fadeOut(withDuration: 0.5), .removeFromParent()]))
+        let text3 = SKLabelNode(text: "THEN KEY THE DECODED CODE BACK IN.")
+        text3.fontName = "Menlo"
+        text3.fontSize = 9
+        text3.fontColor = strokeColor
+        text3.position = CGPoint(x: 0, y: -18)
+        panel.addChild(text3)
+
+        panel.run(.sequence([.wait(forDuration: 7), .fadeOut(withDuration: 0.5), .removeFromParent()]))
     }
 
     private func setupBit() {
@@ -291,79 +337,149 @@ final class AirDropScene: BaseLevelScene, SKPhysicsContactDelegate {
         playerController = PlayerController(character: bit, scene: self)
     }
 
-    // MARK: - Share Flow
+    // MARK: - Share Flow (the decode step)
 
     private func presentShareSheet() {
         guard let viewController = self.view?.window?.rootViewController else { return }
 
-        let shareText = "GLITCHED TRANSMISSION CODE: \(doorCode)"
-        let activityVC = UIActivityViewController(
-            activityItems: [shareText],
-            applicationActivities: nil
-        )
+        // The payload is the DECODED code (owned by the manager). Sharing to yourself
+        // is how you perform the rotate-back rule without doing it in your head.
+        let activityVC = AirDropManager.shared.createShareActivity()
 
-        // iPad support
         if let popover = activityVC.popoverPresentationController {
             popover.sourceView = self.view
             popover.sourceRect = CGRect(x: self.size.width / 2, y: self.size.height / 2, width: 0, height: 0)
         }
 
-        // Any share completion counts — the mechanic is "sharing" not specifically AirDrop.
-        // This is intentional: the narrative framing is about transmission, and any share
-        // method satisfies the puzzle requirement.
         activityVC.completionWithItemsHandler = { [weak self] _, completed, _, _ in
+            guard let self else { return }
             if completed {
-                self?.hasShared = true
-                self?.showKeyboard()
+                // Reveal the decoded code on the terminal (the player also has it in
+                // whatever app they shared to) and open the keypad to type it in.
+                self.revealDecodedCode()
+                self.showKeyboard()
             }
         }
 
         viewController.present(activityVC, animated: true)
     }
 
+    /// Populate the DECODED slot on the terminal. Called when the player completes a
+    /// share (real mechanic) or triggers the Wave-2b fallback. Does NOT unlock the
+    /// door — the player still has to type the code on the distractor keypad.
+    private func revealDecodedCode() {
+        guard !codeRevealed else { return }
+        codeRevealed = true
+        decodedLabel.text = doorCode
+        decodedLabel.fontColor = fillColor
+        decodedLabel.run(.sequence([
+            .scale(to: 1.25, duration: 0.12),
+            .scale(to: 1.0, duration: 0.12)
+        ]))
+        HapticManager.shared.collect()
+        notePlayerProgress()
+    }
+
     private func showKeyboard() {
-        // Remove share button
+        guard keyboardNode == nil else { return }
+
         shareButton?.run(.sequence([.fadeOut(withDuration: 0.2), .removeFromParent()]))
+        shareButton = nil
 
-        // Show "enter code" UI
-        let enterHeader = SKLabelNode(text: "ENTER CODE:")
-        enterHeader.fontName = "Menlo-Bold"
-        enterHeader.fontSize = 9
-        enterHeader.fontColor = fillColor
-        enterHeader.position = CGPoint(x: 0, y: -20)
-        terminalScreen?.addChild(enterHeader)
-
-        enteredCodeLabel = SKLabelNode(text: "______")
-        enteredCodeLabel.fontName = "Menlo-Bold"
-        enteredCodeLabel.fontSize = 14
-        enteredCodeLabel.fontColor = fillColor
-        enteredCodeLabel.position = CGPoint(x: 0, y: -38)
-        terminalScreen?.addChild(enteredCodeLabel)
-
-        // Create in-game keyboard with the code characters as tappable buttons
+        // The keypad is a self-contained modal anchored low on the screen so all keys,
+        // chrome, and the CLEAR button stay on-screen above the home indicator on the
+        // smallest device (390-wide iPhone) and remain centered on iPad. Everything
+        // lives inside `keyboardNode` (incl. a backing panel) so teardown is a single
+        // removeFromParent and nothing leaks behind the play field.
         createInGameKeyboard()
     }
 
+    /// Build a salted keypad: the 6 answer symbols PLUS distractors (the 6 ciphertext
+    /// symbols and other alphabet symbols), de-duplicated, then shuffled into a grid.
+    /// Because the answer is hidden until shared/revealed, tapping every key is not a
+    /// solution — the player must know the decoded code and pick its symbols in order.
     private func createInGameKeyboard() {
+        // Anchor low so the full block (chrome at top, keys, CLEAR at bottom) clears
+        // the bottom safe area. baseY=144 puts the CLEAR bottom edge near y=44.
+        let baseY: CGFloat = 144
         keyboardNode = SKNode()
-        keyboardNode!.position = CGPoint(x: size.width / 2, y: 100)
+        keyboardNode!.position = CGPoint(x: size.width / 2, y: baseY)
         keyboardNode!.zPosition = 200
 
-        let codeChars = Array(doorCode)
-        // Shuffle to make it a puzzle
-        let shuffledChars = codeChars.shuffled()
+        // Build the symbol set for the keypad.
+        var keySet = Set(doorCode)             // the answer symbols
+        keySet.formUnion(Set(cipherText))      // the visible ciphertext symbols (plausible wrong taps)
+        // Pad with extra alphabet symbols up to a 12-key pad so input is non-trivial.
+        let alphabet = AirDropManager.alphabet
+        var pool = alphabet.filter { !keySet.contains($0) }.shuffled()
+        while keySet.count < 12, let next = pool.popLast() {
+            keySet.insert(next)
+        }
+        let keys = Array(keySet).shuffled()
 
-        let buttonWidth: CGFloat = 36
+        // Lay out as two rows of 6, centered on local origin (key rows at y=0 and -46).
+        let columns = 6
+        let buttonSize: CGFloat = 38
         let spacing: CGFloat = 8
-        let totalWidth = CGFloat(shuffledChars.count) * buttonWidth + CGFloat(shuffledChars.count - 1) * spacing
-        let startX = -totalWidth / 2 + buttonWidth / 2
+        let rowCount = Int(ceil(Double(keys.count) / Double(columns)))
+        let rowWidth = CGFloat(columns) * buttonSize + CGFloat(columns - 1) * spacing
+        let startX = -rowWidth / 2 + buttonSize / 2
+        let topRowLocalY: CGFloat = 0
 
-        for (i, char) in shuffledChars.enumerated() {
+        // Chrome positions (local, above the top key row).
+        let statusY = topRowLocalY + buttonSize / 2 + 12
+        let enteredY = statusY + 20
+        let headerY = enteredY + 18
+        let clearY = topRowLocalY - CGFloat(rowCount) * (buttonSize + spacing) - 6
+
+        // Backing panel so the modal reads cleanly over the play field. Spans the full
+        // block from above the header to below CLEAR.
+        let panelTop = headerY + 14
+        let panelBottom = clearY - 18
+        let panelHeight = panelTop - panelBottom
+        let panelWidth = max(rowWidth + 28, 220)
+        let panel = SKShapeNode(rectOf: CGSize(width: panelWidth, height: panelHeight), cornerRadius: 10)
+        panel.fillColor = fillColor
+        panel.strokeColor = strokeColor
+        panel.lineWidth = lineWidth
+        panel.position = CGPoint(x: 0, y: (panelTop + panelBottom) / 2)
+        panel.name = "keypadPanel"   // absorbs stray taps so they don't move Bit
+        keyboardNode!.addChild(panel)
+
+        // Chrome.
+        let enterHeader = SKLabelNode(text: "ENTER DECODED CODE:")
+        enterHeader.fontName = "Menlo-Bold"
+        enterHeader.fontSize = 10
+        enterHeader.fontColor = strokeColor
+        enterHeader.position = CGPoint(x: 0, y: headerY)
+        keyboardNode!.addChild(enterHeader)
+
+        enteredCodeLabel = SKLabelNode(text: "______")
+        enteredCodeLabel.fontName = "Menlo-Bold"
+        enteredCodeLabel.fontSize = 18
+        enteredCodeLabel.fontColor = strokeColor
+        enteredCodeLabel.position = CGPoint(x: 0, y: enteredY)
+        keyboardNode!.addChild(enteredCodeLabel)
+
+        statusLabel = SKLabelNode(text: "KEYS INCLUDE DECOYS")
+        statusLabel.fontName = "Menlo"
+        statusLabel.fontSize = 8
+        statusLabel.fontColor = strokeColor
+        statusLabel.position = CGPoint(x: 0, y: statusY)
+        keyboardNode!.addChild(statusLabel)
+
+        for (i, char) in keys.enumerated() {
+            let row = i / columns
+            let col = i % columns
             let btn = SKNode()
-            btn.position = CGPoint(x: startX + CGFloat(i) * (buttonWidth + spacing), y: 0)
+            btn.position = CGPoint(
+                x: startX + CGFloat(col) * (buttonSize + spacing),
+                y: topRowLocalY - CGFloat(row) * (buttonSize + spacing)
+            )
+            // Index suffix keeps the node name unique; the symbol is parsed back out.
             btn.name = "keyBtn_\(char)_\(i)"
 
-            let bg = SKShapeNode(rectOf: CGSize(width: buttonWidth, height: buttonWidth), cornerRadius: 4)
+            let bg = SKShapeNode(rectOf: CGSize(width: buttonSize, height: buttonSize), cornerRadius: 4)
             bg.fillColor = strokeColor
             bg.strokeColor = strokeColor
             bg.name = btn.name
@@ -371,22 +487,21 @@ final class AirDropScene: BaseLevelScene, SKPhysicsContactDelegate {
 
             let label = SKLabelNode(text: String(char))
             label.fontName = "Menlo-Bold"
-            label.fontSize = 16
+            label.fontSize = 18
             label.fontColor = fillColor
             label.verticalAlignmentMode = .center
             label.name = btn.name
             btn.addChild(label)
 
             keyboardNode!.addChild(btn)
-            keyButtons.append(btn)
         }
 
-        // Clear button
+        // CLEAR / backspace.
         let clearBtn = SKNode()
-        clearBtn.position = CGPoint(x: 0, y: -44)
+        clearBtn.position = CGPoint(x: 0, y: clearY)
         clearBtn.name = "keyClear"
 
-        let clearBG = SKShapeNode(rectOf: CGSize(width: 80, height: 24), cornerRadius: 4)
+        let clearBG = SKShapeNode(rectOf: CGSize(width: 90, height: 26), cornerRadius: 4)
         clearBG.fillColor = fillColor
         clearBG.strokeColor = strokeColor
         clearBG.lineWidth = lineWidth * 0.5
@@ -395,7 +510,7 @@ final class AirDropScene: BaseLevelScene, SKPhysicsContactDelegate {
 
         let clearLabel = SKLabelNode(text: "CLEAR")
         clearLabel.fontName = "Menlo-Bold"
-        clearLabel.fontSize = 10
+        clearLabel.fontSize = 11
         clearLabel.fontColor = strokeColor
         clearLabel.verticalAlignmentMode = .center
         clearLabel.name = "keyClear"
@@ -411,36 +526,37 @@ final class AirDropScene: BaseLevelScene, SKPhysicsContactDelegate {
         if keyName == "keyClear" {
             enteredCode = ""
             updateEnteredCodeDisplay()
+            HapticManager.shared.select()
             return
         }
 
-        // Extract character from key name: "keyBtn_X_N"
+        // "keyBtn_<symbol>_<index>" — take the symbol between the underscores.
         let parts = keyName.components(separatedBy: "_")
-        guard parts.count >= 2 else { return }
-        let char = parts[1]
+        guard parts.count >= 2, let char = parts[safe: 1] else { return }
 
         guard enteredCode.count < doorCode.count else { return }
         enteredCode += char
         updateEnteredCodeDisplay()
-
         HapticManager.shared.collect()
 
-        // Check if code complete
         if enteredCode.count == doorCode.count {
             if enteredCode == doorCode {
                 unlockDoor()
             } else {
-                // Wrong code - flash red and reset
+                statusLabel?.text = "REJECTED — RE-CHECK DECODE"
                 enteredCodeLabel.fontColor = .red
                 enteredCodeLabel.run(.sequence([
-                    .wait(forDuration: 0.5),
+                    .wait(forDuration: 0.6),
                     .run { [weak self] in
-                        self?.enteredCode = ""
-                        self?.updateEnteredCodeDisplay()
-                        self?.enteredCodeLabel.fontColor = self?.fillColor ?? .white
+                        guard let self else { return }
+                        self.enteredCode = ""
+                        self.updateEnteredCodeDisplay()
+                        self.enteredCodeLabel.fontColor = self.strokeColor
+                        self.statusLabel?.text = "KEY IN THE DECODED CODE"
                     }
                 ]))
                 JuiceManager.shared.shake(intensity: .light, duration: 0.2)
+                notePlayerStruggle()
             }
         }
     }
@@ -461,27 +577,22 @@ final class AirDropScene: BaseLevelScene, SKPhysicsContactDelegate {
         guard !doorUnlocked else { return }
         doorUnlocked = true
 
-        // Remove keyboard
         keyboardNode?.run(.sequence([.fadeOut(withDuration: 0.3), .removeFromParent()]))
+        keyboardNode = nil
 
-        // Remove door blocker
         doorBlocker?.physicsBody?.categoryBitMask = PhysicsCategory.none
-
-        // Animate door opening - slide right with sparks
         if let doorContainer = childNode(withName: "doorContainer") {
-            // Sparks
+            clearGroundedIfStandingOn(doorContainer)
             let sparks = ParticleFactory.shared.createSparks(at: doorContainer.position, color: .white)
             addChild(sparks)
-
             doorContainer.run(.sequence([
                 .moveBy(x: 50, y: 0, duration: 0.6),
                 .fadeOut(withDuration: 0.3)
             ]))
         }
 
-        // Fourth wall
         showFourthWallMessage(
-            "I EXIST ON EVERY DEVICE YOU SEND\nME TO. LIKE A VIRUS. BUT FRIENDLY."
+            "YOU ROTATED ME THROUGH ANOTHER\nAPP TO READ ME. I LIVE EVERYWHERE NOW."
         )
 
         JuiceManager.shared.flash(color: .white, duration: 0.3)
@@ -495,7 +606,7 @@ final class AirDropScene: BaseLevelScene, SKPhysicsContactDelegate {
         container.zPosition = 1000
         addChild(container)
 
-        let bg = SKShapeNode(rectOf: CGSize(width: 320, height: 70), cornerRadius: 8)
+        let bg = SKShapeNode(rectOf: CGSize(width: 340, height: 74), cornerRadius: 8)
         bg.fillColor = strokeColor
         bg.strokeColor = fillColor
         bg.lineWidth = 2
@@ -525,8 +636,22 @@ final class AirDropScene: BaseLevelScene, SKPhysicsContactDelegate {
     override func handleGameInput(_ event: GameInputEvent) {
         switch event {
         case .airdropReceived(let code):
-            let isFallbackCode = code == "GLITCH" && AccessibilityManager.shared.needsFallbackUI(for: .airdrop)
-            if code == doorCode || isFallbackCode {
+            // Wave-2b fallback path. The AccessibilityOverlay posts `.airdropReceived`
+            // with the placeholder "GLITCH"; treat that as "I can't share — reveal it
+            // for me." Rather than auto-unlocking (which would bypass the puzzle), we
+            // REVEAL the decoded code on the terminal and open the keypad. The player
+            // still types it among the distractors.
+            let isFallbackPlaceholder =
+                code.uppercased() == "GLITCH" &&
+                AccessibilityManager.shared.needsFallbackUI(for: .airdrop)
+
+            if isFallbackPlaceholder {
+                revealDecodedCode()
+                showKeyboard()
+            } else if code.uppercased() == doorCode.uppercased() {
+                // A real round-trip delivered the exact plaintext (e.g. a future
+                // device-to-device receive). Honor it as a full solve.
+                revealDecodedCode()
                 unlockDoor()
             }
         default:
@@ -539,15 +664,19 @@ final class AirDropScene: BaseLevelScene, SKPhysicsContactDelegate {
         let location = touch.location(in: self)
         let tapped = nodes(at: location)
 
-        // Share button
         if tapped.contains(where: { $0.name == "shareButton" }) {
             presentShareSheet()
             return
         }
 
-        // Keyboard keys
         if let keyNode = tapped.first(where: { ($0.name ?? "").starts(with: "keyBtn_") || $0.name == "keyClear" }) {
             handleKeyTap(keyNode.name!)
+            return
+        }
+
+        // While the keypad modal is up, absorb taps that land on its backing panel so
+        // a near-miss between keys doesn't make Bit walk/jump under the modal.
+        if tapped.contains(where: { $0.name == "keypadPanel" }) {
             return
         }
 
@@ -582,6 +711,7 @@ final class AirDropScene: BaseLevelScene, SKPhysicsContactDelegate {
         } else if collision == PhysicsCategory.player | PhysicsCategory.exit {
             if doorUnlocked { handleExit() }
         } else if collision == PhysicsCategory.player | PhysicsCategory.ground {
+            sharedGroundPlatform = groundNode(fromContact: contact)
             bit.setGrounded(true)
         }
     }
@@ -610,11 +740,21 @@ final class AirDropScene: BaseLevelScene, SKPhysicsContactDelegate {
     }
 
     override func hintText() -> String? {
-        return "Share the code using the Share button"
+        if !codeRevealed {
+            return "Tap SHARE TO DECODE — the shared text is the real code"
+        }
+        return "Type the DECODED code; the keypad has decoy symbols"
     }
 
     override func willMove(from view: SKView) {
         super.willMove(from: view)
         DeviceManagerCoordinator.shared.deactivateAll()
+    }
+}
+
+// Safe subscript so a malformed key name can't crash the input handler.
+private extension Array {
+    subscript(safe index: Int) -> Element? {
+        indices.contains(index) ? self[index] : nil
     }
 }

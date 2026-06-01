@@ -2,8 +2,35 @@ import SpriteKit
 import UIKit
 
 /// Level 27: VoiceOver / Accessibility
-/// Concept: Enable VoiceOver to reveal invisible platforms.
-/// VoiceOver accessibility labels say "STEP HERE" on invisible nodes.
+///
+/// REWORK (Wave 2b design pass):
+/// The old level required the player to *play the platformer while VoiceOver was
+/// running* — but VoiceOver hijacks single-finger touches for cursor navigation,
+/// so the controls the level needs are dead the moment the mechanic is "on". On
+/// iPhone the bridge platforms also overlapped into one continuous, blind-walkable
+/// slab, so the reveal mechanic was moot. There was no toggle-free path.
+///
+/// New design — VoiceOver STATE is the mechanic, not a live input channel:
+///   * A real gap separates the start and exit platforms. Crossing it requires a
+///     series of genuine jumps onto narrow stepping stones. (No walkable slab.)
+///   * The stones are BOTH invisible AND intangible (no physics body) by default,
+///     so walking off the start platform drops Bit straight into the void. You
+///     cannot brute-force it blind.
+///   * Toggling VoiceOver ON — via the real system toggle OR the always-present
+///     on-screen "phase the path in" fallback — PHASES THE PATH IN: the solid
+///     stones materialize and gain collision; the player then plays NORMALLY with
+///     touch (VoiceOver can be back off). State is the trigger; you never platform
+///     while VoiceOver is intercepting touch.
+///   * The puzzle is non-trivial: interleaved with the real stones are DECOY
+///     stones that also appear on reveal but stay intangible ("VOID — DO NOT STEP"
+///     / barred glyph vs. solid fill + "STEP HERE"). The naive read of "every
+///     shimmering tile is a platform" walks you into a fall. You must pick the
+///     solid stones by their label/fill and string the correct jumps together.
+///
+/// This level DEFAULTS to the toggle-free fallback (forceHardwareFallback below),
+/// because asking a player to platform with VoiceOver actively on is hostile. The
+/// real system toggle still works (and adds spoken "STEP HERE / VOID" audio cues),
+/// but it is strictly optional.
 final class VoiceOverScene: BaseLevelScene, SKPhysicsContactDelegate {
 
     private let fillColor = SKColor.white
@@ -14,17 +41,42 @@ final class VoiceOverScene: BaseLevelScene, SKPhysicsContactDelegate {
     private var playerController: PlayerController!
     private var spawnPoint: CGPoint = .zero
 
-    // Invisible bridge platforms
-    private var invisiblePlatforms: [SKNode] = []
-    private var shimmerNodes: [SKShapeNode] = []
+    // MARK: Stepping-stone model
+
+    /// One crossing stone. Real stones are part of the solution path; decoys look
+    /// plausible on reveal but never become solid.
+    private final class Stone {
+        let node: SKNode
+        let surface: SKShapeNode
+        let glyph: SKNode
+        let isReal: Bool
+        let size: CGSize
+        init(node: SKNode, surface: SKShapeNode, glyph: SKNode, isReal: Bool, size: CGSize) {
+            self.node = node
+            self.surface = surface
+            self.glyph = glyph
+            self.isReal = isReal
+            self.size = size
+        }
+    }
+
+    private var stones: [Stone] = []
+
+    private let groundY: CGFloat = 160
+    private let stoneSize = CGSize(width: 40, height: 22)
+
+    // MARK: VoiceOver state
 
     private var isVoiceOverActive = false
-    private var voiceOverHasRevealedPath = false
+    /// Latch: once the path has been phased in (real toggle OR fallback), it stays
+    /// in so the player can platform without re-toggling. Toggling VoiceOver back
+    /// off does NOT yank the floor out from under them.
+    private var pathPhasedIn = false
     private var deathCount = 0
-    private var hasFallbackShown = false
+
+    // Saved view a11y config to restore on exit.
     private var previousViewIsAccessibilityElement = false
     private var previousViewAccessibilityLabel: String?
-    private var previousViewAccessibilityTraits: UIAccessibilityTraits?
 
     override func configureScene() {
         levelID = LevelID(world: .world4, index: 27)
@@ -36,6 +88,13 @@ final class VoiceOverScene: BaseLevelScene, SKPhysicsContactDelegate {
         AccessibilityManager.shared.registerMechanics([.voiceOver])
         DeviceManagerCoordinator.shared.configure(for: [.voiceOver])
 
+        // DEFAULT TO THE TOGGLE-FREE FALLBACK. Playing with VoiceOver actually on
+        // is hostile (it intercepts the touches this platformer needs), so this
+        // level surfaces the on-screen "phase the path in" control from the start
+        // via the existing AccessibilityOverlay path — no need to ever run real
+        // VoiceOver. The real system toggle remains a valid alternate trigger.
+        AccessibilityManager.shared.forceHardwareFallback(for: .voiceOver)
+
         setupBackground()
         setupLevelTitle()
         buildLevel()
@@ -45,17 +104,14 @@ final class VoiceOverScene: BaseLevelScene, SKPhysicsContactDelegate {
 
     override func didMove(to view: SKView) {
         super.didMove(to: view)
-
-        // VoiceOver normally steals single-finger touches for cursor navigation.
-        // This level is still a real-time platformer, so tell iOS the SpriteKit
-        // view supports direct interaction while VoiceOver is active.
+        // We deliberately do NOT request `.allowsDirectInteraction` anymore. The
+        // mechanic no longer asks the player to platform while VoiceOver is on, so
+        // there's no reason to fight VoiceOver for the touch stream. We only label
+        // the view so the level reads sensibly if VoiceOver IS running.
         previousViewIsAccessibilityElement = view.isAccessibilityElement
         previousViewAccessibilityLabel = view.accessibilityLabel
-        previousViewAccessibilityTraits = view.accessibilityTraits
         view.isAccessibilityElement = true
-        view.accessibilityLabel = "Glitched VoiceOver level"
-        view.accessibilityTraits.insert(.allowsDirectInteraction)
-        updateAccessibilityFrames()
+        view.accessibilityLabel = "Glitched VoiceOver level. Toggle VoiceOver, or use the on-screen control, to phase the hidden path into existence."
     }
 
     private func setupBackground() {
@@ -88,39 +144,66 @@ final class VoiceOverScene: BaseLevelScene, SKPhysicsContactDelegate {
         addChild(title)
     }
 
+    // MARK: - Level construction
+
     private func buildLevel() {
-        let groundY: CGFloat = 160
+        // Narrow start/exit platforms pushed to the screen edges so the crossing
+        // span is genuinely wide on every device (no overlap into a slab).
+        let edgePlatformW: CGFloat = 84
+        let startCx: CGFloat = 58
+        let exitCx: CGFloat = size.width - 58
 
-        // Start platform (left side)
-        createPlatform(at: CGPoint(x: 80, y: groundY), size: CGSize(width: 120, height: 30))
+        createPlatform(at: CGPoint(x: startCx, y: groundY), size: CGSize(width: edgePlatformW, height: 30))
+        createPlatform(at: CGPoint(x: exitCx, y: groundY), size: CGSize(width: edgePlatformW, height: 30))
 
-        // Exit platform (right side) - visible gap between
-        createPlatform(at: CGPoint(x: size.width - 80, y: groundY), size: CGSize(width: 120, height: 30))
+        let startRight = startCx + edgePlatformW / 2          // 100
+        let exitLeft = exitCx - edgePlatformW / 2             // width - 100
+        let span = exitLeft - startRight
 
-        // Invisible bridge platforms spanning the gap
-        // These always have physics bodies (always solid), just invisible
-        let bridgeCount = 5
-        let gapStart: CGFloat = 160
-        let gapEnd: CGFloat = size.width - 160
-        let spacing = (gapEnd - gapStart) / CGFloat(bridgeCount + 1)
+        // Pick stone count by available span so iPhone stays jumpable and iPad
+        // gets a longer route. Each transition is a real jump (positive gap, rise
+        // within ~70pt, all reachable given apex ~91 / moveSpeed 245).
+        let realCount: Int
+        if span < 360 { realCount = 2 }        // iPhone (~190-230pt span)
+        else if span < 560 { realCount = 4 }   // wide phones / small split
+        else { realCount = 6 }                 // iPad (~824pt span)
 
-        for i in 0..<bridgeCount {
-            let x = gapStart + spacing * CGFloat(i + 1)
-            // Slight vertical variation to make it interesting
-            let yOffset: CGFloat = CGFloat(i % 2 == 0 ? 0 : 30)
-            let platform = createInvisiblePlatform(
-                at: CGPoint(x: x, y: groundY + yOffset),
-                size: CGSize(width: 70, height: 25),
-                index: i
-            )
-            invisiblePlatforms.append(platform)
-            addChild(platform)
+        // Heights for the SOLUTION path (the real stones), zig-zagged within reach.
+        let realHeightPattern: [CGFloat] = [55, 20, 60, 25, 50, 30]
+
+        // Lay the real stones out with uniform positive horizontal gaps.
+        let gap = (span - CGFloat(realCount) * stoneSize.width) / CGFloat(realCount + 1)
+        var realCenters: [CGFloat] = []
+        var cursor = startRight
+        for _ in 0..<realCount {
+            cursor += gap + stoneSize.width / 2
+            realCenters.append(cursor)
+            cursor += stoneSize.width / 2
         }
 
-        // Exit door
-        createExitDoor(at: CGPoint(x: size.width - 60, y: groundY + 50))
+        // Build the real stones (solid path).
+        for (i, cx) in realCenters.enumerated() {
+            let y = groundY + realHeightPattern[i % realHeightPattern.count]
+            let stone = makeStone(at: CGPoint(x: cx, y: y), isReal: true, index: i)
+            stones.append(stone)
+        }
 
-        // Death zone
+        // Build DECOY stones — one per interior gap on iPhone, more on iPad. Each
+        // decoy sits just OFF the true arc (a tempting lower/closer hop) so a player
+        // who treats every shimmer as a floor falls. Decoys reveal but never solidify.
+        let decoyCenters = decoyPositions(realCenters: realCenters, startRight: startRight, exitLeft: exitLeft)
+        for (j, cx) in decoyCenters.enumerated() {
+            // Decoys hang low and a touch forward of a real stone — visually "in the
+            // way" but never a safe landing.
+            let y = groundY - 6 + CGFloat((j % 2) * 18)
+            let stone = makeStone(at: CGPoint(x: cx, y: y), isReal: false, index: 1000 + j)
+            stones.append(stone)
+        }
+
+        // Exit door on the right platform.
+        createExitDoor(at: CGPoint(x: exitCx, y: groundY + 50))
+
+        // Death zone below everything.
         let death = SKNode()
         death.position = CGPoint(x: size.width / 2, y: -50)
         death.physicsBody = SKPhysicsBody(rectangleOf: CGSize(width: size.width * 2, height: 100))
@@ -129,9 +212,34 @@ final class VoiceOverScene: BaseLevelScene, SKPhysicsContactDelegate {
         addChild(death)
 
         #if DEBUG
-        // Test button for simulator
         createTestButton()
         #endif
+    }
+
+    /// Decoys live between consecutive real stones, nudged below the line so they
+    /// read as "shortcut" tiles. Returns 1 decoy per interior gap (plus, on wide
+    /// layouts, the spacing naturally yields more candidates we cap to keep it fair).
+    private func decoyPositions(realCenters: [CGFloat], startRight: CGFloat, exitLeft: CGFloat) -> [CGFloat] {
+        guard realCenters.count >= 2 else {
+            // 2-stone iPhone case: a single decoy between the two real stones,
+            // shifted toward the first so the obvious "hop straight across low"
+            // line is the trap.
+            if realCenters.count == 2 {
+                let mid = (realCenters[0] + realCenters[1]) / 2
+                return [mid]
+            }
+            // 1 stone (shouldn't happen with current counts): decoy before it.
+            if let only = realCenters.first {
+                return [(startRight + only) / 2]
+            }
+            return []
+        }
+        var decoys: [CGFloat] = []
+        for i in 0..<(realCenters.count - 1) {
+            let mid = (realCenters[i] + realCenters[i + 1]) / 2
+            decoys.append(mid)
+        }
+        return decoys
     }
 
     private func createPlatform(at position: CGPoint, size: CGSize) {
@@ -151,49 +259,76 @@ final class VoiceOverScene: BaseLevelScene, SKPhysicsContactDelegate {
         addChild(platform)
     }
 
-    private func createInvisiblePlatform(at position: CGPoint, size: CGSize, index: Int) -> SKNode {
-        let platform = SKNode()
-        platform.position = position
-        platform.name = "invisPlatform_\(index)"
+    /// A stepping stone. Starts invisible AND intangible (no ground collision).
+    /// Reveal phases it in: real stones gain a solid fill + collision; decoys gain
+    /// a barred "void" glyph but stay intangible.
+    private func makeStone(at position: CGPoint, isReal: Bool, index: Int) -> Stone {
+        let node = SKNode()
+        node.position = position
+        node.name = isReal ? "stone_real_\(index)" : "stone_decoy_\(index)"
 
-        // Visual shape - invisible (alpha 0, no stroke)
-        let surface = SKShapeNode(rectOf: size)
+        // Surface: hidden by default (alpha 0).
+        let surface = SKShapeNode(rectOf: stoneSize, cornerRadius: 3)
         surface.fillColor = .clear
         surface.strokeColor = .clear
         surface.lineWidth = 0
-        surface.name = "surface_\(index)"
-        platform.addChild(surface)
+        surface.alpha = 0
+        surface.name = "surface"
+        node.addChild(surface)
 
-        // Physics body - always solid
-        platform.physicsBody = SKPhysicsBody(rectangleOf: size)
-        platform.physicsBody?.isDynamic = false
-        platform.physicsBody?.categoryBitMask = PhysicsCategory.ground
+        // Glyph layer (drawn on reveal): real = "STEP" tick, decoy = barred circle.
+        let glyph = SKNode()
+        glyph.alpha = 0
+        glyph.name = "glyph"
+        node.addChild(glyph)
 
-        // Accessibility
-        platform.isAccessibilityElement = true
-        platform.accessibilityLabel = "STEP HERE"
-        platform.accessibilityTraits = [.staticText, .allowsDirectInteraction]
-        platform.accessibilityFrame = CGRect(
-            x: position.x - size.width / 2,
-            y: position.y - size.height / 2,
-            width: size.width,
-            height: size.height
+        if isReal {
+            // small "footprint" tick mark
+            let tick = SKShapeNode()
+            let p = CGMutablePath()
+            p.move(to: CGPoint(x: -7, y: -2))
+            p.addLine(to: CGPoint(x: -2, y: -7))
+            p.addLine(to: CGPoint(x: 8, y: 5))
+            tick.path = p
+            tick.strokeColor = strokeColor
+            tick.lineWidth = 2
+            tick.fillColor = .clear
+            tick.lineCap = .round
+            glyph.addChild(tick)
+        } else {
+            // barred "no-step" circle
+            let ring = SKShapeNode(circleOfRadius: 7)
+            ring.strokeColor = strokeColor
+            ring.fillColor = .clear
+            ring.lineWidth = 2
+            glyph.addChild(ring)
+            let bar = SKShapeNode()
+            let bp = CGMutablePath()
+            bp.move(to: CGPoint(x: -5, y: 5))
+            bp.addLine(to: CGPoint(x: 5, y: -5))
+            bar.path = bp
+            bar.strokeColor = strokeColor
+            bar.lineWidth = 2
+            bar.lineCap = .round
+            glyph.addChild(bar)
+        }
+
+        // NOTE: no physics body yet. Real stones receive one only when phased in,
+        // so the gap is uncrossable until the player engages the mechanic.
+
+        // Accessibility: label drives the spoken cue if real VoiceOver is running.
+        node.isAccessibilityElement = true
+        node.accessibilityLabel = isReal ? "STEP HERE" : "VOID. DO NOT STEP."
+        node.accessibilityTraits = .staticText
+        node.accessibilityFrame = CGRect(
+            x: position.x - stoneSize.width / 2,
+            y: position.y - stoneSize.height / 2,
+            width: stoneSize.width,
+            height: stoneSize.height
         )
 
-        // Shimmer outline (hidden until VoiceOver activated)
-        let shimmer = SKShapeNode(rectOf: CGSize(width: size.width + 4, height: size.height + 4))
-        shimmer.strokeColor = strokeColor
-        shimmer.fillColor = .clear
-        shimmer.lineWidth = 1
-        shimmer.alpha = 0
-        shimmer.name = "shimmer_\(index)"
-        shimmer.setScale(1.0)
-        // Use dashed line pattern via glowWidth
-        shimmer.glowWidth = 1.0
-        platform.addChild(shimmer)
-        shimmerNodes.append(shimmer)
-
-        return platform
+        addChild(node)
+        return Stone(node: node, surface: surface, glyph: glyph, isReal: isReal, size: stoneSize)
     }
 
     private func createExitDoor(at position: CGPoint) {
@@ -206,7 +341,6 @@ final class VoiceOverScene: BaseLevelScene, SKPhysicsContactDelegate {
         frame.lineWidth = lineWidth
         door.addChild(frame)
 
-        // Eye icon on door
         let eye = SKShapeNode(ellipseOf: CGSize(width: 16, height: 10))
         eye.strokeColor = strokeColor
         eye.fillColor = .clear
@@ -258,30 +392,37 @@ final class VoiceOverScene: BaseLevelScene, SKPhysicsContactDelegate {
         panel.zPosition = 300
         addChild(panel)
 
-        let bg = SKShapeNode(rectOf: CGSize(width: 300, height: 80), cornerRadius: 8)
+        let bg = SKShapeNode(rectOf: CGSize(width: 320, height: 84), cornerRadius: 8)
         bg.fillColor = fillColor
         bg.strokeColor = strokeColor
         panel.addChild(bg)
 
-        let text1 = SKLabelNode(text: "THE PATH IS THERE. YOU JUST")
+        let text1 = SKLabelNode(text: "THE BRIDGE ISN'T THERE UNTIL YOU")
         text1.fontName = "Menlo-Bold"
-        text1.fontSize = 11
+        text1.fontSize = 10
         text1.fontColor = strokeColor
-        text1.position = CGPoint(x: 0, y: 10)
+        text1.position = CGPoint(x: 0, y: 16)
         panel.addChild(text1)
 
-        let text2 = SKLabelNode(text: "CAN'T SEE IT. TRY VOICEOVER.")
+        let text2 = SKLabelNode(text: "PERCEIVE IT. TOGGLE VOICEOVER —")
         text2.fontName = "Menlo"
-        text2.fontSize = 10
+        text2.fontSize = 9
         text2.fontColor = strokeColor
-        text2.position = CGPoint(x: 0, y: -10)
+        text2.position = CGPoint(x: 0, y: 0)
         panel.addChild(text2)
 
-        panel.run(.sequence([.wait(forDuration: 6), .fadeOut(withDuration: 0.5), .removeFromParent()]))
+        let text3 = SKLabelNode(text: "OR TAP THE ACCESSIBILITY BUTTON.")
+        text3.fontName = "Menlo"
+        text3.fontSize = 9
+        text3.fontColor = strokeColor
+        text3.position = CGPoint(x: 0, y: -16)
+        panel.addChild(text3)
+
+        panel.run(.sequence([.wait(forDuration: 8), .fadeOut(withDuration: 0.5), .removeFromParent()]))
     }
 
     private func setupBit() {
-        spawnPoint = CGPoint(x: 80, y: 200)
+        spawnPoint = CGPoint(x: 58, y: 200)
         bit = BitCharacter.make()
         bit.position = spawnPoint
         addChild(bit)
@@ -289,97 +430,113 @@ final class VoiceOverScene: BaseLevelScene, SKPhysicsContactDelegate {
         playerController = PlayerController(character: bit, scene: self)
     }
 
-    // MARK: - VoiceOver State
+    // MARK: - VoiceOver State (the mechanic)
 
     private func onVoiceOverChanged(isEnabled: Bool) {
+        let wasActive = isVoiceOverActive
         isVoiceOverActive = isEnabled
 
         if isEnabled {
-            voiceOverHasRevealedPath = true
-            activateVoiceOverHints()
-        } else if !voiceOverHasRevealedPath {
-            deactivateVoiceOverHints()
+            // First time the path is engaged — phase it in and latch it.
+            if !pathPhasedIn {
+                phasePathIn()
+            }
+            // Re-assert the visible reveal each time VoiceOver turns on (e.g. user
+            // toggled off then on again).
+            showRevealedState()
+            if isEnabled && !wasActive {
+                // Spoken cue for players using real VoiceOver.
+                VoiceOverManager.announce("Path phased in. Solid stones say step here. Voids are barred. Turn VoiceOver back off and cross.")
+            }
+        } else {
+            // VoiceOver turned OFF. The path stays SOLID (latched), but we dim the
+            // reveal glyphs slightly to acknowledge the state change. The player now
+            // platforms normally with touch. We never strip the floor away.
+            if pathPhasedIn {
+                dimRevealedState()
+            }
         }
     }
 
-    private func updateAccessibilityFrames() {
-        guard let view = view else { return }
+    /// Make the real stones SOLID (add collision) and reveal all stones visually.
+    private func phasePathIn() {
+        pathPhasedIn = true
 
-        for platform in invisiblePlatforms {
-            let frame = platform.calculateAccumulatedFrame()
-            let topLeft = convertPoint(toView: CGPoint(x: frame.minX, y: frame.maxY))
-            let bottomRight = convertPoint(toView: CGPoint(x: frame.maxX, y: frame.minY))
-            let viewRect = CGRect(
-                x: min(topLeft.x, bottomRight.x),
-                y: min(topLeft.y, bottomRight.y),
-                width: abs(bottomRight.x - topLeft.x),
-                height: abs(bottomRight.y - topLeft.y)
-            )
-            platform.accessibilityFrame = view.convert(viewRect, to: nil)
+        for stone in stones where stone.isReal {
+            // Add collision now — this is what makes the gap crossable.
+            let body = SKPhysicsBody(rectangleOf: stone.size)
+            body.isDynamic = false
+            body.categoryBitMask = PhysicsCategory.ground
+            stone.node.physicsBody = body
         }
-    }
-
-    private func activateVoiceOverHints() {
-        // Show subtle shimmer outlines on invisible platforms
-        for shimmer in shimmerNodes {
-            shimmer.alpha = 0.3
-            shimmer.run(.repeatForever(.sequence([
-                .fadeAlpha(to: 0.5, duration: 0.8),
-                .fadeAlpha(to: 0.15, duration: 0.8)
-            ])), withKey: "shimmerPulse")
-        }
-
-        // Fourth wall message
-        showFourthWallMessage(
-            "CLOSING YOUR EYES DOESN'T MAKE\nME DISAPPEAR. BUT IT DOES REVEAL\nWHAT WAS ALWAYS THERE."
-        )
 
         JuiceManager.shared.flash(color: .white, duration: 0.2)
         HapticManager.shared.collect()
+
+        showFourthWallMessage(
+            "PERCEPTION IS A SWITCH.\nSOLID TILES BEAR WEIGHT.\nTHE BARRED ONES ARE LIES."
+        )
     }
 
-    private func deactivateVoiceOverHints() {
-        for shimmer in shimmerNodes {
-            shimmer.removeAction(forKey: "shimmerPulse")
-            shimmer.run(.fadeAlpha(to: 0, duration: 0.3))
-        }
-    }
+    /// Reveal/refresh the visual state of all stones.
+    private func showRevealedState() {
+        for stone in stones {
+            stone.surface.removeAllActions()
+            stone.glyph.removeAllActions()
 
-    private func showFallbackHints() {
-        guard !hasFallbackShown else { return }
-        hasFallbackShown = true
-
-        // After 3 deaths, show faint dotted outlines
-        for platform in invisiblePlatforms {
-            if let surface = platform.children.first(where: { $0.name?.starts(with: "surface_") == true }) as? SKShapeNode {
-                surface.strokeColor = strokeColor
-                surface.alpha = 0.15
-                surface.lineWidth = 1
-
-                // Create dashed appearance with line segments
-                let dashOverlay = SKShapeNode(rectOf: CGSize(width: 74, height: 29))
-                dashOverlay.strokeColor = strokeColor
-                dashOverlay.fillColor = .clear
-                dashOverlay.lineWidth = 1
-                dashOverlay.alpha = 0.2
-                dashOverlay.glowWidth = 0.5
-                platform.addChild(dashOverlay)
-
-                // Pulse subtly
-                dashOverlay.run(.repeatForever(.sequence([
-                    .fadeAlpha(to: 0.3, duration: 1.2),
-                    .fadeAlpha(to: 0.1, duration: 1.2)
-                ])))
+            if stone.isReal {
+                // Solid, confident fill.
+                stone.surface.fillColor = fillColor
+                stone.surface.strokeColor = strokeColor
+                stone.surface.lineWidth = lineWidth
+                stone.surface.run(.fadeAlpha(to: 1.0, duration: 0.25))
+                stone.glyph.run(.fadeAlpha(to: 1.0, duration: 0.25))
+            } else {
+                // Hollow, shimmering, untrustworthy.
+                stone.surface.fillColor = .clear
+                stone.surface.strokeColor = strokeColor
+                stone.surface.lineWidth = 1
+                stone.surface.alpha = 0
+                stone.surface.run(.fadeAlpha(to: 0.45, duration: 0.25))
+                stone.glyph.run(.fadeAlpha(to: 0.5, duration: 0.25))
+                // Pulse so decoys read as "unstable / not real".
+                stone.surface.run(.repeatForever(.sequence([
+                    .fadeAlpha(to: 0.55, duration: 0.7),
+                    .fadeAlpha(to: 0.2, duration: 0.7)
+                ])), withKey: "decoyPulse")
             }
         }
+    }
 
-        // Hint message
-        let hint = SKLabelNode(text: "...MAYBE LOOK WITH YOUR EARS INSTEAD")
+    /// VoiceOver turned off after the latch: keep the solids readable but calm.
+    private func dimRevealedState() {
+        for stone in stones where stone.isReal {
+            // Real stones stay fully solid & visible — they're physical now.
+            stone.surface.alpha = 1.0
+            stone.glyph.alpha = 0.9
+        }
+        for stone in stones where !stone.isReal {
+            // Decoys stay faintly visible so the player still avoids them.
+            stone.surface.removeAction(forKey: "decoyPulse")
+            stone.surface.run(.fadeAlpha(to: 0.3, duration: 0.3))
+        }
+    }
+
+    /// Fallback nudge after repeated deaths: make the decoys' "barred" glyph flash
+    /// once and float a hint, in case the player keeps stepping on the wrong tiles.
+    private func showDeathHint() {
+        for stone in stones where !stone.isReal {
+            stone.glyph.run(.sequence([
+                .fadeAlpha(to: 1.0, duration: 0.2),
+                .repeat(.sequence([.scale(to: 1.25, duration: 0.25), .scale(to: 1.0, duration: 0.25)]), count: 2)
+            ]))
+        }
+        let hint = SKLabelNode(text: "BARRED TILES AREN'T REAL. ONLY THE SOLID ONES.")
         hint.fontName = "Menlo"
         hint.fontSize = 9
         hint.fontColor = strokeColor
-        hint.alpha = 0.5
-        hint.position = CGPoint(x: size.width / 2, y: 120)
+        hint.alpha = 0.6
+        hint.position = CGPoint(x: size.width / 2, y: 116)
         hint.zPosition = 200
         addChild(hint)
         hint.run(.sequence([.wait(forDuration: 5), .fadeOut(withDuration: 1), .removeFromParent()]))
@@ -391,26 +548,27 @@ final class VoiceOverScene: BaseLevelScene, SKPhysicsContactDelegate {
         container.zPosition = 1000
         addChild(container)
 
-        let bg = SKShapeNode(rectOf: CGSize(width: 320, height: 80), cornerRadius: 8)
+        let lines = text.components(separatedBy: "\n")
+        let h = CGFloat(lines.count) * 18 + 28
+        let bg = SKShapeNode(rectOf: CGSize(width: 330, height: h), cornerRadius: 8)
         bg.fillColor = strokeColor
         bg.strokeColor = fillColor
         bg.lineWidth = 2
         container.addChild(bg)
 
-        let lines = text.components(separatedBy: "\n")
         for (i, line) in lines.enumerated() {
             let label = SKLabelNode(text: line)
             label.fontName = "Menlo-Bold"
             label.fontSize = 9
             label.fontColor = fillColor
-            label.position = CGPoint(x: 0, y: 18 - CGFloat(i) * 16)
+            label.position = CGPoint(x: 0, y: (h / 2 - 20) - CGFloat(i) * 16)
             container.addChild(label)
         }
 
         container.alpha = 0
         container.run(.sequence([
             .fadeIn(withDuration: 0.3),
-            .wait(forDuration: 5),
+            .wait(forDuration: 4),
             .fadeOut(withDuration: 0.5),
             .removeFromParent()
         ]))
@@ -432,9 +590,9 @@ final class VoiceOverScene: BaseLevelScene, SKPhysicsContactDelegate {
         let location = touch.location(in: self)
 
         #if DEBUG
-        // Test button
         let tapped = nodes(at: location)
         if tapped.contains(where: { $0.name == "testVOButton" }) {
+            // Debug toggle simulates the real VoiceOver transition.
             let newState = !isVoiceOverActive
             InputEventBus.shared.post(.voiceOverStateChanged(isEnabled: newState))
             return
@@ -460,11 +618,6 @@ final class VoiceOverScene: BaseLevelScene, SKPhysicsContactDelegate {
 
     override func updatePlaying(deltaTime: TimeInterval) {
         playerController.update()
-    }
-
-    override func didChangeSize(_ oldSize: CGSize) {
-        super.didChangeSize(oldSize)
-        updateAccessibilityFrames()
     }
 
     // MARK: - Physics
@@ -493,9 +646,26 @@ final class VoiceOverScene: BaseLevelScene, SKPhysicsContactDelegate {
         playerController.cancel()
         deathCount += 1
 
-        // Fallback: after 3 deaths, show faint outlines
-        if deathCount >= 3 {
-            showFallbackHints()
+        // Fallback nudges:
+        //  * If the player keeps falling before ever phasing the path in, the
+        //    always-present accessibility button (and the "CAN'T DO THIS?" hatch)
+        //    are their route — surface a reminder.
+        //  * If they HAVE phased it in but keep dying, they're likely stepping on
+        //    decoys — flash the barred tiles.
+        if deathCount >= 2 {
+            if pathPhasedIn {
+                showDeathHint()
+            } else {
+                let hint = SKLabelNode(text: "NOTHING TO STAND ON YET. PHASE THE PATH IN FIRST.")
+                hint.fontName = "Menlo"
+                hint.fontSize = 9
+                hint.fontColor = strokeColor
+                hint.alpha = 0.6
+                hint.position = CGPoint(x: size.width / 2, y: 116)
+                hint.zPosition = 200
+                addChild(hint)
+                hint.run(.sequence([.wait(forDuration: 5), .fadeOut(withDuration: 1), .removeFromParent()]))
+            }
         }
 
         bit.playBufferDeath(respawnAt: spawnPoint) { [weak self] in self?.bit.setGrounded(true) }
@@ -512,16 +682,13 @@ final class VoiceOverScene: BaseLevelScene, SKPhysicsContactDelegate {
     }
 
     override func hintText() -> String? {
-        return "Enable VoiceOver in Settings > Accessibility"
+        return "Toggle VoiceOver (or tap the accessibility button) to phase the bridge in. Solid tiles are real; barred tiles are voids."
     }
 
     override func willMove(from view: SKView) {
         super.willMove(from: view)
         view.isAccessibilityElement = previousViewIsAccessibilityElement
         view.accessibilityLabel = previousViewAccessibilityLabel
-        if let previousViewAccessibilityTraits {
-            view.accessibilityTraits = previousViewAccessibilityTraits
-        }
         DeviceManagerCoordinator.shared.deactivateAll()
     }
 }

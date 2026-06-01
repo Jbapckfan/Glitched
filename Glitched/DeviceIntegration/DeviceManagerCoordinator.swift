@@ -20,6 +20,11 @@ final class DeviceManagerCoordinator: DeviceManagerCoordinating {
         .appBackgrounding,
         .appSwitcher,
         .storageSpace,
+        // P1 DEAD-BOLT FIX: Level 11 instructs the player to leave the app and wait
+        // for the message. If we tear the notification manager down on background, it
+        // cancels the pending request + tap subscription mid-wait, so the bell can
+        // never deliver. Preserve it so the "background and wait" flow actually works.
+        .notification,
     ]
 
     private init() {
