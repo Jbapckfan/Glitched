@@ -213,7 +213,12 @@ final class FocusModeScene: BaseLevelScene, SKPhysicsContactDelegate {
 
     private func createFocusIndicator() {
         moonIcon = createMoonIcon(size: 25)
-        moonIcon.position = CGPoint(x: size.width - 50, y: topSafeY - 20)
+        // Focus status indicator. Previously top-RIGHT (x[w-75,w-25], y[T-45,T+5])
+        // which sat inside the reserved top-right 88x88 PAUSE zone (x[w-88,w],
+        // y[T-88,T]). Moved to the top-LEFT corner, left of the title (title
+        // x[80,203]) and above the relocated instruction panel (panel top now
+        // T-70), so it overlaps neither TITLE, PAUSE, nor the panel.
+        moonIcon.position = CGPoint(x: 35, y: topSafeY - 20)
         moonIcon.zPosition = 200
         addChild(moonIcon)
 
@@ -234,11 +239,18 @@ final class FocusModeScene: BaseLevelScene, SKPhysicsContactDelegate {
 
     private func createDNDToggleButton() {
         let button = SKNode()
-        button.position = CGPoint(x: 60, y: topSafeY - 20)
+        // "CAN'T DO THIS?" manual fallback affordance. Previously a top-LEFT HUD
+        // widget at (60, T-20) -> bg x[10,110], y[T-38,T-2], which overlapped the
+        // TITLE band (title x[80,203], y[T-32,T-8]). Moved to a distinct
+        // BOTTOM-TRAILING zone, clear of the top-right pause button, the title,
+        // the moon HUD indicator (top-left), and the exit area (mid-level).
+        let buttonW: CGFloat = 130
+        let buttonH: CGFloat = 36
+        button.position = CGPoint(x: size.width - 16 - buttonW / 2, y: bottomSafeY + 40)
         button.zPosition = 200
         button.name = "dndToggle"
 
-        let bg = SKShapeNode(rectOf: CGSize(width: 100, height: 36), cornerRadius: 8)
+        let bg = SKShapeNode(rectOf: CGSize(width: buttonW, height: buttonH), cornerRadius: 8)
         bg.fillColor = fillColor
         bg.strokeColor = strokeColor
         bg.lineWidth = lineWidth
@@ -246,16 +258,17 @@ final class FocusModeScene: BaseLevelScene, SKPhysicsContactDelegate {
         button.addChild(bg)
 
         let icon = createMoonIcon(size: 10)
-        icon.position = CGPoint(x: -30, y: 0)
+        icon.position = CGPoint(x: -buttonW / 2 + 18, y: 0)
         icon.name = "dndToggle"
         button.addChild(icon)
 
-        let label = SKLabelNode(text: "DND")
+        let label = SKLabelNode(text: "CAN'T DO THIS?")
         label.fontName = "Menlo-Bold"
-        label.fontSize = 11
+        label.fontSize = 10
         label.fontColor = strokeColor
         label.verticalAlignmentMode = .center
-        label.position = CGPoint(x: 10, y: 0)
+        label.horizontalAlignmentMode = .center
+        label.position = CGPoint(x: 12, y: 0)
         label.name = "dndToggle"
         button.addChild(label)
 
@@ -298,7 +311,13 @@ final class FocusModeScene: BaseLevelScene, SKPhysicsContactDelegate {
 
     private func showInstructionPanel() {
         let panel = SKNode()
-        panel.position = CGPoint(x: size.width / 2, y: topSafeY - 90)
+        // Centered 280-wide t=0 discovery panel. On iPhone 390 (x[55,335]) the
+        // old center y=T-90 put the panel top at T-50, poking into the top-right
+        // PAUSE column (pause bottom ~T-56). Lowered the center to T-110 so the
+        // panel spans y[T-150,T-70]: fully below the title band (title bottom
+        // T-8) AND below the pause button's bottom edge -> zero overlap with
+        // TITLE or PAUSE on iPhone 390/402 and iPad 1024.
+        panel.position = CGPoint(x: size.width / 2, y: topSafeY - 110)
         panel.zPosition = 300
         addChild(panel)
 

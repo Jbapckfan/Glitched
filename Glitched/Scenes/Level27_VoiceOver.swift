@@ -366,10 +366,18 @@ final class VoiceOverScene: BaseLevelScene, SKPhysicsContactDelegate {
 
     #if DEBUG
     private func createTestButton() {
+        // BOTTOM-LEFT. The top-trailing ~88x88 column is the reserved PAUSE zone and
+        // the old (size.width - 75, topSafeY - 20) placement (110x30) sat directly in
+        // it, overlapping the pause button on iPhone 390/402 and iPad 1024. Anchor
+        // this DEBUG-only affordance to the bottom-left safe area instead — clear of
+        // the pause button, the title band, the bottom-trailing "CAN'T DO THIS?"
+        // fallback, the start platform (y~160), and the exit door on the right.
+        let buttonPos = CGPoint(x: 75, y: bottomSafeY + 24)
+
         let button = SKShapeNode(rectOf: CGSize(width: 110, height: 30), cornerRadius: 6)
         button.fillColor = strokeColor
         button.strokeColor = strokeColor
-        button.position = CGPoint(x: size.width - 75, y: topSafeY - 20)
+        button.position = buttonPos
         button.zPosition = 500
         button.name = "testVOButton"
         addChild(button)
@@ -379,7 +387,7 @@ final class VoiceOverScene: BaseLevelScene, SKPhysicsContactDelegate {
         label.fontSize = 8
         label.fontColor = fillColor
         label.verticalAlignmentMode = .center
-        label.position = button.position
+        label.position = buttonPos
         label.zPosition = 501
         label.name = "testVOButton"
         addChild(label)

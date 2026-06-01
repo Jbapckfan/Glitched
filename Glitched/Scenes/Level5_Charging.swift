@@ -88,13 +88,22 @@ final class ChargingScene: BaseLevelScene, SKPhysicsContactDelegate {
         // Power lines
         drawPowerLines()
 
-        // Electrical panels
-        drawElectricalPanel(at: CGPoint(x: 50, y: topSafeY - 120))
-        drawElectricalPanel(at: CGPoint(x: size.width - 50, y: topSafeY - 120))
+        // Electrical panels.
+        // Lowered to topSafeY-150 (top edge topSafeY-110) so the RIGHT panel's
+        // top stays clear of the reserved top-right PAUSE zone (its bottom edge
+        // sits at topSafeY-96 on every target device). Symmetric on the left.
+        drawElectricalPanel(at: CGPoint(x: 50, y: topSafeY - 150))
+        drawElectricalPanel(at: CGPoint(x: size.width - 50, y: topSafeY - 150))
 
-        // Lightning bolt decorations
-        drawLightningBolt(at: CGPoint(x: 80, y: topSafeY - 50))
-        drawLightningBolt(at: CGPoint(x: size.width - 80, y: topSafeY - 70))
+        // Lightning bolt decorations.
+        // The LEFT bolt is dropped to topSafeY-150 so it no longer pokes into the
+        // top-left TITLE band ("LEVEL 5" + underline, ~y[topSafeY-44, topSafeY-8]).
+        // The RIGHT bolt is dropped to topSafeY-180 so it clears the reserved
+        // top-right PAUSE 88x88 zone. Both are inset to x=120 / width-120 so they
+        // sit beside (not stacked on) their electrical panels. Verified
+        // non-overlapping on iPhone 390x844 / 402x874 and iPad 1024x1366.
+        drawLightningBolt(at: CGPoint(x: 120, y: topSafeY - 150))
+        drawLightningBolt(at: CGPoint(x: size.width - 120, y: topSafeY - 180))
     }
 
     private func drawPowerLines() {
@@ -248,8 +257,8 @@ final class ChargingScene: BaseLevelScene, SKPhysicsContactDelegate {
         //   platform body top    = (topSafeY-110) + 10 = topSafeY-100
         //   plug rest surface top = topSafeY-100  (coplanar — see riseToTop)
         // Spanning x in [centerX-120, centerX+60] (width 180, centre centerX-30)
-        // keeps the existing door landing zone (door at centerX-80) and now also
-        // covers the full plug surface so a rightward drift still lands safely.
+        // keeps the door landing zone (door at centerX+30, see createExitDoor)
+        // and covers the full plug surface so a rightward drift still lands safely.
         let exitPlatformLeftX = centerX - 120
         let exitPlatformRightX = centerX + 60   // == plug body right edge
         let exitPlatformWidth = exitPlatformRightX - exitPlatformLeftX  // 180
@@ -261,8 +270,13 @@ final class ChargingScene: BaseLevelScene, SKPhysicsContactDelegate {
         exitPlatform.name = "ground"
         addChild(exitPlatform)
 
-        // Exit door
-        createExitDoor(at: CGPoint(x: centerX - 80, y: topSafeY - 70))
+        // Exit door.
+        // Moved from centerX-80 to centerX+30 so the door frame + bobbing arrow
+        // hint no longer pokes into the top-left TITLE band ("LEVEL 5") on narrow
+        // phones (iPhone 390/402). centerX+30 keeps the frame (x +-20) fully on the
+        // exit platform [centerX-120, centerX+60] and over the plug body
+        // [centerX-60, centerX+60], so the coplanar plug-ride dismount is intact.
+        createExitDoor(at: CGPoint(x: centerX + 30, y: topSafeY - 70))
 
         // Death zone
         let deathZone = SKNode()
@@ -788,7 +802,10 @@ final class ChargingScene: BaseLevelScene, SKPhysicsContactDelegate {
         label.text = text
         label.fontSize = 11
         label.fontColor = strokeColor
-        label.position = CGPoint(x: size.width / 2, y: size.height / 2 + 60)
+        // Raised to h/2+90 so the transient 4th-wall commentary clears the
+        // battery objective indicator's hint label (top ~h/2+53) instead of
+        // crowding it.
+        label.position = CGPoint(x: size.width / 2, y: size.height / 2 + 90)
         label.zPosition = 300
         label.alpha = 0
         addChild(label)

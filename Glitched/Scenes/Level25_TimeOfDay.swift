@@ -267,11 +267,27 @@ final class TimeOfDayScene: BaseLevelScene, SKPhysicsContactDelegate {
     }
 
     private func createTimeDisplay() {
+        // Center the time/mode stack horizontally, but on narrow phones the
+        // ideal center (w/2 = 195 on iPhone 390) sits directly under the
+        // top-leading "LEVEL 25" title (which extends to ~x215). Push the
+        // stack's center right so its left edge clears the title band, while
+        // keeping its right edge clear of the top-trailing pause column. On
+        // iPad the slot is wide enough that this leaves the stack centered.
+        let titleRightEdge: CGFloat = 80 + 140      // title x ~[80, 220]
+        let pauseLeftEdge = size.width - 88         // reserved top-right zone
+        let halfLabelWidth: CGFloat = 28            // half of widest "22:00"
+        let margin: CGFloat = 8
+        var displayX = size.width / 2
+        let minCenterX = titleRightEdge + margin + halfLabelWidth
+        let maxCenterX = pauseLeftEdge - margin - halfLabelWidth
+        if displayX < minCenterX { displayX = minCenterX }
+        if displayX > maxCenterX { displayX = maxCenterX }
+
         timeLabel = SKLabelNode(text: "12:00")
         timeLabel.fontName = "Menlo-Bold"
         timeLabel.fontSize = 16
         timeLabel.fontColor = strokeColor
-        timeLabel.position = CGPoint(x: size.width / 2, y: topSafeY - 10)
+        timeLabel.position = CGPoint(x: displayX, y: topSafeY - 14)
         timeLabel.zPosition = 200
         addChild(timeLabel)
 
@@ -279,7 +295,7 @@ final class TimeOfDayScene: BaseLevelScene, SKPhysicsContactDelegate {
         modeLabel.fontName = "Menlo"
         modeLabel.fontSize = 10
         modeLabel.fontColor = strokeColor
-        modeLabel.position = CGPoint(x: size.width / 2, y: topSafeY - 25)
+        modeLabel.position = CGPoint(x: displayX, y: topSafeY - 29)
         modeLabel.zPosition = 200
         addChild(modeLabel)
     }
@@ -569,7 +585,11 @@ final class TimeOfDayScene: BaseLevelScene, SKPhysicsContactDelegate {
         label.fontName = "Menlo"
         label.fontSize = 8
         label.fontColor = currentMode == .day ? strokeColor.withAlphaComponent(0.5) : fillColor.withAlphaComponent(0.5)
-        label.position = CGPoint(x: size.width / 2, y: 30)
+        // Raise the commentary line above the bottom CYCLE TIME toggle button
+        // (which occupies y[35,65]); at y=30 the ~310pt-wide label overlapped
+        // the button's right half on narrow phones. y=78 keeps it clear while
+        // still sitting below the playfield platforms (groundY 160).
+        label.position = CGPoint(x: size.width / 2, y: 78)
         label.zPosition = 150
         addChild(label)
         fourthWallLabel = label

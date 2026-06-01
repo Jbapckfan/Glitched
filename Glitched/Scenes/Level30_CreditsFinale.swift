@@ -313,7 +313,15 @@ final class CreditsFinaleScene: BaseLevelScene, SKPhysicsContactDelegate {
 
     private func showInstructionPanel() {
         let panel = SKNode()
-        panel.position = CGPoint(x: size.width / 2, y: topSafeY - 90)
+        // The 280-wide discovery panel (x ≈ [w/2-140, w/2+140] -> [55,335] on iPhone
+        // 390) shares an x-column with the top-left LEVEL title (x[80,~203]) and the
+        // top-right PAUSE zone (x[w-88, w]). At the old topSafeY-90 center its 80-tall
+        // box top (topSafeY-50) sat only ~6pt under the title band bottom (~topSafeY-44)
+        // and clipped the pause column. Drop it well BELOW the title/pause band: 80-tall
+        // box (y±40) centered at topSafeY-170 spans [topSafeY-210, topSafeY-130], an
+        // 86pt vertical gap below the title — zero rect overlap with TITLE or PAUSE on
+        // iPhone 390/402 and iPad 1024, and still above the gameplay course below.
+        panel.position = CGPoint(x: size.width / 2, y: topSafeY - 170)
         panel.zPosition = 300
         addChild(panel)
 

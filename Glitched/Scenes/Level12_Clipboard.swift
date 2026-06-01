@@ -221,8 +221,16 @@ final class ClipboardScene: BaseLevelScene, SKPhysicsContactDelegate {
     }
 
     private func showInstructionPanel() {
+        // OVERLAP FIX: the panel was centered at topSafeY-70 (top edge topSafeY-40),
+        // which sits inside the TITLE band. With the 240-wide bg, on iPhone 390 the
+        // panel spanned x[75,315] — fully covering the title's x[80,~204] — and its
+        // top edge (topSafeY-40) was only ~6pt below the title glyphs (baseline
+        // topSafeY-30), a fragile near-collision. Drop the panel fully below the title
+        // band: center at topSafeY-120 puts the 60-tall bg's top edge at topSafeY-90
+        // (>= the spec's topSafeY-90 floor), clearing TITLE and the top-right PAUSE
+        // zone entirely while staying well above the terminal/course.
         let panel = SKNode()
-        panel.position = CGPoint(x: size.width / 2, y: topSafeY - 70)
+        panel.position = CGPoint(x: size.width / 2, y: topSafeY - 120)
         panel.zPosition = 300
         addChild(panel)
 

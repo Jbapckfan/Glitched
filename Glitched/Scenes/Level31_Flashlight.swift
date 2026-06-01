@@ -1229,9 +1229,22 @@ final class FlashlightScene: BaseLevelScene, SKPhysicsContactDelegate {
     // MARK: - Fourth-Wall Commentary
 
     private func showCommentaryText(_ text: String) {
-        // Attach to camera so it's always visible regardless of scrolling
+        // Attach to camera so it's always visible regardless of scrolling.
+        // HUD-OVERLAP FIX: The old local y (size.height/2 - 60) placed this 30pt-tall
+        // banner near screen-top (screen-y ~45-75 on iPhone 390/402, ~40-70 on iPad),
+        // where its wide box (up to 50 chars -> ~430pt) overlapped BOTH the level
+        // title (top-left, screen-y ~61-115) and the screen-pinned pause button
+        // (top-right ~88x88). The "CREATIVE USE OF HARDWARE." comment fires the moment
+        // the flashlight turns on — which can be at t=0 with Bit still at spawn and the
+        // title fully visible — so the collision is real, not just transient.
+        // Anchor the banner ~130pt below the safe-top so its top edge (center-15)
+        // sits below both reserved top zones on every device:
+        //   iPhone 390/402: scene-y topSafeY-130 = 655 -> screen-top ~174 (title ends ~115, pause ~111)
+        //   iPad 1024x1366: scene-y topSafeY-130 = 1212 -> screen-top ~139 (title ends ~83, pause ~76)
+        // Expressed in camera-local space (camera centered at size.height/2 at t=0).
+        let commentaryLocalY = (topSafeY - 130) - size.height / 2
         let container = SKNode()
-        container.position = CGPoint(x: 0, y: size.height / 2 - 60)
+        container.position = CGPoint(x: 0, y: commentaryLocalY)
         container.zPosition = 9500
         container.alpha = 0
 

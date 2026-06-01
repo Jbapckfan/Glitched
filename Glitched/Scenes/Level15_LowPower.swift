@@ -212,7 +212,15 @@ final class LowPowerScene: BaseLevelScene, SKPhysicsContactDelegate {
 
     private func createBatteryIndicator() {
         batteryIndicator = SKNode()
-        batteryIndicator.position = CGPoint(x: size.width - 50, y: topSafeY - 20)
+        // Top-trailing, but inset LEFT of the reserved top-right PAUSE zone
+        // (the SwiftUI pause button owns an ~88pt-wide top-right column). The
+        // battery body spans [center-20, center+24] (tip at +22); anchoring the
+        // center at width-120 puts its right edge at width-96, clearing the
+        // pause column on iPhone 390 (right 294 < pause-left 330) and iPad 1024
+        // (right 928 < pause-left 936). y stays in the title band (topSafeY-20),
+        // above the instruction panel (panel top = topSafeY-50), so it overlaps
+        // neither PAUSE, the TITLE (right edge ~210, < 270), nor the panel.
+        batteryIndicator.position = CGPoint(x: size.width - 120, y: topSafeY - 20)
         batteryIndicator.zPosition = 200
         addChild(batteryIndicator)
 
@@ -243,7 +251,13 @@ final class LowPowerScene: BaseLevelScene, SKPhysicsContactDelegate {
     // unavailable (e.g. simulator). Additive to real-device detection.
     private func createLowPowerToggleButton() {
         let button = SKNode()
-        button.position = CGPoint(x: 60, y: topSafeY - 20)
+        // Manual fallback affordance -> distinct BOTTOM-TRAILING zone, clear of
+        // the TITLE (top-left), the PAUSE button (top-right), the battery HUD
+        // (top band) and the exit (mid-screen, logical x=319). The 110x36 bg
+        // centered at (width-65, bottomSafeY+30) spans x[width-120,width-10],
+        // y[bottomSafeY+12, bottomSafeY+48] — well below every top-band element
+        // and the chasm/shelf gameplay, with a 10pt trailing inset.
+        button.position = CGPoint(x: size.width - 65, y: bottomSafeY + 30)
         button.zPosition = 200
         button.name = "lowPowerToggle"
 

@@ -166,7 +166,12 @@ final class ShakeUndoScene: BaseLevelScene, SKPhysicsContactDelegate {
 
     private func createUndoIndicator() {
         undoIcon = SKNode()
-        undoIcon.position = CGPoint(x: size.width - 60, y: topSafeY - 20)
+        // Top-LEFT, anchored just below the "LEVEL 16" title band. The previous
+        // top-RIGHT position (x: size.width - 60) sat inside the global pause
+        // button's reserved ~88x88 top-trailing zone and overlapped it on every
+        // device (iPhone 390/402 + iPad). Keep the undo HUD clear of the pause
+        // column, the title (x>=80) and the centered instruction panel.
+        undoIcon.position = CGPoint(x: 42, y: topSafeY - 66)
         undoIcon.zPosition = 200
         addChild(undoIcon)
 
@@ -219,7 +224,11 @@ final class ShakeUndoScene: BaseLevelScene, SKPhysicsContactDelegate {
 
     private func showInstructionPanel() {
         let panel = SKNode()
-        panel.position = CGPoint(x: size.width / 2, y: topSafeY - 90)
+        // Centered, pushed BELOW the title band. At the old y (topSafeY-90) the
+        // 260-wide panel's right corner reached the undo HUD; dropping it to
+        // topSafeY-150 keeps zero overlap with the title, the relocated top-left
+        // undo widget, and the top-right pause zone on iPhone 390/402 + iPad.
+        panel.position = CGPoint(x: size.width / 2, y: topSafeY - 150)
         panel.zPosition = 300
         addChild(panel)
 

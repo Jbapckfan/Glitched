@@ -212,7 +212,10 @@ final class AppSwitcherScene: BaseLevelScene, SKPhysicsContactDelegate {
 
     private func showInstructionPanel() {
         let panel = SKNode()
-        panel.position = CGPoint(x: size.width / 2, y: topSafeY - 90)
+        // Drop the centered 280-wide panel low enough that its top edge clears
+        // the top-trailing PAUSE button (its bottom-left corner clipped the panel
+        // on iPhone 390x844). topSafeY-98 keeps it below the title band too.
+        panel.position = CGPoint(x: size.width / 2, y: topSafeY - 98)
         panel.zPosition = 300
         addChild(panel)
 

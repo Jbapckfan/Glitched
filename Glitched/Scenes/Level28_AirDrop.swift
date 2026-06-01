@@ -294,8 +294,13 @@ final class AirDropScene: BaseLevelScene, SKPhysicsContactDelegate {
     }
 
     private func showInstructionPanel() {
+        // Lower the panel so its TOP edge sits at ~topSafeY-92, fully below BOTH the
+        // top-left TITLE band (bottom ~topSafeY-36) and the reserved top-right PAUSE
+        // zone (bottom ~topSafeY-88). The 84-tall panel is centered, so center=topSafeY-134
+        // => top=topSafeY-92. This removes the iPhone 390/402 collision where the 320-wide
+        // centered panel's right edge (x~355/361) reached into the pause column (x>=302/314).
         let panel = SKNode()
-        panel.position = CGPoint(x: size.width / 2, y: topSafeY - 90)
+        panel.position = CGPoint(x: size.width / 2, y: topSafeY - 134)
         panel.zPosition = 300
         addChild(panel)
 

@@ -103,7 +103,14 @@ final class ScreenshotScene: BaseLevelScene, SKPhysicsContactDelegate {
     // the player is stuck. Self-removes after 5.5s so it never crowds the HUD.
     private func showDiscoveryPanel() {
         let panel = SKNode()
-        panel.position = CGPoint(x: size.width / 2, y: topSafeY - 70)
+        // Dropped from topSafeY-70 to topSafeY-90 so the 60pt-tall, 280-wide
+        // centered panel (top edge topSafeY-60) sits fully BELOW the title band
+        // (title bottom ~topSafeY-44) and clear of the top-right pause zone.
+        // Previously its rect x[w/2-140, w/2+140] = x[55,335] on iPhone 390
+        // collided with both the title (x[80,~194]) and the pause column;
+        // moving it under the title removes both overlaps. Bottom edge
+        // (topSafeY-120) still clears the detailed instruction panel below it.
+        panel.position = CGPoint(x: size.width / 2, y: topSafeY - 90)
         panel.zPosition = 300
         addChild(panel)
 
@@ -628,12 +635,12 @@ final class ScreenshotScene: BaseLevelScene, SKPhysicsContactDelegate {
 
     private func showInstructionPanel() {
         instructionPanel = SKNode()
-        // Sits below the t=0 discovery panel (which occupies topSafeY-40...-100):
-        // dropped from topSafeY-100 to topSafeY-175 so the 100pt-tall detailed
-        // panel (top edge topSafeY-125) clears the discovery panel with a ~25pt
-        // gap. Still well above the play zone, which lifts no higher than
-        // groundY+70 (exit) — far below the HUD band on every canvas.
-        instructionPanel?.position = CGPoint(x: size.width / 2, y: topSafeY - 175)
+        // Sits below the t=0 discovery panel (which now occupies topSafeY-60...-120):
+        // at topSafeY-185 the 100pt-tall detailed panel (top edge topSafeY-135)
+        // clears the discovery panel's bottom (topSafeY-120) with a ~15pt gap.
+        // Still well above the play zone, which lifts no higher than groundY+70
+        // (exit) — far below the HUD band on every canvas.
+        instructionPanel?.position = CGPoint(x: size.width / 2, y: topSafeY - 185)
         instructionPanel?.zPosition = 200
         addChild(instructionPanel!)
 
@@ -688,7 +695,15 @@ final class ScreenshotScene: BaseLevelScene, SKPhysicsContactDelegate {
 
     private func showTimer() {
         timerDisplay = SKNode()
-        timerDisplay?.position = CGPoint(x: size.width / 2, y: topSafeY - 50)
+        // The freeze timer is shown the instant the player screenshots, which can
+        // happen at t<5s while the t=0 discovery panel is still fading out. At the
+        // old topSafeY-50 the r30 timer circle (y[topSafeY-80, topSafeY-20])
+        // overlapped BOTH the discovery panel and the title's right edge. The
+        // instruction panel is hidden on freeze, so the timer reuses its slot
+        // (topSafeY-185): r30 -> y[topSafeY-215, topSafeY-155], a ~35pt gap below
+        // the discovery panel's bottom (topSafeY-120) and well clear of the title
+        // band and the top-right pause zone (both at y >= topSafeY-44).
+        timerDisplay?.position = CGPoint(x: size.width / 2, y: topSafeY - 185)
         timerDisplay?.zPosition = 200
         addChild(timerDisplay!)
 

@@ -406,6 +406,13 @@ final class WindBridgeScene: BaseLevelScene, SKPhysicsContactDelegate {
             bridge.physicsBody?.isDynamic = false
             bridge.physicsBody?.categoryBitMask = PhysicsCategory.ground
         }
+
+        // SpriteKit fires NO didEnd(_:) when we rip the bridge's physicsBody out from
+        // under Bit (above), so without this Bit would keep reporting isGrounded while
+        // the span he was standing on has vanished — stranded mid-air / stuck in a
+        // death loop. The shared helper clears grounded state only when the bridge
+        // actually de-solidified (body now nil) AND it was the ground under Bit.
+        clearGroundedIfStandingOn(bridge)
     }
 
     private func setupBit() {
@@ -522,7 +529,12 @@ final class WindBridgeScene: BaseLevelScene, SKPhysicsContactDelegate {
         title.fontName = "Helvetica-Bold"
         title.fontSize = 28 * visualScale
         title.fontColor = strokeColor
-        let yOffset = isCompactPhoneLayout ? 205 * layoutYScale : 60 * layoutYScale
+        // Title lives in the reserved top-LEADING band on every device. It is NOT
+        // shoved down on compact phones any more: that old hack (205*ly) pushed the
+        // title ~180pt into the play area only to dodge the centered hint placard.
+        // Instead the placard now sits BELOW the title band (see setupHint), so the
+        // title can stay where the global HUD spec expects it (baseline ~topSafeY-30).
+        let yOffset = 44 * layoutYScale
         title.position = CGPoint(x: 80 * layoutXScale, y: topSafeAreaY(offset: yOffset))
         title.horizontalAlignmentMode = .left
         title.zPosition = 100
@@ -545,8 +557,11 @@ final class WindBridgeScene: BaseLevelScene, SKPhysicsContactDelegate {
         // Start with an environmental clue. The explicit microphone clue appears
         // only after the player struggles.
         let hintContainer = SKNode()
-        let yOffset = isCompactPhoneLayout ? 94 * layoutYScale : 50 * layoutYScale
-        hintContainer.position = CGPoint(x: size.width / 2, y: topSafeAreaY(offset: yOffset))
+        // Centered 210-wide placard. Anchored BELOW the top-leading title band so
+        // its left edge (which on a phone reaches ~x[100,290]) never collides with
+        // the title column at x[~73,176]. topSafeY-70*visualScale keeps the placard
+        // top edge clear of the title baseline on iPhone 390/402 and iPad 1024.
+        hintContainer.position = CGPoint(x: size.width / 2, y: topSafeY - 70 * visualScale)
         hintContainer.setScale(visualScale)
         hintContainer.zPosition = 100
         addChild(hintContainer)
@@ -625,7 +640,12 @@ final class WindBridgeScene: BaseLevelScene, SKPhysicsContactDelegate {
         guard microphoneHint == nil else { return }
 
         let hintContainer = SKNode()
-        hintContainer.position = CGPoint(x: size.width / 2, y: size.height - 98 * layoutYScale)
+        // The escalation "SIGNAL?" mic hint and the persistent "LOOKS WINDY" placard
+        // are BOTH top-center, so the old size.height-98*ly position drew this mic
+        // hint directly on top of the placard once the difficulty timer fired. Drop
+        // it to its own distinct band below the placard (topSafeY-150*visualScale):
+        // clear of the title, the placard, the pause button, and the bottom hint banner.
+        hintContainer.position = CGPoint(x: size.width / 2, y: topSafeY - 150 * visualScale)
         hintContainer.setScale(visualScale)
         hintContainer.zPosition = 150
         hintContainer.alpha = 0
@@ -783,22 +803,33 @@ final class WindBridgeScene: BaseLevelScene, SKPhysicsContactDelegate {
     override func updatePlaying(deltaTime: TimeInterval) {
         playerController.update()
 
-        // Bridge extends quickly toward target
-        let lerpSpeed: CGFloat = 8.0
+        // Asymmetric lerp: the bridge SNAPS OUT toward the target while you blow,
+        // but creeps back IN very slowly when you stop. The old code used one
+        // symmetric lerpSpeed (8.0) in both directions while bridgeTargetWidth
+        // decayed 0.5%/frame (~26%/s) — so the instant you stopped blowing, current
+        // chased the collapsing target downward at up to 8x and the whole span
+        // vanished in ~1s, contradicting the guide's "retracts very slowly" promise
+        // and dropping Bit mid-crossing into the chasm.
         let diff = bridgeTargetWidth - bridgeCurrentWidth
-        bridgeCurrentWidth += diff * CGFloat(deltaTime) * lerpSpeed
-
-        // Bridge retracts VERY slowly when no sound - this is an early level.
-        // Give the player plenty of time to cross after blowing.
-        if lastMicLevel < 0.1 {
-            bridgeCurrentWidth = max(0, bridgeCurrentWidth - CGFloat(deltaTime) * 5)
+        if diff >= 0 {
+            // Extending: fast, responsive to a fresh breath.
+            bridgeCurrentWidth += diff * CGFloat(deltaTime) * 8.0
+        } else {
+            // Retracting: gentle, fixed creep regardless of how far the target fell,
+            // so a full-width bridge takes many seconds to recede — plenty of time
+            // to walk across after a single good blow.
+            let retractRate: CGFloat = 18 // points per second
+            bridgeCurrentWidth = max(bridgeTargetWidth,
+                                     bridgeCurrentWidth - CGFloat(deltaTime) * retractRate)
         }
 
         bridgeCurrentWidth = max(0, min(bridgeCurrentWidth, bridgeFullWidth))
         updateBridgePhysics()
 
-        // Very slow decay of target so bridge stays extended much longer
-        bridgeTargetWidth *= 0.995
+        // Very slow decay of target so the bridge stays extended much longer. Slowed
+        // from 0.995 to 0.999 (~6%/s instead of ~26%/s) so the target — the floor the
+        // gentle retract creeps toward — itself lingers, keeping the crossing forgiving.
+        bridgeTargetWidth *= 0.999
     }
 
     // MARK: - Touch Handling
@@ -834,6 +865,10 @@ final class WindBridgeScene: BaseLevelScene, SKPhysicsContactDelegate {
         } else if collision == PhysicsCategory.player | PhysicsCategory.exit {
             handleExit()
         } else if collision == PhysicsCategory.player | PhysicsCategory.ground {
+            // Track WHICH ground (left/right platform or the bridge) Bit is standing
+            // on, so the shared de-solidify helper can tell whether a vanishing
+            // bridge was actually under Bit. (Base-class recipe.)
+            sharedGroundPlatform = groundNode(fromContact: contact)
             bit.setGrounded(true)
         }
     }
@@ -841,7 +876,9 @@ final class WindBridgeScene: BaseLevelScene, SKPhysicsContactDelegate {
     func didEnd(_ contact: SKPhysicsContact) {
         let collision = contact.bodyA.categoryBitMask | contact.bodyB.categoryBitMask
 
-        if collision == PhysicsCategory.player | PhysicsCategory.ground {
+        if collision == PhysicsCategory.player | PhysicsCategory.ground,
+           sharedGroundPlatform === groundNode(fromContact: contact) {
+            sharedGroundPlatform = nil
             run(.sequence([
                 .wait(forDuration: 0.05),
                 .run { [weak self] in

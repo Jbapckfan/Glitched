@@ -340,9 +340,12 @@ final class NotificationScene: BaseLevelScene, SKPhysicsContactDelegate {
     }
 
     private func createNotificationUI() {
-        // Request notification button
+        // Request notification button. Anchored well below the title band
+        // (title bottom ≈ topSafeY-40) so the centered widget never collides with
+        // "LEVEL 11" on a 390/402-wide phone, and its 180-wide footprint
+        // (right edge = w/2+90) stays clear of the top-right pause column.
         notificationButton = SKNode()
-        notificationButton.position = CGPoint(x: size.width / 2, y: topSafeY - 70)
+        notificationButton.position = CGPoint(x: size.width / 2, y: topSafeY - 95)
         notificationButton.zPosition = 200
         addChild(notificationButton)
 
@@ -393,8 +396,11 @@ final class NotificationScene: BaseLevelScene, SKPhysicsContactDelegate {
     }
 
     private func showInstructionPanel() {
+        // Centered mid-screen so the 260x100 panel sits well below the
+        // topSafeY-anchored notification stack (button / waiting / faux) on every
+        // device and never overlaps it.
         instructionPanel = SKNode()
-        instructionPanel?.position = CGPoint(x: size.width / 2, y: size.height / 2 + 100)
+        instructionPanel?.position = CGPoint(x: size.width / 2, y: size.height / 2)
         instructionPanel?.zPosition = 300
         addChild(instructionPanel!)
 
@@ -515,7 +521,7 @@ final class NotificationScene: BaseLevelScene, SKPhysicsContactDelegate {
         label.fontName = "Menlo-Bold"
         label.fontSize = 10
         label.fontColor = strokeColor
-        label.position = CGPoint(x: size.width / 2, y: size.height / 2 + 50)
+        label.position = CGPoint(x: size.width / 2, y: size.height / 2 + 90)
         label.zPosition = 500
         label.alpha = 0
         addChild(label)
@@ -537,8 +543,13 @@ final class NotificationScene: BaseLevelScene, SKPhysicsContactDelegate {
     private func showFauxNotification() {
         fauxNotificationNode?.removeFromParent()
 
+        // Sits in its own band beneath the waiting indicator (topSafeY-150) so the
+        // two never overlap when both are on screen in the permission-denied flow.
+        // At topSafeY-210 the 280x60 panel is far below the top-right pause column's
+        // y-band, so its width can't intrude on the pause zone, and it clears the
+        // mid-screen instruction panel.
         let notif = SKNode()
-        notif.position = CGPoint(x: size.width / 2, y: topSafeY - 150)
+        notif.position = CGPoint(x: size.width / 2, y: topSafeY - 210)
         notif.zPosition = 600
         notif.name = "fauxNotification"
 
@@ -581,8 +592,10 @@ final class NotificationScene: BaseLevelScene, SKPhysicsContactDelegate {
     }
 
     private func showWaitingIndicator() {
+        // Below the request button (bottom ≈ topSafeY-120) and above the faux
+        // notification (topSafeY-210), giving each a clear band.
         waitingIndicator = SKNode()
-        waitingIndicator?.position = CGPoint(x: size.width / 2, y: topSafeY - 130)
+        waitingIndicator?.position = CGPoint(x: size.width / 2, y: topSafeY - 150)
         waitingIndicator?.zPosition = 200
         addChild(waitingIndicator!)
 
@@ -666,7 +679,7 @@ final class NotificationScene: BaseLevelScene, SKPhysicsContactDelegate {
         label.fontName = "Menlo-Bold"
         label.fontSize = 11
         label.fontColor = strokeColor
-        label.position = CGPoint(x: size.width / 2, y: size.height / 2 + 50)
+        label.position = CGPoint(x: size.width / 2, y: size.height / 2 + 90)
         label.zPosition = 500
         label.alpha = 0
         addChild(label)

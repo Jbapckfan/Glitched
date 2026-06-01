@@ -295,7 +295,14 @@ final class VoiceCommandScene: BaseLevelScene, SKPhysicsContactDelegate {
 
     private func createMicIndicator() {
         let container = SKNode()
-        container.position = CGPoint(x: size.width - 50, y: topSafeY - 20)
+        // Tuck the mic indicator into the trailing column BELOW the reserved
+        // top-right pause-button zone (which extends down to ~topSafeY-52) and
+        // below the centered instruction panel band (bottom ~topSafeY-130), so
+        // its ~21pt pulse radius never overlaps the pause button, the title,
+        // the instruction panel, or the fourth-wall labels on iPhone
+        // (390x844 / 402x874) or iPad (1024x1366). Previously at topSafeY-20 it
+        // sat directly under the pause button.
+        container.position = CGPoint(x: size.width - 34, y: topSafeY - 160)
         container.zPosition = 200
 
         // Mic body

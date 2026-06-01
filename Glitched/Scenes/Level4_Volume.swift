@@ -659,9 +659,14 @@ final class VolumeScene: BaseLevelScene, SKPhysicsContactDelegate {
 
     private func createVolumeIndicator() {
         volumeIndicator = SKNode()
+        // iPad-class (minWH >= 700): the widget is scaled up (visualScale 1.25) and
+        // anchored top-trailing; at offset 70 its top-right corner intruded into the
+        // reserved top-RIGHT pause-button zone (x[964,1008] y[1290,1334] on 1024x1366).
+        // Lower the iPad offset to 140 so the widget's top edge clears the pause zone
+        // with margin. Phones already sit well below (offset 170), so leave them.
         volumeIndicator.position = CGPoint(
             x: size.width - 70 * visualScale,
-            y: topSafeAreaY(offset: min(size.width, size.height) < 700 ? 170 : 70)
+            y: topSafeAreaY(offset: min(size.width, size.height) < 700 ? 170 : 140)
         )
         volumeIndicator.setScale(visualScale)
         volumeIndicator.zPosition = 200

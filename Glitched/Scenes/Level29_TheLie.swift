@@ -290,7 +290,14 @@ final class TheLieScene: BaseLevelScene, SKPhysicsContactDelegate {
 
     private func showInstructionPanel() {
         let panel = SKNode()
-        panel.position = CGPoint(x: size.width / 2, y: topSafeY - 90)
+        // BUG FIX (HUD overlap): the centered 320x80 panel previously sat at
+        // topSafeY-90, so its rect (y[topSafeY-130, topSafeY-50], x[w/2-160, w/2+160])
+        // collided with the left TITLE band (x[80,~220], y[topSafeY-62..-8]) and the
+        // top-right PAUSE zone (x[w-88,w]) on iPhone 390x844 & 402x874. Drop the center
+        // to topSafeY-130 so the panel's TOP edge is topSafeY-90 — fully BELOW the title
+        // bottom (~topSafeY-62) and below the pause zone bottom (topSafeY-88), giving zero
+        // rect overlap on iPhone 390/402 and iPad 1024. (iPad already cleared on x.)
+        panel.position = CGPoint(x: size.width / 2, y: topSafeY - 130)
         panel.zPosition = 300
         addChild(panel)
 

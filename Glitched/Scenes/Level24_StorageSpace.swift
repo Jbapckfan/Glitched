@@ -418,7 +418,14 @@ final class StorageSpaceScene: BaseLevelScene, SKPhysicsContactDelegate {
         storageLabel.fontName = "Menlo-Bold"
         storageLabel.fontSize = 12
         storageLabel.fontColor = strokeColor
-        storageLabel.position = CGPoint(x: size.width / 2, y: topSafeY - 10)
+        // OVERLAP FIX: was centered at topSafeY-10 — its rect (iPhone 390:
+        // x[108,282], y[769,784]) collided with the top-LEADING TITLE band
+        // ("LEVEL 24" baseline topSafeY-30 → rect x[80,208], y[749,775]) in both
+        // x and y. Drop it BELOW the centered instruction/arm-panel band
+        // (those sit at topSafeY-90; tallest arm panel bottom = topSafeY-134) to
+        // topSafeY-158 so its top edge (~topSafeY-149) clears the panel bottom by
+        // ~15pt, and it no longer touches the title or the top-right pause zone.
+        storageLabel.position = CGPoint(x: size.width / 2, y: topSafeY - 158)
         storageLabel.zPosition = 200
         addChild(storageLabel)
 

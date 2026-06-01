@@ -407,7 +407,16 @@ final class DeviceNameScene: BaseLevelScene, SKPhysicsContactDelegate {
 
     private func showInstructionPanel() {
         let panel = SKNode()
-        panel.position = CGPoint(x: size.width / 2, y: topSafeY - 90)
+        // The 320-wide centered panel previously sat with its top edge at
+        // topSafeY-50, which on iPhone widths (390/402) pushed its top-right
+        // corner into the reserved top-right PAUSE zone and crowded the LEVEL 23
+        // title (only ~14pt of clearance). Anchor its CENTER at topSafeY-130 so
+        // the 80-tall panel's top edge lands at topSafeY-90 — fully below the
+        // title's bottom (~topSafeY-36) and the pause button's bottom
+        // (~topSafeY-40) on every device, leaving zero rect overlap with TITLE
+        // or PAUSE. (On iPad the title is narrow at x~[80,220] and the panel is
+        // centered at x~512, so they never shared an x-column anyway.)
+        panel.position = CGPoint(x: size.width / 2, y: topSafeY - 130)
         panel.zPosition = 300
         addChild(panel)
 
@@ -477,7 +486,10 @@ final class DeviceNameScene: BaseLevelScene, SKPhysicsContactDelegate {
         greeting.fontName = "Menlo-Bold"
         greeting.fontSize = 10
         greeting.fontColor = strokeColor
-        greeting.position = CGPoint(x: size.width / 2, y: topSafeY - 130)
+        // Sit below the instruction panel's bottom edge (~topSafeY-170) so the
+        // greeting/follow-up commentary never overlaps the panel if their lifetimes
+        // briefly coincide (the panel lingers 5s; the fallback name also fires at 5s).
+        greeting.position = CGPoint(x: size.width / 2, y: topSafeY - 190)
         greeting.zPosition = 300
         addChild(greeting)
 
@@ -485,7 +497,7 @@ final class DeviceNameScene: BaseLevelScene, SKPhysicsContactDelegate {
         followUp.fontName = "Menlo"
         followUp.fontSize = 9
         followUp.fontColor = strokeColor
-        followUp.position = CGPoint(x: size.width / 2, y: topSafeY - 145)
+        followUp.position = CGPoint(x: size.width / 2, y: topSafeY - 208)
         followUp.zPosition = 300
         followUp.alpha = 0
         addChild(followUp)

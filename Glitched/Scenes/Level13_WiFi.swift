@@ -234,7 +234,12 @@ final class WiFiScene: BaseLevelScene, SKPhysicsContactDelegate {
 
     private func createWiFiIndicator() {
         let indicator = SKNode()
-        indicator.position = CGPoint(x: size.width - 60, y: topSafeY - 30)
+        // Anchor LEFT of the reserved top-right pause zone (trailing safe-area +
+        // ~88x88). The bars span ~40pt to the left of this origin, so origin at
+        // width-118 keeps the whole indicator (x ≈ [width-136, width-96]) clear of
+        // the pause button on both iPhone 390 and iPad 1024. Drop it one band below
+        // the title baseline so it never rides into the LEVEL title row either.
+        indicator.position = CGPoint(x: size.width - 118, y: topSafeY - 34)
         indicator.zPosition = 200
         addChild(indicator)
 
@@ -251,7 +256,12 @@ final class WiFiScene: BaseLevelScene, SKPhysicsContactDelegate {
 
     private func createDownloadBar() {
         let barContainer = SKNode()
-        barContainer.position = CGPoint(x: size.width / 2, y: topSafeY - 70)
+        // Centered, but dropped BELOW the title band (title glyph bottom ≈
+        // topSafeY-44) and below the WiFi indicator row so the bar + its label
+        // (which extends to y+21) never overlap the LEVEL title or the indicator.
+        // Top of label ≈ topSafeY-75, clear of the title; bottom of bar ≈
+        // topSafeY-102, leaving room for the instruction panel further below.
+        barContainer.position = CGPoint(x: size.width / 2, y: topSafeY - 96)
         barContainer.zPosition = 200
         addChild(barContainer)
 
@@ -301,7 +311,7 @@ final class WiFiScene: BaseLevelScene, SKPhysicsContactDelegate {
             confetti.fillColor = strokeColor
             confetti.strokeColor = strokeColor
             confetti.lineWidth = lineWidth * 0.3
-            confetti.position = CGPoint(x: size.width / 2, y: topSafeY - 70)
+            confetti.position = CGPoint(x: size.width / 2, y: topSafeY - 96)
             confetti.zPosition = 300
             addChild(confetti)
 
@@ -370,7 +380,13 @@ final class WiFiScene: BaseLevelScene, SKPhysicsContactDelegate {
 
     private func showInstructionPanel() {
         let panel = SKNode()
-        panel.position = CGPoint(x: size.width / 2, y: topSafeY - 70)
+        // The 280-wide discovery panel (x ≈ [w/2-140, w/2+140]) would collide with
+        // the LEVEL title (top-left, x[80,~225]) and the pause column if placed at
+        // the old topSafeY-70 center. Drop it well BELOW the title band AND below
+        // the download bar: 60-tall box (y±30) centered at topSafeY-170 spans
+        // [topSafeY-200, topSafeY-140], clear of the title, the WiFi indicator, the
+        // download bar (bottom ≈ topSafeY-102), and the gameplay course below.
+        panel.position = CGPoint(x: size.width / 2, y: topSafeY - 170)
         panel.zPosition = 300
         addChild(panel)
 

@@ -493,30 +493,38 @@ struct HardwareFallbackEscapeHatch: View {
     @State private var autoSurfaceTask: DispatchWorkItem?
 
     var body: some View {
+        // ZONE: FALLBACK — bottom-TRAILING. Distinct from PAUSE (top-trailing),
+        // from the mechanic-HUD / AccessibilityOverlay row (bottom-centered, see
+        // AccessibilityOverlay's centered ScrollView), and from the exit area.
+        // Pinned to the bottom-trailing corner above the home indicator.
         VStack {
             Spacer()
-            Button(action: surfaceFallback) {
-                HStack(spacing: 6) {
-                    Image(systemName: "questionmark.circle")
-                        .font(.system(size: 13, weight: .semibold))
-                    Text("CAN'T DO THIS?")
-                        .font(.custom(VisualConstants.Fonts.main, size: 11))
-                        .tracking(1)
+            HStack {
+                Spacer()
+                Button(action: surfaceFallback) {
+                    HStack(spacing: 6) {
+                        Image(systemName: "questionmark.circle")
+                            .font(.system(size: 13, weight: .semibold))
+                        Text("CAN'T DO THIS?")
+                            .font(.custom(VisualConstants.Fonts.main, size: 11))
+                            .tracking(1)
+                    }
+                    .foregroundColor(.white)
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 10)
+                    .background(
+                        Capsule()
+                            .fill(Color.black.opacity(0.55))
+                            .overlay(Capsule().strokeBorder(Color.white.opacity(0.35), lineWidth: 1))
+                    )
                 }
-                .foregroundColor(.white)
-                .padding(.horizontal, 14)
-                .padding(.vertical, 10)
-                .background(
-                    Capsule()
-                        .fill(Color.black.opacity(0.55))
-                        .overlay(Capsule().strokeBorder(Color.white.opacity(0.35), lineWidth: 1))
-                )
+                .accessibilityLabel(Text("Can't perform the device action"))
+                .accessibilityHint(Text("Shows on-screen buttons to complete this level without the hardware action."))
+                .padding(.trailing, 16)
             }
-            .accessibilityLabel(Text("Can't perform the device action"))
-            .accessibilityHint(Text("Shows on-screen buttons to complete this level without the hardware action."))
             // Place above the bottom safe area / home indicator, clear of the
             // AccessibilityOverlay row which lives slightly higher when shown.
-            .padding(.bottom, 96)
+            .padding(.bottom, 40)
         }
         // Reschedule the auto-surface whenever the level changes so a fresh
         // hardware-gated level starts its own no-progress countdown.

@@ -256,7 +256,12 @@ final class LocaleScene: BaseLevelScene, SKPhysicsContactDelegate {
         let button = SKShapeNode(rectOf: CGSize(width: 100, height: 30), cornerRadius: 6)
         button.fillColor = strokeColor
         button.strokeColor = strokeColor
-        button.position = CGPoint(x: size.width - 70, y: topSafeY - 20)
+        // FIX (overlap): old position topSafeY-20 put this DEBUG button's rect
+        // x[w-120,w-20]=[270,370] inside the reserved top-right PAUSE zone
+        // [w-88,w]x[topSafeY-88,topSafeY]. Drop it below the (now-lowered)
+        // instruction panel (bottom topSafeY-220) and the pause zone so it
+        // sits in clear space on iPhone 390/402 and iPad 1024.
+        button.position = CGPoint(x: size.width - 70, y: topSafeY - 245)
         button.zPosition = 500
         button.name = "testLocaleButton"
         addChild(button)
@@ -275,7 +280,18 @@ final class LocaleScene: BaseLevelScene, SKPhysicsContactDelegate {
 
     private func showInstructionPanel() {
         let panel = SKNode()
-        panel.position = CGPoint(x: size.width / 2, y: topSafeY - 90)
+        // FIX (overlap): a 320-wide centered panel at topSafeY-90 put its top
+        // edge (topSafeY-25) above the title's bottom (~topSafeY-36) and its
+        // x-span [w/2-160, w/2+160] = [35,355] on iPhone 390 both swallowed the
+        // title column [80,~204] AND clipped the reserved top-right PAUSE zone
+        // [w-88,w]=[302,390]. The panel is wider than the centre gap between
+        // those two reserved columns, so it can't be narrowed without losing
+        // legibility — instead drop its centre to topSafeY-155 so its TOP edge
+        // (topSafeY-90) sits fully below BOTH the title band (bottom ~topSafeY-36)
+        // and the pause zone (bottom topSafeY-88). Zero rect overlap on iPhone
+        // 390/402 and iPad 1024; bottom edge (topSafeY-220) stays well clear of
+        // the highest signpost/platform (~y 380 logical).
+        panel.position = CGPoint(x: size.width / 2, y: topSafeY - 155)
         panel.zPosition = 300
         addChild(panel)
 

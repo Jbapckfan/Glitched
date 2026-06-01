@@ -245,7 +245,13 @@ final class BatteryPercentScene: BaseLevelScene, SKPhysicsContactDelegate {
         batteryLabel.fontName = "Menlo-Bold"
         batteryLabel.fontSize = 14
         batteryLabel.fontColor = strokeColor
-        batteryLabel.position = CGPoint(x: size.width / 2, y: topSafeY - 10)
+        // HUD FIX: previously centered at topSafeY-10, which on iPhone 390/402 put the
+        // centered label's left edge (~x137) under the left-aligned title (x[80,~210]) in
+        // the same vertical band -> rect overlap with TITLE. Drop it below the title band
+        // (title glyphs end ~topSafeY-2 down to ~topSafeY-36; this baseline sits clear) and
+        // keep it horizontally centered between the reserved top-left title and top-right
+        // pause zones.
+        batteryLabel.position = CGPoint(x: size.width / 2, y: topSafeY - 56)
         batteryLabel.zPosition = 200
         addChild(batteryLabel)
     }
@@ -275,7 +281,10 @@ final class BatteryPercentScene: BaseLevelScene, SKPhysicsContactDelegate {
 
     private func showInstructionPanel() {
         let panel = SKNode()
-        panel.position = CGPoint(x: size.width / 2, y: topSafeY - 90)
+        // HUD FIX: lowered from topSafeY-90 to topSafeY-110 so the 80pt-tall panel's top
+        // edge (center+40 = topSafeY-70) clears the relocated battery label below it
+        // (battery glyphs bottom ~topSafeY-59), leaving zero overlap with TITLE/BATTERY.
+        panel.position = CGPoint(x: size.width / 2, y: topSafeY - 110)
         panel.zPosition = 300
         addChild(panel)
 

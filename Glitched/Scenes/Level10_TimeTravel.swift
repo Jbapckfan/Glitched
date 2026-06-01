@@ -253,11 +253,18 @@ final class TimeTravelScene: BaseLevelScene, SKPhysicsContactDelegate {
         titleNode?.position = CGPoint(x: 80, y: titleY)
         titleUnderline?.position = CGPoint(x: 80, y: titleY)
 
-        // Keep the discovery panel pinned to the L13/L12 anchor (topSafeY - 70)
-        // so it reads as the same convention across the World 1/2 levels. It is
-        // only 60pt tall and self-removes after 5s; centering it horizontally
-        // keeps it clear of the left-anchored title.
-        instructionPanel?.position = CGPoint(x: size.width / 2, y: topSafeY - 70)
+        // OVERLAP FIX: the discovery panel is a CENTERED 280-wide / 60-tall card.
+        // At the old L13/L12 anchor (topSafeY - 70) its rect spans
+        // x[w/2-140, w/2+140] = x[55,335] on iPhone 390 and y[topSafeY-100,
+        // topSafeY-40] = y[685,745] — which COLLIDES with both the left-anchored
+        // TITLE band (x[80,~210], y[~735,785]) and the top-RIGHT 88x88 PAUSE
+        // reserve (x[~302,390], y[~697,785]). Drop the panel's centre to
+        // topSafeY - 130 so its TOP edge is topSafeY - 100 (y[685-30..685+30]
+        // = y[655,685] band moves fully under the title's bottom and below the
+        // pause button's bottom). Zero rect overlap with TITLE or PAUSE on
+        // iPhone 390/402 and iPad 1024, while staying horizontally centred and
+        // clear of the left-anchored title column.
+        instructionPanel?.position = CGPoint(x: size.width / 2, y: topSafeY - 130)
     }
 
     override func didUpdateSafeArea() {
@@ -712,8 +719,10 @@ final class TimeTravelScene: BaseLevelScene, SKPhysicsContactDelegate {
     private func showInstructionPanel() {
         instructionPanel = SKNode()
         // Initial position; repositioned by repositionTopHUD once safe-area
-        // insets are known. Matches the L13/L12 discovery panel anchor.
-        instructionPanel?.position = CGPoint(x: size.width / 2, y: topSafeY - 70)
+        // insets are known. Seeded at the same below-the-title anchor used by
+        // repositionTopHUD (topSafeY - 130) so it never flashes over the TITLE
+        // band or the top-right PAUSE reserve before the first layout pass.
+        instructionPanel?.position = CGPoint(x: size.width / 2, y: topSafeY - 130)
         instructionPanel?.zPosition = 300
         addChild(instructionPanel!)
 

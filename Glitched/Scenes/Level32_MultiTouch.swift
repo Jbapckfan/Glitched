@@ -819,7 +819,18 @@ final class MultiTouchScene: BaseLevelScene, SKPhysicsContactDelegate {
         let container = SKNode()
         container.zPosition = 8500
         container.alpha = 0
-        container.position = CGPoint(x: 0, y: size.height * 0.4)
+        // OVERLAP FIX: the previous anchor (camera-local y = size.height*0.4 ->
+        // scene-Y ~size.height*0.9) put this 30pt-tall, up-to-334pt-wide centered
+        // banner at scene y[744.6,774.6] on iPhone 390x844, which COLLIDED with
+        // both the left-anchored TITLE band (x[80,210], y[topSafeY-44,topSafeY-2]
+        // = [753,795]) and the top-RIGHT pause zone (x[~302,374], y[745,789]).
+        // The widest commentary ("HOW MANY FINGERS DO YOU HAVE, EXACTLY?") fires
+        // as early as 3 active touches, so this can flash over the HUD mid-play.
+        // Re-anchor so the banner's TOP edge sits at topSafeY-105 — fully below
+        // the title band's bottom (~topSafeY-44) and below the pause zone — with
+        // zero rect overlap on iPhone 390/402 and iPad 1024. Centered horizontally
+        // (camera-local x=0) it also stays clear of the top-trailing pause column.
+        container.position = CGPoint(x: 0, y: (topSafeY - 120) - size.height / 2)
 
         let bg = SKShapeNode(rectOf: CGSize(width: CGFloat(text.count) * 8 + 30, height: 30), cornerRadius: 5)
         bg.fillColor = SKColor.black.withAlphaComponent(0.8)

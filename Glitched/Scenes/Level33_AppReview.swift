@@ -333,12 +333,21 @@ final class AppReviewScene: BaseLevelScene, SKPhysicsContactDelegate {
 
     private func showIntroPanel() {
         let panel = SKNode()
-        panel.position = CGPoint(x: size.width / 2, y: topSafeY - 100)
+        // HUD overlap fix: this centered t=0 instruction panel (280 wide) spans the
+        // same horizontal band as the top-leading "LEVEL 33" title. At the previous
+        // y = topSafeY-100 its top edge sat at ~topSafeY-65, level with the subtitle's
+        // bottom -- a vertical near-collision. Drop the panel so its top edge is at
+        // topSafeY-95 (<= topSafeY-90), fully BELOW the title band, on iPhone
+        // 390x844 / 402x874 and iPad 1024x1366. Panel height is 70 (half = 35), so
+        // center y = topSafeY-130 puts the top at topSafeY-95 with ~31pt clearance.
+        panel.position = CGPoint(x: size.width / 2, y: topSafeY - 130)
         panel.zPosition = 300
         addChild(panel)
         introSign = panel
 
-        let bg = SKShapeNode(rectOf: CGSize(width: 300, height: 70), cornerRadius: 8)
+        // Narrowed 300 -> 280 to match the reserved discovery-panel width and keep
+        // both edges inside the safe area on a 320pt-class device.
+        let bg = SKShapeNode(rectOf: CGSize(width: 280, height: 70), cornerRadius: 8)
         bg.fillColor = fillColor
         bg.strokeColor = strokeColor
         bg.lineWidth = lineWidth

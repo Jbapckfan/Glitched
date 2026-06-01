@@ -204,7 +204,14 @@ final class AirplaneModeScene: BaseLevelScene, SKPhysicsContactDelegate {
 
     private func createAirplaneIndicator() {
         airplaneIcon = SKNode()
-        airplaneIcon.position = CGPoint(x: size.width - 60, y: topSafeY - 20)
+        // Anchor LEFT of the reserved top-right pause zone (trailing safe-area +
+        // ~88x88, i.e. x >= width-88). The body ellipse is 40pt wide (extends
+        // 20pt left of origin) and the ON/OFF status label sits below it, so
+        // origin at width-118 keeps the whole indicator (body x ≈ [width-138,
+        // width-98]) clear of the pause button on both iPhone 390 and iPad 1024.
+        // Previously origin (width-60) put the body at x[width-80, width-40],
+        // fully inside the reserved pause zone — a collision on every device.
+        airplaneIcon.position = CGPoint(x: size.width - 118, y: topSafeY - 20)
         airplaneIcon.zPosition = 200
         addChild(airplaneIcon)
 
@@ -250,8 +257,14 @@ final class AirplaneModeScene: BaseLevelScene, SKPhysicsContactDelegate {
     }
 
     private func showInstructionPanel() {
+        // Centered 280-wide panel: x ≈ [w/2-140, w/2+140] (iPhone 390 → x[55,335]).
+        // That column overlaps both the title (top-left) and the airplane HUD
+        // indicator (top-right, now at width-118). Drop the panel a full band
+        // below the title/HUD row so its top edge (center+40) sits clear of the
+        // title baseline AND the indicator's ON/OFF status label. Panel spans
+        // y[topSafeY-150, topSafeY-70]; title/HUD live at y >= topSafeY-50.
         let panel = SKNode()
-        panel.position = CGPoint(x: size.width / 2, y: topSafeY - 90)
+        panel.position = CGPoint(x: size.width / 2, y: topSafeY - 110)
         panel.zPosition = 300
         addChild(panel)
 
