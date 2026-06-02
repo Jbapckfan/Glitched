@@ -807,23 +807,12 @@ final class TimeTravelScene: BaseLevelScene, SKPhysicsContactDelegate {
     }
 
     private func showCommentaryText(_ text: String) {
-        let label = SKLabelNode(text: text)
-        label.fontName = "Menlo-Bold"
-        label.fontSize = 12
-        label.fontColor = strokeColor
-        label.position = CGPoint(x: size.width / 2, y: size.height / 2 + 80)
-        label.zPosition = 500
-        label.alpha = 0
-        label.name = "return_commentary"
-        addChild(label)
-
-        label.run(.sequence([
-            .wait(forDuration: 2.0),
-            .fadeIn(withDuration: 0.3),
-            .wait(forDuration: 3.5),
-            .fadeOut(withDuration: 0.5),
-            .removeFromParent()
-        ]))
+        // 4th-wall narrator aside ("the OS talks to you"): the dry/intimate
+        // "you left and came back" register. Migrated to the shared
+        // GlitchedNarrator (lower-center safe band, typewriter + RGB split,
+        // full opacity, reduce-motion aware) from an ad-hoc upper-center
+        // SKLabelNode. Fired at the same trigger point (right after time passes).
+        GlitchedNarrator.present(text, in: self, style: .whisper)
     }
 
     private func showSyncingAnimation(completion: @escaping () -> Void) {

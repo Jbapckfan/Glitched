@@ -602,44 +602,15 @@ final class AirDropScene: BaseLevelScene, SKPhysicsContactDelegate {
             ]))
         }
 
-        showFourthWallMessage(
-            "YOU ROTATED ME THROUGH ANOTHER\nAPP TO READ ME. I LIVE EVERYWHERE NOW."
+        GlitchedNarrator.present(
+            "YOU ROTATED ME THROUGH ANOTHER APP TO READ ME. I LIVE EVERYWHERE NOW.",
+            in: self,
+            style: .boss
         )
 
         JuiceManager.shared.flash(color: .white, duration: 0.3)
         HapticManager.shared.victory()
         AudioManager.shared.playVictory()
-    }
-
-    private func showFourthWallMessage(_ text: String) {
-        let container = SKNode()
-        container.position = CGPoint(x: size.width / 2, y: size.height / 2)
-        container.zPosition = 1000
-        addChild(container)
-
-        let bg = SKShapeNode(rectOf: CGSize(width: 340, height: 74), cornerRadius: 8)
-        bg.fillColor = strokeColor
-        bg.strokeColor = fillColor
-        bg.lineWidth = 2
-        container.addChild(bg)
-
-        let lines = text.components(separatedBy: "\n")
-        for (i, line) in lines.enumerated() {
-            let label = SKLabelNode(text: line)
-            label.fontName = "Menlo-Bold"
-            label.fontSize = 10
-            label.fontColor = fillColor
-            label.position = CGPoint(x: 0, y: 10 - CGFloat(i) * 18)
-            container.addChild(label)
-        }
-
-        container.alpha = 0
-        container.run(.sequence([
-            .fadeIn(withDuration: 0.3),
-            .wait(forDuration: 4),
-            .fadeOut(withDuration: 0.5),
-            .removeFromParent()
-        ]))
     }
 
     // MARK: - Input

@@ -55,7 +55,13 @@ final class VolumeScene: BaseLevelScene, SKPhysicsContactDelegate {
 
     private var volumeIndicator: SKNode!
 
-    // Wolf sleep talking
+    // Wolf sleep talking — a CONTEXTUAL 4th-wall aside that visibly emanates
+    // from the sleeping wolf, so it stays a positioned label anchored above the
+    // creature rather than the shared lower-center GlitchedNarrator band (which
+    // would collide with the bottom difficulty-hint instruction panel and the
+    // bottom-right exit arrow). The single tracked reference guarantees the
+    // previous bubble is torn down before a new one appears, so the line never
+    // renders twice over itself.
     private var sleepTalkLabel: SKLabelNode?
     private var sleepTalkTimer: TimeInterval = 0
     private let sleepTalkInterval: TimeInterval = 4.0
@@ -899,7 +905,7 @@ final class VolumeScene: BaseLevelScene, SKPhysicsContactDelegate {
             }
         } else {
             sleepTalkTimer = 0
-            // Remove any existing sleep talk bubble
+            // Wolf is no longer sleeping: clear any lingering sleep-talk aside.
             sleepTalkLabel?.removeAllActions()
             sleepTalkLabel?.removeFromParent()
             sleepTalkLabel = nil
@@ -915,18 +921,32 @@ final class VolumeScene: BaseLevelScene, SKPhysicsContactDelegate {
     }
 
     private func showSleepTalk() {
-        // Remove previous bubble
+        // Tear down the previous bubble FIRST so two lines never render stacked
+        // over each other (the "rendered twice" duplicate).
         sleepTalkLabel?.removeAllActions()
         sleepTalkLabel?.removeFromParent()
+        sleepTalkLabel = nil
 
-        let label = SKLabelNode(fontNamed: "Menlo")
+        // The wolf's drowsy 4th-wall mutterings are CONTEXTUAL: they come from
+        // the sleeping creature, so the bubble is anchored just above the wolf's
+        // head (upper-center), NOT in the shared GlitchedNarrator lower-center
+        // band. That band is reserved for the bottom difficulty-hint instruction
+        // panel; routing this positional aside there made the line overlap that
+        // panel AND the bottom-right exit down-arrow. Center-x + above-wolf keeps
+        // it clear of the right-side volume HUD, the exit arrow, the top-left
+        // LEVEL title, and (with the higher Y offset) the "???" flood warning —
+        // on iPhone 390/402 and iPad 1024 alike. Wording and cycling order are
+        // preserved.
+        let label = SKLabelNode(fontNamed: VisualConstants.Fonts.secondary)
         label.text = sleepTalkLines[sleepTalkIndex % sleepTalkLines.count]
-        label.fontSize = 10 * visualScale
+        label.fontSize = 11 * visualScale
         label.fontColor = strokeColor
-        label.position = CGPoint(x: 0, y: 100 * visualScale)
+        label.horizontalAlignmentMode = .center
+        label.verticalAlignmentMode = .center
+        label.position = CGPoint(x: size.width / 2, y: activeGroundY + 160 * visualScale)
         label.zPosition = 200
         label.alpha = 0
-        creature.addChild(label)
+        addChild(label)
         sleepTalkLabel = label
 
         sleepTalkIndex += 1
@@ -1042,6 +1062,9 @@ final class VolumeScene: BaseLevelScene, SKPhysicsContactDelegate {
         super.willMove(from: view)
         volumeObserver?.invalidate()
         volumeObserver = nil
+        sleepTalkLabel?.removeAllActions()
+        sleepTalkLabel?.removeFromParent()
+        sleepTalkLabel = nil
         DeviceManagerCoordinator.shared.deactivateAll()
     }
 }

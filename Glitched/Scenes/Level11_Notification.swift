@@ -674,22 +674,11 @@ final class NotificationScene: BaseLevelScene, SKPhysicsContactDelegate {
         waitingIndicator?.removeFromParent()
         waitingIndicator = nil
 
-        fourthWallLabel?.removeFromParent()
-        let label = SKLabelNode(text: "THAT WASN'T ME. TAP THE BELL AGAIN.")
-        label.fontName = "Menlo-Bold"
-        label.fontSize = 11
-        label.fontColor = strokeColor
-        label.position = CGPoint(x: size.width / 2, y: size.height / 2 + 90)
-        label.zPosition = 500
-        label.alpha = 0
-        addChild(label)
-        fourthWallLabel = label
-        label.run(.sequence([
-            .fadeIn(withDuration: 0.25),
-            .wait(forDuration: 3.0),
-            .fadeOut(withDuration: 0.4),
-            .removeFromParent()
-        ]))
+        // In-character 4th-wall aside: the genuine GLITCHED sender disavows the
+        // spoofed "SYSTEM" alert. Routed through the shared narrator (lower-center
+        // safe band, full opacity, reduce-motion aware) instead of an ad-hoc
+        // mid-screen label. Wording preserved exactly.
+        GlitchedNarrator.present("THAT WASN'T ME. TAP THE BELL AGAIN.", in: self, style: .alert)
 
         let generator = UINotificationFeedbackGenerator()
         generator.notificationOccurred(.error)

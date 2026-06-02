@@ -1060,36 +1060,16 @@ final class OrientationScene: BaseLevelScene, SKPhysicsContactDelegate {
     }
 
     private func showDizzyCommentary() {
-        // Sit the commentary in the cleared top region (just under the safe
-        // inset, below where the title sits) so it doesn't stack on HUD text.
-        let topLocalY = min(60, instructionPanelLocalY() - 20)
-
-        let label = SKLabelNode(text: "I'M GETTING DIZZY.")
-        label.fontName = "Menlo-Bold"
-        label.fontSize = 14
-        label.fontColor = strokeColor
-        label.position = CGPoint(x: 0, y: topLocalY)
-        label.zPosition = 400
-        label.alpha = 0
-        worldNode.addChild(label)
-
-        let label2 = SKLabelNode(text: "ARE YOU DOING THIS ON THE BUS?")
-        label2.fontName = "Menlo-Bold"
-        label2.fontSize = 12
-        label2.fontColor = strokeColor
-        label2.position = CGPoint(x: 0, y: topLocalY - 20)
-        label2.zPosition = 400
-        label2.alpha = 0
-        worldNode.addChild(label2)
-
-        let fadeAction = SKAction.sequence([
-            .fadeIn(withDuration: 0.3),
-            .wait(forDuration: 3.0),
-            .fadeOut(withDuration: 0.5),
-            .removeFromParent()
-        ])
-        label.run(fadeAction)
-        label2.run(fadeAction)
+        // In-character 4th-wall aside (the OS noticing the player's real-world
+        // rotating). Routed through the shared narrator so it renders in the
+        // reserved lower-center band, full opacity, reduce-motion aware, clear of
+        // the title/pause/instruction panels — instead of the old ad-hoc labels
+        // stacked into the top region. Same trigger (3+ rotations in 5s).
+        GlitchedNarrator.present(
+            "I'M GETTING DIZZY. ARE YOU DOING THIS ON THE BUS?",
+            in: self,
+            style: .whisper
+        )
     }
 
     // MARK: - Touch Handling

@@ -44,6 +44,19 @@ final class FaceIDScene: BaseLevelScene, SKPhysicsContactDelegate {
     private var hasShownFourthWall = false
     private var isShowingExitNudge = false
 
+    // Release-build softlock guard. A player on a Face-ID-equipped device who
+    // declines/cancels the system biometric prompt would otherwise loop through
+    // "IMPOSTER DETECTED" forever — Face ID being the sole gate. After this many
+    // declines we proactively surface the on-screen software fallback (the same
+    // controls the global "CAN'T DO THIS?" hatch would eventually auto-surface),
+    // so authentication still genuinely gates the vault but a real biometric scan
+    // is never the *only* way through. Each fallback tap posts .faceIDResult(true)
+    // / .proximityFlipped(true), which routes back through advanceScanStep — the
+    // exact same code path a successful hardware scan takes.
+    private var faceIDDeclineCount = 0
+    private var hasSurfacedAuthFallback = false
+    private static let declinesBeforeFallback = 2
+
     private var scanAnimation: SKAction?
 
     override func configureScene() {
@@ -362,8 +375,30 @@ final class FaceIDScene: BaseLevelScene, SKPhysicsContactDelegate {
         if success {
             advanceScanStep()
         } else {
+            faceIDDeclineCount += 1
             showImposterAlert()
+            // After repeated declines/cancels of the real Face ID prompt, surface
+            // the software fallback so the player is never hard-gated on biometrics.
+            if faceIDDeclineCount >= Self.declinesBeforeFallback {
+                surfaceAuthFallback()
+            }
         }
+    }
+
+    /// Force the on-screen software fallback for the identity mechanics so a
+    /// player who can't / won't pass real Face ID can still complete the level.
+    /// Flips `.faceID` and `.proximity` into the AccessibilityOverlay fallback
+    /// path (their buttons post the same events a hardware scan/cover would),
+    /// without requiring the global Hardware-Free Mode setting to be pre-toggled.
+    private func surfaceAuthFallback() {
+        guard !hasSurfacedAuthFallback else { return }
+        hasSurfacedAuthFallback = true
+        AccessibilityManager.shared.forceHardwareFallback(for: .faceID)
+        AccessibilityManager.shared.forceHardwareFallback(for: .proximity)
+        // Point the existing mechanic HUD at the now-visible software fallback
+        // button (this is an instruction/affordance pointer, not a 4th-wall aside,
+        // so it stays an SKLabelNode rather than going through the narrator).
+        statusLabel.text = "USE ON-SCREEN ID BUTTON"
     }
 
     // MARK: - Imposter Detection (Failed Scan)
@@ -421,8 +456,13 @@ final class FaceIDScene: BaseLevelScene, SKPhysicsContactDelegate {
         run(.sequence([
             .wait(forDuration: 2),
             .run { [weak self] in
-                self?.statusLabel.text = "SCAN IDENTITY"
-                self?.startIdleScan()
+                guard let self else { return }
+                self.startIdleScan()
+                // Don't clobber the "USE ON-SCREEN ID BUTTON" guidance once the
+                // software fallback has been surfaced — keep pointing the player at it.
+                if !self.hasSurfacedAuthFallback {
+                    self.statusLabel.text = "SCAN IDENTITY"
+                }
             }
         ]))
 
@@ -509,38 +549,17 @@ final class FaceIDScene: BaseLevelScene, SKPhysicsContactDelegate {
     // MARK: - 4th Wall Text
 
     private func showFourthWallText() {
-        let panel = SKNode()
-        panel.position = CGPoint(x: size.width / 2, y: size.height / 2 + 80)
-        panel.zPosition = 500
-        panel.alpha = 0
-        addChild(panel)
-
-        let bg = SKShapeNode(rectOf: CGSize(width: 340, height: 50), cornerRadius: 6)
-        bg.fillColor = fillColor
-        bg.strokeColor = strokeColor
-        bg.lineWidth = lineWidth
-        panel.addChild(bg)
-
-        let line1 = SKLabelNode(text: "I KNOW WHAT YOU LOOK LIKE NOW.")
-        line1.fontName = "Menlo-Bold"
-        line1.fontSize = 10
-        line1.fontColor = strokeColor
-        line1.position = CGPoint(x: 0, y: 6)
-        panel.addChild(line1)
-
-        let line2 = SKLabelNode(text: "WE'RE PAST THAT BOUNDARY.")
-        line2.fontName = "Menlo-Bold"
-        line2.fontSize = 10
-        line2.fontColor = strokeColor
-        line2.position = CGPoint(x: 0, y: -10)
-        panel.addChild(line2)
-
-        panel.run(.sequence([
-            .fadeIn(withDuration: 0.2),
-            .wait(forDuration: 3.5),
-            .fadeOut(withDuration: 0.5),
-            .removeFromParent()
-        ]))
+        // Migrated from an ad-hoc upper-center SKLabelNode panel to the shared
+        // GlitchedNarrator. This is the in-character finale/meta beat — the OS
+        // confirming it has just captured your face — so it uses the `.boss`
+        // register and renders in the reserved lower-center safe band (clear of
+        // the title, pause, instruction panel, and the vault status HUD). Same
+        // trigger point (final unlock), same wording, just centralized presentation.
+        GlitchedNarrator.present(
+            "I KNOW WHAT YOU LOOK LIKE NOW. WE'RE PAST THAT BOUNDARY.",
+            in: self,
+            style: .boss
+        )
     }
 
     override func handleGameInput(_ event: GameInputEvent) {
@@ -549,15 +568,17 @@ final class FaceIDScene: BaseLevelScene, SKPhysicsContactDelegate {
             handleFaceIDResult(recognized)
         case .proximityFlipped(let isCovered):
             if isCovered && scanStep < 3 {
-                if !AuthenticationManager.shared.isBiometricAvailable {
-                    // Stop hint
+                if !AuthenticationManager.shared.isBiometricAvailable || hasSurfacedAuthFallback {
+                    // No biometrics (simulator / unsupported), OR the player has
+                    // opted into the software fallback after declining Face ID.
+                    // In both cases the proximity/cover signal is a direct success
+                    // so the level stays completable without a real biometric scan.
                     faceFrame.removeAction(forKey: "proximity_hint")
                     faceFrame.alpha = 1.0
-                    
-                    // Trigger success for the proximity interaction
-                    handleFaceIDResult(true)
+                    advanceScanStep()
                 } else {
-                    // Even if biometrics are available, covering the sensor can trigger the prompt
+                    // Biometrics available and the player hasn't opted out yet —
+                    // covering the sensor re-triggers the real Face ID prompt.
                     triggerFaceIDPrompt()
                 }
             }
@@ -638,6 +659,7 @@ final class FaceIDScene: BaseLevelScene, SKPhysicsContactDelegate {
             showExitNudge()
             return
         }
+        GlitchedNarrator.dismiss(in: self)
         succeedLevel()
         bit.run(.sequence([.fadeOut(withDuration: 0.5), .run { [weak self] in self?.transitionToNextLevel() }]))
     }

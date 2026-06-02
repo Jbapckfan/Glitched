@@ -562,35 +562,20 @@ final class StaticScene: BaseLevelScene, SKPhysicsContactDelegate {
                 }
             }
 
-            // Show neighbor commentary after first successful laser block
+            // Show neighbor commentary after first successful laser block.
+            // 4th-wall narrator aside (the OS noticing your racket) — routed
+            // through the shared narrator so it reads consistently in the
+            // reserved lower-center band instead of an ad-hoc upper-center label.
             if shouldBlock && !hasShownNeighborText {
                 hasShownNeighborText = true
                 notePlayerProgress()
-                showNeighborCommentary()
+                GlitchedNarrator.present("THE NEIGHBORS ARE STARTING TO WORRY.", in: self, style: .alert)
             }
 
             // Haptic feedback on state change
             let generator = UIImpactFeedbackGenerator(style: shouldBlock ? .light : .medium)
             generator.impactOccurred()
         }
-    }
-
-    private func showNeighborCommentary() {
-        let label = SKLabelNode(fontNamed: "Menlo-Bold")
-        label.text = "THE NEIGHBORS ARE STARTING TO WORRY."
-        label.fontSize = 11 * visualScale
-        label.fontColor = strokeColor
-        label.position = CGPoint(x: size.width / 2, y: size.height / 2 + 100 * layoutYScale)
-        label.zPosition = 300
-        label.alpha = 0
-        addChild(label)
-
-        label.run(.sequence([
-            .fadeIn(withDuration: 0.2),
-            .wait(forDuration: 3.0),
-            .fadeOut(withDuration: 0.5),
-            .removeFromParent()
-        ]))
     }
 
     // MARK: - Static Overlay
@@ -642,13 +627,19 @@ final class StaticScene: BaseLevelScene, SKPhysicsContactDelegate {
 
     private func showInstructionPanel() {
         instructionPanel = SKNode()
-        // Anchored BELOW the top-left "LEVEL 3" title band (offset 160 vs the
-        // title's 60) so the centered 230-wide panel never overlaps the title /
-        // underline rect on iPhone 390/402 (where x[91,299] previously abutted the
-        // title's x[73,179] with a ~0pt vertical gap). Top-right pause zone and the
-        // bottom-trailing fallback affordance are unaffected (panel is centered,
-        // high, and far from both). See updatePlaying() for the inverse-laser clue.
-        instructionPanel?.position = CGPoint(x: size.width / 2, y: size.height - 160 * layoutYScale)
+        // Anchored BELOW the top-left "LEVEL 3" title band (offset 180 vs the
+        // title's 60). The title now uses the wider/taller Courier display font
+        // (CourierNewPS-BoldMT) whose heavier glyph block + the underline sitting
+        // 10pt under the baseline crowded the panel's top border at the old 160
+        // offset (gap had shrunk to ~27pt on iPhone 390 and read as touching).
+        // Dropping the panel to offset 180 restores a clear vertical gap
+        // (~45pt iPhone 390, ~50pt iPhone 402, ~107pt iPad 1024) so the title
+        // descenders/underline fully clear the panel top. The centered 230-wide
+        // panel still never overlaps the title's left-aligned x-extent, and the
+        // top-right pause zone + bottom-trailing fallback affordance are
+        // unaffected (panel is centered, high, and far from both, and stays well
+        // above the gameplay course). See updatePlaying() for the inverse-laser clue.
+        instructionPanel?.position = CGPoint(x: size.width / 2, y: size.height - 180 * layoutYScale)
         instructionPanel?.setScale(visualScale)
         instructionPanel?.zPosition = 300
         addChild(instructionPanel!)

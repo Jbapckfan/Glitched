@@ -512,8 +512,10 @@ final class VoiceOverScene: BaseLevelScene, SKPhysicsContactDelegate {
         JuiceManager.shared.flash(color: .white, duration: 0.2)
         HapticManager.shared.collect()
 
-        showFourthWallMessage(
-            "PERCEPTION IS A SWITCH.\nSOLID TILES BEAR WEIGHT.\nTHE BARRED ONES ARE LIES."
+        GlitchedNarrator.present(
+            "PERCEPTION IS A SWITCH. SOLID TILES BEAR WEIGHT. THE BARRED ONES ARE LIES.",
+            in: self,
+            style: .boss
         )
     }
 
@@ -579,38 +581,6 @@ final class VoiceOverScene: BaseLevelScene, SKPhysicsContactDelegate {
         hint.zPosition = 200
         addChild(hint)
         hint.run(.sequence([.wait(forDuration: 5), .fadeOut(withDuration: 1), .removeFromParent()]))
-    }
-
-    private func showFourthWallMessage(_ text: String) {
-        let container = SKNode()
-        container.position = CGPoint(x: size.width / 2, y: size.height / 2)
-        container.zPosition = 1000
-        addChild(container)
-
-        let lines = text.components(separatedBy: "\n")
-        let h = CGFloat(lines.count) * 18 + 28
-        let bg = SKShapeNode(rectOf: CGSize(width: 330, height: h), cornerRadius: 8)
-        bg.fillColor = strokeColor
-        bg.strokeColor = fillColor
-        bg.lineWidth = 2
-        container.addChild(bg)
-
-        for (i, line) in lines.enumerated() {
-            let label = SKLabelNode(text: line)
-            label.fontName = "Menlo-Bold"
-            label.fontSize = 9
-            label.fontColor = fillColor
-            label.position = CGPoint(x: 0, y: (h / 2 - 20) - CGFloat(i) * 16)
-            container.addChild(label)
-        }
-
-        container.alpha = 0
-        container.run(.sequence([
-            .fadeIn(withDuration: 0.3),
-            .wait(forDuration: 4),
-            .fadeOut(withDuration: 0.5),
-            .removeFromParent()
-        ]))
     }
 
     // MARK: - Input

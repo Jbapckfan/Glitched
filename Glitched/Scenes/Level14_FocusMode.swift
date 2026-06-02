@@ -20,7 +20,6 @@ final class FocusModeScene: BaseLevelScene, SKPhysicsContactDelegate {
     private var exitDoorLocked = true
     private var exitBlocker: SKNode?
     private var calmOverlay: SKShapeNode?
-    private var focusTextLabel: SKLabelNode?
     private var orbitalAngles: [Int: CGFloat] = [:]  // hazard index -> current angle
     private var orbitalCenters: [Int: CGPoint] = [:]   // hazard index -> orbit center
     private let designWidth: CGFloat = 390
@@ -385,9 +384,10 @@ final class FocusModeScene: BaseLevelScene, SKPhysicsContactDelegate {
         exitDoorLocked = !hasFocusedOnce
         exitBlocker?.physicsBody?.categoryBitMask = exitDoorLocked ? PhysicsCategory.ground : 0
 
-        // 4th-wall text
+        // 4th-wall narrator line — the OS taunting the player when Focus lands.
+        // Antagonist declaration ("I AM THE DISTURBANCE") -> .boss register.
         if enabled {
-            showFocusText("DO NOT DISTURB? I AM THE DISTURBANCE.")
+            GlitchedNarrator.present("DO NOT DISTURB? I AM THE DISTURBANCE.", in: self, style: .boss)
         }
 
         // Calming visual effect: white overlay + slow particles
@@ -406,27 +406,6 @@ final class FocusModeScene: BaseLevelScene, SKPhysicsContactDelegate {
 
         let generator = UIImpactFeedbackGenerator(style: .soft)
         generator.impactOccurred()
-    }
-
-    private func showFocusText(_ text: String) {
-        focusTextLabel?.removeFromParent()
-
-        let label = SKLabelNode(text: text)
-        label.fontName = "Menlo-Bold"
-        label.fontSize = 11
-        label.fontColor = strokeColor
-        label.position = CGPoint(x: size.width / 2, y: size.height / 2 + 70)
-        label.zPosition = 500
-        label.alpha = 0
-        addChild(label)
-        focusTextLabel = label
-
-        label.run(.sequence([
-            .fadeIn(withDuration: 0.3),
-            .wait(forDuration: 3.0),
-            .fadeOut(withDuration: 0.5),
-            .removeFromParent()
-        ]))
     }
 
     override func handleGameInput(_ event: GameInputEvent) {

@@ -48,11 +48,6 @@ final class ChargingScene: BaseLevelScene, SKPhysicsContactDelegate {
     private var plugIsRideable = false
     private var lastTrackedPlugY: CGFloat = 0
 
-    // 4th-wall commentary
-    private var chargingCommentaryLabel: SKLabelNode?
-    private var hasShownPluggedText = false
-    private var hasShownUnpluggedText = false
-
     // MARK: - Configuration
 
     override func configureScene() {
@@ -811,42 +806,12 @@ final class ChargingScene: BaseLevelScene, SKPhysicsContactDelegate {
             isCurrentlyCharging = isPluggedIn
             if isPluggedIn {
                 triggerPlugAnimation()
-                showChargingCommentary("FEEDING ME ELECTRICITY? HOW... NURTURING.")
+                GlitchedNarrator.present("FEEDING ME ELECTRICITY? HOW... NURTURING.", in: self, style: .alert)
             } else if hasPlugArrived {
-                showChargingCommentary("COLD. SO COLD.")
+                GlitchedNarrator.present("COLD. SO COLD.", in: self, style: .alert)
             }
         default:
             break
-        }
-    }
-
-    private func showChargingCommentary(_ text: String) {
-        // Remove previous commentary
-        chargingCommentaryLabel?.removeAllActions()
-        chargingCommentaryLabel?.removeFromParent()
-
-        let label = SKLabelNode(fontNamed: "Menlo-Bold")
-        label.text = text
-        label.fontSize = 11
-        label.fontColor = strokeColor
-        // Raised to h/2+90 so the transient 4th-wall commentary clears the
-        // battery objective indicator's hint label (top ~h/2+53) instead of
-        // crowding it.
-        label.position = CGPoint(x: size.width / 2, y: size.height / 2 + 90)
-        label.zPosition = 300
-        label.alpha = 0
-        addChild(label)
-        chargingCommentaryLabel = label
-
-        label.run(.sequence([
-            .fadeIn(withDuration: 0.2),
-            .wait(forDuration: 3.0),
-            .fadeOut(withDuration: 0.5),
-            .removeFromParent()
-        ])) { [weak self] in
-            if self?.chargingCommentaryLabel === label {
-                self?.chargingCommentaryLabel = nil
-            }
         }
     }
 

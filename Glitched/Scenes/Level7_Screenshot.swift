@@ -788,35 +788,15 @@ final class ScreenshotScene: BaseLevelScene, SKPhysicsContactDelegate {
         guard !hasShownFirstScreenshotCommentary else { return }
         hasShownFirstScreenshotCommentary = true
 
-        let label = SKLabelNode(text: "YOU JUST SCREENSHOTTED ME.")
-        label.fontName = "Menlo-Bold"
-        label.fontSize = 13
-        label.fontColor = strokeColor
-        // Anchor the 4th-wall beat just above the play zone (the just-frozen
-        // bridge the message reacts to), not scene center, so on iPad it doesn't
-        // float ~550pt above where the player is looking.
-        label.position = CGPoint(x: size.width / 2, y: bridgeY + 140)
-        label.zPosition = 400
-        label.alpha = 0
-        addChild(label)
-
-        let label2 = SKLabelNode(text: "THAT'S IN YOUR CAMERA ROLL NOW. FOREVER.")
-        label2.fontName = "Menlo-Bold"
-        label2.fontSize = 11
-        label2.fontColor = strokeColor
-        label2.position = CGPoint(x: size.width / 2, y: bridgeY + 120)
-        label2.zPosition = 400
-        label2.alpha = 0
-        addChild(label2)
-
-        let fadeAction = SKAction.sequence([
-            .fadeIn(withDuration: 0.3),
-            .wait(forDuration: 3.0),
-            .fadeOut(withDuration: 0.5),
-            .removeFromParent()
-        ])
-        label.run(fadeAction)
-        label2.run(fadeAction)
+        // 4th-wall narrator beat: the OS reacts to being screenshotted. Routed
+        // through the shared GlitchedNarrator so it renders in the reserved
+        // lower-center band (clear of the title / pause / instruction panels)
+        // with the consistent typewriter + RGB-split voice. Wording preserved.
+        GlitchedNarrator.present(
+            "YOU JUST SCREENSHOTTED ME. THAT'S IN YOUR CAMERA ROLL NOW. FOREVER.",
+            in: self,
+            style: .alert
+        )
     }
 
     private func freezeBridge() {

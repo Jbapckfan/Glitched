@@ -303,10 +303,16 @@ final class AppSwitcherScene: BaseLevelScene, SKPhysicsContactDelegate {
         let generator = UIImpactFeedbackGenerator(style: .medium)
         generator.impactOccurred()
 
-        // 4th wall text on first peek
+        // 4th wall text on first peek — the OS taunting you for hovering over
+        // the app switcher. Routed through the shared narrator (lower-center
+        // band, full opacity, reduce-motion aware) instead of an ad-hoc label.
         if !hasShownFourthWall {
             hasShownFourthWall = true
-            showFourthWallText()
+            GlitchedNarrator.present(
+                "I SEE YOU HOVERING OVER THAT OTHER APP. DON'T YOU DARE SWITCH.",
+                in: self,
+                style: .alert
+            )
         }
     }
 
@@ -358,43 +364,6 @@ final class AppSwitcherScene: BaseLevelScene, SKPhysicsContactDelegate {
             line.removeFromParent()
         }
         trajectoryLines.removeAll()
-    }
-
-    // MARK: - 4th Wall Text
-
-    private func showFourthWallText() {
-        let panel = SKNode()
-        panel.position = CGPoint(x: size.width / 2, y: size.height / 2 + 60)
-        panel.zPosition = 500
-        panel.alpha = 0
-        addChild(panel)
-
-        let bg = SKShapeNode(rectOf: CGSize(width: 340, height: 50), cornerRadius: 6)
-        bg.fillColor = fillColor
-        bg.strokeColor = strokeColor
-        bg.lineWidth = lineWidth
-        panel.addChild(bg)
-
-        let line1 = SKLabelNode(text: "I SEE YOU HOVERING OVER THAT OTHER APP.")
-        line1.fontName = "Menlo-Bold"
-        line1.fontSize = 9
-        line1.fontColor = strokeColor
-        line1.position = CGPoint(x: 0, y: 6)
-        panel.addChild(line1)
-
-        let line2 = SKLabelNode(text: "DON'T YOU DARE SWITCH.")
-        line2.fontName = "Menlo-Bold"
-        line2.fontSize = 9
-        line2.fontColor = strokeColor
-        line2.position = CGPoint(x: 0, y: -10)
-        panel.addChild(line2)
-
-        panel.run(.sequence([
-            .fadeIn(withDuration: 0.2),
-            .wait(forDuration: 3.5),
-            .fadeOut(withDuration: 0.5),
-            .removeFromParent()
-        ]))
     }
 
     private func exitPeekMode() {

@@ -19,7 +19,6 @@ final class BatteryPercentScene: BaseLevelScene, SKPhysicsContactDelegate {
     private var currentBattery: Float = 100
     private var steppingStones: [SKNode] = []
     private var batteryLabel: SKLabelNode!
-    private var fourthWallLabel: SKNode?
 
     // Hidden exit below platform 5
     private var hiddenExitNode: SKNode?
@@ -115,8 +114,16 @@ final class BatteryPercentScene: BaseLevelScene, SKPhysicsContactDelegate {
             steppingStones.append(stone)
         }
 
-        // Fake exit at the end (platforms 7-10 lead here - dead end)
-        let fakeExitPos = CGPoint(x: size.width - 50, y: groundY + 30)
+        // Fake exit at the end (platforms 7-10 lead here - dead end).
+        // OVERLAP FIX: on iPhone the 10 stones compress (spacing≈20pt) so the last
+        // "100%" stone lands at x≈332; the door at width-50/groundY+30 sat on top of
+        // that stone's percentage label, clipping its trailing chars. Keep a 12pt
+        // screen-edge margin (width-32) AND raise the door (+50) so it clears the
+        // 100%/90% stone labels by ~16-21pt vertically — the corner is too cramped on
+        // iPhone for horizontal separation alone. No-op concern on iPad (stones spaced
+        // ≈82pt, door far clear either way). Reachability unaffected: it is a dead-end
+        // trap and the raised door (~55pt rise) is well within the ~91pt jump apex.
+        let fakeExitPos = CGPoint(x: size.width - 32, y: groundY + 50)
         createFakeExit(at: fakeExitPos)
 
         // Hidden REAL exit below platform 5 - only reachable when platforms 6+ vanish
@@ -406,41 +413,18 @@ final class BatteryPercentScene: BaseLevelScene, SKPhysicsContactDelegate {
     }
 
     private func showFourthWall(percentage: Float) {
-        fourthWallLabel?.removeFromParent()
-
-        // HUD FIX: this 4th-wall commentary was one ~58-char line CENTERED at
-        // (size.width/2, y:30). At fontSize 8 Menlo (~4.8px/char) it spanned ~278px,
-        // so on iPhone 390/402 its right end (x up to ~334) crossed under the bottom-right
-        // SIM DRAIN button (box x[size.width-105, size.width-15] = [285,375], y[35,65]) —
-        // the text's top glyphs (~y38) collided with the button's bottom (y35).
-        // RELIABLE FIX: left-align the text and anchor it to the LEFT margin, AND wrap it
-        // into two short lines so the right edge stays far left of the button column
-        // (each line ~30 chars -> ~144px wide; right edge ~x164 << button left x285 on 390,
-        // and even on a 1024-wide iPad the button is at the right while text hugs the left).
-        // Vertical: lines sit at y34/y20 on the empty bottom-left; nothing renders there
-        // (ground/platforms are at y>=60 in the center; button is bottom-right only).
-        let container = SKNode()
-        container.position = CGPoint(x: 20, y: 0)
-        container.zPosition = 150
-
-        let line1 = SKLabelNode(text: "YOUR BATTERY IS AT \(Int(percentage))%.")
-        line1.fontName = "Menlo"
-        line1.fontSize = 8
-        line1.fontColor = strokeColor.withAlphaComponent(0.5)
-        line1.horizontalAlignmentMode = .left
-        line1.position = CGPoint(x: 0, y: 34)
-        container.addChild(line1)
-
-        let line2 = SKLabelNode(text: "THIS LEVEL IS \(Int(percentage))% COMPLETE. COINCIDENCE?")
-        line2.fontName = "Menlo"
-        line2.fontSize = 8
-        line2.fontColor = strokeColor.withAlphaComponent(0.5)
-        line2.horizontalAlignmentMode = .left
-        line2.position = CGPoint(x: 0, y: 20)
-        container.addChild(line2)
-
-        addChild(container)
-        fourthWallLabel = container
+        // 4th-wall narrator aside ("the OS talks to you"). Migrated from an
+        // ad-hoc faded SKLabelNode pair to the shared GlitchedNarrator presenter
+        // (consistent voice, legible full-opacity reveal, HUD-safe lower-center
+        // band, auto-fade). Same trigger point — fires on every battery update.
+        // Wording preserved verbatim; presentation moves only. .whisper register
+        // for the dry "coincidence?" aside.
+        let pct = Int(percentage)
+        GlitchedNarrator.present(
+            "YOUR BATTERY IS AT \(pct)%. THIS LEVEL IS \(pct)% COMPLETE. COINCIDENCE?",
+            in: self,
+            style: .whisper
+        )
     }
 
     private func simulateBatteryDrain() {
@@ -452,15 +436,12 @@ final class BatteryPercentScene: BaseLevelScene, SKPhysicsContactDelegate {
     }
 
     private func showFakeExitTaunt() {
-        let taunt = SKLabelNode(text: "NICE TRY. THE REAL EXIT IS ELSEWHERE.")
-        taunt.fontName = "Menlo-Bold"
-        taunt.fontSize = 10
-        taunt.fontColor = strokeColor
-        taunt.position = CGPoint(x: size.width / 2, y: size.height / 2)
-        taunt.zPosition = 400
-        addChild(taunt)
-
-        taunt.run(.sequence([.wait(forDuration: 3), .fadeOut(withDuration: 0.5), .removeFromParent()]))
+        // 4th-wall narrator taunt ("the OS talks to you") fired when the player
+        // touches the fake exit. Migrated from an ad-hoc center-screen SKLabelNode
+        // to the shared GlitchedNarrator (.alert register — it's a "you got it
+        // wrong" warning beat). Same trigger point (fake_exit_trigger contact);
+        // wording preserved verbatim.
+        GlitchedNarrator.present("NICE TRY. THE REAL EXIT IS ELSEWHERE.", in: self, style: .alert)
     }
 
     // MARK: - Game Input
@@ -548,6 +529,8 @@ final class BatteryPercentScene: BaseLevelScene, SKPhysicsContactDelegate {
     }
 
     private func handleExit() {
+        // Clear any lingering narrator aside/taunt before the success transition.
+        GlitchedNarrator.dismiss(in: self)
         succeedLevel()
         bit.run(.sequence([.fadeOut(withDuration: 0.5), .run { [weak self] in self?.transitionToNextLevel() }]))
     }

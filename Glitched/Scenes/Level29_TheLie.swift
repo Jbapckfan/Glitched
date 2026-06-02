@@ -366,33 +366,18 @@ final class TheLieScene: BaseLevelScene, SKPhysicsContactDelegate {
     }
 
     private func showRevealText() {
-        // "DID YOU REALLY THINK THERE WAS NO TRICK?"
-        let container = SKNode()
-        container.position = CGPoint(x: 0, y: 50)
-        container.zPosition = 1000
-        gameCamera?.addChild(container)
+        // 4th-wall narrator beat — the OS dropping the mask the instant you
+        // reach the "exit" it promised. Migrated from an ad-hoc camera-anchored
+        // black box + faint 10pt SKLabelNode to the shared GlitchedNarrator
+        // (consistent voice, legible full-opacity reveal, HUD-safe lower-center
+        // band, auto-fade). Same trigger point (0.8s into the glitch sequence).
+        // This is THE meta level's first 4th-wall hit, so it lands in the .boss
+        // register — slow, heavy, red — to sell that the "no gimmick" promise
+        // was the gimmick. Wording preserved verbatim.
+        GlitchedNarrator.present("DID YOU REALLY THINK THERE WAS NO TRICK?", in: self, style: .boss)
 
-        let bg = SKShapeNode(rectOf: CGSize(width: 350, height: 50), cornerRadius: 6)
-        bg.fillColor = strokeColor
-        bg.strokeColor = fillColor
-        bg.lineWidth = 2
-        container.addChild(bg)
-
-        let label = SKLabelNode(text: "DID YOU REALLY THINK THERE WAS NO TRICK?")
-        label.fontName = "Menlo-Bold"
-        label.fontSize = 10
-        label.fontColor = fillColor
-        container.addChild(label)
-
-        container.alpha = 0
-        container.run(.sequence([
-            .fadeIn(withDuration: 0.2),
-            .wait(forDuration: 2.5),
-            .fadeOut(withDuration: 0.3),
-            .removeFromParent()
-        ]))
-
-        // Shake fake exit door violently
+        // Shake fake exit door violently — POINTS AT the fake door element, so
+        // it stays as a direct on-element effect (not narrator commentary).
         fakeExitDoor?.run(.sequence([
             .repeat(.sequence([
                 .moveBy(x: 3, y: 0, duration: 0.03),
@@ -518,37 +503,37 @@ final class TheLieScene: BaseLevelScene, SKPhysicsContactDelegate {
     }
 
     private func showFourthWallMessage() {
-        let container = SKNode()
-        container.position = CGPoint(x: 0, y: 0)
-        container.zPosition = 1000
-        gameCamera?.addChild(container)
-
-        let bg = SKShapeNode(rectOf: CGSize(width: 340, height: 70), cornerRadius: 8)
-        bg.fillColor = strokeColor
-        bg.strokeColor = fillColor
-        bg.lineWidth = 2
-        container.addChild(bg)
-
-        let lines = [
-            "THE REAL PUZZLE WAS WONDERING",
-            "IF THERE WAS A PUZZLE.",
-            "YOUR DOUBT WAS THE MECHANIC."
-        ]
-        for (i, line) in lines.enumerated() {
-            let label = SKLabelNode(text: line)
-            label.fontName = "Menlo-Bold"
-            label.fontSize = 9
-            label.fontColor = fillColor
-            label.position = CGPoint(x: 0, y: 16 - CGFloat(i) * 16)
-            container.addChild(label)
-        }
-
-        container.alpha = 0
-        container.run(.sequence([
-            .fadeIn(withDuration: 0.3),
-            .wait(forDuration: 5),
-            .fadeOut(withDuration: 0.5),
-            .removeFromParent()
+        // The META payoff — the whole reason this level exists. Migrated from an
+        // ad-hoc 3-line camera-anchored box (9pt, faint) to the shared
+        // GlitchedNarrator in the .boss register so the twist lands HARD:
+        // slow heavy typewriter, red, full opacity, HUD-safe lower-center band.
+        // Same trigger point (fires +5s into the reveal sequence). Rather than
+        // dumping all three lines at once, the OS *builds* the realization beat
+        // by beat — "...was the gimmick" is the punchline, so it arrives last,
+        // alone, after a held pause. Wording preserved verbatim (only the line
+        // break between "WONDERING" / "IF THERE WAS A PUZZLE." is removed since
+        // the narrator wraps automatically). This sells the absence-of-a-gimmick
+        // as intentional, not empty.
+        run(.sequence([
+            .run { [weak self] in
+                guard let self else { return }
+                GlitchedNarrator.present(
+                    "THE REAL PUZZLE WAS WONDERING IF THERE WAS A PUZZLE.",
+                    in: self,
+                    style: .boss
+                )
+            },
+            // Hold for the first line's reveal + read, then deliver the
+            // punchline on its own so it hits clean.
+            .wait(forDuration: 5.5),
+            .run { [weak self] in
+                guard let self else { return }
+                GlitchedNarrator.present(
+                    "YOUR DOUBT WAS THE MECHANIC.",
+                    in: self,
+                    style: .boss
+                )
+            }
         ]))
     }
 
@@ -660,6 +645,9 @@ final class TheLieScene: BaseLevelScene, SKPhysicsContactDelegate {
 
     override func willMove(from view: SKView) {
         super.willMove(from: view)
+        // Clear any narrator line still on screen so it doesn't bleed across the
+        // scene transition (the .boss meta beats can be mid-hold on exit).
+        GlitchedNarrator.dismiss(in: self)
         DeviceManagerCoordinator.shared.deactivateAll()
     }
 }

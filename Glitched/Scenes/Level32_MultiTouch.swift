@@ -614,9 +614,9 @@ final class MultiTouchScene: BaseLevelScene, SKPhysicsContactDelegate {
     private func evaluatePlateGroups() {
         // Count total active touches for commentary
         let totalActive = pressurePlates.filter { $0.isActive }.count
-        if totalActive >= 2 && !shown2Touch { shown2Touch = true; showCommentary("TWO POINTS OF CONTACT. INTERESTING.") }
-        if totalActive >= 3 && !shown3Touch { shown3Touch = true; showCommentary("HOW MANY FINGERS DO YOU HAVE, EXACTLY?") }
-        if totalActive >= 4 && !shown4Touch { shown4Touch = true; showCommentary("YOU LOOK RIDICULOUS RIGHT NOW.") }
+        if totalActive >= 2 && !shown2Touch { shown2Touch = true; GlitchedNarrator.present("TWO POINTS OF CONTACT. INTERESTING.", in: self, style: .whisper) }
+        if totalActive >= 3 && !shown3Touch { shown3Touch = true; GlitchedNarrator.present("HOW MANY FINGERS DO YOU HAVE, EXACTLY?", in: self, style: .whisper) }
+        if totalActive >= 4 && !shown4Touch { shown4Touch = true; GlitchedNarrator.present("YOU LOOK RIDICULOUS RIGHT NOW.", in: self, style: .whisper) }
 
         for group in 1...3 {
             let platesInGroup = pressurePlates.filter { $0.group == group }
@@ -774,7 +774,10 @@ final class MultiTouchScene: BaseLevelScene, SKPhysicsContactDelegate {
 
         run(.sequence([
             .wait(forDuration: 1.5),
-            .run { [weak self] in self?.showCommentary("FULL CONTACT ACHIEVED.") },
+            .run { [weak self] in
+                guard let self else { return }
+                GlitchedNarrator.present("FULL CONTACT ACHIEVED.", in: self, style: .boss)
+            },
         ]))
     }
 

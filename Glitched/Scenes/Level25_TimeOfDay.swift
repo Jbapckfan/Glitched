@@ -38,7 +38,6 @@ final class TimeOfDayScene: BaseLevelScene, SKPhysicsContactDelegate {
     // Time display
     private var timeLabel: SKLabelNode!
     private var modeLabel: SKLabelNode!
-    private var fourthWallLabel: SKLabelNode?
 
     // Override toggle
     private var toggleButton: SKNode?
@@ -464,20 +463,9 @@ final class TimeOfDayScene: BaseLevelScene, SKPhysicsContactDelegate {
         // Add glitch overlay
         addGlitchOverlay()
 
-        // Secret hour message
-        let secretMsg = SKLabelNode(text: "YOU SHOULDN'T BE PLAYING AT THIS HOUR...")
-        secretMsg.fontName = "Menlo-Bold"
-        secretMsg.fontSize = 11
-        secretMsg.fontColor = SKColor(red: 0.8, green: 0.0, blue: 0.0, alpha: 0.8)
-        secretMsg.position = CGPoint(x: size.width / 2, y: size.height / 2 + 60)
-        secretMsg.zPosition = 400
-        secretMsg.name = "secret_msg"
-        addChild(secretMsg)
-
-        secretMsg.run(.repeatForever(.sequence([
-            .fadeAlpha(to: 0.3, duration: 1.5),
-            .fadeAlpha(to: 0.8, duration: 1.5)
-        ])))
+        // Secret hour message — the OS speaking to you at 3:33 AM. Routed
+        // through the shared narrator (eerie meta beat -> .boss).
+        GlitchedNarrator.present("YOU SHOULDN'T BE PLAYING AT THIS HOUR...", in: self, style: .boss)
     }
 
     private func addGhostElements() {
@@ -548,8 +536,6 @@ final class TimeOfDayScene: BaseLevelScene, SKPhysicsContactDelegate {
             ghost.removeFromParent()
         }
         ghostNodes.removeAll()
-
-        childNode(withName: "secret_msg")?.removeFromParent()
     }
 
     private func addGlitchOverlay() {
@@ -585,23 +571,15 @@ final class TimeOfDayScene: BaseLevelScene, SKPhysicsContactDelegate {
     }
 
     private func showFourthWall() {
-        fourthWallLabel?.removeFromParent()
+        // In secret mode, applySecretMode() already presented the eerie
+        // "YOU SHOULDN'T BE PLAYING AT THIS HOUR..." narrator beat; don't
+        // clobber it with the recurring clock aside (the narrator is single-line).
+        guard currentMode != .secret else { return }
 
         let hourDisplay = overrideMode != nil ? (overrideMode == .night ? 22 : (overrideMode == .secret ? 3 : 12)) : currentHour
-        let label = SKLabelNode(text: "IT'S \(hourDisplay):00. YOU SHOULD PROBABLY BE DOING SOMETHING ELSE RIGHT NOW.")
-        label.fontName = "Menlo"
-        label.fontSize = 8
-        label.fontColor = currentMode == .day ? strokeColor.withAlphaComponent(0.5) : fillColor.withAlphaComponent(0.5)
-        // This commentary line is centered; at y=78 its left half still ran
-        // under the global bottom-left night/moon toggle circle (~r44, top
-        // edge ~y96). Raise it to y=120 so its baseline clears that toggle's
-        // top while staying below the playfield platforms (groundY 160) and
-        // above the bottom-right CYCLE TIME button (y[35,65]). Centered, so it
-        // also clears both bottom corners on iPad's wider layout.
-        label.position = CGPoint(x: size.width / 2, y: 120)
-        label.zPosition = 150
-        addChild(label)
-        fourthWallLabel = label
+        // Dry 4th-wall aside (the OS noticing the real clock) -> shared
+        // narrator in the reserved lower band, .whisper register.
+        GlitchedNarrator.present("IT'S \(hourDisplay):00. YOU SHOULD PROBABLY BE DOING SOMETHING ELSE RIGHT NOW.", in: self, style: .whisper)
     }
 
     private func cycleTimeOverride() {

@@ -20,7 +20,6 @@ final class LowPowerScene: BaseLevelScene, SKPhysicsContactDelegate {
     private var batteryBars: [SKShapeNode] = []
     private var lowPowerToggleButton: SKNode?
     private var platformSurfaces: [(shape: SKShapeNode, size: CGSize)] = []  // Track platforms for visual degradation
-    private var fourthWallLabel: SKLabelNode?
     private var hasShownFourthWall = false
     private let designWidth: CGFloat = 390
 
@@ -420,10 +419,11 @@ final class LowPowerScene: BaseLevelScene, SKPhysicsContactDelegate {
             }
         }
 
-        // 4th-wall text on first toggle to low power
+        // 4th-wall narrator aside on first toggle to low power. .alert: it's the
+        // OS reacting to a system state change (power mode) with a taunt.
         if lowPower && !hasShownFourthWall {
             hasShownFourthWall = true
-            showFourthWallText("LOW POWER MODE? I BARELY HAVE ENOUGH ENERGY TO RENDER THESE PLATFORMS.")
+            GlitchedNarrator.present("LOW POWER MODE? I BARELY HAVE ENOUGH ENERGY TO RENDER THESE PLATFORMS.", in: self, style: .alert)
         }
 
         // Visual degradation of platforms in low power mode
@@ -431,29 +431,6 @@ final class LowPowerScene: BaseLevelScene, SKPhysicsContactDelegate {
 
         let generator = UIImpactFeedbackGenerator(style: lowPower ? .light : .medium)
         generator.impactOccurred()
-    }
-
-    private func showFourthWallText(_ text: String) {
-        fourthWallLabel?.removeFromParent()
-
-        let label = SKLabelNode(text: text)
-        label.fontName = "Menlo-Bold"
-        label.fontSize = 9
-        label.fontColor = strokeColor
-        label.position = CGPoint(x: size.width / 2, y: size.height / 2 + 80)
-        label.zPosition = 500
-        label.alpha = 0
-        label.preferredMaxLayoutWidth = size.width - 60
-        label.numberOfLines = 2
-        addChild(label)
-        fourthWallLabel = label
-
-        label.run(.sequence([
-            .fadeIn(withDuration: 0.3),
-            .wait(forDuration: 4.0),
-            .fadeOut(withDuration: 0.5),
-            .removeFromParent()
-        ]))
     }
 
     private func degradePlatformVisuals(_ lowPower: Bool) {

@@ -91,7 +91,6 @@ final class BootSequenceScene: BaseLevelScene {
             ("[OK] physics.ko", 2.5),
             ("[OK] consciousness.ko", 2.7),
             ("[WARN] fourth_wall.ko - UNSTABLE", 3.0),
-            ("OPERATOR TIME: \(Self.currentTimeString()) ... NOTED.", 3.15),
             ("", 3.3),
             ("ERROR: Corruption detected in sector 0x4F4F", 3.5),
             ("Attempting recovery...", 3.9),
@@ -126,6 +125,21 @@ final class BootSequenceScene: BaseLevelScene {
                 }
             ]))
         }
+
+        // 4th-wall narrator aside: the OS reads the player's real clock.
+        // Fires at the same beat it used to scroll by inside the boot log,
+        // now delivered in the narrator's reserved lower-center band.
+        run(.sequence([
+            .wait(forDuration: 3.15),
+            .run { [weak self] in
+                guard let self else { return }
+                GlitchedNarrator.present(
+                    "OPERATOR TIME: \(Self.currentTimeString()) ... NOTED.",
+                    in: self,
+                    style: .whisper
+                )
+            }
+        ]))
 
         // After boot text, reveal the main UI
         run(.sequence([

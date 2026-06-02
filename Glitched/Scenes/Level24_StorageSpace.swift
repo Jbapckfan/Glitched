@@ -254,6 +254,17 @@ final class StorageSpaceScene: BaseLevelScene, SKPhysicsContactDelegate {
 
         junkContainer = container
         addChild(container)
+        // iPhone packs the junk column near the RIGHT edge (courseX(355)), so the
+        // CENTERED "JUNK MASS"/"CAN'T JUMP IT" labels overshoot the right screen edge
+        // there (caught in the iPhone re-audit; subtitle read as "UMP I"). Shift both
+        // labels left by exactly the overshoot, measured from the real rendered frame,
+        // so the widest line keeps a 12pt margin. No-op on iPad (column far from edge).
+        let junkMaxRight = container.position.x + max(label.frame.width, sub.frame.width) / 2
+        if junkMaxRight > size.width - 12 {
+            let shift = junkMaxRight - (size.width - 12)
+            label.position.x -= shift
+            sub.position.x -= shift
+        }
 
         // Physical blocker.
         let blocker = SKNode()
@@ -447,21 +458,44 @@ final class StorageSpaceScene: BaseLevelScene, SKPhysicsContactDelegate {
         storageLabel.zPosition = 200
         addChild(storageLabel)
 
-        let fourthWall = SKLabelNode(text: String(format: "I'M HOARDING %.1fMB OF YOUR STORAGE.", displayMB))
-        fourthWall.fontName = "Menlo"
-        fourthWall.fontSize = 8
-        fourthWall.fontColor = strokeColor.withAlphaComponent(0.5)
-        fourthWall.position = CGPoint(x: size.width / 2, y: 30)
-        fourthWall.zPosition = 150
-        addChild(fourthWall)
+        // In-character 4th-wall aside (the OS taunting you about the storage it's
+        // hoarding). This line is CONTEXTUAL — it points the player at the TERMINAL
+        // ("REACH THE TERMINAL ...") — so it must NOT live in the generic
+        // GlitchedNarrator lower-center band: that band runs straight across the
+        // PURGE TERMINAL control box (logical x=250 ledge, node y≈269, glow 64x56
+        // spanning y≈[241,297]) and its "↑ TERMINAL" arrow (courseX(185), y=245),
+        // occluding the interactable. OVERLAP FIX: restore it to a hand-positioned
+        // label anchored over the START platform on the LEFT (logical x≈70, well
+        // left of the terminal ledge x=250 and the junk-mass column x=355), high
+        // above the start floor (surfaceY+150=325) so it clears the gameplay lane
+        // and the terminal box entirely. Same trigger point (scene setup) and same
+        // wording.
+        let aside = SKLabelNode(text: String(format: "I'M HOARDING %.1fMB OF YOUR STORAGE.", displayMB))
+        aside.fontName = "Menlo-Bold"
+        aside.fontSize = 9
+        aside.fontColor = strokeColor.withAlphaComponent(0.55)
+        aside.horizontalAlignmentMode = .center
+        aside.position = CGPoint(x: courseX(70), y: surfaceY + 150)
+        aside.zPosition = 50
+        addChild(aside)
+        // iPhone has courseOriginX≈0 so courseX(70)≈64; a CENTERED ~35-char line
+        // spills ~40pt off the LEFT edge there (caught in the iPhone re-audit).
+        // Clamp the center so the full label stays on-screen with a 12pt margin.
+        // No-op on iPad (courseX(70)≈367, already clear of the terminal at ≈547).
+        aside.position.x = min(max(courseX(70), aside.frame.width / 2 + 12),
+                               size.width - aside.frame.width / 2 - 12)
 
-        let fourthWall2 = SKLabelNode(text: "REACH THE TERMINAL, THEN MAKE ME LET GO OF IT.")
-        fourthWall2.fontName = "Menlo"
-        fourthWall2.fontSize = 8
-        fourthWall2.fontColor = strokeColor.withAlphaComponent(0.5)
-        fourthWall2.position = CGPoint(x: size.width / 2, y: 18)
-        fourthWall2.zPosition = 150
-        addChild(fourthWall2)
+        let aside2 = SKLabelNode(text: "REACH THE TERMINAL, THEN MAKE ME LET GO.")
+        aside2.fontName = "Menlo"
+        aside2.fontSize = 8
+        aside2.fontColor = strokeColor.withAlphaComponent(0.5)
+        aside2.horizontalAlignmentMode = .center
+        aside2.position = CGPoint(x: courseX(70), y: surfaceY + 136)
+        aside2.zPosition = 50
+        addChild(aside2)
+        // Same left-edge clamp as the line above (longest line, 40 chars).
+        aside2.position.x = min(max(courseX(70), aside2.frame.width / 2 + 12),
+                                size.width - aside2.frame.width / 2 - 12)
     }
 
     private func showInstructionPanel() {
