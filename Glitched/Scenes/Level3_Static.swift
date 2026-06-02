@@ -267,7 +267,7 @@ final class StaticScene: BaseLevelScene, SKPhysicsContactDelegate {
 
     private func setupLevelTitle() {
         let title = SKLabelNode(text: "LEVEL 3")
-        title.fontName = "Helvetica-Bold"
+        title.fontName = VisualConstants.Fonts.display
         title.fontSize = 28 * visualScale
         title.fontColor = strokeColor
         title.position = CGPoint(x: 80 * layoutXScale, y: topSafeAreaY(offset: 60 * layoutYScale))

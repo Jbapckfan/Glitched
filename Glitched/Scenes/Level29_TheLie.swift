@@ -75,7 +75,7 @@ final class TheLieScene: BaseLevelScene, SKPhysicsContactDelegate {
 
     private func setupLevelTitle() {
         let title = SKLabelNode(text: "LEVEL 29")
-        title.fontName = "Helvetica-Bold"
+        title.fontName = VisualConstants.Fonts.display
         title.fontSize = 28
         title.fontColor = strokeColor
         title.position = CGPoint(x: 80, y: topSafeY - 30)

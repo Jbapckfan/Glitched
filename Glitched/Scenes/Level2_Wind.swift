@@ -526,7 +526,7 @@ final class WindBridgeScene: BaseLevelScene, SKPhysicsContactDelegate {
 
     private func setupLevelTitle() {
         let title = SKLabelNode(text: "LEVEL 2")
-        title.fontName = "Helvetica-Bold"
+        title.fontName = VisualConstants.Fonts.display
         title.fontSize = 28 * visualScale
         title.fontColor = strokeColor
         // Title lives in the reserved top-LEADING band on every device. It is NOT

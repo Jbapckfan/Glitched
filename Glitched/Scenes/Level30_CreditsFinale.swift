@@ -97,7 +97,7 @@ final class CreditsFinaleScene: BaseLevelScene, SKPhysicsContactDelegate {
         //   iPad 1024 (topSafeY 1342, cam@683): scene-y 1222 -> screen-top ~144, glyph
         //     ~[130,158]; pause bottom ~120, so 10pt below pause; x clear of pause[924,1024].
         let title = SKLabelNode(text: "LEVEL 30")
-        title.fontName = "Helvetica-Bold"
+        title.fontName = VisualConstants.Fonts.display
         title.fontSize = 28
         title.fontColor = fillColor
         // Camera-local: camera sits at (size.width/2, size.height/2) at t=0, so a scene-y
@@ -326,7 +326,7 @@ final class CreditsFinaleScene: BaseLevelScene, SKPhysicsContactDelegate {
 
         // Star icon
         let star = SKLabelNode(text: "★")
-        star.fontName = "Helvetica"
+        star.fontName = VisualConstants.Fonts.secondary
         star.fontSize = 20
         star.fontColor = strokeColor
         star.verticalAlignmentMode = .center

@@ -329,7 +329,7 @@ final class VolumeScene: BaseLevelScene, SKPhysicsContactDelegate {
 
         // Exclamation mark
         let exclaim = SKLabelNode(text: "!")
-        exclaim.fontName = "Helvetica-Bold"
+        exclaim.fontName = VisualConstants.Fonts.display
         exclaim.fontSize = 18
         exclaim.fontColor = strokeColor
         exclaim.verticalAlignmentMode = .center
@@ -362,7 +362,7 @@ final class VolumeScene: BaseLevelScene, SKPhysicsContactDelegate {
 
     private func setupLevelTitle() {
         let title = SKLabelNode(text: "LEVEL 4")
-        title.fontName = "Helvetica-Bold"
+        title.fontName = VisualConstants.Fonts.display
         title.fontSize = 28
         title.fontColor = strokeColor
         title.position = CGPoint(x: 80, y: topSafeAreaY(offset: min(size.width, size.height) < 700 ? 125 : 70))
@@ -606,7 +606,7 @@ final class VolumeScene: BaseLevelScene, SKPhysicsContactDelegate {
 
         for i in 0..<3 {
             let z = SKLabelNode(text: "Z")
-            z.fontName = "Helvetica-Bold"
+            z.fontName = VisualConstants.Fonts.display
             z.fontSize = CGFloat(14 + i * 4)
             z.fontColor = strokeColor
             z.position = CGPoint(x: CGFloat(i) * 15, y: CGFloat(i) * 20)
@@ -623,7 +623,7 @@ final class VolumeScene: BaseLevelScene, SKPhysicsContactDelegate {
 
         // Alert indicator
         alertIndicator = SKLabelNode(text: "!")
-        alertIndicator.fontName = "Helvetica-Bold"
+        alertIndicator.fontName = VisualConstants.Fonts.display
         alertIndicator.fontSize = 36
         alertIndicator.fontColor = strokeColor
         alertIndicator.position = CGPoint(x: 120, y: 130)

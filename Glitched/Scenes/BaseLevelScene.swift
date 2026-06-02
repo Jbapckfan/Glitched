@@ -173,6 +173,23 @@ class BaseLevelScene: SKScene {
         case calm, tense, glitch
     }
 
+    /// Distinct per-world accent color used to differentiate each world's
+    /// atmosphere. World 0 (free tutorial) reads as a neutral boot grey; the
+    /// paid worlds 1–5 each get a strong, characterful hue so they no longer
+    /// look identical behind the level art.
+    /// (VisualConstants currently exposes no world-accent tokens; if/when it
+    /// does, swap these literals for those tokens.)
+    private var worldAccentColor: SKColor {
+        switch levelID.world {
+        case .world0: return SKColor(red: 0.62, green: 0.66, blue: 0.72, alpha: 1.0) // boot grey
+        case .world1: return SKColor(red: 0.28, green: 0.60, blue: 1.00, alpha: 1.0) // circuit blue
+        case .world2: return SKColor(red: 0.20, green: 0.95, blue: 0.45, alpha: 1.0) // digital-rain green
+        case .world3: return SKColor(red: 1.00, green: 0.55, blue: 0.18, alpha: 1.0) // corruption orange
+        case .world4: return SKColor(red: 0.92, green: 0.28, blue: 1.00, alpha: 1.0) // reality-tear magenta
+        case .world5: return SKColor(red: 1.00, green: 0.20, blue: 0.22, alpha: 1.0) // warning red
+        }
+    }
+
     func setupBackgroundAtmosphere(mood: AtmosphereMood) {
         atmosphereNode?.removeFromParent()
         let container = SKNode()
@@ -185,37 +202,59 @@ class BaseLevelScene: SKScene {
         tint.position = CGPoint(x: size.width / 2, y: size.height / 2)
         container.addChild(tint)
 
+        // Accessibility: high-contrast mode must never paint a colored wash —
+        // keep the tint clear and bail before any per-world effects.
         if ProgressManager.shared.load().settings.highContrastMode {
             tint.fillColor = .clear
             return
         }
 
+        let accent = worldAccentColor
+
+        // Back-of-scene wash. This sits at zPosition -1000 and is largely
+        // occluded by opaque level art (the root cause of the "sub-perceptual"
+        // audit finding), so it stays subtle and we rely on the foreground
+        // edge-frame below for the actual per-world read. Modestly bumped from
+        // the old 0.12–0.16 band and tinted with each world's accent.
         switch levelID.world {
         case .world0:
-            tint.fillColor = SKColor.black.withAlphaComponent(0.12)
+            tint.fillColor = SKColor.black.withAlphaComponent(0.16)
         case .world1:
-            tint.fillColor = SKColor(red: 0.12, green: 0.34, blue: 0.62, alpha: 0.12)
+            tint.fillColor = accent.withAlphaComponent(0.16)
             addCircuitTracePattern(to: container)
         case .world2:
-            tint.fillColor = SKColor(red: 0.0, green: 0.25, blue: 0.12, alpha: 0.12)
+            tint.fillColor = accent.withAlphaComponent(0.16)
             let rain = ParticleFactory.shared.createDigitalRain(in: self)
-            rain.alpha = 0.18
+            rain.alpha = 0.24
             container.addChild(rain)
         case .world3:
-            tint.fillColor = SKColor(red: 0.58, green: 0.28, blue: 0.0, alpha: 0.12)
-            addCorruptionArtifacts(to: container, color: SKColor(red: 1.0, green: 0.55, blue: 0.2, alpha: 1.0))
-            addDataStreams(to: container, color: SKColor(red: 1.0, green: 0.65, blue: 0.25, alpha: 1.0))
+            tint.fillColor = accent.withAlphaComponent(0.17)
+            addCorruptionArtifacts(to: container, color: accent)
+            addDataStreams(to: container, color: accent)
         case .world4:
-            tint.fillColor = SKColor(red: 0.38, green: 0.0, blue: 0.42, alpha: 0.14)
+            tint.fillColor = accent.withAlphaComponent(0.18)
             addRealityTears(to: container)
         case .world5:
-            tint.fillColor = SKColor(red: 0.42, green: 0.03, blue: 0.03, alpha: 0.16)
+            tint.fillColor = accent.withAlphaComponent(0.20)
             addWarningBars(to: container)
+        }
+
+        // Foreground per-world edge frame. This is the key fix: a colored
+        // vignette glow drawn ABOVE the level background/decor (which live in
+        // the ~-100…600 band) but BELOW gameplay-critical overlays and the HUD
+        // (5000+). Because it is an edge-only frame with a fully transparent
+        // center, it makes each world's hue clearly perceptible without
+        // washing the play area, occluding gameplay/HUD, or veiling the
+        // line-art. World 0 stays neutral (no colored frame) to keep the free
+        // tutorial visually plain. Skipped entirely in high-contrast mode via
+        // the early return above.
+        if levelID.world != .world0 {
+            addWorldEdgeFrame(accent: accent)
         }
 
         switch mood {
         case .calm:
-            tint.alpha = 0.8
+            tint.alpha = 0.85
         case .tense:
             tint.alpha = 1.0
             JuiceManager.shared.vignettePulse(color: .black, intensity: 0.2)
@@ -225,6 +264,63 @@ class BaseLevelScene: SKScene {
             glitchRain.alpha = 0.08
             container.addChild(glitchRain)
         }
+    }
+
+    /// Builds an edge-only colored vignette frame in the world's accent hue.
+    /// Lives above level art but below gameplay overlays/HUD, with a clear
+    /// center so it never covers the play area or line-art.
+    private func addWorldEdgeFrame(accent: SKColor) {
+        let frameName = "worldEdgeFrame"
+        gameCamera.childNode(withName: frameName)?.removeFromParent()
+
+        let frame = SKNode()
+        frame.name = frameName
+        // Above background/decor (~-100…600) and gameplay (≤600), but well
+        // below transition/permission/scanline overlays (8000/8500/9000) and
+        // the HUD — so it tints the periphery without ever occluding gameplay
+        // or HUD readouts.
+        frame.zPosition = 700
+        gameCamera.addChild(frame)
+
+        let halfW = size.width / 2
+        let halfH = size.height / 2
+        // Edge band thickness scales with the shorter screen dimension so the
+        // clear central play area is preserved on every device size.
+        let band = max(28, min(size.width, size.height) * 0.10)
+
+        // Soft inner glow: a stroked rounded rect just inside the screen edges.
+        let glow = SKShapeNode(rectOf: CGSize(width: size.width - 4, height: size.height - 4), cornerRadius: 12)
+        glow.position = .zero
+        glow.fillColor = .clear
+        glow.strokeColor = accent.withAlphaComponent(0.34)
+        glow.lineWidth = 2
+        glow.glowWidth = 8
+        frame.addChild(glow)
+
+        // Four edge bars that fade toward the center, giving a vignette feel
+        // without an SKEffectNode blur. Center remains fully transparent.
+        let edges: [(CGSize, CGPoint)] = [
+            (CGSize(width: size.width, height: band), CGPoint(x: 0, y: halfH - band / 2)),   // top
+            (CGSize(width: size.width, height: band), CGPoint(x: 0, y: -halfH + band / 2)),  // bottom
+            (CGSize(width: band, height: size.height), CGPoint(x: -halfW + band / 2, y: 0)), // left
+            (CGSize(width: band, height: size.height), CGPoint(x: halfW - band / 2, y: 0)),  // right
+        ]
+        for (bandSize, pos) in edges {
+            let bar = SKShapeNode(rectOf: bandSize)
+            bar.position = pos
+            bar.fillColor = accent.withAlphaComponent(0.12)
+            bar.strokeColor = .clear
+            bar.blendMode = .add
+            frame.addChild(bar)
+        }
+
+        // Gentle breathing pulse so the world identity reads as "alive" without
+        // being distracting (no per-frame work; SKAction handles it).
+        frame.alpha = 0.9
+        frame.run(.repeatForever(.sequence([
+            .fadeAlpha(to: 0.7, duration: 2.4),
+            .fadeAlpha(to: 0.95, duration: 2.4)
+        ])))
     }
 
     func setupBackgroundAtmosphereForCurrentWorld(mood: AtmosphereMood = .calm) {
