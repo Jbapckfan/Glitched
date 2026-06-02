@@ -75,6 +75,14 @@ final class ShakeUndoScene: BaseLevelScene, SKPhysicsContactDelegate {
     /// clear path to the now-repaired final platform.
     private var preTrapAnchor: CGPoint = .zero
 
+    // Just-in-time "SHAKE TO UNDO" prompt: surfaced ~1.25s after the trap collapses
+    // (while the player is stranded on the catch ledge and still un-repaired) so the
+    // required action is unmissable. Held in a property + scene-action key so it can
+    // be cancelled the instant an undo repairs the trap. Purely additive — the trap
+    // still requires the same shake; this only tells the player what to do.
+    private var shakePrompt: SKNode?
+    private let shakePromptDelayKey = "shakeUndoPromptDelay"
+
     override func configureScene() {
         levelID = LevelID(world: .world2, index: 16)
         backgroundColor = fillColor
@@ -303,24 +311,45 @@ final class ShakeUndoScene: BaseLevelScene, SKPhysicsContactDelegate {
         panel.zPosition = 300
         addChild(panel)
 
-        let bg = SKShapeNode(rectOf: CGSize(width: 200, height: 80), cornerRadius: 8)
+        // Box grown 80 -> 96 tall to fit the actionable "SHAKE TO REWIND TIME"
+        // instruction above the two atmospheric lines (one extra row; width and
+        // the panel center at topSafeY-165 are unchanged). New top edge =
+        // topSafeY-165+48 = topSafeY-117, still ~2pt below the pause-zone bottom
+        // (~topSafeY-115) and well clear of the rightmost clock's bottom. Width is
+        // untouched (200) so the audited left/right clearances vs title/pause/
+        // clocks on iPhone 390 and iPad 1024 still hold.
+        let bg = SKShapeNode(rectOf: CGSize(width: 200, height: 96), cornerRadius: 8)
         bg.fillColor = fillColor
         bg.strokeColor = strokeColor
         panel.addChild(bg)
+
+        // ACTIONABLE instruction (added): tells the player the core verb up front,
+        // while the two atmospheric lines below preserve the level's voice.
+        let instruction = SKLabelNode(text: "SHAKE TO REWIND TIME")
+        instruction.fontName = "Menlo-Bold"
+        instruction.fontSize = 11
+        instruction.fontColor = strokeColor
+        instruction.position = CGPoint(x: 0, y: 26)
+        panel.addChild(instruction)
 
         let text1 = SKLabelNode(text: "MISTAKES CAN BE UNMADE")
         text1.fontName = "Menlo-Bold"
         text1.fontSize = 11
         text1.fontColor = strokeColor
-        text1.position = CGPoint(x: 0, y: 10)
+        text1.position = CGPoint(x: 0, y: 4)
         panel.addChild(text1)
 
         let text2 = SKLabelNode(text: "BUT NOT FOREVER")
         text2.fontName = "Menlo"
         text2.fontSize = 10
         text2.fontColor = strokeColor
-        text2.position = CGPoint(x: 0, y: -10)
+        text2.position = CGPoint(x: 0, y: -16)
         panel.addChild(text2)
+
+        // Accessibility: speak the panel so the clue reaches VoiceOver (matches the
+        // pattern documented on announceObjective — subclasses with their own clue
+        // labels should announce the same text). Lead with the actionable verb.
+        announceObjective("Shake to rewind time. Mistakes can be unmade, but not forever.")
 
         panel.run(.sequence([.wait(forDuration: 5), .fadeOut(withDuration: 0.5), .removeFromParent()]))
     }
@@ -374,6 +403,72 @@ final class ShakeUndoScene: BaseLevelScene, SKPhysicsContactDelegate {
         ]))
         AudioManager.shared.playDanger()
         JuiceManager.shared.popText("PLATFORM CORRUPTED", at: CGPoint(x: size.width / 2, y: size.height / 2), color: strokeColor, fontSize: 16)
+
+        // Just-in-time prompt: a beat after the collapse (so it follows, not
+        // collides with, the "PLATFORM CORRUPTED" pop), surface "SHAKE TO UNDO"
+        // — but only if the player is still stranded (trap collapsed, not yet
+        // repaired). Scheduled under a key so repairTrap() can cancel a pending
+        // appearance, and re-guarded inside the closure for the late-undo race.
+        removeAction(forKey: shakePromptDelayKey)
+        run(.sequence([
+            .wait(forDuration: 1.25),
+            .run { [weak self] in
+                guard let self else { return }
+                guard self.trapCollapsed, !self.trapDisarmed else { return }
+                self.showShakePrompt()
+            }
+        ]), withKey: shakePromptDelayKey)
+    }
+
+    /// Build + present the just-in-time "SHAKE TO UNDO" prompt. Centered just below
+    /// the scene mid-line (clear of the "PLATFORM CORRUPTED" pop and the top HUD),
+    /// with a gentle physics-light pulse so it reads as a live call to action. Idempotent:
+    /// re-presenting replaces any existing prompt. Matches the file's hand-built
+    /// Menlo-label panel style.
+    private func showShakePrompt() {
+        cancelShakePrompt()
+
+        let prompt = SKNode()
+        prompt.position = CGPoint(x: size.width / 2, y: size.height / 2 - 60)
+        prompt.zPosition = 350
+        prompt.alpha = 0
+
+        let bg = SKShapeNode(rectOf: CGSize(width: 180, height: 36), cornerRadius: 8)
+        bg.fillColor = fillColor
+        bg.strokeColor = strokeColor
+        bg.lineWidth = lineWidth
+        prompt.addChild(bg)
+
+        let label = SKLabelNode(text: "SHAKE TO UNDO")
+        label.fontName = "Menlo-Bold"
+        label.fontSize = 13
+        label.fontColor = strokeColor
+        label.verticalAlignmentMode = .center
+        prompt.addChild(label)
+
+        addChild(prompt)
+        shakePrompt = prompt
+
+        // Fade in, then a slow steady pulse to draw the eye until it's dismissed.
+        prompt.run(.sequence([
+            .fadeIn(withDuration: 0.25),
+            .repeatForever(.sequence([
+                .fadeAlpha(to: 0.55, duration: 0.6),
+                .fadeAlpha(to: 1.0, duration: 0.6)
+            ]))
+        ]))
+
+        // Accessibility: speak the call to action for VoiceOver users.
+        announceObjective("Shake to undo.")
+    }
+
+    /// Remove any pending or on-screen "SHAKE TO UNDO" prompt. Called the instant the
+    /// trap is repaired (and defensively on reset) so the prompt never lingers after
+    /// the required action is taken.
+    private func cancelShakePrompt() {
+        removeAction(forKey: shakePromptDelayKey)
+        shakePrompt?.removeFromParent()
+        shakePrompt = nil
     }
 
     /// Undo "unmakes the mistake": the rotten platform is restored solid and
@@ -381,6 +476,9 @@ final class ShakeUndoScene: BaseLevelScene, SKPhysicsContactDelegate {
     /// rewound player can cross to the exit. Called from performUndo on a
     /// successful rewind that involved the trap.
     private func repairTrap() {
+        // The required action has been taken — dismiss the just-in-time prompt
+        // (and cancel any still-pending appearance) before unmaking the trap.
+        cancelShakePrompt()
         resetTrap()
         trapDisarmed = true
 
@@ -655,6 +753,10 @@ final class ShakeUndoScene: BaseLevelScene, SKPhysicsContactDelegate {
     private func resetTrap() {
         trapArmed = false
         trapCollapsed = false
+        // Clear any pending/visible "SHAKE TO UNDO" prompt too, so a death-respawn
+        // mid-collapse doesn't leave it lingering over a now-pristine trap. Idempotent
+        // (repairTrap also calls it), and safe — the prompt is purely advisory.
+        cancelShakePrompt()
         removeAction(forKey: "trapFuse")
         finalPlatform.removeAllActions()
         finalPlatformSurface?.removeAction(forKey: "rot")

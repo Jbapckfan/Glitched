@@ -33,6 +33,14 @@ final class BrightnessScene: BaseLevelScene, SKPhysicsContactDelegate {
     private var screenFlash: SKShapeNode?
     private var isBurning = false
 
+    /// A11Y: suppress the repeating white burn strobe when either the system-level
+    /// Reduce Motion switch or the in-game Reduce Flash toggle is on. Matches the
+    /// photosensitivity gating used in JuiceManager.
+    private var reduceFlashEffects: Bool {
+        UIAccessibility.isReduceMotionEnabled
+            || ProgressManager.shared.load().settings.reduceFlashEffects
+    }
+
     // 4th-wall commentary
     private var darkCommentaryShown = false
     private var brightCommentaryShown = false
@@ -212,10 +220,19 @@ final class BrightnessScene: BaseLevelScene, SKPhysicsContactDelegate {
                     ]))
                 ]))
 
-                screenFlash?.run(.repeatForever(.sequence([
-                    .fadeAlpha(to: 0.3, duration: 0.1),
-                    .fadeAlpha(to: 0, duration: 0.2)
-                ])), withKey: "flash")
+                // A11Y / photosensitivity: a repeating full-screen white flash is a
+                // seizure risk. When system Reduce Motion or the in-game Reduce Flash
+                // toggle is on, skip the strobe entirely and hold a static low-alpha
+                // tint — the warning label + warning haptic still signal the danger.
+                screenFlash?.removeAction(forKey: "flash")
+                if reduceFlashEffects {
+                    screenFlash?.run(.fadeAlpha(to: 0.12, duration: 0.2), withKey: "flash")
+                } else {
+                    screenFlash?.run(.repeatForever(.sequence([
+                        .fadeAlpha(to: 0.3, duration: 0.1),
+                        .fadeAlpha(to: 0, duration: 0.2)
+                    ])), withKey: "flash")
+                }
 
                 let generator = UINotificationFeedbackGenerator()
                 generator.notificationOccurred(.warning)
@@ -1098,8 +1115,18 @@ final class BrightnessScene: BaseLevelScene, SKPhysicsContactDelegate {
         label.fontName = "Menlo-Bold"
         label.fontSize = isCompactPhone ? 13 : 14
         label.fontColor = strokeColor
-        label.position = CGPoint(x: 0, y: -35)
+        label.position = CGPoint(x: 0, y: -29)
         instructionPanel?.addChild(label)
+
+        // Caption: cue players that the target is the high-but-not-max band so they
+        // don't blow past the sweet spot into the burn zone. Text only; both lines
+        // stay inside the existing 100pt-tall panel background (spans -50…+50).
+        let caption = SKLabelNode(text: "NOT TOO BRIGHT  ~80%")
+        caption.fontName = "Menlo"
+        caption.fontSize = isCompactPhone ? 8 : 9
+        caption.fontColor = strokeColor
+        caption.position = CGPoint(x: 0, y: -43)
+        instructionPanel?.addChild(caption)
         layoutHUDNodes()
     }
 

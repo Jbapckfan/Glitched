@@ -26,6 +26,15 @@ final class FlashlightScene: BaseLevelScene, SKPhysicsContactDelegate {
     private var isFlashlightOn = false
     private var currentPitch: Double = 0.0  // radians, -pi/2 = vertical, 0 = flat
 
+    /// System-level Reduce Motion (Settings > Accessibility > Motion). When on we
+    /// skip the purely cosmetic instruction-panel pulse, exit-portal pulse,
+    /// exit-glow pulse, and exit down-arrow bob. NONE of these are load-bearing:
+    /// the level's hazards (stalactites, pits, death zone) and the exit trigger are
+    /// unaffected — the door and its glow stay drawn at a steady, legible alpha.
+    private var systemReduceMotion: Bool {
+        UIAccessibility.isReduceMotionEnabled
+    }
+
     // Light cone (SKCropNode system)
     private var cropNode: SKCropNode!
     private var levelContainer: SKNode!
@@ -53,8 +62,15 @@ final class FlashlightScene: BaseLevelScene, SKPhysicsContactDelegate {
     private var verticalCommentShown = false
     private var exitCommentShown = false
 
-    // Section checkpoints (x positions) for progress tracking
-    private let sectionCheckpoints: [CGFloat] = [400, 1000, 1800, 2600]
+    // Section checkpoints (x positions) for progress tracking.
+    // RESPAWN-IN-GAP FIX: checkpoint[3] was 2600 — Section 4 ends at 2560 and the
+    // Section 5 exit platform doesn't begin until 2650, so x=2600 sits over the
+    // open death gap. checkSectionProgress drives spawnPoint off these x values, so
+    // respawning at the last checkpoint dropped Bit straight into the pit (instant
+    // re-death loop). Move it to 2700, which lands over the wide exit platform
+    // (createPlatform at x:2850, width 400 -> spans 2650...3050), giving a safe
+    // respawn footing on every device width.
+    private let sectionCheckpoints: [CGFloat] = [400, 1000, 1800, 2700]
     private var lastCheckpointReached = -1
 
     // Exit door references
@@ -471,11 +487,14 @@ final class FlashlightScene: BaseLevelScene, SKPhysicsContactDelegate {
         levelContainer.addChild(portal)
         exitDoorPortal = portal
 
-        // Portal pulse
-        portal.run(.repeatForever(.sequence([
-            .fadeAlpha(to: 0.6, duration: 1.0),
-            .fadeAlpha(to: 0.2, duration: 1.0)
-        ])))
+        // Portal pulse (cosmetic; gated behind Reduce Motion — the portal stays
+        // drawn at its steady fill alpha when motion is reduced).
+        if !systemReduceMotion {
+            portal.run(.repeatForever(.sequence([
+                .fadeAlpha(to: 0.6, duration: 1.0),
+                .fadeAlpha(to: 0.2, duration: 1.0)
+            ])))
+        }
 
         // Physics trigger
         let exitTrigger = SKSpriteNode(color: .clear, size: CGSize(width: doorWidth, height: doorHeight))
@@ -499,11 +518,15 @@ final class FlashlightScene: BaseLevelScene, SKPhysicsContactDelegate {
         exitGlow.zPosition = 5
         addChild(exitGlow)
 
-        // Pulse the glow
-        exitGlow.run(.repeatForever(.sequence([
-            .fadeAlpha(to: 0.3, duration: 1.5),
-            .fadeAlpha(to: 0.8, duration: 1.5)
-        ])))
+        // Pulse the glow (cosmetic; gated behind Reduce Motion — the always-on
+        // exit glow stays visible at a steady alpha so the door is still findable
+        // in the dark when motion is reduced).
+        if !systemReduceMotion {
+            exitGlow.run(.repeatForever(.sequence([
+                .fadeAlpha(to: 0.3, duration: 1.5),
+                .fadeAlpha(to: 0.8, duration: 1.5)
+            ])))
+        }
 
         // Decorative archway around exit
         let archPath = CGMutablePath()
@@ -526,10 +549,14 @@ final class FlashlightScene: BaseLevelScene, SKPhysicsContactDelegate {
         let arrow = createArrow()
         arrow.position = CGPoint(x: doorPos.x, y: groundY + 140)
         arrow.zPosition = 25
-        arrow.run(.repeatForever(.sequence([
-            .moveBy(x: 0, y: -6, duration: 0.4),
-            .moveBy(x: 0, y: 6, duration: 0.4)
-        ])))
+        // Bob is cosmetic; gated behind Reduce Motion. The arrow stays drawn at a
+        // fixed position so the exit hint is still present when motion is reduced.
+        if !systemReduceMotion {
+            arrow.run(.repeatForever(.sequence([
+                .moveBy(x: 0, y: -6, duration: 0.4),
+                .moveBy(x: 0, y: 6, duration: 0.4)
+            ])))
+        }
         levelContainer.addChild(arrow)
     }
 
@@ -914,10 +941,19 @@ final class FlashlightScene: BaseLevelScene, SKPhysicsContactDelegate {
     // MARK: - Instruction Panel
 
     private func showInstructionPanel() {
+        // LEGIBILITY FIX: the panel used to live inside levelContainer (the
+        // SKCropNode masked to the flashlight beam), so the "turn on your
+        // flashlight" goal was clipped by the very darkness it tells you to dispel
+        // — you couldn't read the instruction until you'd already done the thing.
+        // Re-parent it to the camera as a fixed HUD overlay (mirrors L8's
+        // scene-anchored panel), outside the crop, so it's always legible and
+        // stays on-screen as the camera scrolls. zPosition 200 preserved.
         instructionPanel = SKNode()
-        instructionPanel?.position = CGPoint(x: 150, y: size.height / 2 + 40)
+        // Camera-local coordinates: origin maps to screen centre, so place the
+        // panel in the upper-centre of the viewport on every device width.
+        instructionPanel?.position = CGPoint(x: 0, y: topSafeY - size.height / 2 - 80)
         instructionPanel?.zPosition = 200
-        levelContainer.addChild(instructionPanel!)
+        gameCamera.addChild(instructionPanel!)
 
         // Panel background
         let panelBG = SKShapeNode(rectOf: CGSize(width: 240, height: 100), cornerRadius: 8)
@@ -952,11 +988,14 @@ final class FlashlightScene: BaseLevelScene, SKPhysicsContactDelegate {
         label2.position = CGPoint(x: 0, y: -40)
         instructionPanel?.addChild(label2)
 
-        // Pulsing animation
-        instructionPanel?.run(.repeatForever(.sequence([
-            .fadeAlpha(to: 0.6, duration: 1.0),
-            .fadeAlpha(to: 1.0, duration: 1.0)
-        ])))
+        // Pulsing animation (cosmetic; gated behind Reduce Motion — the panel
+        // holds a steady, fully-legible alpha when motion is reduced).
+        if !systemReduceMotion {
+            instructionPanel?.run(.repeatForever(.sequence([
+                .fadeAlpha(to: 0.6, duration: 1.0),
+                .fadeAlpha(to: 1.0, duration: 1.0)
+            ])))
+        }
     }
 
     private func createFlashlightIcon() -> SKNode {
@@ -1321,7 +1360,7 @@ final class FlashlightScene: BaseLevelScene, SKPhysicsContactDelegate {
     }
 
     override func hintText() -> String? {
-        return "Turn on your flashlight and hold your phone up to look ahead"
+        return "Turn on your flashlight and hold your phone up to look ahead. Tilt your phone flat to light up the floor and spot pits."
     }
 
     // MARK: - Cleanup

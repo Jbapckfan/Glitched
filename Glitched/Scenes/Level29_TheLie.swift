@@ -192,6 +192,13 @@ final class TheLieScene: BaseLevelScene, SKPhysicsContactDelegate {
         exitText.verticalAlignmentMode = .center
         fakeExitDoor!.addChild(exitText)
 
+        // Accessibility: name the door honestly. It LOOKS like the goal but is the
+        // bait — VoiceOver users get the same "is this real?" tension sighted
+        // players read off the visual, without spoiling that it's fake.
+        fakeExitDoor!.isAccessibilityElement = true
+        fakeExitDoor!.accessibilityLabel = "Exit door at the far right."
+        fakeExitDoor!.accessibilityTraits = .staticText
+
         // Fake exit trigger
         let fakeTrigger = SKNode()
         fakeTrigger.position = CGPoint(x: fakeExitX, y: groundY + 50)
@@ -227,6 +234,14 @@ final class TheLieScene: BaseLevelScene, SKPhysicsContactDelegate {
         realText.fontColor = strokeColor
         realText.verticalAlignmentMode = .center
         realExitDoor!.addChild(realText)
+
+        // Accessibility: the door is invisible (alpha 0) and inert until the reveal,
+        // so keep it OUT of the VoiceOver order until revealTruth() turns it on —
+        // otherwise the twist's "behind you the whole time" exit is spoiled. Label
+        // is preset so it's correct the instant the element is enabled.
+        realExitDoor!.isAccessibilityElement = false
+        realExitDoor!.accessibilityLabel = "Real exit door, back at the start."
+        realExitDoor!.accessibilityTraits = .staticText
 
         addChild(realExitDoor!)
 
@@ -403,6 +418,11 @@ final class TheLieScene: BaseLevelScene, SKPhysicsContactDelegate {
             ]))
         ]))
 
+        // Accessibility: now that the truth is revealed, expose the real exit door
+        // to VoiceOver and announce where the actual goal is.
+        realExitDoor?.isAccessibilityElement = true
+        announceObjective("The real exit appeared back at the start. Go back left to reach it.")
+
         // Enable real exit trigger
         if let realTrigger = childNode(withName: "realExit") {
             realTrigger.physicsBody?.categoryBitMask = PhysicsCategory.exit
@@ -427,20 +447,50 @@ final class TheLieScene: BaseLevelScene, SKPhysicsContactDelegate {
             .run { [weak self] in self?.showFourthWallMessage() }
         ]))
 
-        // Pan camera hint - subtle arrow pointing left
+        // Pan camera hint - direction label pinned to the LEFT of the viewport so
+        // it stays readable for the entire walk-back, on every device width.
+        // CLARITY: bumped 14pt -> 22pt bold at full opacity (was easy to miss);
+        // pinned to the left edge (camera-space x = -size.width/2 + inset) with a
+        // left-aligned origin so it reads "<< GO BACK" out from the left margin and
+        // never drifts off a narrow iPhone or floats mid-screen on a wide iPad.
+        let goBackInset: CGFloat = 24
         let arrow = SKLabelNode(text: "<< GO BACK")
         arrow.fontName = "Menlo-Bold"
-        arrow.fontSize = 14
+        arrow.fontSize = 22
         arrow.fontColor = strokeColor
         arrow.alpha = 0
-        arrow.position = CGPoint(x: -100, y: -60)
+        arrow.horizontalAlignmentMode = .left
+        arrow.position = CGPoint(x: -size.width / 2 + goBackInset, y: -60)
         arrow.zPosition = 500
         gameCamera?.addChild(arrow)
+        // Hold at full opacity for the whole walk-back (no fade pulse); a subtle
+        // left nudge keeps it alive without obscuring the "pinned left" read.
         arrow.run(.sequence([
             .fadeIn(withDuration: 0.5),
             .repeatForever(.sequence([
-                .moveBy(x: -10, y: 0, duration: 0.5),
-                .moveBy(x: 10, y: 0, duration: 0.5)
+                .moveBy(x: -6, y: 0, duration: 0.5),
+                .moveBy(x: 6, y: 0, duration: 0.5)
+            ]))
+        ]))
+
+        // Faint left-chevron breadcrumb sitting just under the label, reinforcing
+        // the "head back this way" direction. Low opacity so it reads as a hint,
+        // not a UI control; pinned to the same left margin as the label.
+        let breadcrumb = SKLabelNode(text: "<<<")
+        breadcrumb.fontName = "Menlo-Bold"
+        breadcrumb.fontSize = 18
+        breadcrumb.fontColor = strokeColor
+        breadcrumb.alpha = 0
+        breadcrumb.horizontalAlignmentMode = .left
+        breadcrumb.position = CGPoint(x: -size.width / 2 + goBackInset, y: -84)
+        breadcrumb.zPosition = 500
+        gameCamera?.addChild(breadcrumb)
+        breadcrumb.run(.sequence([
+            .wait(forDuration: 0.5),
+            .fadeAlpha(to: 0.3, duration: 0.5),
+            .repeatForever(.sequence([
+                .moveBy(x: -8, y: 0, duration: 0.6),
+                .moveBy(x: 8, y: 0, duration: 0.6)
             ]))
         ]))
     }
@@ -500,6 +550,12 @@ final class TheLieScene: BaseLevelScene, SKPhysicsContactDelegate {
             .fadeOut(withDuration: 0.5),
             .removeFromParent()
         ]))
+
+        // Accessibility: the analysis panel is purely visual; speak its contents so
+        // VoiceOver users get the same beat. Mirrors the on-screen labels verbatim.
+        announceObjective(
+            "Player analysis. Touches: \(touchCount). Hesitations: \(hesitationCount). Trust level: \(trust)."
+        )
     }
 
     private func showFourthWallMessage() {

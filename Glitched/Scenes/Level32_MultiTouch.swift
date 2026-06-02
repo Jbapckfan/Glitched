@@ -323,6 +323,8 @@ final class MultiTouchScene: BaseLevelScene, SKPhysicsContactDelegate {
         plate.lineWidth = lineWidth
         plate.position = cameraPosition
         plate.zPosition = 501
+        plate.isAccessibilityElement = true
+        plate.accessibilityLabel = "Pressure node, group \(group), inactive"
         gameCamera.addChild(plate)
 
         // Pulse ring (visible when all plates in group active)
@@ -352,6 +354,9 @@ final class MultiTouchScene: BaseLevelScene, SKPhysicsContactDelegate {
     private func createGate(at position: CGPoint, group: Int) -> Gate {
         let gateWidth: CGFloat = 16
         let gateHeight: CGFloat = 100
+        // Derive the required finger/contact count from how many plates feed
+        // this group's circuit (NOT hardcoded): group1=2, group2=3, group3=4.
+        let requiredContacts = pressurePlates.filter { $0.group == group }.count
         let container = SKNode()
         container.position = position
         container.zPosition = 50
@@ -381,14 +386,28 @@ final class MultiTouchScene: BaseLevelScene, SKPhysicsContactDelegate {
         container.physicsBody?.categoryBitMask = PhysicsCategory.ground
         container.physicsBody?.friction = 0
 
-        // Lock indicator
-        let lockIcon = SKShapeNode(circleOfRadius: 6)
-        lockIcon.fillColor = strokeColor.withAlphaComponent(0.3)
-        lockIcon.strokeColor = strokeColor
-        lockIcon.lineWidth = 1.5
-        lockIcon.position = CGPoint(x: 0, y: gateHeight / 2 + 14)
-        lockIcon.name = "lock_\(group)"
-        container.addChild(lockIcon)
+        // Lock indicator — finger-count label so players can read how many
+        // contacts this gate needs (replaces the ambiguous generic lock dot).
+        let lockBadge = SKShapeNode(circleOfRadius: 11)
+        lockBadge.fillColor = strokeColor.withAlphaComponent(0.3)
+        lockBadge.strokeColor = strokeColor
+        lockBadge.lineWidth = 1.5
+        lockBadge.position = CGPoint(x: 0, y: gateHeight / 2 + 18)
+        lockBadge.name = "lock_\(group)"
+        container.addChild(lockBadge)
+
+        let countLabel = SKLabelNode(text: "\(requiredContacts)")
+        countLabel.fontName = VisualConstants.Fonts.display
+        countLabel.fontSize = 13
+        countLabel.fontColor = strokeColor
+        countLabel.verticalAlignmentMode = .center
+        countLabel.horizontalAlignmentMode = .center
+        countLabel.name = "lockCount_\(group)"
+        lockBadge.addChild(countLabel)
+
+        // Accessibility: gate announces required contacts + locked/open state.
+        container.isAccessibilityElement = true
+        container.accessibilityLabel = "Gate, needs \(requiredContacts) contacts, locked"
 
         return Gate(node: container, barNodes: barNodes, group: group)
     }
@@ -412,7 +431,9 @@ final class MultiTouchScene: BaseLevelScene, SKPhysicsContactDelegate {
             path.addLine(to: cameraDestination)
 
             line.path = path
-            line.strokeColor = strokeColor.withAlphaComponent(0.08)
+            // Resting alpha raised 0.08 -> 0.2 so players can read which plates
+            // wire to which gate BEFORE activating the group (display only).
+            line.strokeColor = strokeColor.withAlphaComponent(0.2)
             line.lineWidth = 1.0
             line.zPosition = 498
             line.name = "circuit_\(group)"
@@ -571,11 +592,16 @@ final class MultiTouchScene: BaseLevelScene, SKPhysicsContactDelegate {
         let plate = pressurePlates[index]
         plate.node.removeAction(forKey: "shimmer")
 
-        // Visual: cyan glow
-        plate.node.fillColor = VisualConstants.Colors.accent.withAlphaComponent(0.15)
+        // Visual: cyan glow + non-color cue (thicker stroke + more-opaque inner
+        // disc) so the active state reads without relying on hue alone (A11Y).
+        plate.node.fillColor = VisualConstants.Colors.accent.withAlphaComponent(0.4)
         plate.node.strokeColor = VisualConstants.Colors.accent
+        plate.node.lineWidth = lineWidth * 2
         plate.glowRing.strokeColor = VisualConstants.Colors.accent.withAlphaComponent(0.6)
         plate.glowRing.glowWidth = 8
+
+        // Accessibility: announce the active state for this node.
+        plate.node.accessibilityLabel = "Pressure node, group \(plate.group), active"
 
         // Scale pop
         plate.node.run(.sequence([
@@ -595,10 +621,14 @@ final class MultiTouchScene: BaseLevelScene, SKPhysicsContactDelegate {
         let plate = pressurePlates[index]
         plate.node.fillColor = fillColor.withAlphaComponent(0.05)
         plate.node.strokeColor = strokeColor.withAlphaComponent(0.4)
+        plate.node.lineWidth = lineWidth
         plate.glowRing.strokeColor = strokeColor.withAlphaComponent(0.3)
         plate.glowRing.glowWidth = 3
         plate.pulseRing.alpha = 0
         plate.pulseRing.removeAction(forKey: "pulse")
+
+        // Accessibility: announce the inactive state for this node.
+        plate.node.accessibilityLabel = "Pressure node, group \(plate.group), inactive"
 
         let shimmer = SKAction.sequence([
             .run { plate.node.strokeColor = SKColor.black.withAlphaComponent(0.5) },
@@ -680,6 +710,9 @@ final class MultiTouchScene: BaseLevelScene, SKPhysicsContactDelegate {
         let gate = gates[index]
         gate.node.physicsBody = nil
 
+        let requiredContacts = pressurePlates.filter { $0.group == gate.group }.count
+        gate.node.accessibilityLabel = "Gate, needs \(requiredContacts) contacts, open"
+
         HapticManager.shared.heavy()
         AudioManager.shared.playGlitch()
 
@@ -708,7 +741,17 @@ final class MultiTouchScene: BaseLevelScene, SKPhysicsContactDelegate {
         gate.node.physicsBody?.isDynamic = false
         gate.node.physicsBody?.categoryBitMask = PhysicsCategory.ground
         gate.node.physicsBody?.friction = 0
+
+        let requiredContacts = pressurePlates.filter { $0.group == gate.group }.count
+        gate.node.accessibilityLabel = "Gate, needs \(requiredContacts) contacts, locked"
+
         for bar in gate.barNodes { bar.run(.fadeAlpha(to: 1.0, duration: 0.15)) }
+        // Restore the finger-count badge that faded out when the gate opened.
+        if let lock = gate.node.childNode(withName: "lock_\(gate.group)") as? SKShapeNode {
+            lock.removeAllActions()
+            lock.fillColor = strokeColor.withAlphaComponent(0.3)
+            lock.run(.fadeAlpha(to: 1.0, duration: 0.15))
+        }
         AudioManager.shared.playClick()
     }
 
@@ -724,7 +767,7 @@ final class MultiTouchScene: BaseLevelScene, SKPhysicsContactDelegate {
                 ]), withKey: "illuminate")
             } else {
                 line.removeAction(forKey: "illuminate")
-                line.strokeColor = SKColor.black.withAlphaComponent(0.08)
+                line.strokeColor = SKColor.black.withAlphaComponent(0.2)
                 line.lineWidth = 1.0
                 line.glowWidth = 0
             }

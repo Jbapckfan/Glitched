@@ -49,6 +49,7 @@ final class TimeTravelScene: BaseLevelScene, SKPhysicsContactDelegate {
     private var treeBranches: [SKNode] = []
 
     private var clockDisplay: SKNode?
+    private var yearsReadout: SKLabelNode?
     private var signNode: SKNode?
     private var instructionPanel: SKNode?
     private var syncingLabel: SKLabelNode?
@@ -265,6 +266,18 @@ final class TimeTravelScene: BaseLevelScene, SKPhysicsContactDelegate {
         // iPhone 390/402 and iPad 1024, while staying horizontally centred and
         // clear of the left-anchored title column.
         instructionPanel?.position = CGPoint(x: size.width / 2, y: topSafeY - 155)
+
+        // OVERLAP FIX: pin the "N / 10 YRS" age counter to a fixed top-center
+        // HUD slot, 90pt below the safe-area top. This sits in the clear band
+        // BELOW the left-anchored LEVEL title (text baseline at topSafeY-32, so
+        // ~58pt of clearance above this y) and ABOVE the centered discovery
+        // panel (top edge topSafeY-125, which the panel vacates after 5s
+        // regardless). At center x the left title column (ends ~x210 on iPhone
+        // 390) and the top-right 88x88 PAUSE reserve (starts ~x302) never reach
+        // it, and on iPad 1024 it stays dead-center with even more margin. No
+        // game sprite — Bit, tree, sign, clock dial — lives in this band, so the
+        // dynamic age digits are always fully readable.
+        yearsReadout?.position = CGPoint(x: size.width / 2, y: topSafeY - 90)
     }
 
     override func didUpdateSafeArea() {
@@ -703,6 +716,41 @@ final class TimeTravelScene: BaseLevelScene, SKPhysicsContactDelegate {
         clockDisplay?.run(.repeatForever(.sequence([
             .rotate(byAngle: .pi * 2, duration: 2.0)
         ])))
+
+        // Upright "N / 10 YRS" progress readout.
+        //
+        // OVERLAP FIX: this counter previously anchored just under the spinning
+        // clockDisplay dial — which floats over the tree/sapling at the spawn
+        // (clockDisplay.x == treeContainer.x == cliffX-200, y groundY+80). The
+        // astronaut (Bit) sprite spawns right there and OCCLUDED the dynamic
+        // current-age digits on iPad (only the static "/ 10 YRS" tail peeked out
+        // past the helmet) and crowded the figure on iPhone. Re-anchor it to a
+        // FIXED top-center HUD slot below the LEVEL title — owned by the scene,
+        // never a child of any sprite/spinner — so no game node can overlap it
+        // and the age value stays fully readable. The exact position is set in
+        // repositionTopHUD() (and re-applied on safe-area changes); seed it here
+        // with the same formula so it is correct before the first layout pass.
+        let readout = SKLabelNode(text: "0 / \(Int(requiredYears)) YRS")
+        readout.fontName = "Menlo-Bold"
+        readout.fontSize = 14
+        readout.fontColor = strokeColor
+        readout.horizontalAlignmentMode = .center
+        readout.verticalAlignmentMode = .center
+        readout.position = CGPoint(x: size.width / 2, y: topSafeY - 90)
+        readout.zPosition = 100
+        addChild(readout)
+        lineElements.append(readout)
+        yearsReadout = readout
+        updateYearsReadout()
+        repositionTopHUD()
+    }
+
+    // Refreshes the clock's "N / 10 YRS" progress readout. Clamps the displayed
+    // value to the required total so it reads as a goal tracker rather than
+    // overshooting once enough time has passed.
+    private func updateYearsReadout() {
+        let shown = Int(min(gameYears, requiredYears).rounded(.down))
+        yearsReadout?.text = "\(shown) / \(Int(requiredYears)) YRS"
     }
 
     // MARK: - Instruction Panel
@@ -773,6 +821,7 @@ final class TimeTravelScene: BaseLevelScene, SKPhysicsContactDelegate {
     private func applyTimePassage(deltaTime: TimeInterval) {
         let newYears = gameYears + (deltaTime * timeMultiplier)
         gameYears = newYears
+        updateYearsReadout()
 
         // Show 4th-wall return commentary
         showReturnCommentary(secondsAway: deltaTime)
@@ -899,8 +948,9 @@ final class TimeTravelScene: BaseLevelScene, SKPhysicsContactDelegate {
 
         // Only activate exit for ancient tree (full growth)
         if stage == .ancientTree {
-            // Hide clock and sign
+            // Hide clock, its readout, and sign
             clockDisplay?.run(.fadeOut(withDuration: 0.5))
+            yearsReadout?.run(.fadeOut(withDuration: 0.5))
             signNode?.run(.fadeOut(withDuration: 0.5))
 
             // Activate exit arrow
@@ -1102,6 +1152,7 @@ final class TimeTravelScene: BaseLevelScene, SKPhysicsContactDelegate {
             applyTimePassage(deltaTime: deltaTime)
         case .timePassageSimulated(let years):
             gameYears += years
+            updateYearsReadout()
             // Simulate time away based on years for stage calculation
             let simulatedSeconds = years / timeMultiplier
             showReturnCommentary(secondsAway: simulatedSeconds)

@@ -191,10 +191,9 @@ final class AirDropScene: BaseLevelScene, SKPhysicsContactDelegate {
         cipherDisplayLabel.fontColor = fillColor
         cipherDisplayLabel.position = CGPoint(x: 0, y: 28)
         terminalScreen!.addChild(cipherDisplayLabel)
-        cipherDisplayLabel.run(.repeatForever(.sequence([
-            .fadeAlpha(to: 0.55, duration: 0.5),
-            .fadeAlpha(to: 1.0, duration: 0.5)
-        ])))
+        // The ciphertext is NOT the actionable thing — it can't be solved in-head, so a
+        // forever-pulse here mis-aims the player's attention at a dead end. Show it
+        // statically at full opacity; the breathing draw belongs on the SHARE button.
 
         // Visible transform rule. Sharing performs this rotation for you.
         ruleLabel = SKLabelNode(text: "RULE: ROTATE BACK \(shift)")
@@ -239,8 +238,23 @@ final class AirDropScene: BaseLevelScene, SKPhysicsContactDelegate {
         shareLabel.name = "shareButton"
         shareBtnNode.addChild(shareLabel)
 
+        // Expose the SHARE button (the only actionable element here) to VoiceOver.
+        shareBtnNode.isAccessibilityElement = true
+        shareBtnNode.accessibilityLabel = "Share to decode, button"
+        shareBtnNode.accessibilityTraits = .button
+
         shareButton = shareBtnNode
         terminalScreen!.addChild(shareBtnNode)
+
+        // Gentle idle breathe so attention lands on the actionable SHARE control rather
+        // than the un-solvable ciphertext. Suppressed under Reduce Motion (the static
+        // button still reads via its VoiceOver label and full-opacity chrome).
+        if !UIAccessibility.isReduceMotionEnabled {
+            shareBtnNode.run(.repeatForever(.sequence([
+                .scale(to: 1.04, duration: 0.9),
+                .scale(to: 1.0, duration: 0.9)
+            ])), withKey: "shareBreathe")
+        }
 
         addChild(terminalScreen!)
     }
@@ -387,6 +401,10 @@ final class AirDropScene: BaseLevelScene, SKPhysicsContactDelegate {
             .scale(to: 1.25, duration: 0.12),
             .scale(to: 1.0, duration: 0.12)
         ]))
+        // Announce the revealed plaintext for VoiceOver, spelled out so each symbol reads
+        // distinctly (space-separated) rather than as one mangled word.
+        let spelled = doorCode.map { String($0) }.joined(separator: " ")
+        UIAccessibility.post(notification: .announcement, argument: "Decoded code: \(spelled)")
         HapticManager.shared.collect()
         notePlayerProgress()
     }
@@ -504,6 +522,12 @@ final class AirDropScene: BaseLevelScene, SKPhysicsContactDelegate {
             label.name = btn.name
             btn.addChild(label)
 
+            // Expose each key to VoiceOver by its symbol (spelled out so a single glyph
+            // reads as a letter, not punctuation).
+            btn.isAccessibilityElement = true
+            btn.accessibilityLabel = "Key \(String(char)), button"
+            btn.accessibilityTraits = .button
+
             keyboardNode!.addChild(btn)
         }
 
@@ -526,6 +550,10 @@ final class AirDropScene: BaseLevelScene, SKPhysicsContactDelegate {
         clearLabel.verticalAlignmentMode = .center
         clearLabel.name = "keyClear"
         clearBtn.addChild(clearLabel)
+
+        clearBtn.isAccessibilityElement = true
+        clearBtn.accessibilityLabel = "Clear, button"
+        clearBtn.accessibilityTraits = .button
 
         keyboardNode!.addChild(clearBtn)
         addChild(keyboardNode!)

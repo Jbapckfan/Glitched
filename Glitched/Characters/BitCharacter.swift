@@ -274,7 +274,7 @@ final class BitCharacter: SKSpriteNode {
         ])
         
         run(SKAction.repeatForever(breathe), withKey: "idle")
-        antenna?.run(SKAction.repeatForever(antennaPulse))
+        antenna?.run(SKAction.repeatForever(antennaPulse), withKey: "antennaPulse")
     }
 
     private func updateTrail() {

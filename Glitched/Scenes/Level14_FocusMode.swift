@@ -20,6 +20,8 @@ final class FocusModeScene: BaseLevelScene, SKPhysicsContactDelegate {
     private var exitDoorLocked = true
     private var exitBlocker: SKNode?
     private var calmOverlay: SKShapeNode?
+    private var moonLock: SKNode?
+    private var focusCuePresenting = false
     private var orbitalAngles: [Int: CGFloat] = [:]  // hazard index -> current angle
     private var orbitalCenters: [Int: CGPoint] = [:]   // hazard index -> orbit center
     private let designWidth: CGFloat = 390
@@ -289,6 +291,7 @@ final class FocusModeScene: BaseLevelScene, SKPhysicsContactDelegate {
         let lock = createMoonIcon(size: 10)
         lock.name = "moon_lock"
         door.addChild(lock)
+        moonLock = lock
 
         exitBlocker = SKNode()
         exitBlocker?.physicsBody = SKPhysicsBody(rectangleOf: CGSize(width: 40, height: 60))
@@ -336,15 +339,25 @@ final class FocusModeScene: BaseLevelScene, SKPhysicsContactDelegate {
         text1.fontName = "Menlo-Bold"
         text1.fontSize = 11
         text1.fontColor = strokeColor
-        text1.position = CGPoint(x: 0, y: 10)
+        text1.position = CGPoint(x: 0, y: 18)
         panel.addChild(text1)
 
         let text2 = SKLabelNode(text: "UNLESS YOU LET IT.")
         text2.fontName = "Menlo"
         text2.fontSize = 10
         text2.fontColor = strokeColor
-        text2.position = CGPoint(x: 0, y: -10)
+        text2.position = CGPoint(x: 0, y: 1)
         panel.addChild(text2)
+
+        // 3rd line: explicit mechanic prompt so players know the OS-level action
+        // that solves the level (matches hintText() / LEVEL-GUIDE). Box height
+        // (80) is unchanged; the three lines pack inside the existing bounds.
+        let text3 = SKLabelNode(text: "ENABLE FOCUS / DO NOT DISTURB TO FREEZE THE CHAOS")
+        text3.fontName = "Menlo"
+        text3.fontSize = 7
+        text3.fontColor = strokeColor
+        text3.position = CGPoint(x: 0, y: -18)
+        panel.addChild(text3)
 
         panel.run(.sequence([.wait(forDuration: 6), .fadeOut(withDuration: 0.5), .removeFromParent()]))
     }
@@ -473,7 +486,14 @@ final class FocusModeScene: BaseLevelScene, SKPhysicsContactDelegate {
         if collision == PhysicsCategory.player | PhysicsCategory.hazard {
             handleDeath()
         } else if collision == PhysicsCategory.player | PhysicsCategory.exit {
-            if !exitDoorLocked { handleExit() }
+            if !exitDoorLocked {
+                handleExit()
+            } else {
+                // Player reached a still-locked door — surface the solution
+                // without changing gating: a near-door "FOCUS TO OPEN" cue and a
+                // pulse on the moon-lock to point at the OS-level action.
+                presentLockedExitCue()
+            }
         } else if collision == PhysicsCategory.player | PhysicsCategory.ground {
             bit.setGrounded(true)
         }
@@ -495,6 +515,43 @@ final class FocusModeScene: BaseLevelScene, SKPhysicsContactDelegate {
     private func handleExit() {
         succeedLevel()
         bit.run(.sequence([.fadeOut(withDuration: 0.5), .run { [weak self] in self?.transitionToNextLevel() }]))
+    }
+
+    /// Additive feedback shown when the player touches the still-locked exit:
+    /// a transient "FOCUS TO OPEN" label above the door plus a moon-lock pulse.
+    /// Throttled so repeated contacts while leaning on the door don't stack cues.
+    /// Purely cosmetic — does not alter the exit gating in any way.
+    private func presentLockedExitCue() {
+        guard !focusCuePresenting else { return }
+        guard let exitNode = childNode(withName: "exit") else { return }
+        focusCuePresenting = true
+
+        let cue = SKLabelNode(text: "FOCUS TO OPEN")
+        cue.fontName = "Menlo-Bold"
+        cue.fontSize = 9
+        cue.fontColor = strokeColor
+        cue.verticalAlignmentMode = .center
+        cue.horizontalAlignmentMode = .center
+        // Just above the 60-tall door frame (centered at the exit position).
+        cue.position = CGPoint(x: exitNode.position.x, y: exitNode.position.y + 42)
+        cue.zPosition = 250
+        cue.alpha = 0
+        addChild(cue)
+        cue.run(.sequence([
+            .fadeIn(withDuration: 0.2),
+            .wait(forDuration: 1.0),
+            .fadeOut(withDuration: 0.3),
+            .removeFromParent(),
+            .run { [weak self] in self?.focusCuePresenting = false }
+        ]))
+
+        // Pulse the moon-lock to draw the eye to the locked gate.
+        moonLock?.run(.sequence([
+            .scale(to: 1.4, duration: 0.2),
+            .scale(to: 1.0, duration: 0.2),
+            .scale(to: 1.4, duration: 0.2),
+            .scale(to: 1.0, duration: 0.2)
+        ]), withKey: "lockPulse")
     }
 
     override func onLevelSucceeded() {

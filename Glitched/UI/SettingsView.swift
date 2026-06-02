@@ -68,7 +68,7 @@ struct SettingsView: View {
 
                             Text("TEXT SIZE FOLLOWS YOUR SYSTEM DYNAMIC TYPE SETTING.")
                                 .font(scaledFont(VisualConstants.Fonts.secondary, size: 10))
-                                .foregroundStyle(.white.opacity(0.4))
+                                .foregroundStyle(.white.opacity(0.65))
                                 .frame(maxWidth: .infinity, alignment: .leading)
                         }
 
@@ -82,6 +82,7 @@ struct SettingsView: View {
                                 restorePurchasesButton
                             }
                             .disabled(restoringPurchases)
+                            .accessibilityLabel("Restore purchases, button")
 
                             statusRow("FULL GAME", unlocked: store.isUnlocked(StoreManager.fullGameProductID))
 
@@ -159,6 +160,7 @@ struct SettingsView: View {
             }
         }
         .toggleStyle(SwitchToggleStyle(tint: .cyan))
+        .accessibilityHint(caption ?? "")
     }
 
     private func terminalSlider(_ label: String, value: Binding<Float>) -> some View {
@@ -192,7 +194,7 @@ struct SettingsView: View {
             Spacer()
             Text(unlocked ? "UNLOCKED" : "LOCKED")
                 .font(scaledFont(VisualConstants.Fonts.main, size: 11))
-                .foregroundStyle(unlocked ? Color.cyan : .white.opacity(0.45))
+                .foregroundStyle(unlocked ? Color.cyan : .white.opacity(0.65))
         }
     }
 

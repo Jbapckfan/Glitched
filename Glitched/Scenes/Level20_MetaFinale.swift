@@ -95,6 +95,13 @@ final class MetaFinaleScene: BaseLevelScene, SKPhysicsContactDelegate {
     private var corruptionProximity: CGFloat = 0
     private var hasShownFakeReview = false
 
+    /// System-level Reduce Motion (Settings > Accessibility > Motion). When on we
+    /// suppress the raw corruption-block flicker and the purge's glitch flashes,
+    /// matching JuiceManager's own `systemReduceMotion` guards on shake/glitch.
+    private var systemReduceMotion: Bool {
+        UIAccessibility.isReduceMotionEnabled
+    }
+
     override func configureScene() {
         levelID = LevelID(world: .world2, index: 20)
         backgroundColor = .black // Start dark for dramatic reveal
@@ -327,7 +334,7 @@ final class MetaFinaleScene: BaseLevelScene, SKPhysicsContactDelegate {
         corruptionWall.addChild(blocker)
 
         // Hint
-        hintLabel = SKLabelNode(text: "INITIATE SYSTEM PURGE TO CLEAR CORRUPTION")
+        hintLabel = SKLabelNode(text: "WALK INTO THE CORRUPTION TO PURGE IT")
         hintLabel.fontName = "Menlo"
         hintLabel.fontSize = 9
         hintLabel.fontColor = strokeColor
@@ -420,14 +427,14 @@ final class MetaFinaleScene: BaseLevelScene, SKPhysicsContactDelegate {
         text2.position = CGPoint(x: 0, y: 5)
         panel.addChild(text2)
 
-        let text3 = SKLabelNode(text: "ONLY A FRESH START CAN CLEAR IT")
+        let text3 = SKLabelNode(text: "WALK INTO IT TO PURGE THE CORRUPTION")
         text3.fontName = "Menlo"
         text3.fontSize = 10
         text3.fontColor = strokeColor
         text3.position = CGPoint(x: 0, y: -15)
         panel.addChild(text3)
 
-        let text4 = SKLabelNode(text: "(YOUR PROGRESS IS SAFE IN THE CLOUD)")
+        let text4 = SKLabelNode(text: "(YOUR PROGRESS SURVIVES THE PURGE)")
         text4.fontName = "Menlo"
         text4.fontSize = 8
         text4.fontColor = strokeColor
@@ -436,6 +443,10 @@ final class MetaFinaleScene: BaseLevelScene, SKPhysicsContactDelegate {
         panel.addChild(text4)
 
         panel.run(.sequence([.wait(forDuration: 8), .fadeOut(withDuration: 0.5), .removeFromParent()]))
+
+        // A11Y: the gate instruction is purely visual (pulsing label + timed panel).
+        // Speak it once so VoiceOver users get the actionable objective.
+        announceObjective("Corrupted data blocks the exit. Walk into the corruption to purge it. Your progress survives the purge.")
     }
 
     private func setupBit() {
@@ -476,9 +487,13 @@ final class MetaFinaleScene: BaseLevelScene, SKPhysicsContactDelegate {
         crashOverlay.name = "crashOverlay"
         addChild(crashOverlay)
 
-        // Intense glitch effects
+        // Intense glitch effects. shake/glitchEffect self-guard on Reduce Motion in
+        // JuiceManager; the explicit gate here keeps the intent local and skips the
+        // glitch-bar flash outright when the system switch is on.
         JuiceManager.shared.shake(intensity: .earthquake, duration: 1.0)
-        JuiceManager.shared.glitchEffect(duration: 0.8)
+        if !systemReduceMotion {
+            JuiceManager.shared.glitchEffect(duration: 0.8)
+        }
         AudioManager.shared.playGlitch()
         HapticManager.shared.playPattern(.heartbeat)
 
@@ -635,6 +650,10 @@ final class MetaFinaleScene: BaseLevelScene, SKPhysicsContactDelegate {
 
         // Mark as cleared in Keychain
         KeychainHelper.save(key: "level20_cleared", value: "true")
+
+        // A11Y: the clear is conveyed only by the block explosion + recolored label.
+        // Speak the result so VoiceOver users know the path is now open.
+        announceObjective("Corruption cleared — the exit is open.")
     }
 
     // Fake review prompt removed — violates App Store guidelines
@@ -687,7 +706,12 @@ final class MetaFinaleScene: BaseLevelScene, SKPhysicsContactDelegate {
             glitchTimer += deltaTime
             let glitchInterval = max(0.02, 0.15 - (corruptionProximity * 0.13))
 
-            if glitchTimer > glitchInterval {
+            // A11Y: the proximity flicker (rapid block jitter + glitch bars) is the
+            // exact kind of rapid involuntary motion Reduce Motion is meant to
+            // suppress. Skip it entirely when the system switch is on. (Haptics,
+            // the static red-overlay alpha, and shake — which self-guards in
+            // JuiceManager — are left alone so the gate still reads as tense.)
+            if glitchTimer > glitchInterval && !systemReduceMotion {
                 glitchTimer = 0
 
                 // More intense glitches when closer
@@ -702,7 +726,8 @@ final class MetaFinaleScene: BaseLevelScene, SKPhysicsContactDelegate {
                     }
                 }
 
-                // Occasional glitch effect when very close
+                // Occasional glitch effect when very close (JuiceManager.glitchEffect
+                // also self-guards on Reduce Motion).
                 if corruptionProximity > 0.7 && Int.random(in: 0...10) < 2 {
                     JuiceManager.shared.glitchEffect(duration: 0.05)
                 }

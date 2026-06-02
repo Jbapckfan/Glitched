@@ -33,18 +33,14 @@ final class DeviceNameScene: BaseLevelScene, SKPhysicsContactDelegate {
 
     // Device name state
     private var playerName: String = "PLAYER"
-    private var nameDoorLabel: SKLabelNode?
-    private var nameDoorBlocker: SKNode?
-    private var nameDoorNode: SKNode?
-    private var nameDoorOpened = false
 
-    // Name-gate doors: the puzzle's actual lock. The mid-level name gate only
-    // de-solidifies once the device name is confirmed; the END is a CLUSTER of
-    // three doorways and only the one labeled with the real device name is the
-    // live exit — the other two are inert decoys. The name is the key, so the
-    // player must READ their name and step into the matching door (distractors
-    // flank it). Doorways don't block traversal, so the player can always reach
-    // their slot regardless of which one it is.
+    // Name-gate doors: the puzzle's actual lock. The END is a CLUSTER of three
+    // doorways and only the one labeled with the real device name is the live
+    // exit — the other two are inert decoys. The name is the key, so the player
+    // must READ their name and step into the matching door (distractors flank
+    // it). Door FRAMES don't block traversal; solid pillars between the slots
+    // partition the platform into one bay per door so the player must CHOOSE a
+    // bay rather than sweeping all three slots in a single walk.
     private struct NameGateDoor {
         let node: SKNode
         let label: SKLabelNode
@@ -183,7 +179,9 @@ final class DeviceNameScene: BaseLevelScene, SKPhysicsContactDelegate {
 
         createPlatform(at: CGPoint(x: courseX(145), y: groundY), size: CGSize(width: courseLen(80), height: 30))
 
-        createNameDoor(at: CGPoint(x: courseX(185), y: groundY + 45))
+        // The mid-level name gate has been removed: it was jumpable (apex ~266 over
+        // platform top 175) and auto-opened on a timer, so it gated nothing. The END
+        // three-door cluster is now the sole name lock and the real puzzle.
 
         createPlatform(at: CGPoint(x: courseX(230), y: groundY), size: CGSize(width: courseLen(50), height: 30))
         createPlatform(at: CGPoint(x: courseX(285), y: groundY + 30), size: CGSize(width: courseLen(40), height: 25))
@@ -198,6 +196,32 @@ final class DeviceNameScene: BaseLevelScene, SKPhysicsContactDelegate {
         // Decision point: three doors, only the one matching the device name is
         // the live exit. Logical x = 332 / 372 / 412, sills at groundY + 50.
         createExitDoorCluster(slotLogicalXs: [332, 372, 412], sillY: groundY + 50)
+
+        // Solid blocker pillars BETWEEN the three door slots, partitioning the
+        // final platform into three bays (one per door). Without these the slots
+        // all fall within Bit's grounded walk range and a single rightward stroll
+        // sweeps every slot, so the level would complete without the player
+        // CHOOSING a door. The door FRAMES stay non-blocking, so the player can
+        // stand in the chosen bay and contact only that bay's exit body.
+        //
+        // Logical x = 352, 392 (between 332/372 and 372/412). Each ~10pt wide,
+        // rising from the platform top (groundY + 15 = 175) to the door-frame top
+        // (sill 210 + 30 = 240), i.e. height ~65pt. That is taller than the safe
+        // jump rise (~91pt apex would land back on the same platform), so a jump
+        // that clears a pillar overshoots the narrow bay and falls — it can't be
+        // used to bypass the choice. Bay interiors: bay1 ~37, bay2 ~30, bay3 ~33
+        // (logical), all > the ~26pt Bit needs to reach its own slot, and >= 26pt
+        // even at the 390w iPhone (courseScale ~0.907): bay2 = 30 * 0.907 ~ 27.2pt.
+        let pillarTopY = groundY + 50 + 30          // door-frame top (sill + half-frame)
+        let platformTopY = groundY + 15             // final platform surface top
+        let pillarHeight = pillarTopY - platformTopY // ~65pt
+        let pillarCenterY = (pillarTopY + platformTopY) / 2
+        for pillarLogicalX in [352, 392] as [CGFloat] {
+            createPillar(
+                at: CGPoint(x: courseX(pillarLogicalX), y: pillarCenterY),
+                size: CGSize(width: courseLen(10), height: pillarHeight)
+            )
+        }
 
         // Death zone — stays full-width (centered at size.width/2) so it always
         // catches falls regardless of where the centered course sits.
@@ -226,58 +250,24 @@ final class DeviceNameScene: BaseLevelScene, SKPhysicsContactDelegate {
         addChild(platform)
     }
 
-    private func createNameDoor(at position: CGPoint) {
-        let door = SKNode()
-        door.position = position
-        door.name = "name_door"
+    /// A solid, static blocker pillar (ground category) used to partition the
+    /// final platform into per-door bays. Visually a filled bar matching the
+    /// door-frame treatment so it reads as a wall between the doorways.
+    private func createPillar(at position: CGPoint, size: CGSize) {
+        let pillar = SKNode()
+        pillar.position = position
 
-        // Door frame
-        let frame = SKShapeNode(rectOf: CGSize(width: 10, height: 60))
-        frame.fillColor = strokeColor
-        frame.strokeColor = strokeColor
-        frame.lineWidth = lineWidth
-        door.addChild(frame)
+        let surface = SKShapeNode(rectOf: size)
+        surface.fillColor = strokeColor
+        surface.strokeColor = strokeColor
+        surface.lineWidth = lineWidth
+        pillar.addChild(surface)
 
-        // Name label - will update when name is received
-        let label = SKLabelNode(text: "PLAYER'S DOOR")
-        label.fontName = "Menlo-Bold"
-        label.fontSize = 9
-        label.fontColor = strokeColor
-        label.position = CGPoint(x: 0, y: 35)
-        label.zPosition = 50
-        door.addChild(label)
-        nameDoorLabel = label
+        pillar.physicsBody = SKPhysicsBody(rectangleOf: size)
+        pillar.physicsBody?.isDynamic = false
+        pillar.physicsBody?.categoryBitMask = PhysicsCategory.ground
 
-        addChild(door)
-        nameDoorNode = door
-
-        // Physical blocker. Unlike the old blind 2-second auto-open, this gate is
-        // genuinely NAME-gated: it stays solid until the device name is confirmed
-        // and the gate label matches `playerName` (it always will — the gate is
-        // keyed to the player — but the OPEN is now caused by reading you, not a
-        // timer). Stored so `openNameGate()` can de-solidify it on confirmation.
-        let blocker = SKNode()
-        blocker.physicsBody = SKPhysicsBody(rectangleOf: CGSize(width: 10, height: 60))
-        blocker.physicsBody?.isDynamic = false
-        blocker.physicsBody?.categoryBitMask = PhysicsCategory.ground
-        door.addChild(blocker)
-        nameDoorBlocker = blocker
-    }
-
-    /// Open the mid-level name gate once the device name has been confirmed.
-    /// The gate is the player's own door, so a confirmed name always opens it —
-    /// but it is now driven by reading the name, not a fixed timer. No-op until
-    /// the name arrives.
-    private func openNameGate() {
-        guard nameReceived, !nameDoorOpened, let door = nameDoorNode else { return }
-        nameDoorOpened = true
-        nameDoorBlocker?.physicsBody?.categoryBitMask = 0
-        // The gate is a vertical WALL beside the path, not a floor the player
-        // stands on, so de-solidifying it can't strand grounded state.
-        door.run(.sequence([
-            .moveBy(x: 0, y: 60, duration: 0.4),
-            .fadeAlpha(to: 0.3, duration: 0.2)
-        ]))
+        addChild(pillar)
     }
 
     /// Build the END decision: a row of doorways, exactly ONE of which is the
@@ -306,6 +296,11 @@ final class DeviceNameScene: BaseLevelScene, SKPhysicsContactDelegate {
             frame.lineWidth = lineWidth
             door.addChild(frame)
 
+            // Short placeholder until the name resolves. The three door slots sit
+            // only ~36pt apart, so a wide "SCANNING..." label smears the three
+            // together (and the rightmost clips the screen edge). A "?" never
+            // overlaps; assignDoorIdentities() overwrites the matched door with the
+            // resolved name. The opening narrator beat carries the scanning clarity.
             let label = SKLabelNode(text: "?")
             label.fontName = "Menlo-Bold"
             label.fontSize = 9
@@ -523,6 +518,36 @@ final class DeviceNameScene: BaseLevelScene, SKPhysicsContactDelegate {
         // band, full opacity, reduce-motion aware). Fires at the same trigger
         // point (scene setup). Wording preserved.
         GlitchedNarrator.present("I KNOW WHO YOU ARE. THE DOOR KNOWS TOO.", in: self, style: .alert)
+
+        // The task instruction lives in the TOP instruction-panel band (mirroring
+        // sibling levels' showInstructionPanel placement), NOT the narrator's
+        // lower-center band: the narrator band crosses mid-screen where it would
+        // overlap the astronaut (left, y~200) and the door panels (right, y~210).
+        // One short top-center line clears both on iPhone 390 and iPad 1024 — it
+        // sits a row below the top-left "LEVEL 23" title (topSafeY - 30) and never
+        // descends into the gameplay band.
+        showFindYourDoorInstruction()
+    }
+
+    /// Top-center, one-line task instruction in the reserved upper instruction
+    /// band. Kept short so it stays on a single line within the band width on the
+    /// narrowest (390-pt) iPhone and clears the doorway/astronaut sprites below.
+    private func showFindYourDoorInstruction() {
+        let instruction = SKLabelNode(text: "FIND THE DOOR WITH YOUR NAME")
+        instruction.fontName = "Menlo-Bold"
+        instruction.fontSize = 11
+        instruction.fontColor = strokeColor
+        instruction.horizontalAlignmentMode = .center
+        instruction.position = CGPoint(x: size.width / 2, y: topSafeY - 64)
+        instruction.zPosition = 200
+        instruction.alpha = 0
+        addChild(instruction)
+        instruction.run(.sequence([
+            .fadeIn(withDuration: 0.4),
+            .wait(forDuration: 5.0),
+            .fadeOut(withDuration: 0.5),
+            .removeFromParent()
+        ]))
     }
 
     private func setupBit() {
@@ -532,6 +557,14 @@ final class DeviceNameScene: BaseLevelScene, SKPhysicsContactDelegate {
         addChild(bit)
         registerPlayer(bit)
         playerController = PlayerController(character: bit, scene: self)
+        // The controller clamps maxX = (worldWidth ?? size.width) - 11 - 20. With
+        // no worldWidth this scene capped at size.width - 31 (= 359 on a 390-pt
+        // iPhone), which falls SHORT of bay3's standable center over door3's exit
+        // body — softlocking the puzzle whenever the real door resolves to the
+        // rightmost slot. Tie the clamp to the course so maxX = courseX(430) - 11
+        // reaches the final platform's right edge on EVERY device (390 -> 379,
+        // iPad 1024 -> 716), seating the player over door3's exit on the right.
+        playerController.worldWidth = courseX(430) + 20
     }
 
     // MARK: - Name Handling
@@ -549,12 +582,9 @@ final class DeviceNameScene: BaseLevelScene, SKPhysicsContactDelegate {
         // matchable identity is always shown on the doors.
         playerName = normalizedName(name)
 
-        // The mid-level gate's own label points at that gate (kept in place).
-        nameDoorLabel?.text = "\(playerName)'S DOOR"
-
-        // Open the player's name gate (now caused by reading the name) and slot
-        // the real name into one END door while decoys fill the rest.
-        openNameGate()
+        // Slot the real name into one END door while decoys fill the rest. The
+        // end three-door cluster is the sole name lock now that the mid-level
+        // gate has been removed.
         assignDoorIdentities()
 
         // Show the 4th-wall greeting (narrator).

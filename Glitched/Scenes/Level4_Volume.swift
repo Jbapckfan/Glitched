@@ -54,6 +54,7 @@ final class VolumeScene: BaseLevelScene, SKPhysicsContactDelegate {
     private var playerInZone = false
 
     private var volumeIndicator: SKNode!
+    private var instructionPanel: SKNode?
 
     // Wolf sleep talking — a CONTEXTUAL 4th-wall aside that visibly emanates
     // from the sleeping wolf, so it stays a positioned label anchored above the
@@ -110,6 +111,7 @@ final class VolumeScene: BaseLevelScene, SKPhysicsContactDelegate {
         createVolumeIndicator()
         setupVolumeObserver()
         setupBit()
+        showInstructionPanel()
     }
 
     // MARK: - Water System
@@ -161,8 +163,10 @@ final class VolumeScene: BaseLevelScene, SKPhysicsContactDelegate {
             bubbles.append(bubble)
         }
 
-        // Warning label
-        let warningLabel = SKLabelNode(text: "???")
+        // Warning label — names the flood hazard explicitly so the player
+        // understands the water/volume link. Persists (no auto-fade) while the
+        // wolf/flood area matters, instead of the old 3s fade that hid the clue.
+        let warningLabel = SKLabelNode(text: "TOO LOUD = FLOOD")
         warningLabel.fontName = "Menlo-Bold"
         warningLabel.fontSize = 10
         warningLabel.fontColor = strokeColor
@@ -171,11 +175,6 @@ final class VolumeScene: BaseLevelScene, SKPhysicsContactDelegate {
         warningLabel.alpha = 0.7
         warningLabel.name = "flood_warning"
         addChild(warningLabel)
-
-        warningLabel.run(.sequence([
-            .wait(forDuration: 3),
-            .fadeOut(withDuration: 0.5)
-        ]))
     }
 
     private func updateWaterLevel() {
@@ -737,6 +736,87 @@ final class VolumeScene: BaseLevelScene, SKPhysicsContactDelegate {
                 }
             }
         }
+    }
+
+    // MARK: - Instruction Panel
+
+    private func showInstructionPanel() {
+        instructionPanel = SKNode()
+        // Centered, top-anchored teaching panel mirroring the sibling levels
+        // (e.g. Level 3 / Level 6). It sits in the empty upper-center band BELOW
+        // the right-side volume HUD (offset 178/168) and ABOVE the ground-anchored
+        // wolf mutterings / flood warning, so it never overlaps:
+        //   - the top-LEFT "LEVEL 4" title (left-aligned; this panel is centered)
+        //   - the global top-RIGHT pause button (panel is centered + well below it)
+        //   - the right-side volume HUD (panel y is ~115pt below the HUD center)
+        //   - the wolf sleep-talk ("...160" offset) and flood warning ("...110")
+        // Verified clear on iPhone 390/402 (offset 330) and iPad 1024 (offset 430).
+        // It is transient: fades out after 5s like the sibling panels.
+        instructionPanel?.position = CGPoint(
+            x: size.width / 2,
+            y: topSafeAreaY(offset: min(size.width, size.height) < 700 ? 330 : 430)
+        )
+        instructionPanel?.setScale(visualScale)
+        instructionPanel?.zPosition = 300
+        addChild(instructionPanel!)
+
+        let bg = SKShapeNode(rectOf: CGSize(width: 230, height: 74), cornerRadius: 8)
+        bg.fillColor = fillColor
+        bg.strokeColor = strokeColor
+        bg.lineWidth = lineWidth
+        instructionPanel?.addChild(bg)
+
+        // Speaker icon: an environmental cue before the explicit text hint.
+        let speaker = SKShapeNode()
+        let speakerPath = CGMutablePath()
+        speakerPath.move(to: CGPoint(x: -90, y: 8))
+        speakerPath.addLine(to: CGPoint(x: -80, y: 8))
+        speakerPath.addLine(to: CGPoint(x: -70, y: 15))
+        speakerPath.addLine(to: CGPoint(x: -70, y: -15))
+        speakerPath.addLine(to: CGPoint(x: -80, y: -8))
+        speakerPath.addLine(to: CGPoint(x: -90, y: -8))
+        speakerPath.closeSubpath()
+        speaker.path = speakerPath
+        speaker.fillColor = fillColor
+        speaker.strokeColor = strokeColor
+        speaker.lineWidth = lineWidth * 0.8
+        instructionPanel?.addChild(speaker)
+
+        // Sound waves (muted) beside the speaker
+        for i in 0..<2 {
+            let wave = SKShapeNode()
+            let wavePath = CGMutablePath()
+            let r = CGFloat(8 + i * 7)
+            wavePath.addArc(center: CGPoint(x: -66, y: 0), radius: r,
+                            startAngle: -.pi / 4, endAngle: .pi / 4, clockwise: false)
+            wave.path = wavePath
+            wave.strokeColor = strokeColor.withAlphaComponent(0.5)
+            wave.lineWidth = lineWidth * 0.5
+            wave.fillColor = .clear
+            instructionPanel?.addChild(wave)
+        }
+
+        // Text
+        let label1 = SKLabelNode(text: "KEEP IT QUIET")
+        label1.fontName = "Menlo-Bold"
+        label1.fontSize = 14
+        label1.fontColor = strokeColor
+        label1.position = CGPoint(x: 25, y: 8)
+        instructionPanel?.addChild(label1)
+
+        let label2 = SKLabelNode(text: "Lower volume — loud noises wake the wolf")
+        label2.fontName = "Menlo"
+        label2.fontSize = 7
+        label2.fontColor = strokeColor
+        label2.position = CGPoint(x: 22, y: -12)
+        instructionPanel?.addChild(label2)
+
+        // Fade out after delay
+        instructionPanel?.run(.sequence([
+            .wait(forDuration: 5.0),
+            .fadeOut(withDuration: 0.5),
+            .removeFromParent()
+        ]))
     }
 
     // MARK: - Volume Observer

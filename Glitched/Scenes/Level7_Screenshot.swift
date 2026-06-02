@@ -702,6 +702,17 @@ final class ScreenshotScene: BaseLevelScene, SKPhysicsContactDelegate {
         subLabel.fontColor = strokeColor
         subLabel.position = CGPoint(x: 20, y: -15)
         instructionPanel?.addChild(subLabel)
+
+        // Explicit gesture so the screenshot mechanic is discoverable without
+        // trial-and-error. Centered under the panel, smaller than the action
+        // lines so it reads as a caption. Fits inside the 180-wide box.
+        let gestureLabel = SKLabelNode(text: "PRESS SIDE + VOLUME UP")
+        gestureLabel.fontName = "Menlo"
+        gestureLabel.fontSize = 8
+        gestureLabel.fontColor = strokeColor
+        gestureLabel.horizontalAlignmentMode = .center
+        gestureLabel.position = CGPoint(x: 0, y: -38)
+        instructionPanel?.addChild(gestureLabel)
     }
 
     // MARK: - Timer Display
@@ -812,18 +823,23 @@ final class ScreenshotScene: BaseLevelScene, SKPhysicsContactDelegate {
         // Show 4th-wall text on first screenshot
         showScreenshotCommentary()
 
-        // Flash effect (line art style)
-        let flash = SKShapeNode(rectOf: size)
-        flash.fillColor = fillColor
-        flash.strokeColor = .clear
-        flash.position = CGPoint(x: size.width / 2, y: size.height / 2)
-        flash.zPosition = 1000
-        flash.alpha = 1.0
-        addChild(flash)
-        flash.run(.sequence([
-            .fadeOut(withDuration: 0.25),
-            .removeFromParent()
-        ]))
+        // Flash effect (line art style). Honor system Reduce Motion: the
+        // full-screen brightness flash is exactly the kind of heavy screen-space
+        // effect that setting suppresses, so skip it outright when enabled. The
+        // freeze still reads via the solidified bridge, timer, and haptic below.
+        if !UIAccessibility.isReduceMotionEnabled {
+            let flash = SKShapeNode(rectOf: size)
+            flash.fillColor = fillColor
+            flash.strokeColor = .clear
+            flash.position = CGPoint(x: size.width / 2, y: size.height / 2)
+            flash.zPosition = 1000
+            flash.alpha = 1.0
+            addChild(flash)
+            flash.run(.sequence([
+                .fadeOut(withDuration: 0.25),
+                .removeFromParent()
+            ]))
+        }
 
         // Haptic
         let generator = UIImpactFeedbackGenerator(style: .medium)
@@ -1057,7 +1073,7 @@ final class ScreenshotScene: BaseLevelScene, SKPhysicsContactDelegate {
     }
 
     override func hintText() -> String? {
-        return "Take a screenshot to freeze the bridge"
+        return "Take a screenshot (press Side + Volume Up) to freeze the bridge"
     }
 
     // MARK: - Cleanup

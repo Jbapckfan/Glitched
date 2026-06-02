@@ -330,6 +330,9 @@ class BaseLevelScene: SKScene {
     override func willMove(from view: SKView) {
         super.willMove(from: view)
         cancellables.removeAll()
+        // Re-enable the idle timer when leaving the scene so the screen can
+        // sleep normally outside of gameplay (paired with startPlay()).
+        UIApplication.shared.isIdleTimerDisabled = false
     }
 
     override func didChangeSize(_ oldSize: CGSize) {
@@ -379,6 +382,10 @@ class BaseLevelScene: SKScene {
     func startPlay() {
         isPaused = false
         playStartedAt = Date()
+        // Keep the screen awake during active gameplay (SKScene lifecycle runs
+        // on the main thread). Reset in willMove(from:) so we never leave the
+        // idle timer disabled after leaving a level.
+        UIApplication.shared.isIdleTimerDisabled = true
         GameState.shared.setState(.playing)
     }
 
@@ -462,6 +469,9 @@ class BaseLevelScene: SKScene {
             color: VisualConstants.Colors.accent,
             fontSize: 32
         )
+
+        // Accessibility: speak the outcome so the on-screen marquee reaches VoiceOver.
+        UIAccessibility.post(notification: .announcement, argument: "Level complete.")
     }
 
     /// Center of the currently-visible viewport in scene coordinates. Full-screen
@@ -481,6 +491,9 @@ class BaseLevelScene: SKScene {
 
         // Sound
         AudioManager.shared.playDeath()
+
+        // Accessibility: speak the outcome so the death/respawn moment reaches VoiceOver.
+        UIAccessibility.post(notification: .announcement, argument: "You died. Restarting.")
 
         // FIX #20: Full glitch death sequence. The screen-space portions (flash,
         // glitch bars, static overlay) are camera-anchored inside JuiceManager; the
@@ -628,10 +641,23 @@ class BaseLevelScene: SKScene {
         showDifficultyHint()
     }
 
+    /// Accessibility: posts a VoiceOver announcement so on-screen clue/objective
+    /// text (hint panels, instruction panels) is also spoken aloud. Subclasses
+    /// that build their own clue labels (e.g. `showInstructionPanel()`) should
+    /// call this with the same text so those labels reach VoiceOver.
+    func announceObjective(_ text: String) {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        UIAccessibility.post(notification: .announcement, argument: trimmed)
+    }
+
     private func showDifficultyHint() {
         ProgressManager.shared.recordHintUsed(for: levelID)
         difficultyHintDidShow()
         let text = hintText() ?? "Try using your device's features..."
+
+        // Accessibility: speak the on-screen hint so the clue reaches VoiceOver.
+        announceObjective(text)
 
         let container = SKNode()
         container.zPosition = 8000

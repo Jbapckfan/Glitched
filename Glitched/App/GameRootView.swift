@@ -318,7 +318,7 @@ struct AccessibilityOverlay: View {
                     .padding(10)
                     .background(Circle().fill(color.opacity(0.7)))
             }
-            .accessibilityLabel(Text(mechanic.rawValue))
+            .accessibilityLabel(Text(mechanic.displayName))
         }
     }
 
@@ -464,6 +464,7 @@ struct AccessibilityOverlay: View {
                 .foregroundColor(.white)
                 .padding(.horizontal, 10)
                 .padding(.vertical, 12)
+                .frame(minHeight: 44)
                 .background(Capsule().fill(Color.pink.opacity(0.7)))
         }
         .accessibilityLabel(Text("Voice command \(label)"))
@@ -512,6 +513,7 @@ struct HardwareFallbackEscapeHatch: View {
                     .foregroundColor(.white)
                     .padding(.horizontal, 14)
                     .padding(.vertical, 10)
+                    .frame(minHeight: 44)
                     .background(
                         Capsule()
                             .fill(Color.black.opacity(0.55))
@@ -593,10 +595,6 @@ struct PauseMenuView: View {
 
                     PauseMenuButton(title: "RETURN_TO_MAP", color: VisualConstants.Colors.accentUI, fontSize: buttonFontSize, buttonWidth: buttonWidth) {
                         GameState.shared.showWorldMap()
-                    }
-
-                    PauseMenuButton(title: "TERMINATE_PROCESS", color: VisualConstants.Colors.dangerUI, fontSize: buttonFontSize, buttonWidth: buttonWidth) {
-                        // Handle quit logic if applicable
                     }
                 }
             }

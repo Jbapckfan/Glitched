@@ -36,6 +36,8 @@ final class FlashlightManager: DeviceManager {
         motionManager.deviceMotionUpdateInterval = 1.0 / 30.0
         motionManager.startDeviceMotionUpdates(to: .main) { [weak self] motion, _ in
             guard let motion = motion, self?.isActive == true else { return }
+            // Don't clobber the escape-hatch fallback buttons when the user is in fallback UI
+            guard !AccessibilityManager.shared.needsFallbackUI(for: .flashlight) else { return }
             // pitch: 0 = flat, -π/2 = vertical (screen facing user)
             let pitch = motion.attitude.pitch
             DispatchQueue.main.async {
@@ -46,6 +48,8 @@ final class FlashlightManager: DeviceManager {
         // Poll torch state (no reliable KVO for torch)
         pollTimer = Timer.scheduledTimer(withTimeInterval: 0.25, repeats: true) { [weak self] _ in
             guard self?.isActive == true else { return }
+            // Don't clobber the escape-hatch fallback buttons when the user is in fallback UI
+            guard !AccessibilityManager.shared.needsFallbackUI(for: .flashlight) else { return }
             let isOn = self?.isTorchOn() ?? false
             DispatchQueue.main.async {
                 InputEventBus.shared.post(.flashlightChanged(isOn: isOn))

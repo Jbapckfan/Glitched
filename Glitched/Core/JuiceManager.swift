@@ -189,6 +189,9 @@ final class JuiceManager {
     // MARK: - Chromatic Aberration Effect
 
     func glitchEffect(duration: TimeInterval = 0.2) {
+        // A11Y: chromatic-aberration glitch bars are rapid flashing motion — skip
+        // under Reduce Motion, matching shake/slowMotion/freezeFrame/punchZoom.
+        guard !systemReduceMotion else { return }
         guard let scene = currentScene else { return }
 
         // Create offset color layers
@@ -301,19 +304,23 @@ final class JuiceManager {
         staticOverlay.position = screenCenter(in: scene)
         scene.addChild(staticOverlay)
 
-        // Static noise lines
-        for _ in 0..<30 {
-            let line = SKShapeNode(rectOf: CGSize(
-                width: CGFloat.random(in: 20...scene.size.width),
-                height: CGFloat.random(in: 1...4)
-            ))
-            line.fillColor = UIColor.white.withAlphaComponent(CGFloat.random(in: 0.3...0.8))
-            line.strokeColor = .clear
-            line.position = CGPoint(
-                x: CGFloat.random(in: -scene.size.width/2...scene.size.width/2),
-                y: CGFloat.random(in: -scene.size.height/2...scene.size.height/2)
-            )
-            staticOverlay.addChild(line)
+        // Static noise lines — these produce a rapid high-contrast strobe.
+        // A11Y: gate the strobing noise behind Reduce Motion / Reduce Flash; when
+        // either is on, leave the overlay as a single calm fade (no flickering lines).
+        if !systemReduceMotion && !reduceFlashEffects {
+            for _ in 0..<30 {
+                let line = SKShapeNode(rectOf: CGSize(
+                    width: CGFloat.random(in: 20...scene.size.width),
+                    height: CGFloat.random(in: 1...4)
+                ))
+                line.fillColor = UIColor.white.withAlphaComponent(CGFloat.random(in: 0.3...0.8))
+                line.strokeColor = .clear
+                line.position = CGPoint(
+                    x: CGFloat.random(in: -scene.size.width/2...scene.size.width/2),
+                    y: CGFloat.random(in: -scene.size.height/2...scene.size.height/2)
+                )
+                staticOverlay.addChild(line)
+            }
         }
 
         staticOverlay.run(.sequence([

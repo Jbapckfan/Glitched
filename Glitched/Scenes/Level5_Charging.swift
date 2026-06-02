@@ -48,6 +48,23 @@ final class ChargingScene: BaseLevelScene, SKPhysicsContactDelegate {
     private var plugIsRideable = false
     private var lastTrackedPlugY: CGFloat = 0
 
+    // MARK: - Accessibility (mirrors JuiceManager's Reduce Motion semantics)
+
+    /// System-level Reduce Motion (Settings > Accessibility > Motion). When on we
+    /// skip the heavy full-scene flash and the cosmetic screen shakes outright,
+    /// independent of the in-game toggles below (which only dampen / skip flash).
+    private var systemReduceMotion: Bool {
+        UIAccessibility.isReduceMotionEnabled
+    }
+
+    private var reduceScreenShake: Bool {
+        ProgressManager.shared.load().settings.reduceScreenShake
+    }
+
+    private var reduceFlashEffects: Bool {
+        ProgressManager.shared.load().settings.reduceFlashEffects
+    }
+
     // MARK: - Configuration
 
     override func configureScene() {
@@ -516,7 +533,7 @@ final class ChargingScene: BaseLevelScene, SKPhysicsContactDelegate {
         batteryIcon.run(SKAction.repeatForever(pulse), withKey: "pulse")
 
         // Hint text
-        let hintLabel = SKLabelNode(text: "POWER REQUIRED")
+        let hintLabel = SKLabelNode(text: "PLUG IN YOUR CHARGER")
         hintLabel.fontName = "Menlo-Bold"
         hintLabel.fontSize = 10
         hintLabel.fontColor = strokeColor
@@ -634,15 +651,21 @@ final class ChargingScene: BaseLevelScene, SKPhysicsContactDelegate {
     private func animatePlugEntry() {
         spawnDebrisParticles()
 
-        let flash = SKSpriteNode(color: fillColor, size: self.size)
-        flash.position = CGPoint(x: size.width / 2, y: size.height / 2)
-        flash.zPosition = 500
-        flash.alpha = 0.8
-        addChild(flash)
-        flash.run(SKAction.sequence([
-            SKAction.fadeOut(withDuration: 0.3),
-            SKAction.removeFromParent()
-        ]))
+        // A11Y: the full-scene white flash is a heavy motion/photosensitivity
+        // effect. Skip it when system Reduce Motion or the in-game flash toggle is
+        // on; otherwise cap its peak alpha so it stays a soft pulse, not a blast.
+        // The plug timeline (breakFloor + burst/rise below) is unaffected.
+        if !systemReduceMotion && !reduceFlashEffects {
+            let flash = SKSpriteNode(color: fillColor, size: self.size)
+            flash.position = CGPoint(x: size.width / 2, y: size.height / 2)
+            flash.zPosition = 500
+            flash.alpha = 0.8
+            addChild(flash)
+            flash.run(SKAction.sequence([
+                SKAction.fadeOut(withDuration: 0.3),
+                SKAction.removeFromParent()
+            ]))
+        }
 
         breakFloor()
 
@@ -944,6 +967,15 @@ final class ChargingScene: BaseLevelScene, SKPhysicsContactDelegate {
     // MARK: - Screen Shake Helper
 
     private func createShakeAction(duration: TimeInterval, amplitudeX: CGFloat, amplitudeY: CGFloat) -> SKAction {
+        // A11Y: skip the shake entirely when system Reduce Motion is on; otherwise
+        // dampen the amplitude when the in-game reduce-shake toggle is set. Mirrors
+        // JuiceManager (system switch skips, in-game toggle only reduces). The plug
+        // entry/rise timeline runs regardless — only this cosmetic shake is gated.
+        guard !systemReduceMotion else { return .wait(forDuration: duration) }
+        let amplitudeScale: CGFloat = reduceScreenShake ? 0.5 : 1.0
+        let amplitudeX = amplitudeX * amplitudeScale
+        let amplitudeY = amplitudeY * amplitudeScale
+
         let numberOfShakes = Int(duration / 0.04)
         var actions: [SKAction] = []
 

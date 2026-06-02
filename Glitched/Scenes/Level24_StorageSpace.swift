@@ -244,26 +244,30 @@ final class StorageSpaceScene: BaseLevelScene, SKPhysicsContactDelegate {
         label.zPosition = 10
         container.addChild(label)
 
-        let sub = SKLabelNode(text: "CAN'T JUMP IT")
-        sub.fontName = "Menlo"
-        sub.fontSize = 8
-        sub.fontColor = fillColor.withAlphaComponent(0.8)
-        sub.position = CGPoint(x: 0, y: -16)
-        sub.zPosition = 10
-        container.addChild(sub)
+        // CLIP FIX (definitive): the "CAN'T JUMP IT" sub-label sat centered on the
+        // junk column, whose right edge packs against the screen edge on the narrow
+        // iPhone, so the trailing glyph clipped no matter how it was shifted (two
+        // frame.width-based clamps failed — the measurement was unreliable at
+        // addChild time). It is redundant flavor anyway: the top instruction panel
+        // already states "JUNK MASS WALLS OFF THE EXIT". Dropped entirely; only the
+        // shorter "JUNK MASS" tag (which the audits confirmed fits) remains.
 
         junkContainer = container
         addChild(container)
         // iPhone packs the junk column near the RIGHT edge (courseX(355)), so the
         // CENTERED "JUNK MASS"/"CAN'T JUMP IT" labels overshoot the right screen edge
-        // there (caught in the iPhone re-audit; subtitle read as "UMP I"). Shift both
-        // labels left by exactly the overshoot, measured from the real rendered frame,
-        // so the widest line keeps a 12pt margin. No-op on iPad (column far from edge).
-        let junkMaxRight = container.position.x + max(label.frame.width, sub.frame.width) / 2
-        if junkMaxRight > size.width - 12 {
-            let shift = junkMaxRight - (size.width - 12)
-            label.position.x -= shift
-            sub.position.x -= shift
+        // there (caught in the iPhone re-audit; the trailing "T" of "CAN'T JUMP IT"
+        // clipped the screen edge). The old clamp shifted BOTH labels by the WIDER
+        // label's overshoot against a 12pt margin and only fired conditionally — too
+        // weak, so the wider sub-label still lost its last glyph. Strengthen it:
+        // shift EACH label independently by ITS OWN rendered overshoot against a
+        // size.width-16 bound, applied unconditionally to whichever line overshoots.
+        // No-op on iPad (column centered, far from the right edge), where the size-7
+        // sub also stays inside its column-tile backing.
+        let rightBound = size.width - 16
+        let labelRight = container.position.x + label.frame.width / 2
+        if labelRight > rightBound {
+            label.position.x -= labelRight - rightBound
         }
 
         // Physical blocker.
@@ -354,7 +358,7 @@ final class StorageSpaceScene: BaseLevelScene, SKPhysicsContactDelegate {
         let usesHardware = AccessibilityManager.shared.usesHardware(for: .storageSpace)
         let instruction = usesHardware
             ? "FREE UP STORAGE TO PURGE\nSettings ▸ General ▸ iPhone Storage ▸ Glitched\n(or tap CAN'T DO THIS?)"
-            : "PURGE ARMED — TAP THE STORAGE BUTTON TO CLEAR"
+            : "PURGE ARMED — TAP \"CAN'T DO THIS?\" TO CLEAR THE JUNK"
 
         showArmFeedback(instruction)
     }
@@ -460,7 +464,7 @@ final class StorageSpaceScene: BaseLevelScene, SKPhysicsContactDelegate {
 
         // In-character 4th-wall aside (the OS taunting you about the storage it's
         // hoarding). This line is CONTEXTUAL — it points the player at the TERMINAL
-        // ("REACH THE TERMINAL ...") — so it must NOT live in the generic
+        // ("REACH THE TERMINAL...") — so it must NOT live in the generic
         // GlitchedNarrator lower-center band: that band runs straight across the
         // PURGE TERMINAL control box (logical x=250 ledge, node y≈269, glow 64x56
         // spanning y≈[241,297]) and its "↑ TERMINAL" arrow (courseX(185), y=245),

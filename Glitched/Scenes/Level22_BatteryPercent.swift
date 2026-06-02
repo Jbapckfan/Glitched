@@ -20,6 +20,9 @@ final class BatteryPercentScene: BaseLevelScene, SKPhysicsContactDelegate {
     private var steppingStones: [SKNode] = []
     private var batteryLabel: SKLabelNode!
 
+    // 4th-wall aside fires once (near the first drain), not on every battery tick.
+    private var fourthWallShown = false
+
     // Hidden exit below platform 5
     private var hiddenExitNode: SKNode?
     private var fakeExitNode: SKNode?
@@ -275,12 +278,17 @@ final class BatteryPercentScene: BaseLevelScene, SKPhysicsContactDelegate {
         bg.lineWidth = 1.5
         button.addChild(bg)
 
-        let label = SKLabelNode(text: "SIM DRAIN")
+        let label = SKLabelNode(text: "DRAIN POWER")
         label.fontName = "Menlo"
         label.fontSize = 9
         label.fontColor = strokeColor
         label.verticalAlignmentMode = .center
         button.addChild(label)
+
+        // Accessibility: expose the tappable drain control to VoiceOver as a button.
+        button.isAccessibilityElement = true
+        button.accessibilityLabel = "Drain power"
+        button.accessibilityTraits = .button
 
         drainButton = button
         addChild(button)
@@ -357,8 +365,12 @@ final class BatteryPercentScene: BaseLevelScene, SKPhysicsContactDelegate {
             }
         }
 
-        // Show 4th wall text
-        showFourthWall(percentage: pct)
+        // Show 4th wall aside once, near the first drain (battery dips below full),
+        // rather than re-firing the narrator on every battery tick.
+        if !fourthWallShown && pct < 100 {
+            fourthWallShown = true
+            showFourthWall(percentage: pct)
+        }
     }
 
     // FIX #14: Adjust visual brightness and atmosphere based on battery level.
@@ -413,15 +425,15 @@ final class BatteryPercentScene: BaseLevelScene, SKPhysicsContactDelegate {
     }
 
     private func showFourthWall(percentage: Float) {
-        // 4th-wall narrator aside ("the OS talks to you"). Migrated from an
-        // ad-hoc faded SKLabelNode pair to the shared GlitchedNarrator presenter
-        // (consistent voice, legible full-opacity reveal, HUD-safe lower-center
-        // band, auto-fade). Same trigger point — fires on every battery update.
-        // Wording preserved verbatim; presentation moves only. .whisper register
-        // for the dry "coincidence?" aside.
+        // 4th-wall narrator aside ("the OS talks to you") via the shared
+        // GlitchedNarrator presenter (consistent voice, legible full-opacity
+        // reveal, HUD-safe lower-center band, auto-fade). .whisper register for
+        // the dry aside. Now fired one-shot near the first drain (see caller).
+        // Dropped the false "THIS LEVEL IS X% COMPLETE" claim — level completion
+        // is unrelated to battery %, so that line was a lie to the player.
         let pct = Int(percentage)
         GlitchedNarrator.present(
-            "YOUR BATTERY IS AT \(pct)%. THIS LEVEL IS \(pct)% COMPLETE. COINCIDENCE?",
+            "YOUR BATTERY IS AT \(pct)%. FEELING IT YET? COINCIDENCE?",
             in: self,
             style: .whisper
         )
@@ -525,6 +537,10 @@ final class BatteryPercentScene: BaseLevelScene, SKPhysicsContactDelegate {
     private func handleDeath() {
         guard GameState.shared.levelState == .playing else { return }
         playerController.cancel()
+        // Surface the battery hint after repeated deaths (matches L3): notePlayerStruggle
+        // feeds the shared difficulty-hint timer, so the "lower your battery %" hintText
+        // appears when the player keeps dying instead of staying buried.
+        notePlayerStruggle()
         bit.playBufferDeath(respawnAt: spawnPoint) { [weak self] in self?.bit.setGrounded(true) }
     }
 

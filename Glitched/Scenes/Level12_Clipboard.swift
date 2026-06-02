@@ -22,8 +22,9 @@ final class ClipboardScene: BaseLevelScene, SKPhysicsContactDelegate {
     private var isUnlocked = false
     private var doorBlocker: SKNode?
     private var clipboardScanLabel: SKLabelNode?
-    private var hasScannedClipboard = false
     private let designWidth: CGFloat = 390
+
+    private var foregroundObserver: NSObjectProtocol?
 
     private var courseScale: CGFloat { min(1.0, size.width / designWidth) }
     private var courseOriginX: CGFloat { (size.width - designWidth * courseScale) / 2 }
@@ -47,7 +48,21 @@ final class ClipboardScene: BaseLevelScene, SKPhysicsContactDelegate {
         createTerminal()
         showInstructionPanel()
         setupBit()
-        scanClipboardOnLoad()
+
+        // P0 COMPLETABILITY: the copy-GLITCH3D-elsewhere-and-return flow is the
+        // intended solve. When the user returns to the app we re-assert the expected
+        // password and re-read the pasteboard directly (no changeCount delta — that
+        // can be stale/zero across an app switch and silently softlock the level).
+        // This read is user-return-driven, not a speculative cold-launch read, so it
+        // is the documented completability path. The explicit tappable PASTE control
+        // (see createTerminal) is the App-Review-clean primary path.
+        foregroundObserver = NotificationCenter.default.addObserver(
+            forName: UIApplication.willEnterForegroundNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            self?.scanClipboardForPassword()
+        }
     }
 
     private func setupBackground() {
@@ -185,21 +200,48 @@ final class ClipboardScene: BaseLevelScene, SKPhysicsContactDelegate {
         terminal.addChild(passwordDisplay)
 
         // Status
-        statusLabel = SKLabelNode(text: "PASTE PASSWORD")
+        statusLabel = SKLabelNode(text: "ENTER PASSWORD")
         statusLabel.fontName = "Menlo"
         statusLabel.fontSize = 9
         statusLabel.fontColor = strokeColor
         statusLabel.position = CGPoint(x: 0, y: -25)
         terminal.addChild(statusLabel)
 
-        // Hint
+        // P1 COMPLIANCE: user-initiated PASTE control. The pasteboard is only read
+        // when the user taps this button (handled in touchesBegan via node name),
+        // so there is no speculative on-load read to trigger the iOS "paste from X"
+        // prompt. Placed directly below the terminal, well clear of the top-left
+        // LEVEL title and top-right PAUSE button HUD columns.
+        let pasteButton = SKNode()
+        pasteButton.name = "pasteButton"
+        pasteButton.position = CGPoint(x: 0, y: -62)
+        pasteButton.zPosition = 1
+        terminal.addChild(pasteButton)
+
+        let pasteBG = SKShapeNode(rectOf: CGSize(width: 130, height: 30), cornerRadius: 6)
+        pasteBG.fillColor = fillColor
+        pasteBG.strokeColor = strokeColor
+        pasteBG.lineWidth = lineWidth
+        pasteBG.name = "pasteButton"
+        pasteButton.addChild(pasteBG)
+
+        let pasteText = SKLabelNode(text: "PASTE PASSWORD")
+        pasteText.fontName = "Menlo-Bold"
+        pasteText.fontSize = 11
+        pasteText.fontColor = strokeColor
+        pasteText.verticalAlignmentMode = .center
+        pasteText.name = "pasteButton"
+        pasteButton.addChild(pasteText)
+
+        // COPY hint, anchored relative to the terminal (child offset) so it scales
+        // and stays positioned with the terminal on iPad rather than at a raw point.
         let hint = SKLabelNode(text: "COPY: \(correctPassword)")
         hint.fontName = "Menlo"
         hint.fontSize = 14
         hint.fontColor = strokeColor
-        hint.position = CGPoint(x: 100, y: 400)
-        hint.zPosition = 100
-        addChild(hint)
+        hint.position = CGPoint(x: 0, y: 80)
+        hint.zPosition = 50
+        terminal.addChild(hint)
     }
 
     private func createExitDoor(at position: CGPoint) {
@@ -253,9 +295,14 @@ final class ClipboardScene: BaseLevelScene, SKPhysicsContactDelegate {
         panel.run(.sequence([.wait(forDuration: 5), .fadeOut(withDuration: 0.5), .removeFromParent()]))
     }
 
-    private func scanClipboardOnLoad() {
-        guard !hasScannedClipboard else { return }
-        hasScannedClipboard = true
+    /// Reusable pasteboard scan. Re-asserts the expected password with the
+    /// ClipboardManager, then reads UIPasteboard directly and routes through the
+    /// normal password-accept path if it contains the answer. Used by both the
+    /// foreground observer (completability) and the user-initiated PASTE control.
+    private func scanClipboardForPassword() {
+        guard !isUnlocked else { return }
+
+        ClipboardManager.shared.setExpectedPassword(correctPassword)
 
         if let clipboardContent = UIPasteboard.general.string,
            clipboardContent.range(of: correctPassword, options: [.caseInsensitive]) != nil {
@@ -317,7 +364,16 @@ final class ClipboardScene: BaseLevelScene, SKPhysicsContactDelegate {
 
     override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent?) {
         guard let touch = touches.first else { return }
-        playerController.touchBegan(at: touch.location(in: self))
+        let location = touch.location(in: self)
+
+        // User-initiated paste: reading the pasteboard here (and only here, plus on
+        // foreground return) keeps the level solvable without a speculative read.
+        if !isUnlocked, atPoint(location).name == "pasteButton" {
+            scanClipboardForPassword()
+            return
+        }
+
+        playerController.touchBegan(at: location)
     }
 
     override func touchesMoved(_ touches: Set<UITouch>, with event: UIEvent?) {
@@ -381,6 +437,10 @@ final class ClipboardScene: BaseLevelScene, SKPhysicsContactDelegate {
 
     override func willMove(from view: SKView) {
         super.willMove(from: view)
+        if let observer = foregroundObserver {
+            NotificationCenter.default.removeObserver(observer)
+            foregroundObserver = nil
+        }
         DeviceManagerCoordinator.shared.deactivateAll()
     }
 }

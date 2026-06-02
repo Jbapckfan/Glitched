@@ -59,6 +59,14 @@ final class FaceIDScene: BaseLevelScene, SKPhysicsContactDelegate {
 
     private var scanAnimation: SKAction?
 
+    /// System-level Reduce Motion (Settings > Accessibility > Motion). When on we
+    /// replace the photosensitive full-screen red strobe + door shake in the
+    /// imposter alert with a single soft fade. Mirrors the semantics used by the
+    /// other device-feature scenes (Level5/Level9).
+    private var systemReduceMotion: Bool {
+        UIAccessibility.isReduceMotionEnabled
+    }
+
     override func configureScene() {
         levelID = LevelID(world: .world2, index: 19)
         backgroundColor = fillColor
@@ -316,14 +324,14 @@ final class FaceIDScene: BaseLevelScene, SKPhysicsContactDelegate {
         bg.strokeColor = strokeColor
         panel.addChild(bg)
 
-        let text1 = SKLabelNode(text: "VAULT REQUIRES IDENTITY")
+        let text1 = SKLabelNode(text: "WALK TO THE VAULT")
         text1.fontName = "Menlo-Bold"
         text1.fontSize = 11
         text1.fontColor = strokeColor
         text1.position = CGPoint(x: 0, y: 10)
         panel.addChild(text1)
 
-        let text2 = SKLabelNode(text: "AUTHENTICATE TO PROCEED")
+        let text2 = SKLabelNode(text: "TAP IT TO SCAN YOUR FACE")
         text2.fontName = "Menlo"
         text2.fontSize = 10
         text2.fontColor = strokeColor
@@ -416,24 +424,35 @@ final class FaceIDScene: BaseLevelScene, SKPhysicsContactDelegate {
         redFlash.position = CGPoint(x: size.width / 2, y: size.height / 2)
         addChild(redFlash)
 
-        redFlash.run(.sequence([
-            .fadeAlpha(to: 0.3, duration: 0.05),
-            .fadeAlpha(to: 0.0, duration: 0.1),
-            .fadeAlpha(to: 0.3, duration: 0.05),
-            .fadeAlpha(to: 0.0, duration: 0.1),
-            .fadeAlpha(to: 0.2, duration: 0.05),
-            .fadeOut(withDuration: 0.2),
-            .removeFromParent()
-        ]))
+        if systemReduceMotion {
+            // Photosensitivity: skip the rapid full-screen red strobe and the
+            // aggressive door shake. A single soft red fade-in/out conveys the
+            // failure without flashing or sudden movement.
+            redFlash.run(.sequence([
+                .fadeAlpha(to: 0.2, duration: 0.4),
+                .fadeOut(withDuration: 0.4),
+                .removeFromParent()
+            ]))
+        } else {
+            redFlash.run(.sequence([
+                .fadeAlpha(to: 0.3, duration: 0.05),
+                .fadeAlpha(to: 0.0, duration: 0.1),
+                .fadeAlpha(to: 0.3, duration: 0.05),
+                .fadeAlpha(to: 0.0, duration: 0.1),
+                .fadeAlpha(to: 0.2, duration: 0.05),
+                .fadeOut(withDuration: 0.2),
+                .removeFromParent()
+            ]))
 
-        // Shake the vault door aggressively
-        vaultDoor.run(.sequence([
-            .moveBy(x: -8, y: 0, duration: 0.04),
-            .moveBy(x: 16, y: 0, duration: 0.04),
-            .moveBy(x: -16, y: 0, duration: 0.04),
-            .moveBy(x: 16, y: 0, duration: 0.04),
-            .moveBy(x: -8, y: 0, duration: 0.04)
-        ]))
+            // Shake the vault door aggressively
+            vaultDoor.run(.sequence([
+                .moveBy(x: -8, y: 0, duration: 0.04),
+                .moveBy(x: 16, y: 0, duration: 0.04),
+                .moveBy(x: -16, y: 0, duration: 0.04),
+                .moveBy(x: 16, y: 0, duration: 0.04),
+                .moveBy(x: -8, y: 0, duration: 0.04)
+            ]))
+        }
 
         // Show IMPOSTER text big
         let imposterLabel = SKLabelNode(text: "IMPOSTER DETECTED")
