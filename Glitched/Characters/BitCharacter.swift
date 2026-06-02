@@ -328,8 +328,23 @@ final class BitCharacter: SKSpriteNode {
         run(glitchAction, withKey: "glitchSchedule")
     }
 
+    /// True when rapid glitch strobing is allowed. Disabled if the system
+    /// Reduce Motion switch or the in-game Reduce Flash toggle is on. Matches
+    /// the photosensitivity gating used in JuiceManager / level scenes.
+    private var glitchStrobeAllowed: Bool {
+        !UIAccessibility.isReduceMotionEnabled
+            && !ProgressManager.shared.load().settings.reduceFlashEffects
+    }
+
     private func playGlitchFlicker() {
         guard bodyNode != nil, headNode != nil else { return }
+
+        // Photosensitivity: under Reduce Motion / Reduce Flash, skip the rapid
+        // color strobe and hold a calm, single non-flickering state instead.
+        guard glitchStrobeAllowed else {
+            playCalmGlitch()
+            return
+        }
 
         let glitchColor = glitchColors.randomElement() ?? glitchColors[0]
         let intensity = Double.random(in: 0...1)
@@ -343,6 +358,29 @@ final class BitCharacter: SKSpriteNode {
         } else {
             playIntenseGlitch(color: glitchColor)
         }
+    }
+
+    /// Calm, non-strobing fallback used when photosensitivity settings are on.
+    /// A single brief accent tint with a slow ease back to the normal stroke —
+    /// no rapid color flicker, position jitter, or static overlays.
+    private func playCalmGlitch() {
+        guard let body = bodyNode, let head = headNode else { return }
+
+        let tint = VisualConstants.Colors.accent
+        let restore: SKColor = strokeColor
+
+        let calm = SKAction.sequence([
+            SKAction.run {
+                body.strokeColor = tint
+                head.strokeColor = tint
+            },
+            SKAction.wait(forDuration: 0.18),
+            SKAction.run {
+                body.strokeColor = restore
+                head.strokeColor = restore
+            }
+        ])
+        run(calm)
     }
 
     private func playSubtleGlitch(color: SKColor) {
@@ -383,6 +421,9 @@ final class BitCharacter: SKSpriteNode {
 
     private func playMediumGlitch(color: SKColor) {
         guard let body = bodyNode, let head = headNode else { return }
+        // Photosensitivity: every caller (incl. the death sequence) must respect
+        // Reduce Motion / Reduce Flash — fall back to the calm, non-strobing variant.
+        guard glitchStrobeAllowed else { playCalmGlitch(); return }
 
         // Pick multiple random colors
         let colors = (0..<3).map { _ in glitchColors.randomElement() ?? color }
@@ -448,6 +489,8 @@ final class BitCharacter: SKSpriteNode {
 
     private func playIntenseGlitch(color: SKColor) {
         guard let body = bodyNode, let head = headNode else { return }
+        // Photosensitivity: gate the death/respawn strobe too (Reduce Motion / Flash).
+        guard glitchStrobeAllowed else { playCalmGlitch(); return }
 
         let flickerCount = Int.random(in: 6...12)
         var flickerActions: [SKAction] = []

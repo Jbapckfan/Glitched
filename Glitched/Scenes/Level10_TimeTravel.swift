@@ -879,6 +879,22 @@ final class TimeTravelScene: BaseLevelScene, SKPhysicsContactDelegate {
             .moveBy(x: CGFloat.random(in: -5...5), y: 0, duration: 0.05)
         ]), count: 20))
 
+        // A11Y / photosensitivity: the full-screen white flash node below is a
+        // seizure risk. When system Reduce Motion or the in-game Reduce Flash
+        // toggle is on, skip the flash node entirely and drive the label
+        // teardown + completion off the syncing label instead, holding the
+        // original ~1.5s timing so the time-travel mechanic is unchanged.
+        let reduceFlash = UIAccessibility.isReduceMotionEnabled
+            || ProgressManager.shared.load().settings.reduceFlashEffects
+        guard !reduceFlash else {
+            syncingLabel?.run(.sequence([
+                .wait(forDuration: 1.5),
+                .removeFromParent(),
+                .run { completion() }
+            ]))
+            return
+        }
+
         // Screen flash (line art style)
         let flash = SKShapeNode(rectOf: size)
         flash.fillColor = fillColor

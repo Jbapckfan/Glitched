@@ -624,14 +624,19 @@ final class ShakeUndoScene: BaseLevelScene, SKPhysicsContactDelegate {
             .fadeAlpha(to: 1.0, duration: 0.1)
         ]))
 
-        // Flash effect
-        let flash = SKShapeNode(rectOf: size)
-        flash.fillColor = fillColor
-        flash.alpha = 0.8
-        flash.zPosition = 500
-        flash.position = CGPoint(x: size.width / 2, y: size.height / 2)
-        addChild(flash)
-        flash.run(.sequence([.fadeOut(withDuration: 0.3), .removeFromParent()]))
+        // Flash effect — gated behind the reduce-flash accessibility setting so the
+        // full-screen white flash (alpha 0.8) never fires for photosensitive players.
+        // Skip the flash node entirely when reduce-motion/reduce-flash is on; the undo
+        // rewind logic above is unaffected.
+        if !(UIAccessibility.isReduceMotionEnabled || ProgressManager.shared.load().settings.reduceFlashEffects) {
+            let flash = SKShapeNode(rectOf: size)
+            flash.fillColor = fillColor
+            flash.alpha = 0.8
+            flash.zPosition = 500
+            flash.position = CGPoint(x: size.width / 2, y: size.height / 2)
+            addChild(flash)
+            flash.run(.sequence([.fadeOut(withDuration: 0.3), .removeFromParent()]))
+        }
 
         // Drop everything newer than the rewind target so the next undo still
         // has a full window to walk back through (do NOT wipe the buffer).

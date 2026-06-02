@@ -48,6 +48,11 @@ final class ClipboardManager: DeviceManager {
         guard currentCount != lastChangeCount else { return }
         lastChangeCount = currentCount
 
+        // Guard the string read behind hasStrings so the poll never performs a
+        // speculative UIPasteboard.general.string fetch (which can surface the iOS
+        // "paste from X" prompt) without an actual string present on the pasteboard.
+        guard UIPasteboard.general.hasStrings else { return }
+
         if let text = UIPasteboard.general.string,
            isGameRelevant(text: text) {
             DispatchQueue.main.async {

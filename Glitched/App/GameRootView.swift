@@ -225,9 +225,7 @@ struct AccessibilityOverlay: View {
                     accessibilityButton(for: .screenshot, icon: "camera", color: .gray) {
                         InputEventBus.shared.post(.screenshotTaken)
                     }
-                    accessibilityButton(for: .darkMode, icon: "moon.fill", color: .indigo) {
-                        InputEventBus.shared.post(.darkModeChanged(isDark: true))
-                    }
+                    darkModeFallbackControls
                     accessibilityButton(for: .orientation, icon: "rotate.right", color: .teal) {
                         InputEventBus.shared.post(.orientationChanged(isLandscape: true))
                     }
@@ -242,9 +240,7 @@ struct AccessibilityOverlay: View {
                     accessibilityButton(for: .clipboard, icon: "doc.on.clipboard", color: .mint) {
                         InputEventBus.shared.post(.clipboardUpdated(value: "GLITCH3D"))
                     }
-                    accessibilityButton(for: .wifi, icon: "wifi", color: .blue) {
-                        InputEventBus.shared.post(.wifiStateChanged(isEnabled: false))
-                    }
+                    wifiFallbackControls
                     focusModeFallbackControls
                     lowPowerFallbackControls
                     accessibilityButton(for: .shakeUndo, icon: "arrow.uturn.backward", color: .orange) {
@@ -283,7 +279,9 @@ struct AccessibilityOverlay: View {
 
                     // World 4 mechanics
                     accessibilityButton(for: .locale, icon: "globe", color: .blue) {
-                        InputEventBus.shared.post(.localeChanged(language: "ja"))
+                        let baseline = LocaleManager.shared.currentLanguageCode.lowercased()
+                        let target = (baseline == "ja") ? "en" : "ja"
+                        InputEventBus.shared.post(.localeChanged(language: target))
                     }
                     accessibilityButton(for: .voiceOver, icon: "accessibility", color: .purple) {
                         InputEventBus.shared.post(.voiceOverStateChanged(isEnabled: true))
@@ -347,6 +345,64 @@ struct AccessibilityOverlay: View {
                         .background(Circle().fill(Color.purple.opacity(0.7)))
                 }
                 .accessibilityLabel(Text("Volume high"))
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var darkModeFallbackControls: some View {
+        if accessibility.needsFallbackUI(for: .darkMode) {
+            HStack(spacing: 8) {
+                Button {
+                    InputEventBus.shared.post(.darkModeChanged(isDark: false))
+                } label: {
+                    Image(systemName: "sun.max")
+                        .font(.system(size: 24))
+                        .foregroundColor(.white)
+                        .padding(10)
+                        .background(Circle().fill(Color.yellow.opacity(0.7)))
+                }
+                .accessibilityLabel(Text("Light Mode"))
+
+                Button {
+                    InputEventBus.shared.post(.darkModeChanged(isDark: true))
+                } label: {
+                    Image(systemName: "moon.fill")
+                        .font(.system(size: 24))
+                        .foregroundColor(.white)
+                        .padding(10)
+                        .background(Circle().fill(Color.indigo.opacity(0.7)))
+                }
+                .accessibilityLabel(Text("Dark Mode"))
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var wifiFallbackControls: some View {
+        if accessibility.needsFallbackUI(for: .wifi) {
+            HStack(spacing: 8) {
+                Button {
+                    InputEventBus.shared.post(.wifiStateChanged(isEnabled: true))
+                } label: {
+                    Image(systemName: "wifi")
+                        .font(.system(size: 24))
+                        .foregroundColor(.white)
+                        .padding(10)
+                        .background(Circle().fill(Color.blue.opacity(0.7)))
+                }
+                .accessibilityLabel(Text("WiFi on"))
+
+                Button {
+                    InputEventBus.shared.post(.wifiStateChanged(isEnabled: false))
+                } label: {
+                    Image(systemName: "wifi.slash")
+                        .font(.system(size: 24))
+                        .foregroundColor(.white)
+                        .padding(10)
+                        .background(Circle().fill(Color.gray.opacity(0.7)))
+                }
+                .accessibilityLabel(Text("WiFi off"))
             }
         }
     }

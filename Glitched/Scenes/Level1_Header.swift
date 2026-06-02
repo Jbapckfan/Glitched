@@ -51,9 +51,7 @@ final class HeaderScene: BaseLevelScene, SKPhysicsContactDelegate {
 
         // Register the dragHUD mechanic
         AccessibilityManager.shared.registerMechanics([.dragHUD])
-#if targetEnvironment(simulator)
         AccessibilityManager.shared.forceHardwareFallback(for: .dragHUD)
-#endif
         DeviceManagerCoordinator.shared.configure(for: [.dragHUD])
 
         setupBackground()

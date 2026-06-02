@@ -395,15 +395,22 @@ final class AirDropScene: BaseLevelScene, SKPhysicsContactDelegate {
     private func revealDecodedCode() {
         guard !codeRevealed else { return }
         codeRevealed = true
+        // Spell out each symbol (space-separated) so VoiceOver reads them distinctly
+        // rather than as one mangled word; reused by both the persistent element and
+        // the one-shot announcement below.
+        let spelled = doorCode.map { String($0) }.joined(separator: " ")
         decodedLabel.text = doorCode
         decodedLabel.fontColor = fillColor
+        // Make the decoded code a persistent VoiceOver element so a VO user can swipe
+        // back and re-read it, not just catch the transient announcement.
+        decodedLabel.isAccessibilityElement = true
+        decodedLabel.accessibilityLabel = "Decoded code: \(spelled)"
+        decodedLabel.accessibilityTraits = .staticText
         decodedLabel.run(.sequence([
             .scale(to: 1.25, duration: 0.12),
             .scale(to: 1.0, duration: 0.12)
         ]))
-        // Announce the revealed plaintext for VoiceOver, spelled out so each symbol reads
-        // distinctly (space-separated) rather than as one mangled word.
-        let spelled = doorCode.map { String($0) }.joined(separator: " ")
+        // Announce the revealed plaintext for VoiceOver.
         UIAccessibility.post(notification: .announcement, argument: "Decoded code: \(spelled)")
         HapticManager.shared.collect()
         notePlayerProgress()

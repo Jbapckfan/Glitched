@@ -49,19 +49,18 @@ final class ClipboardScene: BaseLevelScene, SKPhysicsContactDelegate {
         showInstructionPanel()
         setupBit()
 
-        // P0 COMPLETABILITY: the copy-GLITCH3D-elsewhere-and-return flow is the
-        // intended solve. When the user returns to the app we re-assert the expected
-        // password and re-read the pasteboard directly (no changeCount delta — that
-        // can be stale/zero across an app switch and silently softlock the level).
-        // This read is user-return-driven, not a speculative cold-launch read, so it
-        // is the documented completability path. The explicit tappable PASTE control
-        // (see createTerminal) is the App-Review-clean primary path.
+        // P1 COMPLIANCE: the copy-GLITCH3D-elsewhere-and-return flow is the intended
+        // solve, but the actual UIPasteboard.general.string read must be user-initiated
+        // (the tappable PASTE control) so no speculative pasteboard fetch / system "paste
+        // from X" prompt fires on foreground return. The observer therefore only
+        // re-asserts the expected password with the ClipboardManager — it performs NO
+        // .string access. The user taps PASTE to read and submit.
         foregroundObserver = NotificationCenter.default.addObserver(
             forName: UIApplication.willEnterForegroundNotification,
             object: nil,
             queue: .main
         ) { [weak self] _ in
-            self?.scanClipboardForPassword()
+            self?.reassertClipboardState()
         }
     }
 
@@ -295,11 +294,19 @@ final class ClipboardScene: BaseLevelScene, SKPhysicsContactDelegate {
         panel.run(.sequence([.wait(forDuration: 5), .fadeOut(withDuration: 0.5), .removeFromParent()]))
     }
 
-    /// Reusable pasteboard scan. Re-asserts the expected password with the
-    /// ClipboardManager, then reads UIPasteboard directly and routes through the
-    /// normal password-accept path if it contains the answer. Used by both the
-    /// foreground observer (completability) and the user-initiated PASTE control.
-    private func scanClipboardForPassword() {
+    /// State re-assert only — re-asserts the expected password with the
+    /// ClipboardManager. Performs NO UIPasteboard.general.string access, so it is
+    /// safe to call on foreground return without triggering a speculative pasteboard
+    /// read or the iOS "paste from X" prompt. Used by the foreground observer.
+    private func reassertClipboardState() {
+        guard !isUnlocked else { return }
+        ClipboardManager.shared.setExpectedPassword(correctPassword)
+    }
+
+    /// User-initiated pasteboard read. Reads UIPasteboard.general.string directly and
+    /// routes through the normal password-accept path if it contains the answer. Called
+    /// ONLY from the tappable PASTE control (touchesBegan), never speculatively.
+    private func readClipboardForPassword() {
         guard !isUnlocked else { return }
 
         ClipboardManager.shared.setExpectedPassword(correctPassword)
@@ -366,10 +373,11 @@ final class ClipboardScene: BaseLevelScene, SKPhysicsContactDelegate {
         guard let touch = touches.first else { return }
         let location = touch.location(in: self)
 
-        // User-initiated paste: reading the pasteboard here (and only here, plus on
-        // foreground return) keeps the level solvable without a speculative read.
+        // User-initiated paste: this is the ONLY place UIPasteboard.general.string is
+        // read. The foreground observer merely re-asserts state, so the level stays
+        // solvable (copy GLITCH3D, return, tap PASTE) without any speculative read.
         if !isUnlocked, atPoint(location).name == "pasteButton" {
-            scanClipboardForPassword()
+            readClipboardForPassword()
             return
         }
 
