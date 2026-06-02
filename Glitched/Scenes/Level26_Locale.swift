@@ -381,13 +381,18 @@ final class LocaleScene: BaseLevelScene, SKPhysicsContactDelegate {
             return
         }
 
-        let isNonEnglish = language.lowercased() != "en"
+        // BASELINE-RELATIVE GATE (L26-locale-baseline): the solve must fire when
+        // the device language moves AWAY from whatever the level loaded with —
+        // not when it equals "en". Otherwise a player whose baseline is non-English
+        // (e.g. "ja") makes a real change by switching TO English yet gets no
+        // solve. Compare against the load-time baseline (default "en" if unknown).
+        let changedFromBaseline = language.lowercased() != (baselineLanguage?.lowercased() ?? "en")
 
-        if isNonEnglish && !isUnscrambled {
+        if changedFromBaseline && !isUnscrambled {
             unscrambleWorld()
-        } else if !isNonEnglish && isUnscrambled {
-            // Reverting to English. If the puzzle is already latched the
-            // correct route stays solid — re-scramble text only, never touch
+        } else if !changedFromBaseline && isUnscrambled {
+            // Reverting to the baseline language. If the puzzle is already latched
+            // the correct route stays solid — re-scramble text only, never touch
             // physics — so a mid-climb revert can't drop or eject Bit.
             if puzzleLatched {
                 rescrambleTextOnly()
@@ -491,7 +496,13 @@ final class LocaleScene: BaseLevelScene, SKPhysicsContactDelegate {
         // Test button check
         let tapped = nodes(at: location)
         if tapped.contains(where: { $0.name == "testLocaleButton" }) {
-            let testLang = isUnscrambled ? "en" : "ja"
+            // BASELINE-AWARE TEST TOGGLE: post a language that differs from the
+            // device baseline so the simulator actually triggers a solve even when
+            // the baseline is non-English (a hardcoded "ja" would equal the baseline
+            // on a Japanese device and no-op). Toggle: when unscrambled, return to
+            // baseline; otherwise pick a language guaranteed to differ from it.
+            let baseline = baselineLanguage?.lowercased() ?? "en"
+            let testLang = isUnscrambled ? baseline : (baseline == "ja" ? "en" : "ja")
             InputEventBus.shared.post(.localeChanged(language: testLang))
             return
         }

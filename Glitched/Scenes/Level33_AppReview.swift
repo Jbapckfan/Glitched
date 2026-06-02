@@ -816,37 +816,22 @@ final class AppReviewScene: BaseLevelScene, SKPhysicsContactDelegate {
         buttonBG.name = "reviewButtonBG"
         reviewButton.addChild(buttonBG)
 
-        // Star + RATE 5 STARS + Star text
-        let buttonText = SKLabelNode(text: "RATE 5 STARS")
+        // Fictional, non-soliciting CTA — preserves the fourth-wall gag without
+        // imitating Apple's review UI or asking for a real App Store rating. No
+        // star/rating imagery; tapping only unlocks the door in-game.
+        let buttonText = SKLabelNode(text: "VALIDATE ME")
         buttonText.fontName = "Menlo-Bold"
         buttonText.fontSize = 16
         buttonText.fontColor = fillColor
         buttonText.verticalAlignmentMode = .center
         reviewButton.addChild(buttonText)
 
-        // Stars flanking the text
-        let leftStar = SKLabelNode(text: "\u{2605}")
-        leftStar.fontName = "Menlo-Bold"
-        leftStar.fontSize = 14
-        leftStar.fontColor = SKColor(red: 1, green: 0.85, blue: 0, alpha: 1) // Gold
-        leftStar.verticalAlignmentMode = .center
-        leftStar.position = CGPoint(x: -55, y: 0)
-        reviewButton.addChild(leftStar)
-
-        let rightStar = SKLabelNode(text: "\u{2605}")
-        rightStar.fontName = "Menlo-Bold"
-        rightStar.fontSize = 14
-        rightStar.fontColor = SKColor(red: 1, green: 0.85, blue: 0, alpha: 1)
-        rightStar.verticalAlignmentMode = .center
-        rightStar.position = CGPoint(x: 55, y: 0)
-        reviewButton.addChild(rightStar)
-
         addChild(reviewButton)
 
         // VoiceOver: expose the button and make clear the exit unlocks regardless.
         reviewButton.isAccessibilityElement = true
         reviewButton.accessibilityTraits = .button
-        reviewButton.accessibilityLabel = "Leave a review (optional). The exit unlocks either way."
+        reviewButton.accessibilityLabel = "Validate me (optional). The exit unlocks either way."
 
         // Pulsing glow animation
         let pulse = SKAction.sequence([

@@ -25,6 +25,7 @@ final class BatteryPercentScene: BaseLevelScene, SKPhysicsContactDelegate {
 
     // Hidden exit below platform 5
     private var hiddenExitNode: SKNode?
+    private var hiddenExitBody: SKSpriteNode?
     private var fakeExitNode: SKNode?
 
     // Fallback for simulator
@@ -237,6 +238,9 @@ final class BatteryPercentScene: BaseLevelScene, SKPhysicsContactDelegate {
         label.fontColor = strokeColor
         door.addChild(label)
 
+        // Start the door visually hidden/faded — it should only reveal once the
+        // battery drains enough for the platforms above to vanish.
+        door.alpha = 0.15
         hiddenExitNode = door
         addChild(door)
 
@@ -244,9 +248,13 @@ final class BatteryPercentScene: BaseLevelScene, SKPhysicsContactDelegate {
         exit.position = position
         exit.physicsBody = SKPhysicsBody(rectangleOf: exit.size)
         exit.physicsBody?.isDynamic = false
-        exit.physicsBody?.categoryBitMask = PhysicsCategory.exit
+        // OBJECTIVE FIX: start the REAL exit INERT (category 0) so the battery
+        // mechanic can't be bypassed at 100%. updateBatteryState toggles it on
+        // only when battery < 60% (matching the platform-vanish threshold).
+        exit.physicsBody?.categoryBitMask = PhysicsCategory.none
         exit.physicsBody?.collisionBitMask = 0
         exit.name = "exit"
+        hiddenExitBody = exit
         addChild(exit)
     }
 
@@ -364,6 +372,15 @@ final class BatteryPercentScene: BaseLevelScene, SKPhysicsContactDelegate {
                 stone.physicsBody = nil
             }
         }
+
+        // OBJECTIVE FIX: the REAL exit only becomes reachable once battery < 60%,
+        // i.e. once the upper platforms (6+, thresholds 60%/70%/…) have vanished.
+        // Below threshold the exit body is real (PhysicsCategory.exit) and the
+        // door fades in; at/above threshold it is inert (0) and faded out, so the
+        // battery mechanic can't be bypassed. Same 60% cutoff as platform-vanish.
+        let exitActive = pct < 60
+        hiddenExitBody?.physicsBody?.categoryBitMask = exitActive ? PhysicsCategory.exit : PhysicsCategory.none
+        hiddenExitNode?.run(.fadeAlpha(to: exitActive ? 1.0 : 0.15, duration: 0.3))
 
         // Show 4th wall aside once, near the first drain (battery dips below full),
         // rather than re-firing the narrator on every battery tick.
