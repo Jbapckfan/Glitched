@@ -71,7 +71,7 @@ That means players can experience the actual hook before paying. This reduces th
 
 Recommended paywall framing:
 
-"World 1 was the boot sequence. The rest of the system is sealed."
+"WORLDS 0-1 FREE. WORLDS 2-5 SEALED."
 
 Bullet proof:
 - Unlock Worlds 2-5

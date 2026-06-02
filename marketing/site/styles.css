@@ -821,3 +821,36 @@ button {
     flex-direction: column;
   }
 }
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+  }
+
+  .platform-b,
+  .dark-layer,
+  .demo-bit,
+  .device-frame,
+  .corridor,
+  .tree-trunk,
+  .tree-crown {
+    opacity: 1;
+    transform: none;
+  }
+
+  .bit {
+    transform: translateY(0);
+  }
+
+  .flash {
+    opacity: 0;
+  }
+}
