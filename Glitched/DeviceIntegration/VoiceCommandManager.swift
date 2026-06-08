@@ -66,6 +66,22 @@ final class VoiceCommandManager: DeviceManager {
     private func startListening() {
         guard let recognizer = speechRecognizer, recognizer.isAvailable else { return }
 
+        // Put the shared session into a record-capable state BEFORE building the
+        // engine. AudioManager leaves the session in .ambient (input disabled),
+        // under which inputNode.outputFormat returns a 0-rate/0-channel format and
+        // the tap/engine silently feed empty buffers — so voice recognition would
+        // never hear input on a real device. AudioManager.restorePlaybackSession()
+        // (called from deactivate()) hands playback back when we leave the level.
+        do {
+            let session = AVAudioSession.sharedInstance()
+            try session.setCategory(.playAndRecord, mode: .measurement, options: [.duckOthers, .defaultToSpeaker])
+            try session.setActive(true)
+        } catch {
+            print("VoiceCommandManager: Failed to configure record session: \(error)")
+            reportMicDenied()
+            return
+        }
+
         audioEngine = AVAudioEngine()
         guard let audioEngine = audioEngine else { return }
 
@@ -75,6 +91,17 @@ final class VoiceCommandManager: DeviceManager {
 
         let inputNode = audioEngine.inputNode
         let recordingFormat = inputNode.outputFormat(forBus: 0)
+
+        // Guard against an invalid format (input not actually available); without
+        // this, installTap/engine.start() throw and recognition silently dies.
+        guard recordingFormat.sampleRate > 0, recordingFormat.channelCount > 0 else {
+            print("VoiceCommandManager: Invalid input format — falling back to text input")
+            audioEngine.stop()
+            self.audioEngine = nil
+            recognitionRequest = nil
+            reportMicDenied()
+            return
+        }
 
         inputNode.installTap(onBus: 0, bufferSize: 1024, format: recordingFormat) { buffer, _ in
             request.append(buffer)
