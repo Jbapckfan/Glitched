@@ -82,8 +82,18 @@ final class AppSwitcherScene: BaseLevelScene, SKPhysicsContactDelegate {
         addChild(title)
     }
 
+    // iPad vertical-void fix: uniform upward lift applied to EVERY gameplay node
+    // (platforms, exit, spawn, respawn, hazards, death zone). Returns 0 on
+    // iPhone-class canvases so the phone layout is byte-identical; positive on
+    // tall iPad canvases so the flat band sits center-ish instead of hugging the
+    // bottom. The band runs from the lowest ground (groundY=160) to the highest
+    // gameplay node (top oscillating spike center, y=265). Because the SAME lift
+    // is added to all gameplay Y, every gap/rise/jump distance is unchanged.
+    private var gameplayLift: CGFloat { gameplayVerticalLift(bandBottom: 160, bandTop: 265) }
+
     private func buildLevel() {
-        let groundY: CGFloat = 160
+        let lift = gameplayLift
+        let groundY: CGFloat = 160 + lift
 
         // Fits a 390-pt logical course. Stepping stones are ≤ 25 pt apart
         // with 30-pt rise/drop — well inside the 91-pt jump height.
@@ -96,9 +106,10 @@ final class AppSwitcherScene: BaseLevelScene, SKPhysicsContactDelegate {
         createPlatform(at: CGPoint(x: courseX(345), y: groundY), size: CGSize(width: courseLen(80), height: 30))
         createExitDoor(at: CGPoint(x: courseX(355), y: groundY + 50))
 
-        // Death zone
+        // Death zone — lifted with the band so it stays the SAME distance below
+        // the lowest platform (groundY) on both iPhone and iPad.
         let death = SKNode()
-        death.position = CGPoint(x: size.width / 2, y: -50)
+        death.position = CGPoint(x: size.width / 2, y: -50 + lift)
         death.physicsBody = SKPhysicsBody(rectangleOf: CGSize(width: size.width * 2, height: 100))
         death.physicsBody?.isDynamic = false
         death.physicsBody?.categoryBitMask = PhysicsCategory.hazard
@@ -126,10 +137,13 @@ final class AppSwitcherScene: BaseLevelScene, SKPhysicsContactDelegate {
         // Multiple fast-moving spikes that are hard to time without peeking.
         // Positions and oscillation ranges fit a 390-pt iPhone canvas and
         // are kept clear of the exit plateau on narrow iPhones (≥375 pt).
+        // Hazard Y is lifted by the SAME band lift as the platforms, so each
+        // spike keeps its exact vertical offset above the course on iPad.
+        let lift = gameplayLift
         let hazardData: [(pos: CGPoint, range: CGFloat, speed: TimeInterval)] = [
-            (CGPoint(x: courseX(130), y: 235), courseLen(40), 0.8),
-            (CGPoint(x: courseX(200), y: 265), courseLen(50), 0.6),
-            (CGPoint(x: courseX(275), y: 240), courseLen(45), 0.7)
+            (CGPoint(x: courseX(130), y: 235 + lift), courseLen(40), 0.8),
+            (CGPoint(x: courseX(200), y: 265 + lift), courseLen(50), 0.6),
+            (CGPoint(x: courseX(275), y: 240 + lift), courseLen(45), 0.7)
         ]
 
         for (index, data) in hazardData.enumerated() {
@@ -300,7 +314,9 @@ final class AppSwitcherScene: BaseLevelScene, SKPhysicsContactDelegate {
     }
 
     private func setupBit() {
-        spawnPoint = CGPoint(x: courseX(45), y: 200)
+        // Spawn (and respawn target — handleDeath respawns at spawnPoint) lifted
+        // with the band so Bit starts the SAME height above the ground on iPad.
+        spawnPoint = CGPoint(x: courseX(45), y: 200 + gameplayLift)
         bit = BitCharacter.make()
         bit.position = spawnPoint
         addChild(bit)

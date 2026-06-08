@@ -15,6 +15,10 @@ final class BatteryPercentScene: BaseLevelScene, SKPhysicsContactDelegate {
     private var playerController: PlayerController!
     private var spawnPoint: CGPoint = .zero
 
+    // iPad vertical-void fix: uniform upward lift for the whole gameplay band,
+    // computed once in buildLevel() and reused for the spawn point. 0 on iPhone.
+    private var gameplayLift: CGFloat = 0
+
     // Battery state
     private var currentBattery: Float = 100
     private var steppingStones: [SKNode] = []
@@ -101,7 +105,18 @@ final class BatteryPercentScene: BaseLevelScene, SKPhysicsContactDelegate {
     }
 
     private func buildLevel() {
-        let groundY: CGFloat = 160
+        // iPad vertical-void fix: lift the ENTIRE gameplay band uniformly so it
+        // sits center-ish on tall canvases. Helper returns 0 on iPhone (height
+        // <= 1000pt) -> byte-identical phone layout. Band runs from the lowest
+        // gameplay element (the landing platform at groundY-100=60) to the
+        // highest (the fake-exit door at groundY+50=210). Because every gameplay
+        // node here derives from `groundY`, lifting `groundY` shifts the start
+        // platform, all 10 stones, the fake exit, the hidden real exit, and the
+        // landing platform by the SAME amount, so all gaps/rises are unchanged.
+        // The two nodes NOT derived from groundY (death zone, spawn point) get
+        // the same `+ gameplayLift` added explicitly below / in setupBit().
+        gameplayLift = gameplayVerticalLift(bandBottom: 60, bandTop: 210)
+        let groundY: CGFloat = 160 + gameplayLift
 
         // Start platform
         createPlatform(at: CGPoint(x: 60, y: groundY), size: CGSize(width: 100, height: 30))
@@ -138,9 +153,11 @@ final class BatteryPercentScene: BaseLevelScene, SKPhysicsContactDelegate {
         // Small landing platform near hidden exit
         createPlatform(at: CGPoint(x: platform5X, y: groundY - 100), size: CGSize(width: 80, height: 20))
 
-        // Death zone
+        // Death zone — lifted with the band by the same gameplayLift so it stays
+        // the same distance below the lowest platform (groundY-100). On iPhone
+        // gameplayLift==0 so this is unchanged.
         let death = SKNode()
-        death.position = CGPoint(x: size.width / 2, y: -50)
+        death.position = CGPoint(x: size.width / 2, y: -50 + gameplayLift)
         death.physicsBody = SKPhysicsBody(rectangleOf: CGSize(width: size.width * 2, height: 100))
         death.physicsBody?.isDynamic = false
         death.physicsBody?.categoryBitMask = PhysicsCategory.hazard
@@ -335,7 +352,9 @@ final class BatteryPercentScene: BaseLevelScene, SKPhysicsContactDelegate {
     }
 
     private func setupBit() {
-        spawnPoint = CGPoint(x: 60, y: 200)
+        // Spawn point sits above the start platform; lift it with the band by the
+        // same gameplayLift so the spawn-to-platform drop is unchanged. iPhone: 0.
+        spawnPoint = CGPoint(x: 60, y: 200 + gameplayLift)
         bit = BitCharacter.make()
         bit.position = spawnPoint
         addChild(bit)

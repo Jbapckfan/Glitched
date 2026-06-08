@@ -26,6 +26,21 @@ class BaseLevelScene: SKScene {
     /// inset (home indicator).
     var bottomSafeY: CGFloat { effectiveBottomSafeInset }
 
+    /// iPad vertical-void fix: the uniform upward lift to apply to a flat,
+    /// ground-anchored gameplay band so it sits center-ish on a TALL canvas
+    /// instead of hugging the bottom. Returns 0 on iPhone-proportioned
+    /// canvases (height <= 1000pt) so phone layout is byte-identical. On iPad
+    /// (portrait height > 1000pt) it lifts so the band is biased slightly above
+    /// true-center. Scenes pass the CURRENT lowest/highest gameplay Y of their
+    /// band; every gameplay node is then shifted by the returned value so
+    /// relative geometry (gaps/rises) is unchanged.
+    func gameplayVerticalLift(bandBottom: CGFloat, bandTop: CGFloat) -> CGFloat {
+        guard size.height > 1000 else { return 0 }      // iPhone-class: no change
+        let bandHeight = max(0, bandTop - bandBottom)
+        let targetBottom = (size.height - bandHeight) * 0.42   // center, slightly high
+        return max(0, targetBottom - bandBottom)
+    }
+
     private var effectiveTopSafeInset: CGFloat {
         max(safeAreaInsets.top, hardwareCutoutFallbackInsets.top)
     }

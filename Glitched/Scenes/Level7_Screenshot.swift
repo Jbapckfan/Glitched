@@ -330,6 +330,23 @@ final class ScreenshotScene: BaseLevelScene, SKPhysicsContactDelegate {
         // the platforms/bridge/exit toward center instead of pinning them to the
         // floor; on a phone (height ~844) max(...) keeps the original layout.
         groundY = max(180, size.height * 0.28)
+
+        // iPad vertical-void fix: lift the ENTIRE gameplay band uniformly so it
+        // sits center-ish on a tall iPad canvas instead of hugging the floor.
+        // The band runs from the platform tops (bandBottom = groundY) up to the
+        // exit door (bandTop = groundY + 70). Every gameplay node in this scene
+        // derives its Y from this single `groundY` anchor — platforms (groundY),
+        // the ghost bridge (bridgeY = groundY + 10, read after buildLevel()),
+        // chasm hatching (groundY - 60), the exit door + arrow (groundY + 70),
+        // and the player spawn/respawn (groundY + 40, set in setupBit() after
+        // buildLevel()) — so adding the lift to `groundY` here shifts the whole
+        // band by the SAME amount and leaves every relative gap/rise/jump
+        // distance byte-identical. On iPhone the helper returns 0, so groundY is
+        // unchanged and the scene is identical. The death zone stays fixed at
+        // y = -50, well below the lifted platform tops (groundY + lift >= 180).
+        let lift = gameplayVerticalLift(bandBottom: groundY, bandTop: groundY + 70)
+        groundY += lift
+
         bridgeY = groundY + 10
 
         // Fixed, screen-centered chasm. Clamp the chasm to the canvas so a very

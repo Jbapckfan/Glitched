@@ -45,6 +45,20 @@ final class ShakeUndoScene: BaseLevelScene, SKPhysicsContactDelegate {
     private var movingPlatform: SKNode!
     private var platformPhase: CGFloat = 0
 
+    // iPad vertical-void fix: a single uniform upward lift applied to EVERY
+    // gameplay Y (platforms, spawn, exit, hazards, moving-platform base,
+    // preTrapAnchor, death zone). Computed once in buildLevel from the flat
+    // ground-anchored band [bandBottom=40 catch ledge ... bandTop=290 moving
+    // platform peak] via the shared helper, which returns 0 on iPhone-class
+    // canvases (height <= 1000) — so iPhone layout is byte-identical — and a
+    // positive value on tall iPad canvases. Because the SAME lift is added to
+    // every gameplay Y, all relative gaps/rises/jump distances are unchanged;
+    // only HUD/title/instruction/clock/atmosphere/camera (which key off
+    // size/topSafeY) stay put, centering the band. resetTrap and updatePlaying
+    // reuse this stored value so a respawned/oscillating platform lands at the
+    // SAME lifted Y as buildLevel placed it.
+    private var verticalLift: CGFloat = 0
+
     // MARK: - Rotten-platform trap (makes shake-to-undo genuinely REQUIRED)
     // The exit's final platform starts "rotten": the first time the player lands
     // on it, it arms a short fuse and then de-solidifies and drops away, leaving
@@ -157,6 +171,18 @@ final class ShakeUndoScene: BaseLevelScene, SKPhysicsContactDelegate {
     private func buildLevel() {
         let groundY: CGFloat = 160
 
+        // iPad vertical-void fix: compute ONE uniform lift from the flat band and
+        // add it to EVERY gameplay Y below. bandBottom = the catch ledge (y=40, the
+        // lowest standable surface; the death zone at y=-50 sits below it and is
+        // lifted with the band so it stays below all platforms). bandTop = the
+        // moving platform's peak (baseY 240 + amplitude 40 = 280, +half-height ~10
+        // ≈ 290, the highest reachable surface). On iPhone-class canvases the helper
+        // returns 0, so every `+ verticalLift` is a no-op and the layout is
+        // byte-identical to before. On iPad it returns a positive value applied
+        // identically everywhere, so all gaps/rises are unchanged.
+        verticalLift = gameplayVerticalLift(bandBottom: 40, bandTop: 290)
+        let lift = verticalLift
+
         // Gameplay geometry is authored in the fixed 430-pt logical course (X via
         // courseX, widths via courseLen) so spacing/gaps stay device-independent;
         // Y stays on the single-screen-height scaling the file already used. The
@@ -164,16 +190,16 @@ final class ShakeUndoScene: BaseLevelScene, SKPhysicsContactDelegate {
         // updatePlaying); only its BASE X is course-mapped. The widest gameplay
         // gaps occur at courseScale 1.0 (430-pt iPhone / iPad) and stay inside
         // the jumpable budget (see trace below).
-        _ = createPlatform(at: CGPoint(x: courseX(45), y: groundY), size: CGSize(width: courseLen(80), height: 30))
+        _ = createPlatform(at: CGPoint(x: courseX(45), y: groundY + lift), size: CGSize(width: courseLen(80), height: 30))
 
-        movingPlatform = createPlatform(at: CGPoint(x: courseX(160), y: groundY + 80), size: CGSize(width: courseLen(55), height: 20))
+        movingPlatform = createPlatform(at: CGPoint(x: courseX(160), y: groundY + 80 + lift), size: CGSize(width: courseLen(55), height: 20))
         movingPlatform.name = "moving"
 
-        _ = createPlatform(at: CGPoint(x: courseX(260), y: groundY + 40), size: CGSize(width: courseLen(60), height: 25))
+        _ = createPlatform(at: CGPoint(x: courseX(260), y: groundY + 40 + lift), size: CGSize(width: courseLen(60), height: 25))
         // Safe rewind anchor for trap-repair undos: just above P3's top surface
         // (groundY+40 + 12.5 half-height + 16 clearance). From here the final
         // platform (courseX 385, top groundY+15=175) is one normal hop away.
-        preTrapAnchor = CGPoint(x: courseX(260), y: groundY + 40 + 12.5 + 16)
+        preTrapAnchor = CGPoint(x: courseX(260), y: groundY + 40 + 12.5 + 16 + lift)
 
         // FINAL (exit) platform — starts ROTTEN. Geometry unchanged from before, but
         // we keep a reference + surface so the trap can de-solidify and glitch it away
@@ -181,10 +207,10 @@ final class ShakeUndoScene: BaseLevelScene, SKPhysicsContactDelegate {
         // landing pad for the exit, so the player is FORCED onto it — which is what
         // makes shake-to-undo required rather than cosmetic.
         finalPlatformSize = CGSize(width: courseLen(70), height: 30)
-        finalPlatform = createPlatform(at: CGPoint(x: courseX(designSize.width - 45), y: groundY), size: finalPlatformSize)
+        finalPlatform = createPlatform(at: CGPoint(x: courseX(designSize.width - 45), y: groundY + lift), size: finalPlatformSize)
         finalPlatform.name = "final"
         finalPlatformSurface = finalPlatform.children.first as? SKShapeNode
-        createExitDoor(at: CGPoint(x: courseX(designSize.width - 35), y: groundY + 50))
+        createExitDoor(at: CGPoint(x: courseX(designSize.width - 35), y: groundY + 50 + lift))
 
         // CATCH LEDGE — a non-lethal solid shelf directly under the final platform.
         // When the rotten final platform collapses, the player drops onto this shelf
@@ -196,12 +222,14 @@ final class ShakeUndoScene: BaseLevelScene, SKPhysicsContactDelegate {
         // "CAN'T DO THIS?" fallback). Wider than the final platform (90 vs 70 logical)
         // so a collapsing player always lands on it, but kept inside the course so it
         // doesn't overhang the screen edge on the narrowest (390-pt) device.
-        _ = createPlatform(at: CGPoint(x: courseX(designSize.width - 45), y: 40), size: CGSize(width: courseLen(90), height: 24))
+        _ = createPlatform(at: CGPoint(x: courseX(designSize.width - 45), y: 40 + lift), size: CGSize(width: courseLen(90), height: 24))
 
         // Death zone — stays full-width so it always catches falls regardless of
         // course centering (decorative-scope geometry, intentionally not course-mapped).
+        // Lifted with the band so it stays a fixed 90pt below the catch ledge on every
+        // device (still well below the lowest lifted platform).
         let death = SKNode()
-        death.position = CGPoint(x: size.width / 2, y: -50)
+        death.position = CGPoint(x: size.width / 2, y: -50 + lift)
         death.physicsBody = SKPhysicsBody(rectangleOf: CGSize(width: size.width * 2, height: 100))
         death.physicsBody?.isDynamic = false
         death.physicsBody?.categoryBitMask = PhysicsCategory.hazard
@@ -355,7 +383,8 @@ final class ShakeUndoScene: BaseLevelScene, SKPhysicsContactDelegate {
     }
 
     private func setupBit() {
-        spawnPoint = CGPoint(x: courseX(45), y: 200)
+        // Spawn lifted by the same band lift so Bit drops onto the (also-lifted) P1.
+        spawnPoint = CGPoint(x: courseX(45), y: 200 + verticalLift)
         bit = BitCharacter.make()
         bit.position = spawnPoint
         addChild(bit)
@@ -695,9 +724,12 @@ final class ShakeUndoScene: BaseLevelScene, SKPhysicsContactDelegate {
         gameTime += deltaTime
         recordPosition()
 
-        // Move platform
+        // Move platform — baseY lifted by the band lift so the oscillation centers on
+        // the SAME lifted Y where buildLevel placed it (groundY+80=240). The ±40
+        // amplitude is unchanged, so the moving-platform rise relative to the band is
+        // identical on every device.
         platformPhase += CGFloat(deltaTime)
-        let baseY: CGFloat = 240
+        let baseY: CGFloat = 240 + verticalLift
         movingPlatform.position.y = baseY + sin(platformPhase * 2) * 40
     }
 
@@ -765,7 +797,10 @@ final class ShakeUndoScene: BaseLevelScene, SKPhysicsContactDelegate {
         removeAction(forKey: "trapFuse")
         finalPlatform.removeAllActions()
         finalPlatformSurface?.removeAction(forKey: "rot")
-        finalPlatform.position = CGPoint(x: courseX(designSize.width - 45), y: 160)
+        // Restore to the SAME lifted Y buildLevel used (groundY=160 + band lift), so a
+        // death-respawn mid-fuse re-pristines the platform exactly where it belongs on
+        // every device.
+        finalPlatform.position = CGPoint(x: courseX(designSize.width - 45), y: 160 + verticalLift)
         finalPlatform.alpha = 1.0
         finalPlatformSurface?.alpha = 1.0
         finalPlatformSurface?.xScale = 1.0
