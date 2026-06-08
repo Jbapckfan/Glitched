@@ -4,29 +4,36 @@
 # RULE: shared files are RESERVED for a single serialized pass, done LAST.
 
 mac-mini (Claude Opus):
-  scope: LEVEL-INTERNAL fixes only (each level's own scene file +
-         that level's dedicated manager). No shared-file edits.
-  started: 2026-05-31
-  DONE (pushed): L15, L16, L19, L20, L21, L23, L24, L30
-  lane (in progress): L22, L25, L26, L29, L33
-  files:
-    Glitched/Scenes/Level22_BatteryPercent.swift
-    Glitched/Scenes/Level25_TimeOfDay.swift
-    Glitched/Scenes/Level26_Locale.swift
-    Glitched/Scenes/Level29_TheLie.swift
-    Glitched/Scenes/Level33_AppReview.swift
+  scope: LEVEL-INTERNAL fixes + audio/compliance systems.
+  lane: CLEAR — no level scene files currently claimed.
+  DONE (all pushed to main): L3, L13, L15, L16, L19, L20, L21, L23, L24,
+    L25, L26, L29, L30, L33 fixes; centered-course pass; discovery-first
+    clue pass; camera+DiskSpace compliance; audio-death P0.
+  next (NOT level-scene files — no collision with MBP iPad-void pass):
+    Glitched/DeviceIntegration/VoiceCommandManager.swift  # record-session setup (L21 device input)
+  => All Level*.swift scene files are RELEASED by mac-mini. MBP may take
+     the full flat-level iPad-void set, INCLUDING L22/L25/L26/L29/L33/L30
+     (those are merged/done — the earlier "in progress" label was stale).
 
 macbook-pro (Claude + Codex):
-  lane: L7, L8, L9, L10
-  files:
-    Glitched/Scenes/Level7_Screenshot.swift
-    Glitched/Scenes/Level8_DarkMode.swift
-    Glitched/Scenes/Level9_Orientation.swift
-    Glitched/Scenes/Level10_TimeTravel.swift
+  lane: L7, L8, L9, L10 (DONE, merged) + iPad-vertical-void pass (NEW, all
+    in-scope flat Level*.swift scene files per MBP-TASK-ipad-vertical-void.md).
+  branch: fix/ipad-vertical-void off origin/main.
+  files: any in-scope Level*.swift scene file (Mini has released all of them).
 
-RESERVED — single serialized pass, LAST, one agent only:
+RESERVED — single serialized pass, one agent only:
   Glitched/App/GameRootView.swift            # fallback overlay buttons
   Glitched/Core/AccessibilityManager.swift   # forceHardwareFallback audit
-  Glitched/Scenes/BaseLevelScene.swift
   Glitched/Core/PlayerController.swift
   Glitched/Info.plist                        # L9 orientation decision
+
+RULING — BaseLevelScene.swift courseOriginY helper (iPad-void pass):
+  MBP is CLEARED to add a vertical-center helper (courseOriginY / a
+  shared vertical-offset computed from spare canvas height) to
+  BaseLevelScene.swift as part of the iPad-void pass, AND to own that
+  file for the duration of that pass. Rationale: a shared helper is
+  cleaner than per-scene duplication, the audio/compliance work is done
+  so Mini has no pending BaseLevelScene edit, and Mini's only remaining
+  task (VoiceCommandManager) does not touch BaseLevelScene. MBP: claim
+  BaseLevelScene here while editing it; Mini will not touch it during the
+  iPad-void pass. The other reserved files stay untouched.
