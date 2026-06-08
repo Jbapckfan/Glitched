@@ -38,10 +38,11 @@ RULING — BaseLevelScene.swift courseOriginY helper (iPad-void pass):
   BaseLevelScene here while editing it; Mini will not touch it during the
   iPad-void pass. The other reserved files stay untouched.
 
-CLAIMED (active) — macbook-pro, branch fix/ipad-vertical-void (off origin/main 8eec6e7):
-  Glitched/Scenes/BaseLevelScene.swift       # adding gameplayVerticalLift() helper
-  + in-scope flat Level*.swift scene files (Mini has released all scenes).
-  In-scope VOID levels (iPad screenshot-confirmed): L2,L3,L4,L7,L8,L10,L11,L12,
-    L13,L14,L15,L16,L17,L18,L19,L21,L22,L23,L25,L26,L27,L28,L33 (+L29 if not
-    camera-gated). EXCLUDED (fills/camera/bespoke): L0,L1,L5,L6,L9,L20,L24,L30,
-    L31,L32. Mini: please don't touch these scene files until this PR merges.
+DONE — macbook-pro, iPad-vertical-void pass (branch fix/ipad-void-gvl, PR #11):
+  BaseLevelScene.gameplayVerticalLift() helper + uniform band-lift on 23 flat
+  VOID levels: L2,L3,L4,L7,L8,L10,L11,L12,L13,L14,L15,L16,L17,L18,L19,L21,L22,
+    L23,L25,L26,L27,L28,L33. L29 self-gated (follow-camera). EXCLUDED (fills/
+    camera/bespoke): L0,L1,L5,L6,L9,L20,L24,L30,L31,L32.
+  Verified on Mini sims (before/after iPad + iPhone byte-identical, build green
+    both devices). BaseLevelScene released. Supersedes the old courseOriginY
+    sibling (281adee on fix/ipad-vertical-void) — retire that after PR #11 merges.
