@@ -56,6 +56,10 @@ final class VoiceCommandManager: DeviceManager {
         guard isActive else { return }
         isActive = false
         stopListening()
+        // Hand the shared AVAudioSession back to AudioManager so leaving the voice
+        // level doesn't leave the session in a recording state that silences all
+        // game audio (same class of bug as MicrophoneManager).
+        AudioManager.shared.restorePlaybackSession()
         print("VoiceCommandManager: Deactivated")
     }
 

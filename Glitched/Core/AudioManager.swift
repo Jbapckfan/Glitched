@@ -73,6 +73,44 @@ final class AudioManager {
             name: AVAudioSession.interruptionNotification,
             object: AVAudioSession.sharedInstance()
         )
+
+        // Defense-in-depth: if the app returns to foreground with the shared
+        // session in a non-playback state (e.g. another component took it for
+        // recording and a teardown was missed), re-assert playback on activation.
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(handleAppDidBecomeActive),
+            name: UIApplication.didBecomeActiveNotification,
+            object: nil
+        )
+    }
+
+    @objc private func handleAppDidBecomeActive() {
+        restorePlaybackSession()
+    }
+
+    /// Re-assert the playback (.ambient) audio session and restart the engine +
+    /// ambient bed after another component (e.g. MicrophoneManager / voice
+    /// recognition) borrowed the shared session for recording. Without this, the
+    /// session is left inactive and in the .record category and ALL game audio
+    /// stays silent for the rest of the run. Safe to call repeatedly.
+    func restorePlaybackSession() {
+        guard !isMuted else { return }
+        do {
+            let session = AVAudioSession.sharedInstance()
+            try session.setCategory(.ambient, mode: .default, options: [.mixWithOthers])
+            try session.setActive(true)
+        } catch {
+            print("AudioManager: failed to restore playback session: \(error)")
+        }
+        if let engine = audioEngine, !engine.isRunning {
+            try? engine.start()
+        }
+        // Re-assert the ambient bed for the current world if one was playing
+        // (the .record category / setActive(false) will have stopped it).
+        if let currentAmbientWorld {
+            playAmbientBed(for: currentAmbientWorld)
+        }
     }
 
     @objc private func handleAudioInterruption(_ notification: Notification) {

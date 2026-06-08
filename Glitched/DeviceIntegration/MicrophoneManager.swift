@@ -38,8 +38,14 @@ final class MicrophoneManager: DeviceManager {
         guard isRunning else { return }
         engine.inputNode.removeTap(onBus: 0)
         engine.stop()
-        try? AVAudioSession.sharedInstance().setActive(false)
         isRunning = false
+        // Hand the shared AVAudioSession back to AudioManager (the playback owner)
+        // instead of calling setActive(false). Deactivating here would leave the
+        // process-wide session inactive and stuck in the .record category, which
+        // silences ALL game audio (ambient + SFX + UI) for the rest of the run —
+        // AudioManager only re-asserts the session on an interruption .ended event,
+        // and a programmatic setActive(false) posts no such notification.
+        AudioManager.shared.restorePlaybackSession()
     }
 
     private func startCapture() {
