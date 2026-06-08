@@ -26,10 +26,37 @@ final class StaticScene: BaseLevelScene, SKPhysicsContactDelegate {
     // decorative TV frame / antennas / panels, which still key off size.width.
     private var courseScale: CGFloat { min(1.0, size.width / designSize.width) }
     private var courseOriginX: CGFloat { (size.width - designSize.width * courseScale) / 2 }
-    /// Map a logical x (0...designSize.width) into centered course space.
+    /// Map a logical x (0...designSize.width) into centered course space. Used by
+    /// the iPhone layout (buildPhoneLevel). The COMPOSED iPad layout authors its own
+    /// absolute positions via `px()` and does NOT go through courseX.
     private func courseX(_ logicalX: CGFloat) -> CGFloat { courseOriginX + logicalX * courseScale }
     /// Scale a logical length (platform width, etc.) into course space.
     private func courseLen(_ logical: CGFloat) -> CGFloat { logical * courseScale }
+
+    // MARK: - Native-iPad layout (hand-composed)
+    //
+    // iPhone uses the original fixed 430-wide gauntlet (buildPhoneLevel), unchanged.
+    // iPad gets a HAND-COMPOSED level (buildComposedIPadLevel) with paced beats —
+    // teach -> cluster -> rest -> peak -> breath -> inverse-twist -> exit — that
+    // fills the screen with intent rather than tiling the phone level wider. Bit's
+    // physics are device-independent, so all spacing stays within the same fixed
+    // jump reach (platform pitch `unitPitch`, rises < the 85pt safe ceiling). The
+    // composed course is wider than the viewport, so it scrolls via the Phase 0
+    // installCameraFollow. Everything is gated on `isWideCanvas`; iPhone is unchanged.
+
+    /// True on iPad-proportioned canvases (matches the base helpers' gate).
+    private var isWideCanvas: Bool { size.height > 1000 && size.width > designSize.width }
+
+    /// Absolute horizontal pitch of one platform/laser unit (68.8pt on iPad). Used
+    /// by both the composed layout's `px()` and the laser midpoints so spacing is
+    /// a single safe constant.
+    private var unitPitch: CGFloat { 0.16 * designSize.width * courseScale }
+
+    /// Legacy accessor retained only so older call sites compile; the composed
+    /// layout uses `composedWorldWidth` set in buildComposedIPadLevel.
+    private var courseWorldWidth: CGFloat {
+        return max(playableCanvasWidth, composedWorldWidth)
+    }
 
     // MARK: - Properties
     private var bit: BitCharacter!
@@ -40,7 +67,19 @@ final class StaticScene: BaseLevelScene, SKPhysicsContactDelegate {
     private var laserEmitters: [SKNode] = []
     private var laserBeams: [SKShapeNode] = []
     private var laserHitZones: [SKNode] = []
-    private var inverseLaserIndex: Int = 3  // Index of the inverse laser (4th laser)
+    // Index of the inverse laser. On iPhone this is the 4th laser (index 3). On
+    // iPad the lead-in lasers are appended BEFORE the original four (indices
+    // 0..<prependedUnitCount), so the original 4th — the INVERSE one — shifts to
+    // `prependedUnitCount + 3`. createLaserSystem() sets this after the prepend so
+    // the inverse mechanic always targets the same physical laser. Defaults to 3
+    // (iPhone / prepend == 0).
+    private var inverseLaserIndex: Int = 3
+
+    // Composed iPad layout anchors (set in buildComposedIPadLevel; unused on iPhone).
+    private var composedSpawnX: CGFloat = 0
+    private var composedExitX: CGFloat = 0
+    private var composedExitDoorX: CGFloat = 0
+    private var composedWorldWidth: CGFloat = 0
 
     // Static/noise state
     private var currentNoiseLevel: Float = 0.0
@@ -307,13 +346,20 @@ final class StaticScene: BaseLevelScene, SKPhysicsContactDelegate {
     // MARK: - Level Building
 
     private func buildLevel() {
+        if isWideCanvas {
+            buildComposedIPadLevel()
+            return
+        }
+        buildPhoneLevel()
+    }
+
+    // MARK: - iPhone layout (unchanged, byte-identical to the shipped phone level)
+
+    private func buildPhoneLevel() {
         let groundY: CGFloat = 160 * layoutYScale
-        // Gameplay widths are authored in logical course points (centered course),
-        // so platform spacing/sizes stay consistent instead of stretching on iPad.
         let startWidth = courseLen(96)
         let midWidth = courseLen(72)
         let platformHeight = courseLen(24)
-        // `x` is a logical fraction of the course (0...1), mapped via courseX().
         let platformPoints: [(x: CGFloat, yOffset: CGFloat, width: CGFloat, height: CGFloat)] = [
             (0.13, 0, startWidth, courseLen(30)),
             (0.29, 25, midWidth, platformHeight),
@@ -322,54 +368,83 @@ final class StaticScene: BaseLevelScene, SKPhysicsContactDelegate {
             (0.76, 50, midWidth, platformHeight),
             (0.90, 0, startWidth, courseLen(30))
         ]
-
-        // Starting platform
-        // NOTE: every gameplay Y below adds the SAME `gameplayLift` (iPad-only,
-        // 0 on iPhone) so the whole band shifts uniformly — relative geometry is
-        // byte-identical across devices.
-        _ = createPlatform(
-            at: CGPoint(x: courseX(platformPoints[0].x * designSize.width), y: groundY + platformPoints[0].yOffset * layoutYScale + gameplayLift),
-            size: CGSize(width: platformPoints[0].width, height: platformPoints[0].height)
-        )
-
-        // Middle platforms (across laser gauntlet)
-        _ = createPlatform(
-            at: CGPoint(x: courseX(platformPoints[1].x * designSize.width), y: groundY + platformPoints[1].yOffset * layoutYScale + gameplayLift),
-            size: CGSize(width: platformPoints[1].width, height: platformPoints[1].height)
-        )
-
-        _ = createPlatform(
-            at: CGPoint(x: courseX(platformPoints[2].x * designSize.width), y: groundY + platformPoints[2].yOffset * layoutYScale + gameplayLift),
-            size: CGSize(width: platformPoints[2].width, height: platformPoints[2].height)
-        )
-
-        _ = createPlatform(
-            at: CGPoint(x: courseX(platformPoints[3].x * designSize.width), y: groundY + platformPoints[3].yOffset * layoutYScale + gameplayLift),
-            size: CGSize(width: platformPoints[3].width, height: platformPoints[3].height)
-        )
-
-        // Platform before the 4th (inverse) laser
-        _ = createPlatform(
-            at: CGPoint(x: courseX(platformPoints[4].x * designSize.width), y: groundY + platformPoints[4].yOffset * layoutYScale + gameplayLift),
-            size: CGSize(width: platformPoints[4].width, height: platformPoints[4].height)
-        )
-
-        // Exit platform (pushed further right for 4th laser)
-        _ = createPlatform(
-            at: CGPoint(x: courseX(platformPoints[5].x * designSize.width), y: groundY + platformPoints[5].yOffset * layoutYScale + gameplayLift),
-            size: CGSize(width: platformPoints[5].width, height: platformPoints[5].height)
-        )
-
-        // Exit door
+        for p in platformPoints {
+            _ = createPlatform(
+                at: CGPoint(x: courseX(p.x * designSize.width), y: groundY + p.yOffset * layoutYScale + gameplayLift),
+                size: CGSize(width: p.width, height: p.height)
+            )
+        }
         createExitDoor(at: CGPoint(x: courseX(0.92 * designSize.width), y: groundY + 50 * visualScale + gameplayLift))
+        installDeathZone()
+    }
 
-        // Death zone — the "fell off the bottom of the world" floor. Intentionally
-        // NOT lifted: it sits at y = -50, well below the lowest lifted platform
-        // (>= 160*layoutYScale + gameplayLift), so it still catches a fall on every
-        // device. Lifting it would shrink the void below the band for no benefit.
+    // MARK: - iPad layout (HAND-COMPOSED, native — teach -> build -> peak -> twist)
+    //
+    // Rather than tiling the iPhone gauntlet wider, the iPad level is authored as
+    // a paced sequence of BEATS that fill the screen with intent. All geometry is
+    // in absolute points (not size.width fractions) so jump reach is exact:
+    // platform centers are spaced at `pitch` (<= safe gap) and rises stay <= ~73pt
+    // (< the 85pt safe ceiling). The level reads:
+    //   1. TEACH    — spawn + 1 lone laser (learn "noise = shield"), easy.
+    //   2. CLUSTER A— 2 lasers, platforms step up then down (rhythm, not a flat row).
+    //   3. REST     — a wider platform, no laser: a deliberate breath + 4th-wall beat.
+    //   4. CLUSTER B— 3 tight lasers: the tension peak, sustain noise.
+    //   5. BREATH   — short pause so the player relaxes...
+    //   6. INVERSE  — the isolated dashed 4th laser (silence = safe): the twist finale.
+    //   7. EXIT.
+    // The INVERSE laser is the design climax, given its own approach platform +
+    // placard, instead of being buried in a uniform row.
+    private func buildComposedIPadLevel() {
+        let baseGroundY: CGFloat = 160 * layoutYScale + gameplayLift
+        let pitch: CGFloat = unitPitch                 // safe horizontal step (<=130)
+        let stepUp: CGFloat = 46 * layoutYScale        // ~67pt rise at 1366h (< 85 safe)
+        let wide = courseLen(96)
+        let mid = courseLen(72)
+        let h = courseLen(28)
+
+        // Hand-placed platforms: (xPitchIndex, tier) — tier 0/1/2 = ground/up/up2.
+        // xPitchIndex multiplies `pitch` from a left margin; tiers vary height for
+        // rhythm. Lasers (createLaserSystem) sit in the GAPS between chosen pairs.
+        let leftMargin: CGFloat = pitch * 1.2
+        func px(_ i: CGFloat) -> CGFloat { leftMargin + i * pitch }
+        func py(_ tier: CGFloat) -> CGFloat { baseGroundY + tier * stepUp }
+
+        // index:  0     1     2     3      4(rest) 5     6     7     8(breath) 9(inv-approach) 10(exit)
+        // tier :  0     1     0     1      0       1     2     1     0          0               0
+        let plats: [(i: CGFloat, tier: CGFloat, w: CGFloat)] = [
+            (0,  0, wide),   // spawn (TEACH)
+            (1.0, 1, mid),   // over laser 1
+            (2.0, 0, mid),   // CLUSTER A start
+            (3.0, 1, mid),   // CLUSTER A — stepped
+            (4.2, 0, wide),  // REST (wider, breath)
+            (5.4, 1, mid),   // CLUSTER B
+            (6.4, 2, mid),   // CLUSTER B — highest tier (peak)
+            (7.4, 1, mid),   // CLUSTER B end
+            (8.6, 0, wide),  // BREATH (relax before the twist)
+            (9.8, 0, mid),   // INVERSE approach platform
+            (11.0, 0, wide)  // EXIT platform
+        ]
+        for p in plats {
+            _ = createPlatform(at: CGPoint(x: px(p.i), y: py(p.tier)), size: CGSize(width: p.w, height: h))
+        }
+
+        composedSpawnX = px(0)
+        composedExitX = px(11.0)
+        composedExitDoorX = px(11.0)
+        // Course extent: last platform right edge + margin.
+        composedWorldWidth = px(11.0) + wide / 2 + pitch
+
+        createExitDoor(at: CGPoint(x: composedExitDoorX, y: baseGroundY + 50 * visualScale))
+        installDeathZone()
+    }
+
+    /// Death zone, shared by both layouts. Not lifted (it's the fall-floor at y=-50).
+    private func installDeathZone() {
+        let deathZoneCenterX = isWideCanvas ? composedWorldWidth / 2 : size.width / 2
+        let deathZoneWidth = isWideCanvas ? composedWorldWidth * 2 : size.width * 2
         let deathZone = SKNode()
-        deathZone.position = CGPoint(x: size.width / 2, y: -50)
-        deathZone.physicsBody = SKPhysicsBody(rectangleOf: CGSize(width: size.width * 2, height: 100))
+        deathZone.position = CGPoint(x: deathZoneCenterX, y: -50)
+        deathZone.physicsBody = SKPhysicsBody(rectangleOf: CGSize(width: deathZoneWidth, height: 100))
         deathZone.physicsBody?.isDynamic = false
         deathZone.physicsBody?.categoryBitMask = PhysicsCategory.hazard
         deathZone.name = "death_zone"
@@ -413,25 +488,58 @@ final class StaticScene: BaseLevelScene, SKPhysicsContactDelegate {
     // MARK: - Laser System
 
     private func createLaserSystem() {
-        // Create 3 normal laser barriers + 1 inverse laser near the end.
         // Hazard band Y values get the SAME uniform `gameplayLift` (iPad-only) as
-        // the platforms/spawn/exit, so the lasers stay aligned with the gaps and
-        // the laser/platform vertical relationship is byte-identical on iPhone.
+        // the platforms/spawn/exit, so lasers stay aligned with the gaps.
         let laserBaseY = 140 * layoutYScale + gameplayLift
         let laserTopLow = 280 * layoutYScale + gameplayLift
         let laserTopHigh = 320 * layoutYScale + gameplayLift
-        // Laser x positions are authored in the centered logical course so they
-        // stay aligned with the platform gaps on every device.
-        let lx0 = courseX(0.21 * designSize.width)
-        let lx1 = courseX(0.37 * designSize.width)
-        let lx2 = courseX(0.53 * designSize.width)
-        let lx3 = courseX(0.68 * designSize.width)
-        let laserPositions: [(start: CGPoint, end: CGPoint)] = [
-            (CGPoint(x: lx0, y: laserBaseY), CGPoint(x: lx0, y: laserTopLow)),
-            (CGPoint(x: lx1, y: laserBaseY), CGPoint(x: lx1, y: laserTopHigh)),
-            (CGPoint(x: lx2, y: laserBaseY), CGPoint(x: lx2, y: laserTopLow)),
-            (CGPoint(x: lx3, y: laserBaseY), CGPoint(x: lx3, y: laserTopLow))  // 4th laser - INVERSE
-        ]
+
+        var laserPositions: [(start: CGPoint, end: CGPoint)] = []
+
+        if isWideCanvas {
+            // COMPOSED iPad gauntlet: lasers sit in the gaps that match the beat
+            // layout in buildComposedIPadLevel — 1 TEACH, 2 CLUSTER A, 3 CLUSTER B,
+            // then the INVERSE finale (its own beat). X = midpoint of the platform
+            // pair that brackets each laser; heights alternate low/high for variety.
+            // The 7th laser is the INVERSE one (silence = safe).
+            let pitch: CGFloat = unitPitch
+            let leftMargin: CGFloat = pitch * 1.2
+            func px(_ i: CGFloat) -> CGFloat { leftMargin + i * pitch }
+            // Gaps (laser between platform index a and b): teach 0|1; A 1|2, 2|3;
+            // B 5|6... wait — lasers go in the GAPS the player crosses. The platform
+            // indices from buildComposedIPadLevel are at i = 0,1,2,3,4.2,5.4,6.4,
+            // 7.4,8.6,9.8,11. Place a laser at the midpoint of each crossed gap that
+            // belongs to a beat:
+            let laserGaps: [(a: CGFloat, b: CGFloat, top: CGFloat, inverse: Bool)] = [
+                (0,   1.0, laserTopLow,  false), // TEACH — lone laser
+                (2.0, 3.0, laserTopHigh, false), // CLUSTER A — 1
+                (3.0, 4.2, laserTopLow,  false), // CLUSTER A — 2
+                (4.2, 5.4, laserTopHigh, false), // CLUSTER B — 1
+                (5.4, 6.4, laserTopLow,  false), // CLUSTER B — 2
+                (6.4, 7.4, laserTopHigh, false), // CLUSTER B — 3 (peak)
+                (9.8, 11.0, laserTopLow, true)   // INVERSE — isolated finale beat
+            ]
+            var inverseIdx = 3
+            for (k, g) in laserGaps.enumerated() {
+                let mx = (px(g.a) + px(g.b)) / 2
+                laserPositions.append((CGPoint(x: mx, y: laserBaseY), CGPoint(x: mx, y: g.top)))
+                if g.inverse { inverseIdx = k }
+            }
+            inverseLaserIndex = inverseIdx
+        } else {
+            // iPhone: original 4 lasers, byte-identical (3 normal + inverse 4th).
+            let lx0 = courseX(0.21 * designSize.width)
+            let lx1 = courseX(0.37 * designSize.width)
+            let lx2 = courseX(0.53 * designSize.width)
+            let lx3 = courseX(0.68 * designSize.width)
+            laserPositions = [
+                (CGPoint(x: lx0, y: laserBaseY), CGPoint(x: lx0, y: laserTopLow)),
+                (CGPoint(x: lx1, y: laserBaseY), CGPoint(x: lx1, y: laserTopHigh)),
+                (CGPoint(x: lx2, y: laserBaseY), CGPoint(x: lx2, y: laserTopLow)),
+                (CGPoint(x: lx3, y: laserBaseY), CGPoint(x: lx3, y: laserTopLow))  // INVERSE
+            ]
+            inverseLaserIndex = 3
+        }
 
         for (index, positions) in laserPositions.enumerated() {
             createLaser(from: positions.start, to: positions.end, index: index)
@@ -610,15 +718,29 @@ final class StaticScene: BaseLevelScene, SKPhysicsContactDelegate {
         staticOverlay = SKNode()
         staticOverlay.zPosition = 200
         staticOverlay.alpha = 0.8
-        addChild(staticOverlay)
+        // On iPad the camera scrolls horizontally, so the full-screen static must
+        // ride the VIEWPORT, not the world — attach it to the camera and author its
+        // lines in camera-local coords (centered on origin). On iPhone (no camera-
+        // follow) it stays a scene child with the original world coords, so phone
+        // output is byte-identical.
+        if isWideCanvas, let camera = gameCamera {
+            camera.addChild(staticOverlay)
+        } else {
+            addChild(staticOverlay)
+        }
 
-        // Create static scanlines
+        // Create static scanlines. iPad: span the viewport in camera-local space
+        // (-w/2...w/2, -h/2...h/2). iPhone: original 0...size coords.
+        let lineXStart = isWideCanvas ? -size.width / 2 : 0
+        let lineXEnd = isWideCanvas ? size.width / 2 : size.width
+        let yLow = isWideCanvas ? -size.height / 2 : 0
+        let yHigh = isWideCanvas ? size.height / 2 : size.height
         for _ in 0..<25 {
             let line = SKShapeNode()
             let linePath = CGMutablePath()
-            let y = CGFloat.random(in: 0...size.height)
-            linePath.move(to: CGPoint(x: 0, y: y))
-            linePath.addLine(to: CGPoint(x: size.width, y: y))
+            let y = CGFloat.random(in: yLow...yHigh)
+            linePath.move(to: CGPoint(x: lineXStart, y: y))
+            linePath.addLine(to: CGPoint(x: lineXEnd, y: y))
             line.path = linePath
             line.strokeColor = strokeColor
             line.lineWidth = CGFloat.random(in: 1...3) * visualScale
@@ -798,8 +920,11 @@ final class StaticScene: BaseLevelScene, SKPhysicsContactDelegate {
     // MARK: - Bit Setup
 
     private func setupBit() {
-        // Spawn (and respawn — handleDeath respawns here) lifts with the band.
-        spawnPoint = CGPoint(x: courseX(0.13 * designSize.width), y: 205 * layoutYScale + gameplayLift)
+        // Spawn (and respawn — handleDeath respawns here). On iPad the composed
+        // layout sets composedSpawnX (the leftmost beat platform); on iPhone the
+        // spawn is the original P0 — byte-identical. Spawn Y rides the band lift.
+        let spawnX = isWideCanvas ? composedSpawnX : courseX(0.13 * designSize.width)
+        spawnPoint = CGPoint(x: spawnX, y: 205 * layoutYScale + gameplayLift)
 
         bit = BitCharacter.make()
         bit.position = spawnPoint
@@ -807,6 +932,13 @@ final class StaticScene: BaseLevelScene, SKPhysicsContactDelegate {
         registerPlayer(bit)
 
         playerController = PlayerController(character: bit, scene: self)
+
+        // NATIVE-iPad: the composed gauntlet is wider than the viewport, so promote
+        // the level to horizontal camera-follow. No-op gate on iPhone (isWideCanvas
+        // false), so the phone stays a static single-screen course.
+        if isWideCanvas {
+            installCameraFollow(worldWidth: composedWorldWidth, playerController: playerController)
+        }
     }
 
     // MARK: - Update Loop
