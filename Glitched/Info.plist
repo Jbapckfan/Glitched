@@ -20,6 +20,8 @@
 	<string>$(MARKETING_VERSION)</string>
 	<key>CFBundleVersion</key>
 	<string>$(CURRENT_PROJECT_VERSION)</string>
+	<key>NSCameraUsageDescription</key>
+	<string>The flashlight level uses your device's torch to illuminate the game world.</string>
 	<key>NSFaceIDUsageDescription</key>
 	<string>Authenticate to unlock the security vault puzzle.</string>
 	<key>NSMicrophoneUsageDescription</key>
