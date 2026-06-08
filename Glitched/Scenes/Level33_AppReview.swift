@@ -15,6 +15,13 @@ final class AppReviewScene: BaseLevelScene, SKPhysicsContactDelegate {
     private var playerController: PlayerController!
     private var spawnPoint: CGPoint = .zero
 
+    // iPad vertical-void fix: uniform lift applied to the entire gameplay band.
+    // 0 on iPhone (helper returns 0 for size.height <= 1000), positive on iPad.
+    // Computed in buildLevel() before any gameplay node is positioned, then added
+    // to the groundY anchor AND to the standalone spawn point and death zone so the
+    // whole band moves together and all relative geometry is preserved.
+    private var gameplayLift: CGFloat = 0
+
     // Gate system
     private var gate1: SKNode!
     private var gate2: SKNode!
@@ -102,7 +109,21 @@ final class AppReviewScene: BaseLevelScene, SKPhysicsContactDelegate {
     // MARK: - Level Construction
 
     private func buildLevel() {
-        let groundY: CGFloat = 120
+        // iPad vertical-void fix: on tall iPad canvases this flat, ground-anchored
+        // band renders bottom-stuck with a large empty band above. Lift the ENTIRE
+        // gameplay band uniformly by anchoring everything off `groundY` and adding
+        // the shared helper's lift to that single anchor. Because every platform,
+        // gate, trigger, sign and the exit door derives its Y from `groundY`, and
+        // the standalone spawn/respawn point and death zone are lifted by the SAME
+        // `gameplayVerticalLift`, all gaps/rises/jump distances stay byte-identical.
+        // On iPhone the helper returns 0, so groundY == 120 and the scene is unchanged.
+        //
+        //   bandBottom = groundY (120, the lowest gameplay surface = ground top)
+        //   bandTop    = groundY + 95 (215, the highest in-world gameplay marker:
+        //                the start platform's sign; exit-door top is groundY+50+30=200,
+        //                start-platform top ~groundY+60+10=190, all below 215).
+        gameplayLift = gameplayVerticalLift(bandBottom: 120, bandTop: 215)
+        let groundY: CGFloat = 120 + gameplayLift
 
         // Full-width ground platform for that "deceptively simple" look
         createPlatform(at: CGPoint(x: size.width / 2, y: groundY),
@@ -130,9 +151,10 @@ final class AppReviewScene: BaseLevelScene, SKPhysicsContactDelegate {
         let exitX = size.width - 60
         createExitDoor(at: CGPoint(x: exitX, y: groundY + 50))
 
-        // Death zone below
+        // Death zone below — lifted with the band so it stays the same distance
+        // below the (now-lifted) ground; on iPhone gameplayLift == 0 → y == -50.
         let death = SKNode()
-        death.position = CGPoint(x: size.width / 2, y: -50)
+        death.position = CGPoint(x: size.width / 2, y: -50 + gameplayLift)
         death.physicsBody = SKPhysicsBody(rectangleOf: CGSize(width: size.width * 2, height: 100))
         death.physicsBody?.isDynamic = false
         death.physicsBody?.categoryBitMask = PhysicsCategory.hazard
@@ -398,7 +420,11 @@ final class AppReviewScene: BaseLevelScene, SKPhysicsContactDelegate {
     // MARK: - Player Setup
 
     private func setupBit() {
-        spawnPoint = CGPoint(x: 50, y: 180)
+        // Spawn AND respawn point (handleDeath uses spawnPoint). 180 == groundY(120)+60.
+        // Lift by the same band lift so the player still spawns the same 60pt above the
+        // (lifted) ground; setupBit() runs after buildLevel(), so gameplayLift is set.
+        // On iPhone gameplayLift == 0 → spawn y == 180 (byte-identical).
+        spawnPoint = CGPoint(x: 50, y: 180 + gameplayLift)
         bit = BitCharacter.make()
         bit.position = spawnPoint
         addChild(bit)

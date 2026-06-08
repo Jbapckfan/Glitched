@@ -22,6 +22,18 @@ final class DeviceNameScene: BaseLevelScene, SKPhysicsContactDelegate {
     // space filled by decoration/UI, which still keys off size.width.
     private var courseScale: CGFloat { min(1.0, size.width / designSize.width) }
     private var courseOriginX: CGFloat { (size.width - designSize.width * courseScale) / 2 }
+
+    // MARK: - iPad vertical-void fix (uniform gameplay lift)
+    // On a tall iPad canvas this flat, ground-anchored band hugs the bottom with a
+    // large empty void above. `gameplayLift` is the SAME uniform upward shift added
+    // to EVERY gameplay node Y (platforms, pillars, exit doors, spawn/respawn,
+    // doppelganger path, in-world feedback labels) so relative geometry — every
+    // gap, rise, jump distance, and the exit reach — is byte-identical. The band's
+    // lowest gameplay Y is groundY (160); its highest is the door-cluster/pillar
+    // top (groundY + 50 + 30 = 240). On iPhone the helper returns 0, so the scene
+    // is unchanged. NOT applied to: title, instruction panel, name-tag decoration,
+    // HUD, narrator, atmosphere, or the full-width death net (which keys off size).
+    private var gameplayLift: CGFloat { gameplayVerticalLift(bandBottom: 160, bandTop: 240) }
     /// Map a logical x (0...designSize.width) into centered course space.
     private func courseX(_ logicalX: CGFloat) -> CGFloat { courseOriginX + logicalX * courseScale }
     /// Scale a logical length (platform width, etc.) into course space.
@@ -168,7 +180,11 @@ final class DeviceNameScene: BaseLevelScene, SKPhysicsContactDelegate {
     }
 
     private func buildLevel() {
-        let groundY: CGFloat = 160
+        // iPad vertical-void fix: lift the whole band uniformly by baking the lift
+        // into groundY. Every platform/pillar/door/death-zone Y in this method
+        // derives from groundY, so all gaps/rises/the exit jump stay byte-identical
+        // (lift == 0 on iPhone -> groundY == 160 unchanged).
+        let groundY: CGFloat = 160 + gameplayLift
 
         // Gameplay is authored in fixed logical course space (0...430) so the
         // platform spacing, gaps, and the final exit jump stay constant across
@@ -224,9 +240,12 @@ final class DeviceNameScene: BaseLevelScene, SKPhysicsContactDelegate {
         }
 
         // Death zone — stays full-width (centered at size.width/2) so it always
-        // catches falls regardless of where the centered course sits.
+        // catches falls regardless of where the centered course sits. Lifted with
+        // the band (+ gameplayLift, here via the lifted groundY anchor pattern:
+        // -50 + gameplayLift) so the fall-to-death distance below the lowest
+        // platform is byte-identical on iPad; it remains well below groundY.
         let death = SKNode()
-        death.position = CGPoint(x: size.width / 2, y: -50)
+        death.position = CGPoint(x: size.width / 2, y: -50 + gameplayLift)
         death.physicsBody = SKPhysicsBody(rectangleOf: CGSize(width: size.width * 2, height: 100))
         death.physicsBody?.isDynamic = false
         death.physicsBody?.categoryBitMask = PhysicsCategory.hazard
@@ -367,7 +386,8 @@ final class DeviceNameScene: BaseLevelScene, SKPhysicsContactDelegate {
         if let real = exitDoors.first(where: { $0.isRealExit }) {
             return real.node.position
         }
-        return CGPoint(x: courseX(372), y: 210)
+        // Fallback sill = groundY(160) + 50 = 210, lifted with the band.
+        return CGPoint(x: courseX(372), y: 210 + gameplayLift)
     }
 
     /// A decoy door position the doppelganger commits to (and is rejected at), so
@@ -376,7 +396,8 @@ final class DeviceNameScene: BaseLevelScene, SKPhysicsContactDelegate {
         if let decoy = exitDoors.first(where: { !$0.isRealExit }) {
             return decoy.node.position
         }
-        return CGPoint(x: courseX(332), y: 210)
+        // Fallback sill = groundY(160) + 50 = 210, lifted with the band.
+        return CGPoint(x: courseX(332), y: 210 + gameplayLift)
     }
 
     private func createDoppelganger() {
@@ -432,7 +453,9 @@ final class DeviceNameScene: BaseLevelScene, SKPhysicsContactDelegate {
         label.position = CGPoint(x: 0, y: 45)
         doppel.addChild(label)
 
-        doppel.position = CGPoint(x: courseX(90), y: 200)
+        // Doppelganger spawns standing on the band (y = 200, same as the player
+        // spawn), lifted uniformly with the rest of the gameplay band.
+        doppel.position = CGPoint(x: courseX(90), y: 200 + gameplayLift)
         doppel.alpha = 0 // Hidden until triggered
 
         doppelganger = doppel
@@ -451,7 +474,10 @@ final class DeviceNameScene: BaseLevelScene, SKPhysicsContactDelegate {
         // so it commits to a DECOY door and is rejected there — it never sits on
         // (or blocks) the real exit, so completability is independent of it.
         // The player wins by reading their name and taking the matching door.
-        let groundY: CGFloat = 160
+        // groundY carries the same uniform iPad band lift as buildLevel(), so the
+        // doppelganger's race waypoints track the lifted platforms (decoyTarget is
+        // already a lifted door position). On iPhone gameplayLift == 0 -> unchanged.
+        let groundY: CGFloat = 160 + gameplayLift
         let decoyTarget = doppelgangerTargetPosition
 
         // Waypoints route through the centered platforms toward a decoy slot.
@@ -484,7 +510,9 @@ final class DeviceNameScene: BaseLevelScene, SKPhysicsContactDelegate {
         rejected.fontName = "Menlo-Bold"
         rejected.fontSize = 10
         rejected.fontColor = strokeColor
-        rejected.position = CGPoint(x: decoyTarget.x, y: 280)
+        // In-world label anchored over the decoy door element, so it tracks the
+        // lifted band (+ gameplayLift) to stay positioned above that doorway.
+        rejected.position = CGPoint(x: decoyTarget.x, y: 280 + gameplayLift)
         rejected.zPosition = 300
         addChild(rejected)
         rejected.run(.sequence([.wait(forDuration: 3), .fadeOut(withDuration: 0.5), .removeFromParent()]))
@@ -506,7 +534,9 @@ final class DeviceNameScene: BaseLevelScene, SKPhysicsContactDelegate {
         openLabel.fontName = "Menlo-Bold"
         openLabel.fontSize = 10
         openLabel.fontColor = strokeColor
-        openLabel.position = CGPoint(x: real.x, y: 120)
+        // In-world label anchored below the real exit door element, so it tracks
+        // the lifted band (+ gameplayLift) to stay positioned by that doorway.
+        openLabel.position = CGPoint(x: real.x, y: 120 + gameplayLift)
         openLabel.zPosition = 300
         addChild(openLabel)
         openLabel.run(.sequence([.wait(forDuration: 3), .fadeOut(withDuration: 0.5), .removeFromParent()]))
@@ -551,7 +581,10 @@ final class DeviceNameScene: BaseLevelScene, SKPhysicsContactDelegate {
     }
 
     private func setupBit() {
-        spawnPoint = CGPoint(x: courseX(45), y: 200)
+        // Player spawn AND respawn point (handleDeath respawns here). Lifted with
+        // the band so Bit starts/respawns standing on platform P1 exactly as on
+        // iPhone (gameplayLift == 0 -> y == 200 unchanged).
+        spawnPoint = CGPoint(x: courseX(45), y: 200 + gameplayLift)
         bit = BitCharacter.make()
         bit.position = spawnPoint
         addChild(bit)

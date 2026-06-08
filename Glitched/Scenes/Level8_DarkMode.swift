@@ -346,10 +346,36 @@ final class DarkModeScene: BaseLevelScene, SKPhysicsContactDelegate {
         // groundY is set in configureScene (bottomSafeY + 120) so floor decor and
         // platforms share the same baseline.
 
+        // iPad vertical-void fix: on a TALL canvas this flat, bottom-anchored band
+        // leaves a large empty void above it. Lift the WHOLE gameplay band uniformly
+        // by raising the single `groundY` anchor that every gameplay Y derives from
+        // (all platforms via groundY + step*N, spawn via groundY + 40, the door /
+        // moon sensor / exit trigger via the derived doorPlatformTopY/doorPlatformPoint,
+        // and the shadow enemy via light1Point). Because all gaps/rises are computed
+        // *after* this single shift, every relative distance is byte-identical; only
+        // the absolute baseline moves. On iPhone the helper returns 0 (size.height
+        // <= 1000), so groundY is unchanged and the scene is byte-identical. The
+        // death zone (fixed at y: -50, independent of groundY) stays well below the
+        // lowest lifted platform and remains the catch-all floor. The decorative
+        // floor grid (drawn in setupBackground off the pre-lift groundY) is
+        // intentionally NOT lifted — it is background decor, not a gameplay node.
+        //
+        // Band: bottom = groundY (start platform top center); top = the door
+        // platform center at groundY + step * 3.55 (highest reachable surface).
         // Per-step vertical rise: scale gently with available height but cap each
         // step at 50pt so every jump stays feasible (rule: rises <= ~55pt).
+        // Computed from the PRE-lift groundY so the rises are identical to the
+        // unlifted layout — the lift must move the band, never resize the gaps.
         let riseBand = max(0, topSafeY - groundY)
         let step = min(50, riseBand * 0.10)   // one "step up" unit
+
+        // Now apply the uniform band lift (after `step` is fixed off the pre-lift
+        // band) so every gameplay Y below shifts by the SAME amount.
+        let lift = gameplayVerticalLift(
+            bandBottom: groundY,
+            bandTop: groundY + step * 3.55
+        )
+        groundY += lift
 
         // Horizontal route is REACH-BOUNDED, not width-fractional. Width-fractional
         // X (the old w*0.30..0.86) made inner edge-to-edge gaps explode on iPad

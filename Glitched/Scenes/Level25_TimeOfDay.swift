@@ -49,6 +49,16 @@ final class TimeOfDayScene: BaseLevelScene, SKPhysicsContactDelegate {
     private func courseX(_ logicalX: CGFloat) -> CGFloat { courseOriginX + logicalX * courseScale }
     private func courseLen(_ logical: CGFloat) -> CGFloat { logical * courseScale }
 
+    // iPad vertical-void fix: a single uniform upward lift applied to EVERY
+    // gameplay node Y (platforms, spawn, exit, enemy hazards, zzz markers).
+    // Returns 0 on iPhone-class canvases so phone layout is byte-identical; on
+    // tall iPad canvases it shifts the whole flat band up so it sits center-ish.
+    // Band: bandBottom = groundY (160, lowest platform center), bandTop = exit
+    // door Y (groundY + 50 = 210, highest gameplay element). Because the SAME
+    // lift is added at every gameplay Y, all gaps/rises/jump distances are
+    // unchanged → completability identical.
+    private lazy var gameplayLift: CGFloat = gameplayVerticalLift(bandBottom: 160, bandTop: 210)
+
     override func configureScene() {
         levelID = LevelID(world: .world3, index: 25)
         backgroundColor = fillColor
@@ -136,20 +146,21 @@ final class TimeOfDayScene: BaseLevelScene, SKPhysicsContactDelegate {
         // the spikes -> NIGHT -> land safely). Each rise is <= 13 pt, well
         // under the ~91-pt jump apex.
         // P1 (start): center 50, span [10,90], top y=175
-        createPlatform(at: CGPoint(x: courseX(50), y: groundY), size: CGSize(width: courseLen(80), height: 30))
+        createPlatform(at: CGPoint(x: courseX(50), y: groundY + gameplayLift), size: CGSize(width: courseLen(80), height: 30))
 
         // P2 (guarded landing): center 265, span [220,310], top y=187.5.
         // Center-to-center from P1 = 215 (>= 210), open gap = 130 (<= 184).
-        createPlatform(at: CGPoint(x: courseX(265), y: groundY + 15), size: CGSize(width: courseLen(90), height: 25))
+        createPlatform(at: CGPoint(x: courseX(265), y: groundY + 15 + gameplayLift), size: CGSize(width: courseLen(90), height: 25))
 
         // P3 (exit pad): center 355, span [320,390], top y=175. Trivial hop
         // from P2 (open gap 10). Right edge = 390 = on-screen at 390 width.
-        createPlatform(at: CGPoint(x: courseX(355), y: groundY), size: CGSize(width: courseLen(70), height: 30))
-        createExitDoor(at: CGPoint(x: courseX(363), y: groundY + 50))
+        createPlatform(at: CGPoint(x: courseX(355), y: groundY + gameplayLift), size: CGSize(width: courseLen(70), height: 30))
+        createExitDoor(at: CGPoint(x: courseX(363), y: groundY + 50 + gameplayLift))
 
-        // Death zone
+        // Death zone — lifted with the band so its distance below the lowest
+        // platform is unchanged (and it stays well below all gameplay).
         let death = SKNode()
-        death.position = CGPoint(x: size.width / 2, y: -50)
+        death.position = CGPoint(x: size.width / 2, y: -50 + gameplayLift)
         death.physicsBody = SKPhysicsBody(rectangleOf: CGSize(width: size.width * 2, height: 100))
         death.physicsBody?.isDynamic = false
         death.physicsBody?.categoryBitMask = PhysicsCategory.hazard
@@ -198,7 +209,10 @@ final class TimeOfDayScene: BaseLevelScene, SKPhysicsContactDelegate {
             // anchor through courseX() and the range through courseLen() so
             // the moveBy distances (which read the converted range) scale with
             // the course automatically.
-            let pos = CGPoint(x: courseX(data.logicalX), y: data.y)
+            // Enemy hazards are part of the gameplay band; lift their Y by the
+            // same uniform amount so they stay pinned to the lifted platforms
+            // (the zzz marker derives from pos.y, so it follows automatically).
+            let pos = CGPoint(x: courseX(data.logicalX), y: data.y + gameplayLift)
             let range = courseLen(data.range)
 
             let enemy = createSpikeEnemy()
@@ -383,7 +397,9 @@ final class TimeOfDayScene: BaseLevelScene, SKPhysicsContactDelegate {
     }
 
     private func setupBit() {
-        spawnPoint = CGPoint(x: courseX(50), y: 200)
+        // Spawn (also the respawn point used by handleDeath) sits 40pt above
+        // P1's top; lift it with the band so the drop-onto-P1 is unchanged.
+        spawnPoint = CGPoint(x: courseX(50), y: 200 + gameplayLift)
         bit = BitCharacter.make()
         bit.position = spawnPoint
         addChild(bit)

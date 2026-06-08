@@ -17,6 +17,15 @@ final class NotificationScene: BaseLevelScene, SKPhysicsContactDelegate {
     private var playerController: PlayerController!
     private var spawnPoint: CGPoint = .zero
 
+    // iPad vertical-void fix: uniform upward lift applied to the ENTIRE flat
+    // gameplay band (ground/platforms, doors, exit, spawn, death zone). 0 on
+    // iPhone (helper returns 0 for height <= 1000pt) so phone layout is
+    // byte-identical; positive on tall iPad canvases. Computed once in
+    // buildLevel() from the band [groundY, groundY+50] and reused by setupBit()
+    // so every gameplay node shifts by the SAME amount → relative geometry
+    // (gaps/rises/jump distances) unchanged.
+    private var gameplayLift: CGFloat = 0
+
     // Door system
     private var doors: [SKNode] = []
     private var doorStates: [Bool] = [false, false]  // unlocked state
@@ -251,7 +260,14 @@ final class NotificationScene: BaseLevelScene, SKPhysicsContactDelegate {
     // MARK: - Level Building
 
     private func buildLevel() {
-        let groundY: CGFloat = 160
+        // Band: lowest gameplay surface anchor = groundY (160); highest gameplay
+        // anchor = groundY + 50 (locked doors / exit door = 210). Compute the
+        // uniform iPad lift ONCE from that band and add it to groundY so every
+        // platform / door / exit derived from groundY shifts identically. The
+        // death zone and spawn point get the same lift below / in setupBit().
+        let groundYBase: CGFloat = 160
+        gameplayLift = gameplayVerticalLift(bandBottom: groundYBase, bandTop: groundYBase + 50)
+        let groundY: CGFloat = groundYBase + gameplayLift
 
         // Layout fits a 390-pt logical course and is centered on wider devices.
         // Locked doors block forward travel until the notification event unlocks
@@ -267,9 +283,10 @@ final class NotificationScene: BaseLevelScene, SKPhysicsContactDelegate {
         createPlatform(at: CGPoint(x: courseX(345), y: groundY), size: CGSize(width: courseLen(70), height: 30))
         createExitDoor(at: CGPoint(x: courseX(355), y: groundY + 50))
 
-        // Death zone
+        // Death zone — lifted with the band so it stays the SAME distance below
+        // the lowest platform (groundY). On iPhone gameplayLift == 0 → y == -50.
         let deathZone = SKNode()
-        deathZone.position = CGPoint(x: size.width / 2, y: -50)
+        deathZone.position = CGPoint(x: size.width / 2, y: -50 + gameplayLift)
         deathZone.physicsBody = SKPhysicsBody(rectangleOf: CGSize(width: size.width * 2, height: 100))
         deathZone.physicsBody?.isDynamic = false
         deathZone.physicsBody?.categoryBitMask = PhysicsCategory.hazard
@@ -441,7 +458,11 @@ final class NotificationScene: BaseLevelScene, SKPhysicsContactDelegate {
     // MARK: - Setup
 
     private func setupBit() {
-        spawnPoint = CGPoint(x: courseX(50), y: 200)
+        // Spawn (and respawn, via spawnPoint in handleDeath) sits 40pt above
+        // groundY (200 = 160 + 40). Add the SAME gameplayLift computed in
+        // buildLevel() so spawn rises with the band and its relation to the
+        // ground is byte-identical. iPhone: gameplayLift == 0 → y == 200.
+        spawnPoint = CGPoint(x: courseX(50), y: 200 + gameplayLift)
         bit = BitCharacter.make()
         bit.position = spawnPoint
         addChild(bit)

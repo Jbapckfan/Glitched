@@ -312,6 +312,25 @@ final class TimeTravelScene: BaseLevelScene, SKPhysicsContactDelegate {
         // The exit door sits 30pt above the cliff top.
         exitDoorY = groundY + cliffHeight + 30
 
+        // iPad vertical-void fix: lift the ENTIRE flat gameplay band uniformly
+        // so it sits center-ish on a tall canvas instead of hugging the bottom.
+        // The band runs from the floor (lowest gameplay node, center y=groundY)
+        // up to the exit door (highest gameplay node, y=exitDoorY). Because
+        // EVERY gameplay node — floor, cliff, exit, treeContainer (and all its
+        // branch footholds), sign, clock, spawn — is positioned as
+        // `groundY + <fixed constant>`, lifting the single `groundY` anchor
+        // shifts the whole band by exactly `lift` and leaves every relative
+        // gap / rise / jump distance byte-identical. On iPhone the helper
+        // returns 0 (size.height <= 1000) so groundY is unchanged and the layout
+        // is byte-identical. The death zone stays at y=-50 (below the lowest
+        // lifted platform, which only moves up) so it still catches falls.
+        let lift = gameplayVerticalLift(bandBottom: groundY, bandTop: exitDoorY)
+        groundY += lift
+        // exitDoorY derives from the now-lifted groundY (same +cliffHeight+30
+        // offset), so it rises by the identical lift; cliffHeight is a sizing
+        // value (not a band-relative gap) and is intentionally left unchanged.
+        exitDoorY = groundY + cliffHeight + 30
+
         // Anchor the cliff (and therefore the whole climbable cluster) in the
         // centered logical course so the tree always reads as a bridge toward the
         // exit and the spawn→tree→cliff spacing stays a rigid unit at any width

@@ -24,6 +24,12 @@ final class AirplaneModeScene: BaseLevelScene, SKPhysicsContactDelegate {
     private let platformDelayOffsets: [TimeInterval] = [0.0, 0.3, 0.6]
     private let designWidth: CGFloat = 390
 
+    // iPad vertical-void fix: uniform upward lift applied to every gameplay Y.
+    // 0 on iPhone (byte-identical layout); positive on tall iPad canvases.
+    // Set in buildLevel() and reused by setupBit() for spawn/respawn so Bit
+    // spawns the same distance above the lifted start platform on every device.
+    private var gameplayLift: CGFloat = 0
+
     // Keep the traversal course phone-sized and centered. The old layout kept
     // the lift platforms at fixed phone X values but pushed the exit to
     // size.width, making the final gap impossible on iPad.
@@ -102,26 +108,40 @@ final class AirplaneModeScene: BaseLevelScene, SKPhysicsContactDelegate {
     private func buildLevel() {
         let groundY: CGFloat = 160
 
+        // iPad vertical-void fix: lift the ENTIRE gameplay band uniformly so the
+        // flat, ground-anchored course sits center-ish on a tall iPad canvas
+        // instead of hugging the bottom. The helper returns 0 on iPhone-class
+        // canvases (height <= 1000), so phone layout is byte-identical. On iPad
+        // it returns a positive value that is ADDED to every gameplay Y below
+        // (ground, flying landed/flying targets, end platform, exit, spawn,
+        // respawn, death zone), so all gaps/rises/jump distances are unchanged.
+        // bandBottom = groundY (lowest surface); bandTop = exit door top
+        // (groundY + 190). Stored in gameplayLift for setupBit()'s spawn/respawn.
+        let lift = gameplayVerticalLift(bandBottom: groundY, bandTop: groundY + 190)
+        gameplayLift = lift
+
         // Fits a 390-pt logical course. When airplane mode is OFF the flying
         // platforms sit below ground (unusable). When ON they rise to
         // cascading heights: rises between consecutive platforms stay at
         // 60 pt (< 91-pt max jump) so the upward path is reachable.
-        createPlatform(at: CGPoint(x: courseX(45), y: groundY), size: CGSize(width: courseLen(70), height: 30), isFlying: false)
+        createPlatform(at: CGPoint(x: courseX(45), y: groundY + lift), size: CGSize(width: courseLen(70), height: 30), isFlying: false)
 
         // Landed y sits inside the death plane (y = -100...0), so if
         // Airplane Mode is OFF the platforms aren't usable: dropping off
         // the start platform to reach them lands the player in the death
         // zone before they can touch a platform top. Toggling the mode ON
         // is the only way to raise the platforms into a walkable position.
+        // Every Y below carries `+ lift` so the landed/flying offsets relative
+        // to the (also-lifted) ground and death zone are byte-identical.
         let flyingData: [(landed: CGPoint, flying: CGPoint, size: CGSize)] = [
-            (landed: CGPoint(x: courseX(130), y: -60),
-             flying: CGPoint(x: courseX(130), y: groundY + 60),
+            (landed: CGPoint(x: courseX(130), y: -60 + lift),
+             flying: CGPoint(x: courseX(130), y: groundY + 60 + lift),
              size: CGSize(width: courseLen(55), height: 25)),
-            (landed: CGPoint(x: courseX(205), y: -60),
-             flying: CGPoint(x: courseX(205), y: groundY + 120),
+            (landed: CGPoint(x: courseX(205), y: -60 + lift),
+             flying: CGPoint(x: courseX(205), y: groundY + 120 + lift),
              size: CGSize(width: courseLen(55), height: 25)),
-            (landed: CGPoint(x: courseX(280), y: -60),
-             flying: CGPoint(x: courseX(280), y: groundY + 80),
+            (landed: CGPoint(x: courseX(280), y: -60 + lift),
+             flying: CGPoint(x: courseX(280), y: groundY + 80 + lift),
              size: CGSize(width: courseLen(55), height: 25))
         ]
 
@@ -133,12 +153,13 @@ final class AirplaneModeScene: BaseLevelScene, SKPhysicsContactDelegate {
             flyingPlatforms.append(platform)
         }
 
-        createPlatform(at: CGPoint(x: courseX(345), y: groundY + 140), size: CGSize(width: courseLen(70), height: 30), isFlying: false)
-        createExitDoor(at: CGPoint(x: courseX(355), y: groundY + 190))
+        createPlatform(at: CGPoint(x: courseX(345), y: groundY + 140 + lift), size: CGSize(width: courseLen(70), height: 30), isFlying: false)
+        createExitDoor(at: CGPoint(x: courseX(355), y: groundY + 190 + lift))
 
-        // Death zone
+        // Death zone — lifted with the band so it stays the SAME distance
+        // (110 pt) below the lifted ground/landed platforms.
         let death = SKNode()
-        death.position = CGPoint(x: size.width / 2, y: -50)
+        death.position = CGPoint(x: size.width / 2, y: -50 + lift)
         death.physicsBody = SKPhysicsBody(rectangleOf: CGSize(width: size.width * 2, height: 100))
         death.physicsBody?.isDynamic = false
         death.physicsBody?.categoryBitMask = PhysicsCategory.hazard
@@ -314,7 +335,12 @@ final class AirplaneModeScene: BaseLevelScene, SKPhysicsContactDelegate {
     }
 
     private func setupBit() {
-        spawnPoint = CGPoint(x: courseX(45), y: 200)
+        // spawnPoint doubles as the respawn point (handleDeath →
+        // playBufferDeath(respawnAt:)). Lift it with the band (gameplayLift, set
+        // in buildLevel which runs first) so Bit spawns/respawns the same 40 pt
+        // above the lifted start platform top on every device. lift==0 on iPhone
+        // keeps spawnPoint at the original y=200.
+        spawnPoint = CGPoint(x: courseX(45), y: 200 + gameplayLift)
         bit = BitCharacter.make()
         bit.position = spawnPoint
         addChild(bit)

@@ -13,6 +13,16 @@ final class LowPowerScene: BaseLevelScene, SKPhysicsContactDelegate {
     private var playerController: PlayerController!
     private var spawnPoint: CGPoint = .zero
 
+    // iPad vertical-void fix: a single UNIFORM lift added to every gameplay node's
+    // Y so the flat band sits center-ish on tall canvases. 0 on iPhone (helper
+    // returns 0 -> byte-identical layout); positive on iPad. Computed once in
+    // buildLevel() from the actual gameplay band [bandBottom, bandTop] and reused
+    // in setupBit() so the spawn point moves by the SAME amount as the platforms.
+    // bandBottom = lowest gameplay surface (catch-ledge top, groundY-30 center=130,
+    // top=140). bandTop = highest gameplay element (exit door top, groundY+200+30
+    // center=390, top=420). Stored, not recomputed, to guarantee identical lift.
+    private var gameplayLift: CGFloat = 0
+
     private let normalGravity: CGFloat = -14
     private let lowPowerGravity: CGFloat = -5  // Lunar gravity
     private var isLowPower = false
@@ -89,7 +99,17 @@ final class LowPowerScene: BaseLevelScene, SKPhysicsContactDelegate {
     }
 
     private func buildLevel() {
-        let groundY: CGFloat = 160
+        // iPad vertical-void fix: lift the WHOLE gameplay band uniformly. The band
+        // runs from the lowest gameplay surface (catch-ledge top = 140) to the
+        // highest gameplay element (exit-door top = 420). Folding the lift into the
+        // groundY anchor moves EVERY groundY-derived node (floor, step, high ledge,
+        // mini ledges, catch ledge, shelf, exit) by the SAME amount, so every gap,
+        // rise and jump distance is byte-identical. The helper returns 0 on iPhone
+        // (size unchanged) -> identical layout; positive on iPad. We also add the
+        // same lift to the spawn point (setupBit) and the death zone (below).
+        let lift = gameplayVerticalLift(bandBottom: 140, bandTop: 420)
+        gameplayLift = lift
+        let groundY: CGFloat = 160 + lift
 
         // Fits a 390-pt logical course, centered on wider devices. courseScale is
         // clamped to <= 1.0, so horizontal logical pts == scene pts on both iPhone
@@ -180,9 +200,11 @@ final class LowPowerScene: BaseLevelScene, SKPhysicsContactDelegate {
         // mandatory and the exit can't be triggered before it is solved.
         createExitDoor(at: CGPoint(x: courseX(319), y: shelfTopY + 30))
 
-        // Death zone
+        // Death zone — lifted by the SAME amount as the band so it stays the same
+        // distance below the lowest platform (relative geometry preserved). On
+        // iPhone lift==0 so this is still y=-100, byte-identical.
         let death = SKNode()
-        death.position = CGPoint(x: size.width / 2, y: -100)
+        death.position = CGPoint(x: size.width / 2, y: -100 + lift)
         death.physicsBody = SKPhysicsBody(rectangleOf: CGSize(width: size.width * 2, height: 100))
         death.physicsBody?.isDynamic = false
         death.physicsBody?.categoryBitMask = PhysicsCategory.hazard
@@ -389,8 +411,10 @@ final class LowPowerScene: BaseLevelScene, SKPhysicsContactDelegate {
 
     private func setupBit() {
         // Spawn above the Section-1 floor (logical x=40, top y=175); the player
-        // settles onto it under normal gravity.
-        spawnPoint = CGPoint(x: courseX(40), y: 210)
+        // settles onto it under normal gravity. iPad vertical-void fix: add the
+        // SAME gameplayLift the platforms got (computed in buildLevel) so the spawn
+        // stays 35pt above the floor top on every device. lift==0 on iPhone -> y=210.
+        spawnPoint = CGPoint(x: courseX(40), y: 210 + gameplayLift)
         bit = BitCharacter.make()
         bit.position = spawnPoint
         addChild(bit)

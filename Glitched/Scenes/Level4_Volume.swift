@@ -43,10 +43,27 @@ final class VolumeScene: BaseLevelScene, SKPhysicsContactDelegate {
         min(1.25, max(1.0, min(size.width / designSize.width, size.height / designSize.height)))
     }
     private var activeGroundY: CGFloat {
+        // iPad vertical-void fix: this is a flat, single-screen, ground-anchored
+        // band (no follow-camera, no world scroll). EVERY gameplay node derives
+        // from this single anchor — the ground, the exit door (+30), Bit's spawn
+        // (+40), the sleeping-wolf hazard (+20), and the volume-driven water flood
+        // hazard (all `activeGroundY - ...` math). Folding the uniform lift in here
+        // shifts the entire gameplay band by the SAME amount, so every gap/rise/
+        // spawn/exit/hazard distance stays byte-identical. On iPhone the helper
+        // returns 0 (size.height <= 1000) so this expression is unchanged. The
+        // HUD, LEVEL title, instruction panel, and background all key off
+        // topSafeAreaY / size and intentionally do NOT use this anchor, so they
+        // stay put.
+        let base: CGFloat
         if min(size.width, size.height) >= 700 {
-            return min(size.height * 0.34, max(160 * visualScale, size.height * 0.32))
+            base = min(size.height * 0.34, max(160 * visualScale, size.height * 0.32))
+        } else {
+            base = max(160, size.height * 0.18)
         }
-        return max(160, size.height * 0.18)
+        // bandBottom = ground top (base); bandTop = exit door (base + 30*scale,
+        // the highest persistent gameplay node).
+        let lift = gameplayVerticalLift(bandBottom: base, bandTop: base + 30 * visualScale)
+        return base + lift
     }
     private var scaledWolfDetectionRadius: CGFloat { wolfDetectionRadius * visualScale }
 

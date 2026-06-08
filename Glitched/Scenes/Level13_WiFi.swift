@@ -90,8 +90,20 @@ final class WiFiScene: BaseLevelScene, SKPhysicsContactDelegate {
         addChild(title)
     }
 
+    /// iPad vertical-void fix: uniform upward lift applied to the entire gameplay
+    /// band (0 on iPhone). Computed once from the band's lowest/highest gameplay Y
+    /// and added to EVERY gameplay node Y (ground anchor, spawn, hazards), so all
+    /// gaps/rises/jump distances are byte-identical across devices.
+    private var gameplayLift: CGFloat = 0
+
     private func buildLevel() {
-        let groundY: CGFloat = 160
+        // Band: bandBottom = the lowest gameplay surface anchor (groundY, the
+        // bookend / rest-ledge base at 160). bandTop = the highest gameplay marker,
+        // the exit door at exitLedgeTopY + 30 = (groundY + 15) + 100 + 30 = 305.
+        // The helper returns 0 on iPhone (height <= 1000) → byte-identical layout.
+        let lift = gameplayVerticalLift(bandBottom: 160, bandTop: 305)
+        gameplayLift = lift
+        let groundY: CGFloat = 160 + lift
 
         // Fits a 390-pt iPhone canvas. Round-2 tightening: WiFi toggling is now
         // GENUINELY REQUIRED in BOTH states — the path is split into two disjoint
@@ -188,9 +200,11 @@ final class WiFiScene: BaseLevelScene, SKPhysicsContactDelegate {
 
         createExitDoor(at: CGPoint(x: courseX(400), y: exitLedgeTopY + 30))
 
-        // Death zone
+        // Death zone (fall-catch below the band). Lifted with the band by the SAME
+        // gameplayLift so its distance below the lowest platform is unchanged; on
+        // iPhone lift == 0 so it stays at y == -50.
         let death = SKNode()
-        death.position = CGPoint(x: size.width / 2, y: -50)
+        death.position = CGPoint(x: size.width / 2, y: -50 + gameplayLift)
         death.physicsBody = SKPhysicsBody(rectangleOf: CGSize(width: size.width * 2, height: 100))
         death.physicsBody?.isDynamic = false
         death.physicsBody?.categoryBitMask = PhysicsCategory.hazard
@@ -490,7 +504,9 @@ final class WiFiScene: BaseLevelScene, SKPhysicsContactDelegate {
     }
 
     private func setupBit() {
-        spawnPoint = CGPoint(x: courseX(50), y: 200)
+        // Spawn (and respawn — handleDeath reuses spawnPoint) lifts with the band
+        // by the SAME gameplayLift so its rise above the ground footing is unchanged.
+        spawnPoint = CGPoint(x: courseX(50), y: 200 + gameplayLift)
         bit = BitCharacter.make()
         bit.position = spawnPoint
         addChild(bit)

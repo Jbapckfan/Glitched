@@ -38,7 +38,22 @@ final class WindBridgeScene: BaseLevelScene, SKPhysicsContactDelegate {
     private var bridgeTargetWidth: CGFloat = 0
     private var lastPhysicsSegmentCount = -1
 
-    private var groundHeight: CGFloat { 100 * layoutYScale }
+    // iPad vertical-void fix: on tall iPad canvases this flat level otherwise
+    // renders bottom-anchored with a large empty band above. We lift the ENTIRE
+    // gameplay band uniformly by adding a single `gameplayLift` to the one anchor
+    // (`groundHeight`) that every gameplay node derives its Y from. On iPhone the
+    // helper returns 0, so `groundHeight` == its raw value and layout is
+    // byte-identical. The lift is computed once (lazily, after `size` is known)
+    // from the UNLIFTED band so relative geometry never changes.
+    //   bandBottom = raw ground top (the floor Bit walks on)  = 100 * layoutYScale
+    //   bandTop    = exit door top = bandBottom + doorHeight   = 100*ly + 60*vs
+    private var groundBaseHeight: CGFloat { 100 * layoutYScale }
+    private lazy var gameplayLift: CGFloat = {
+        let bandBottom = groundBaseHeight
+        let bandTop = groundBaseHeight + 60 * visualScale   // exit door top
+        return gameplayVerticalLift(bandBottom: bandBottom, bandTop: bandTop)
+    }()
+    private var groundHeight: CGFloat { groundBaseHeight + gameplayLift }
     private var chasmStartX: CGFloat { 140 * layoutXScale }
     // Span widened 200 -> 235 design-pt (end 340 -> 375) so the chasm stays
     // genuinely unjumpable on the narrowest shipping iPhone (390pt, courseScale

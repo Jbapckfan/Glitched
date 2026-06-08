@@ -26,6 +26,14 @@ final class ClipboardScene: BaseLevelScene, SKPhysicsContactDelegate {
 
     private var foregroundObserver: NSObjectProtocol?
 
+    /// iPad vertical-void fix: uniform upward shift applied to EVERY gameplay node
+    /// (platforms, locked door, exit, spawn, terminal interactable, death zone) so the
+    /// flat ground-anchored band sits center-ish on a tall iPad canvas. The band runs
+    /// from groundY (160, lowest platform/anchor) to the terminal interactable top
+    /// (~340). On iPhone the helper returns 0, so every Y is byte-identical and relative
+    /// geometry (gaps/rises/jump distances) is preserved on every canvas.
+    private lazy var gameplayLift: CGFloat = gameplayVerticalLift(bandBottom: 160, bandTop: 340)
+
     private var courseScale: CGFloat { min(1.0, size.width / designWidth) }
     private var courseOriginX: CGFloat { (size.width - designWidth * courseScale) / 2 }
     private func courseX(_ logicalX: CGFloat) -> CGFloat { courseOriginX + logicalX * courseScale }
@@ -90,7 +98,10 @@ final class ClipboardScene: BaseLevelScene, SKPhysicsContactDelegate {
     }
 
     private func buildLevel() {
-        let groundY: CGFloat = 160
+        // groundY is the single anchor every structural gameplay node (3 platforms,
+        // locked door, exit door) derives from. Adding the uniform iPad lift here shifts
+        // the whole structural band together, so every gap/rise between them is unchanged.
+        let groundY: CGFloat = 160 + gameplayLift
 
         // Authored in a 390-pt logical course and centered on iPad. The old
         // mixed layout pinned the middle platform to size.width/2 and the exit
@@ -105,9 +116,11 @@ final class ClipboardScene: BaseLevelScene, SKPhysicsContactDelegate {
         // Exit
         createExitDoor(at: CGPoint(x: courseX(330), y: groundY + 50))
 
-        // Death zone
+        // Death zone — lifted with the band so it stays the same relative distance
+        // (210pt) below groundY. On iPhone lift==0 so this is byte-identical (-50); on
+        // iPad it remains well below the lowest lifted platform, preserving fall-death.
         let death = SKNode()
-        death.position = CGPoint(x: size.width / 2, y: -50)
+        death.position = CGPoint(x: size.width / 2, y: -50 + gameplayLift)
         death.physicsBody = SKPhysicsBody(rectangleOf: CGSize(width: size.width * 2, height: 100))
         death.physicsBody?.isDynamic = false
         death.physicsBody?.categoryBitMask = PhysicsCategory.hazard
@@ -162,8 +175,12 @@ final class ClipboardScene: BaseLevelScene, SKPhysicsContactDelegate {
     }
 
     private func createTerminal() {
+        // Terminal is the gameplay interactable (PASTE control + COPY hint live as its
+        // children at relative offsets). Lift its anchor with the band so it stays the
+        // same relative distance above groundY; all child offsets are untouched, so the
+        // PASTE hit-target keeps its exact position relative to the platforms.
         terminal = SKNode()
-        terminal.position = CGPoint(x: size.width / 2 - 50, y: 260)
+        terminal.position = CGPoint(x: size.width / 2 - 50, y: 260 + gameplayLift)
         terminal.zPosition = 50
         addChild(terminal)
 
@@ -318,7 +335,9 @@ final class ClipboardScene: BaseLevelScene, SKPhysicsContactDelegate {
     }
 
     private func setupBit() {
-        spawnPoint = CGPoint(x: courseX(80), y: 200)
+        // Spawn (and respawn — handleDeath reuses spawnPoint) lifted with the band so
+        // Bit still starts/respawns the same 40pt above groundY. iPhone lift==0 → y=200.
+        spawnPoint = CGPoint(x: courseX(80), y: 200 + gameplayLift)
         bit = BitCharacter.make()
         bit.position = spawnPoint
         addChild(bit)

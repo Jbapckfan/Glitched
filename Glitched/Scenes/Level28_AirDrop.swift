@@ -50,6 +50,14 @@ final class AirDropScene: BaseLevelScene, SKPhysicsContactDelegate {
     private var terminalScreen: SKNode?
     private let designWidth: CGFloat = 390
 
+    // iPad vertical-void fix. Flat ground-anchored band: lowest gameplay surface is the
+    // ground platforms at groundY (160); highest reachable obstruction is the locked
+    // door body top at groundY + 75 + 60 = groundY + 135 (door is 120 tall, centered).
+    // The helper returns 0 on iPhone-class canvases (height <= 1000) so phone layout is
+    // byte-identical; on iPad it returns a positive uniform lift added to EVERY gameplay
+    // node Y, leaving all relative gaps/rises/jump distances unchanged.
+    private lazy var gameplayLift: CGFloat = gameplayVerticalLift(bandBottom: 160, bandTop: 295)
+
     private var courseScale: CGFloat { min(1.0, size.width / designWidth) }
     private var courseOriginX: CGFloat { (size.width - designWidth * courseScale) / 2 }
     private func courseX(_ logicalX: CGFloat) -> CGFloat { courseOriginX + logicalX * courseScale }
@@ -123,7 +131,10 @@ final class AirDropScene: BaseLevelScene, SKPhysicsContactDelegate {
     }
 
     private func buildLevel() {
-        let groundY: CGFloat = 160
+        // groundY is the single anchor every gameplay element derives from. Lifting it by
+        // the iPad-only `gameplayLift` shifts the whole band uniformly; all element offsets
+        // (+110 terminal, +75 door, death zone) ride along so relative geometry is unchanged.
+        let groundY: CGFloat = 160 + gameplayLift
 
         createPlatform(at: CGPoint(x: courseX(80), y: groundY), size: CGSize(width: courseLen(120), height: 30))
         createPlatform(at: CGPoint(x: courseX(195), y: groundY), size: CGSize(width: courseLen(180), height: 30))
@@ -135,8 +146,10 @@ final class AirDropScene: BaseLevelScene, SKPhysicsContactDelegate {
         // the platform top, so it cannot be cleared without unlocking.
         createLockedDoor(at: CGPoint(x: courseX(330), y: groundY + 75))
 
+        // Death zone rides with the band so it stays the SAME distance below the lifted
+        // ground (lowest platform bottom = groundY - 15; death top = -50 + 25 + gameplayLift).
         let death = SKNode()
-        death.position = CGPoint(x: size.width / 2, y: -50)
+        death.position = CGPoint(x: size.width / 2, y: -50 + gameplayLift)
         death.physicsBody = SKPhysicsBody(rectangleOf: CGSize(width: size.width * 2, height: 100))
         death.physicsBody?.isDynamic = false
         death.physicsBody?.categoryBitMask = PhysicsCategory.hazard
@@ -354,7 +367,10 @@ final class AirDropScene: BaseLevelScene, SKPhysicsContactDelegate {
     }
 
     private func setupBit() {
-        spawnPoint = CGPoint(x: courseX(80), y: 200)
+        // Spawn (and the respawn target — handleDeath reuses spawnPoint) rides with the
+        // band: y = 200 is groundY(160) + 40, so + gameplayLift keeps Bit the SAME 40pt
+        // above the lifted ground on iPad and exactly y=200 on iPhone (lift == 0).
+        spawnPoint = CGPoint(x: courseX(80), y: 200 + gameplayLift)
         bit = BitCharacter.make()
         bit.position = spawnPoint
         addChild(bit)

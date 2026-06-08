@@ -65,6 +65,14 @@ final class VoiceOverScene: BaseLevelScene, SKPhysicsContactDelegate {
     private let groundY: CGFloat = 160
     private let stoneSize = CGSize(width: 40, height: 22)
 
+    /// iPad vertical-void fix: uniform upward lift applied to EVERY gameplay node so
+    /// the flat band sits center-ish on tall iPad canvases. The shared helper returns
+    /// 0 on iPhone (scene byte-identical) and a positive value on iPad. Because the
+    /// SAME `lift` is added to every gameplay Y, all gaps/rises/jump distances are
+    /// unchanged → completability is identical. Computed in buildLevel(), consumed
+    /// there and in setupBit() (which runs after buildLevel()).
+    private var gameplayLift: CGFloat = 0
+
     // MARK: VoiceOver state
 
     /// Mirrors JuiceManager / sibling levels: honor the system Reduce Motion
@@ -169,8 +177,17 @@ final class VoiceOverScene: BaseLevelScene, SKPhysicsContactDelegate {
         let startCx: CGFloat = 40
         let exitCx: CGFloat = size.width - 40
 
-        createPlatform(at: CGPoint(x: startCx, y: groundY), size: CGSize(width: edgePlatformW, height: 30))
-        createPlatform(at: CGPoint(x: exitCx, y: groundY), size: CGSize(width: edgePlatformW, height: 30))
+        // iPad vertical-void fix: compute the uniform lift ONCE from the gameplay
+        // band (bandBottom = groundY = lowest platform top; bandTop = highest real
+        // stone = groundY + max(realHeightPattern) = 160 + 60 = 220). On iPhone the
+        // helper returns 0, so every `+ gameplayLift` below is a no-op and the scene
+        // is byte-identical. On iPad it returns a positive value added uniformly to
+        // EVERY gameplay node Y, preserving all relative geometry.
+        gameplayLift = gameplayVerticalLift(bandBottom: groundY, bandTop: groundY + 60)
+        let lift = gameplayLift
+
+        createPlatform(at: CGPoint(x: startCx, y: groundY + lift), size: CGSize(width: edgePlatformW, height: 30))
+        createPlatform(at: CGPoint(x: exitCx, y: groundY + lift), size: CGSize(width: edgePlatformW, height: 30))
 
         let startRight = startCx + edgePlatformW / 2          // 82
         let exitLeft = exitCx - edgePlatformW / 2             // width - 82
@@ -199,7 +216,7 @@ final class VoiceOverScene: BaseLevelScene, SKPhysicsContactDelegate {
 
         // Build the real stones (solid path).
         for (i, cx) in realCenters.enumerated() {
-            let y = groundY + realHeightPattern[i % realHeightPattern.count]
+            let y = groundY + realHeightPattern[i % realHeightPattern.count] + lift
             let stone = makeStone(at: CGPoint(x: cx, y: y), isReal: true, index: i)
             stones.append(stone)
         }
@@ -211,17 +228,19 @@ final class VoiceOverScene: BaseLevelScene, SKPhysicsContactDelegate {
         for (j, cx) in decoyCenters.enumerated() {
             // Decoys hang low and a touch forward of a real stone — visually "in the
             // way" but never a safe landing.
-            let y = groundY - 6 + CGFloat((j % 2) * 18)
+            let y = groundY - 6 + CGFloat((j % 2) * 18) + lift
             let stone = makeStone(at: CGPoint(x: cx, y: y), isReal: false, index: 1000 + j)
             stones.append(stone)
         }
 
         // Exit door on the right platform.
-        createExitDoor(at: CGPoint(x: exitCx, y: groundY + 50))
+        createExitDoor(at: CGPoint(x: exitCx, y: groundY + 50 + lift))
 
-        // Death zone below everything.
+        // Death zone below everything. Lifted with the band so it keeps the SAME
+        // relative offset below the lowest platform (groundY) on iPad; on iPhone
+        // lift==0 leaves it at the original y = -50.
         let death = SKNode()
-        death.position = CGPoint(x: size.width / 2, y: -50)
+        death.position = CGPoint(x: size.width / 2, y: -50 + lift)
         death.physicsBody = SKPhysicsBody(rectangleOf: CGSize(width: size.width * 2, height: 100))
         death.physicsBody?.isDynamic = false
         death.physicsBody?.categoryBitMask = PhysicsCategory.hazard
@@ -477,7 +496,10 @@ final class VoiceOverScene: BaseLevelScene, SKPhysicsContactDelegate {
     }
 
     private func setupBit() {
-        spawnPoint = CGPoint(x: 58, y: 200)
+        // Lift the spawn (and therefore the respawn, which reuses spawnPoint) by the
+        // SAME uniform band lift computed in buildLevel(), which runs before this.
+        // On iPhone gameplayLift==0 so spawn stays at y=200 (byte-identical).
+        spawnPoint = CGPoint(x: 58, y: 200 + gameplayLift)
         bit = BitCharacter.make()
         bit.position = spawnPoint
         addChild(bit)

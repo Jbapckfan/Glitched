@@ -31,6 +31,18 @@ final class FocusModeScene: BaseLevelScene, SKPhysicsContactDelegate {
     private func courseX(_ logicalX: CGFloat) -> CGFloat { courseOriginX + logicalX * courseScale }
     private func courseLen(_ logical: CGFloat) -> CGFloat { logical * courseScale }
 
+    /// iPad vertical-void fix: uniform upward shift applied to EVERY gameplay
+    /// Y (platforms, spawn, exit, hazards, death floor) so the flat,
+    /// ground-anchored band sits center-ish on a tall iPad canvas instead of
+    /// hugging the bottom. Returns 0 on iPhone-class canvases (height <= 1000),
+    /// so phone layout is byte-identical. Band spans the lowest platform top
+    /// (groundY = 160) to the highest reachable hazard zone (orbital top ≈ 330).
+    /// Computed (not stored) so it is always consistent with `size`; it is added
+    /// identically at every gameplay node so all gaps/rises/jump distances and
+    /// completability are preserved. HUD/title/panel/background/camera key off
+    /// size/topSafeY/bottomSafeY and are intentionally NOT lifted.
+    private var gameplayLift: CGFloat { gameplayVerticalLift(bandBottom: 160, bandTop: 330) }
+
     override func configureScene() {
         levelID = LevelID(world: .world2, index: 14)
         backgroundColor = fillColor
@@ -86,7 +98,11 @@ final class FocusModeScene: BaseLevelScene, SKPhysicsContactDelegate {
     }
 
     private func buildLevel() {
-        let groundY: CGFloat = 160
+        // iPad vertical-void fix: lift the single ground anchor by the uniform
+        // gameplayLift. Because all platforms and the exit derive from groundY,
+        // and the death floor adds the same lift below, every relative rise/gap
+        // is byte-identical; on iPhone gameplayLift == 0 so groundY stays 160.
+        let groundY: CGFloat = 160 + gameplayLift
 
         // Fits a 390-pt logical course and centers that course on wider devices.
         // The previous layout kept the stepping stones fixed near the left edge
@@ -99,8 +115,11 @@ final class FocusModeScene: BaseLevelScene, SKPhysicsContactDelegate {
 
         createExitDoor(at: CGPoint(x: courseX(350), y: groundY + 50))
 
+        // Death floor lifts with the band so it stays the same distance below
+        // the lowest platform (groundY): -50 is 210 below groundY=160; with the
+        // lift it remains 210 below the lifted groundY. On iPhone lift==0 -> -50.
         let death = SKNode()
-        death.position = CGPoint(x: size.width / 2, y: -50)
+        death.position = CGPoint(x: size.width / 2, y: -50 + gameplayLift)
         death.physicsBody = SKPhysicsBody(rectangleOf: CGSize(width: size.width * 2, height: 100))
         death.physicsBody?.isDynamic = false
         death.physicsBody?.categoryBitMask = PhysicsCategory.hazard
@@ -125,11 +144,16 @@ final class FocusModeScene: BaseLevelScene, SKPhysicsContactDelegate {
     }
 
     private func createHazards() {
+        // iPad vertical-void fix: every hazard Y (and orbital center Y) gets the
+        // SAME gameplayLift as the platforms/spawn/exit, so each hazard keeps its
+        // exact height above the band it threatens. On iPhone gameplayLift == 0.
+        let lift = gameplayLift
+
         // Hazard 0: Horizontal oscillation (slow). y=260 keeps it well above
         // platform 2's surface (top y ≈ 222.5) so it threatens high jumps
         // rather than sitting on the landing spot.
         let h0 = createSpike()
-        h0.position = CGPoint(x: courseX(120), y: 260)
+        h0.position = CGPoint(x: courseX(120), y: 260 + lift)
         h0.name = "hazard_0"
         addChild(h0)
         hazards.append(h0)
@@ -140,7 +164,7 @@ final class FocusModeScene: BaseLevelScene, SKPhysicsContactDelegate {
 
         // Hazard 1: Horizontal oscillation (fast)
         let h1 = createSpike()
-        h1.position = CGPoint(x: courseX(210), y: 260)
+        h1.position = CGPoint(x: courseX(210), y: 260 + lift)
         h1.name = "hazard_1"
         addChild(h1)
         hazards.append(h1)
@@ -151,7 +175,7 @@ final class FocusModeScene: BaseLevelScene, SKPhysicsContactDelegate {
 
         // Hazard 2: Vertical oscillation
         let h2 = createSpike()
-        h2.position = CGPoint(x: courseX(160), y: 275)
+        h2.position = CGPoint(x: courseX(160), y: 275 + lift)
         h2.name = "hazard_2"
         addChild(h2)
         hazards.append(h2)
@@ -162,7 +186,7 @@ final class FocusModeScene: BaseLevelScene, SKPhysicsContactDelegate {
 
         // Hazard 3: Vertical oscillation (offset)
         let h3 = createSpike()
-        h3.position = CGPoint(x: courseX(260), y: 310)
+        h3.position = CGPoint(x: courseX(260), y: 310 + lift)
         h3.name = "hazard_3"
         addChild(h3)
         hazards.append(h3)
@@ -173,20 +197,20 @@ final class FocusModeScene: BaseLevelScene, SKPhysicsContactDelegate {
 
         // Hazard 4: Orbital/circular movement
         let h4 = createSpike()
-        h4.position = CGPoint(x: courseX(180), y: 290)
+        h4.position = CGPoint(x: courseX(180), y: 290 + lift)
         h4.name = "hazard_4"
         addChild(h4)
         hazards.append(h4)
-        orbitalCenters[4] = CGPoint(x: courseX(180), y: 290)
+        orbitalCenters[4] = CGPoint(x: courseX(180), y: 290 + lift)
         orbitalAngles[4] = 0
 
         // Hazard 5: Orbital/circular movement (opposite phase)
         let h5 = createSpike()
-        h5.position = CGPoint(x: courseX(285), y: 290)
+        h5.position = CGPoint(x: courseX(285), y: 290 + lift)
         h5.name = "hazard_5"
         addChild(h5)
         hazards.append(h5)
-        orbitalCenters[5] = CGPoint(x: courseX(285), y: 290)
+        orbitalCenters[5] = CGPoint(x: courseX(285), y: 290 + lift)
         orbitalAngles[5] = .pi
     }
 
@@ -363,7 +387,11 @@ final class FocusModeScene: BaseLevelScene, SKPhysicsContactDelegate {
     }
 
     private func setupBit() {
-        spawnPoint = CGPoint(x: courseX(50), y: 200)
+        // iPad vertical-void fix: spawn (and the respawn target, which is this
+        // same spawnPoint, used by handleDeath -> playBufferDeath) gets the SAME
+        // gameplayLift as the band, so Bit still drops onto the first platform.
+        // On iPhone gameplayLift == 0 -> spawn y stays 200.
+        spawnPoint = CGPoint(x: courseX(50), y: 200 + gameplayLift)
         bit = BitCharacter.make()
         bit.position = spawnPoint
         addChild(bit)

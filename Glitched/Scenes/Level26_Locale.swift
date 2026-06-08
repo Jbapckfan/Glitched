@@ -37,6 +37,16 @@ final class LocaleScene: BaseLevelScene, SKPhysicsContactDelegate {
     private var baselineLanguage: String?
     private let designWidth: CGFloat = 390
 
+    // iPad vertical-void fix (L26-locale): this is a flat, ground-anchored band
+    // whose every gameplay Y derives from groundY (=160) up to the exit door
+    // (=groundY+295=455). On a tall iPad canvas it would hug the bottom with a
+    // large empty band above. Lift the ENTIRE band uniformly by this amount so it
+    // sits center-ish. On iPhone (height <= 1000pt) the helper returns 0, so the
+    // layout is byte-identical. Computed once (lazy) so buildLevel() and
+    // setupBit() share the SAME lift — every gameplay node moves by the same
+    // delta, leaving all gaps/rises/jump distances unchanged.
+    private lazy var gameplayLift: CGFloat = gameplayVerticalLift(bandBottom: 160, bandTop: 455)
+
     private var courseScale: CGFloat { min(1.0, size.width / designWidth) }
     private var courseOriginX: CGFloat { (size.width - designWidth * courseScale) / 2 }
     private func courseX(_ logicalX: CGFloat) -> CGFloat { courseOriginX + logicalX * courseScale }
@@ -101,7 +111,13 @@ final class LocaleScene: BaseLevelScene, SKPhysicsContactDelegate {
     }
 
     private func buildLevel() {
-        let groundY: CGFloat = 160
+        // iPad vertical-void fix: lift the whole band by adding gameplayLift to
+        // the single groundY anchor. Because EVERY platform, signpost, hidden/
+        // wrong-route origin, the exit plateau and the exit door are positioned
+        // as groundY + <offset>, lifting groundY shifts the entire band by the
+        // same delta — all relative gaps/rises are byte-identical. On iPhone
+        // gameplayLift == 0 so groundY stays exactly 160 (no change).
+        let groundY: CGFloat = 160 + gameplayLift
 
         // Fits a 390-pt iPhone canvas. Two overlapping zigzag routes share
         // the same narrow column: the scrambled "wrong" route leads nowhere,
@@ -156,9 +172,10 @@ final class LocaleScene: BaseLevelScene, SKPhysicsContactDelegate {
         createPlatform(at: CGPoint(x: courseX(350), y: groundY + 240), size: CGSize(width: courseLen(70), height: 30))
         createExitDoor(at: CGPoint(x: courseX(360), y: groundY + 295))
 
-        // Death zone
+        // Death zone — lift with the band so its distance below the lowest
+        // platform is byte-identical (iPhone: gameplayLift == 0, stays at -50).
         let death = SKNode()
-        death.position = CGPoint(x: size.width / 2, y: -50)
+        death.position = CGPoint(x: size.width / 2, y: -50 + gameplayLift)
         death.physicsBody = SKPhysicsBody(rectangleOf: CGSize(width: size.width * 2, height: 100))
         death.physicsBody?.isDynamic = false
         death.physicsBody?.categoryBitMask = PhysicsCategory.hazard
@@ -361,7 +378,10 @@ final class LocaleScene: BaseLevelScene, SKPhysicsContactDelegate {
     }
 
     private func setupBit() {
-        spawnPoint = CGPoint(x: courseX(45), y: 200)
+        // Player spawn AND respawn point (handleDeath respawns at spawnPoint).
+        // Lift by the same gameplayLift as the band so Bit still lands 40pt above
+        // the start platform (groundY=160 → spawn 200). iPhone: gameplayLift == 0.
+        spawnPoint = CGPoint(x: courseX(45), y: 200 + gameplayLift)
         bit = BitCharacter.make()
         bit.position = spawnPoint
         addChild(bit)

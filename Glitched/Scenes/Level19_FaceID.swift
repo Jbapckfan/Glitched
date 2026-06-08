@@ -30,6 +30,18 @@ final class FaceIDScene: BaseLevelScene, SKPhysicsContactDelegate {
     private var playerController: PlayerController!
     private var spawnPoint: CGPoint = .zero
 
+    // iPad vertical-void fix: a single uniform upward lift applied to EVERY
+    // gameplay node Y (platforms, spawn, vault doors + their blockers, exit, the
+    // exit-door visual). Computed once from the gameplay band in buildLevel() via
+    // the shared helper, which returns 0 on iPhone-class canvases (height <= 1000)
+    // so phone layout stays byte-identical. Because the SAME value is added to
+    // every gameplay Y, all gaps/rises/jump distances and the door-blocks-exit
+    // relationship are preserved exactly. Decoration (background grid, title,
+    // instruction panel, HUD) keys off size/topSafeY and is intentionally NOT
+    // lifted. Band: bandBottom = groundY (160, lowest platform tops),
+    // bandTop = 230 (the two vault doors, highest gameplay surfaces).
+    private var gameplayLift: CGFloat = 0
+
     private var vaultDoor: SKNode!
     private var faceFrame: SKShapeNode!
     private var scanLines: [SKShapeNode] = []
@@ -115,30 +127,43 @@ final class FaceIDScene: BaseLevelScene, SKPhysicsContactDelegate {
     private func buildLevel() {
         let groundY: CGFloat = 160
 
+        // Uniform iPad lift for the whole gameplay band. bandBottom = groundY
+        // (lowest platform tops, 160), bandTop = 230 (the two vault doors, the
+        // highest gameplay surfaces). Returns 0 on iPhone-class canvases so phone
+        // layout is byte-identical; on iPad every gameplay Y below gets the SAME
+        // `lift` added, so all gaps/rises and the door-blocks-exit relationship
+        // are unchanged.
+        let lift = gameplayVerticalLift(bandBottom: groundY, bandTop: 230)
+        gameplayLift = lift
+
         // Start platform
-        createPlatform(at: CGPoint(x: courseX(80), y: groundY), size: CGSize(width: courseLen(120), height: 30))
+        createPlatform(at: CGPoint(x: courseX(80), y: groundY + lift), size: CGSize(width: courseLen(120), height: 30))
 
         // Middle platform (before first vault)
-        createPlatform(at: CGPoint(x: courseX(175), y: groundY), size: CGSize(width: courseLen(160), height: 30))
+        createPlatform(at: CGPoint(x: courseX(175), y: groundY + lift), size: CGSize(width: courseLen(160), height: 30))
 
         // Platform between doors
-        createPlatform(at: CGPoint(x: courseX(335), y: groundY), size: CGSize(width: courseLen(100), height: 30))
+        createPlatform(at: CGPoint(x: courseX(335), y: groundY + lift), size: CGSize(width: courseLen(100), height: 30))
 
         // Second door blocker (between middle and exit)
-        createSecondDoor(at: CGPoint(x: courseX(385), y: 230))
+        createSecondDoor(at: CGPoint(x: courseX(385), y: 230 + lift))
 
         // Exit platform (after second door) - extends under and past door2's blocker
         // so the exit can only be reached once door2 opens at step 2.
-        createPlatform(at: CGPoint(x: courseX(380), y: groundY), size: CGSize(width: courseLen(120), height: 30))
+        createPlatform(at: CGPoint(x: courseX(380), y: groundY + lift), size: CGSize(width: courseLen(120), height: 30))
         // Exit sits BEHIND door2's blocker. In logical course space the blocker spans
         // logical x [355,415] (center 385, width 60) and the exit body spans logical
         // x [385,425] (center 405, width 40). While door2 is closed, Bit (half-width
         // ~11 logical at courseScale 1.0) is stopped at the blocker's LEFT edge (355),
         // so its right edge reaches only logical 355 — still 30pt left of the exit's
         // left edge (385). Unreachable until secondDoorBlocker is cleared at step 2.
-        createExitDoor(at: CGPoint(x: courseX(405), y: groundY + 50))
+        createExitDoor(at: CGPoint(x: courseX(405), y: groundY + 50 + lift))
 
-        // Death zone (stays full-width so it always catches falls)
+        // Death zone (stays full-width so it always catches falls). Kept at the
+        // fixed scene-bottom y=-50: even with the maximum lift the lowest lifted
+        // platform top sits at groundY + lift (>= 160), far above this band, so a
+        // fall still always reaches the death zone. (Not lifted on purpose — it
+        // only needs to stay below the lowest gameplay surface, which it does.)
         let death = SKNode()
         death.position = CGPoint(x: size.width / 2, y: -50)
         death.physicsBody = SKPhysicsBody(rectangleOf: CGSize(width: size.width * 2, height: 100))
@@ -202,7 +227,7 @@ final class FaceIDScene: BaseLevelScene, SKPhysicsContactDelegate {
 
     private func createVaultDoor() {
         vaultDoor = SKNode()
-        vaultDoor.position = CGPoint(x: courseX(275), y: 230)
+        vaultDoor.position = CGPoint(x: courseX(275), y: 230 + gameplayLift)
         vaultDoor.zPosition = 50
         addChild(vaultDoor)
 
@@ -263,7 +288,7 @@ final class FaceIDScene: BaseLevelScene, SKPhysicsContactDelegate {
 
         // Door blocker physics (logical x 275, logical width 80 -> course space)
         doorBlocker = SKNode()
-        doorBlocker?.position = CGPoint(x: courseX(275), y: 210)
+        doorBlocker?.position = CGPoint(x: courseX(275), y: 210 + gameplayLift)
         doorBlocker?.physicsBody = SKPhysicsBody(rectangleOf: CGSize(width: courseLen(80), height: 100))
         doorBlocker?.physicsBody?.isDynamic = false
         doorBlocker?.physicsBody?.categoryBitMask = PhysicsCategory.ground
@@ -342,7 +367,9 @@ final class FaceIDScene: BaseLevelScene, SKPhysicsContactDelegate {
     }
 
     private func setupBit() {
-        spawnPoint = CGPoint(x: courseX(80), y: 200)
+        // Spawn (and the death-respawn point, which reuses spawnPoint) lifts with
+        // the band by the same amount as every platform/door/exit.
+        spawnPoint = CGPoint(x: courseX(80), y: 200 + gameplayLift)
         bit = BitCharacter.make()
         bit.position = spawnPoint
         addChild(bit)

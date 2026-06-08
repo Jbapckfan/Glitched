@@ -132,8 +132,24 @@ final class VoiceCommandScene: BaseLevelScene, SKPhysicsContactDelegate {
         addChild(title)
     }
 
+    /// iPad vertical-void fix: uniform upward shift applied to EVERY gameplay
+    /// node Y (platforms, bridge, doors, exit, hint markers, spawn, death zone)
+    /// so the flat ground-anchored band sits center-ish on a tall iPad canvas
+    /// instead of hugging the bottom. The band runs from the lowest platform top
+    /// (groundY = 160) up to the highest reachable surface, the exit door center
+    /// (baseGroundY + 155 = 315). On iPhone-class canvases (height <= 1000) the
+    /// helper returns 0, so every Y below is byte-identical to before. On iPad
+    /// every gameplay Y increases by this SAME constant, so all gaps/rises/jump
+    /// distances — and therefore completability — are unchanged. HUD/title/
+    /// instruction panel/mic/soundwaves/fallback buttons key off size/topSafeY
+    /// and are intentionally NOT lifted.
+    private var gameplayLift: CGFloat {
+        let baseGroundY: CGFloat = 160
+        return gameplayVerticalLift(bandBottom: baseGroundY, bandTop: baseGroundY + 155)
+    }
+
     private func buildLevel() {
-        let groundY: CGFloat = 160
+        let groundY: CGFloat = 160 + gameplayLift
 
         // Fits a 390-pt iPhone canvas. Three voice commands gate progress:
         //   BRIDGE spans a 250-pt logical chasm (~227pt at the narrowest 390-pt
@@ -179,8 +195,10 @@ final class VoiceCommandScene: BaseLevelScene, SKPhysicsContactDelegate {
 
         // Death zone stays full-width (centered) — it only needs to catch falls,
         // not define gameplay spacing.
+        // Death zone lifts with the band so it stays the same distance below the
+        // lowest platform (groundY) on every device — catching falls identically.
         let death = SKNode()
-        death.position = CGPoint(x: size.width / 2, y: -50)
+        death.position = CGPoint(x: size.width / 2, y: -50 + gameplayLift)
         death.physicsBody = SKPhysicsBody(rectangleOf: CGSize(width: size.width * 2, height: 100))
         death.physicsBody?.isDynamic = false
         death.physicsBody?.categoryBitMask = PhysicsCategory.hazard
@@ -461,7 +479,10 @@ final class VoiceCommandScene: BaseLevelScene, SKPhysicsContactDelegate {
     }
 
     private func setupBit() {
-        spawnPoint = CGPoint(x: courseX(45), y: 200)
+        // Spawn (and respawn — handleDeath() respawns at spawnPoint) sits 40pt
+        // above the start platform top (groundY 160 -> spawn 200); lift it by the
+        // same band shift so that relative spawn-over-platform offset is preserved.
+        spawnPoint = CGPoint(x: courseX(45), y: 200 + gameplayLift)
         bit = BitCharacter.make()
         bit.position = spawnPoint
         addChild(bit)

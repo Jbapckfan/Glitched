@@ -67,6 +67,23 @@ final class StaticScene: BaseLevelScene, SKPhysicsContactDelegate {
     // 4th-wall commentary
     private var hasShownNeighborText = false
 
+    // iPad vertical-void fix: a single uniform upward lift applied to EVERY
+    // gameplay node (platforms, spawn/respawn, exit, lasers/hazards, death zone)
+    // so the flat ground-anchored band sits center-ish on tall iPad canvases.
+    // The band is authored against `layoutYScale` (160..320 logical-Y), so the
+    // lift is computed once from the real scene-space lowest/highest gameplay Y
+    // and reused everywhere — relative gaps/rises stay byte-identical. Returns 0
+    // on iPhone-class canvases (helper guards height <= 1000), so phone layout is
+    // unchanged. Computed lazily once layout is known; see buildLevel().
+    private lazy var gameplayLift: CGFloat = {
+        // Lowest gameplay element = laser base (140 * layoutYScale), which sits
+        // below the lowest platform center (160 * layoutYScale).
+        // Highest gameplay element = tallest laser top (320 * layoutYScale).
+        let bandBottom = 140 * layoutYScale
+        let bandTop = 320 * layoutYScale
+        return gameplayVerticalLift(bandBottom: bandBottom, bandTop: bandTop)
+    }()
+
     // TV screens decoration
     private var tvScreens: [SKNode] = []
     private var instructionPanel: SKNode?
@@ -307,43 +324,49 @@ final class StaticScene: BaseLevelScene, SKPhysicsContactDelegate {
         ]
 
         // Starting platform
+        // NOTE: every gameplay Y below adds the SAME `gameplayLift` (iPad-only,
+        // 0 on iPhone) so the whole band shifts uniformly — relative geometry is
+        // byte-identical across devices.
         _ = createPlatform(
-            at: CGPoint(x: courseX(platformPoints[0].x * designSize.width), y: groundY + platformPoints[0].yOffset * layoutYScale),
+            at: CGPoint(x: courseX(platformPoints[0].x * designSize.width), y: groundY + platformPoints[0].yOffset * layoutYScale + gameplayLift),
             size: CGSize(width: platformPoints[0].width, height: platformPoints[0].height)
         )
 
         // Middle platforms (across laser gauntlet)
         _ = createPlatform(
-            at: CGPoint(x: courseX(platformPoints[1].x * designSize.width), y: groundY + platformPoints[1].yOffset * layoutYScale),
+            at: CGPoint(x: courseX(platformPoints[1].x * designSize.width), y: groundY + platformPoints[1].yOffset * layoutYScale + gameplayLift),
             size: CGSize(width: platformPoints[1].width, height: platformPoints[1].height)
         )
 
         _ = createPlatform(
-            at: CGPoint(x: courseX(platformPoints[2].x * designSize.width), y: groundY + platformPoints[2].yOffset * layoutYScale),
+            at: CGPoint(x: courseX(platformPoints[2].x * designSize.width), y: groundY + platformPoints[2].yOffset * layoutYScale + gameplayLift),
             size: CGSize(width: platformPoints[2].width, height: platformPoints[2].height)
         )
 
         _ = createPlatform(
-            at: CGPoint(x: courseX(platformPoints[3].x * designSize.width), y: groundY + platformPoints[3].yOffset * layoutYScale),
+            at: CGPoint(x: courseX(platformPoints[3].x * designSize.width), y: groundY + platformPoints[3].yOffset * layoutYScale + gameplayLift),
             size: CGSize(width: platformPoints[3].width, height: platformPoints[3].height)
         )
 
         // Platform before the 4th (inverse) laser
         _ = createPlatform(
-            at: CGPoint(x: courseX(platformPoints[4].x * designSize.width), y: groundY + platformPoints[4].yOffset * layoutYScale),
+            at: CGPoint(x: courseX(platformPoints[4].x * designSize.width), y: groundY + platformPoints[4].yOffset * layoutYScale + gameplayLift),
             size: CGSize(width: platformPoints[4].width, height: platformPoints[4].height)
         )
 
         // Exit platform (pushed further right for 4th laser)
         _ = createPlatform(
-            at: CGPoint(x: courseX(platformPoints[5].x * designSize.width), y: groundY + platformPoints[5].yOffset * layoutYScale),
+            at: CGPoint(x: courseX(platformPoints[5].x * designSize.width), y: groundY + platformPoints[5].yOffset * layoutYScale + gameplayLift),
             size: CGSize(width: platformPoints[5].width, height: platformPoints[5].height)
         )
 
         // Exit door
-        createExitDoor(at: CGPoint(x: courseX(0.92 * designSize.width), y: groundY + 50 * visualScale))
+        createExitDoor(at: CGPoint(x: courseX(0.92 * designSize.width), y: groundY + 50 * visualScale + gameplayLift))
 
-        // Death zone
+        // Death zone — the "fell off the bottom of the world" floor. Intentionally
+        // NOT lifted: it sits at y = -50, well below the lowest lifted platform
+        // (>= 160*layoutYScale + gameplayLift), so it still catches a fall on every
+        // device. Lifting it would shrink the void below the band for no benefit.
         let deathZone = SKNode()
         deathZone.position = CGPoint(x: size.width / 2, y: -50)
         deathZone.physicsBody = SKPhysicsBody(rectangleOf: CGSize(width: size.width * 2, height: 100))
@@ -390,10 +413,13 @@ final class StaticScene: BaseLevelScene, SKPhysicsContactDelegate {
     // MARK: - Laser System
 
     private func createLaserSystem() {
-        // Create 3 normal laser barriers + 1 inverse laser near the end
-        let laserBaseY = 140 * layoutYScale
-        let laserTopLow = 280 * layoutYScale
-        let laserTopHigh = 320 * layoutYScale
+        // Create 3 normal laser barriers + 1 inverse laser near the end.
+        // Hazard band Y values get the SAME uniform `gameplayLift` (iPad-only) as
+        // the platforms/spawn/exit, so the lasers stay aligned with the gaps and
+        // the laser/platform vertical relationship is byte-identical on iPhone.
+        let laserBaseY = 140 * layoutYScale + gameplayLift
+        let laserTopLow = 280 * layoutYScale + gameplayLift
+        let laserTopHigh = 320 * layoutYScale + gameplayLift
         // Laser x positions are authored in the centered logical course so they
         // stay aligned with the platform gaps on every device.
         let lx0 = courseX(0.21 * designSize.width)
@@ -772,7 +798,8 @@ final class StaticScene: BaseLevelScene, SKPhysicsContactDelegate {
     // MARK: - Bit Setup
 
     private func setupBit() {
-        spawnPoint = CGPoint(x: courseX(0.13 * designSize.width), y: 205 * layoutYScale)
+        // Spawn (and respawn — handleDeath respawns here) lifts with the band.
+        spawnPoint = CGPoint(x: courseX(0.13 * designSize.width), y: 205 * layoutYScale + gameplayLift)
 
         bit = BitCharacter.make()
         bit.position = spawnPoint
