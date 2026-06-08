@@ -83,7 +83,7 @@ final class AppSwitcherScene: BaseLevelScene, SKPhysicsContactDelegate {
     }
 
     private func buildLevel() {
-        let groundY: CGFloat = 160
+        let groundY: CGFloat = 160 + courseOriginY(courseScale: courseScale)
 
         // Fits a 390-pt logical course. Stepping stones are ≤ 25 pt apart
         // with 30-pt rise/drop — well inside the 91-pt jump height.
@@ -123,13 +123,15 @@ final class AppSwitcherScene: BaseLevelScene, SKPhysicsContactDelegate {
     }
 
     private func createHazards() {
+        let courseY = courseOriginY(courseScale: courseScale)
+
         // Multiple fast-moving spikes that are hard to time without peeking.
         // Positions and oscillation ranges fit a 390-pt iPhone canvas and
         // are kept clear of the exit plateau on narrow iPhones (≥375 pt).
         let hazardData: [(pos: CGPoint, range: CGFloat, speed: TimeInterval)] = [
-            (CGPoint(x: courseX(130), y: 235), courseLen(40), 0.8),
-            (CGPoint(x: courseX(200), y: 265), courseLen(50), 0.6),
-            (CGPoint(x: courseX(275), y: 240), courseLen(45), 0.7)
+            (CGPoint(x: courseX(130), y: 235 + courseY), courseLen(40), 0.8),
+            (CGPoint(x: courseX(200), y: 265 + courseY), courseLen(50), 0.6),
+            (CGPoint(x: courseX(275), y: 240 + courseY), courseLen(45), 0.7)
         ]
 
         for (index, data) in hazardData.enumerated() {
@@ -300,7 +302,7 @@ final class AppSwitcherScene: BaseLevelScene, SKPhysicsContactDelegate {
     }
 
     private func setupBit() {
-        spawnPoint = CGPoint(x: courseX(45), y: 200)
+        spawnPoint = CGPoint(x: courseX(45), y: 200 + courseOriginY(courseScale: courseScale))
         bit = BitCharacter.make()
         bit.position = spawnPoint
         addChild(bit)

@@ -240,7 +240,7 @@ final class MetaFinaleScene: BaseLevelScene, SKPhysicsContactDelegate {
     }
 
     private func buildLevel() {
-        let groundY: CGFloat = 160
+        let groundY: CGFloat = 160 + courseOriginY(courseScale: courseScale)
 
         // Start platform (logical x=80, w=120)
         createPlatform(at: CGPoint(x: courseX(80), y: groundY), size: CGSize(width: courseLen(120), height: 30))
@@ -282,7 +282,7 @@ final class MetaFinaleScene: BaseLevelScene, SKPhysicsContactDelegate {
         corruptionWall = SKNode()
         // Logical x = 270 (430 - 160); stays in the same coordinate space as Bit so
         // the proximity fallback math in updatePlaying() still holds (see below).
-        corruptionWall.position = CGPoint(x: courseX(270), y: 260)
+        corruptionWall.position = CGPoint(x: courseX(270), y: 260 + courseOriginY(courseScale: courseScale))
         corruptionWall.zPosition = 50
         addChild(corruptionWall)
 
@@ -339,7 +339,7 @@ final class MetaFinaleScene: BaseLevelScene, SKPhysicsContactDelegate {
         hintLabel.fontSize = 9
         hintLabel.fontColor = strokeColor
         hintLabel.alpha = 0.7
-        hintLabel.position = CGPoint(x: size.width / 2, y: 100)
+        hintLabel.position = CGPoint(x: size.width / 2, y: 100 + courseOriginY(courseScale: courseScale))
         hintLabel.zPosition = 100
         addChild(hintLabel)
 
@@ -348,7 +348,7 @@ final class MetaFinaleScene: BaseLevelScene, SKPhysicsContactDelegate {
         progressSavedLabel.fontName = "Menlo"
         progressSavedLabel.fontSize = 10
         progressSavedLabel.fontColor = strokeColor
-        progressSavedLabel.position = CGPoint(x: size.width / 2, y: 80)
+        progressSavedLabel.position = CGPoint(x: size.width / 2, y: 80 + courseOriginY(courseScale: courseScale))
         progressSavedLabel.zPosition = 100
         addChild(progressSavedLabel)
 
@@ -450,7 +450,7 @@ final class MetaFinaleScene: BaseLevelScene, SKPhysicsContactDelegate {
     }
 
     private func setupBit() {
-        spawnPoint = CGPoint(x: courseX(80), y: 200)
+        spawnPoint = CGPoint(x: courseX(80), y: 200 + courseOriginY(courseScale: courseScale))
         bit = BitCharacter.make()
         bit.position = spawnPoint
         addChild(bit)

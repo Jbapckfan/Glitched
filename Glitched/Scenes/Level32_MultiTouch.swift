@@ -58,7 +58,7 @@ final class MultiTouchScene: BaseLevelScene, SKPhysicsContactDelegate {
     private var instructionLabel: SKLabelNode?
 
     // MARK: - Ground Y
-    private let groundY: CGFloat = 120
+    private var groundY: CGFloat { 120 + courseOriginY() }
 
     // MARK: - Configuration
 

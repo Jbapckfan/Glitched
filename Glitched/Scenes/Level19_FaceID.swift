@@ -113,7 +113,7 @@ final class FaceIDScene: BaseLevelScene, SKPhysicsContactDelegate {
     }
 
     private func buildLevel() {
-        let groundY: CGFloat = 160
+        let groundY: CGFloat = 160 + courseOriginY(courseScale: courseScale)
 
         // Start platform
         createPlatform(at: CGPoint(x: courseX(80), y: groundY), size: CGSize(width: courseLen(120), height: 30))
@@ -125,7 +125,7 @@ final class FaceIDScene: BaseLevelScene, SKPhysicsContactDelegate {
         createPlatform(at: CGPoint(x: courseX(335), y: groundY), size: CGSize(width: courseLen(100), height: 30))
 
         // Second door blocker (between middle and exit)
-        createSecondDoor(at: CGPoint(x: courseX(385), y: 230))
+        createSecondDoor(at: CGPoint(x: courseX(385), y: groundY + 70))
 
         // Exit platform (after second door) - extends under and past door2's blocker
         // so the exit can only be reached once door2 opens at step 2.
@@ -202,7 +202,7 @@ final class FaceIDScene: BaseLevelScene, SKPhysicsContactDelegate {
 
     private func createVaultDoor() {
         vaultDoor = SKNode()
-        vaultDoor.position = CGPoint(x: courseX(275), y: 230)
+        vaultDoor.position = CGPoint(x: courseX(275), y: 230 + courseOriginY(courseScale: courseScale))
         vaultDoor.zPosition = 50
         addChild(vaultDoor)
 
@@ -263,7 +263,7 @@ final class FaceIDScene: BaseLevelScene, SKPhysicsContactDelegate {
 
         // Door blocker physics (logical x 275, logical width 80 -> course space)
         doorBlocker = SKNode()
-        doorBlocker?.position = CGPoint(x: courseX(275), y: 210)
+        doorBlocker?.position = CGPoint(x: courseX(275), y: 210 + courseOriginY(courseScale: courseScale))
         doorBlocker?.physicsBody = SKPhysicsBody(rectangleOf: CGSize(width: courseLen(80), height: 100))
         doorBlocker?.physicsBody?.isDynamic = false
         doorBlocker?.physicsBody?.categoryBitMask = PhysicsCategory.ground
@@ -342,7 +342,7 @@ final class FaceIDScene: BaseLevelScene, SKPhysicsContactDelegate {
     }
 
     private func setupBit() {
-        spawnPoint = CGPoint(x: courseX(80), y: 200)
+        spawnPoint = CGPoint(x: courseX(80), y: 200 + courseOriginY(courseScale: courseScale))
         bit = BitCharacter.make()
         bit.position = spawnPoint
         addChild(bit)

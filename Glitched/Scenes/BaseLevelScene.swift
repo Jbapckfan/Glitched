@@ -355,6 +355,25 @@ class BaseLevelScene: SKScene {
     /// Override in subclasses to reposition HUD elements when the safe area changes.
     func didUpdateSafeArea() {}
 
+    // MARK: - Course Layout Helpers
+
+    /// Vertical centering for single-screen courses authored around an iPhone-height
+    /// canvas. Returns zero on phones so existing iPhone geometry remains unchanged,
+    /// and raises flat courses on iPad/large canvases into the middle band to avoid
+    /// bottom-anchored voids.
+    func courseOriginY(
+        designHeight: CGFloat = 844,
+        courseScale: CGFloat = 1,
+        centerFactor: CGFloat = 0.6
+    ) -> CGFloat {
+        let shortSide = min(size.width, size.height)
+        guard shortSide >= 700 else { return 0 }
+
+        let scaledDesignHeight = designHeight * courseScale
+        let spareHeight = size.height - scaledDesignHeight
+        return max(0, spareHeight * centerFactor)
+    }
+
     // MARK: - Override Points
 
     /// Set up nodes, physics, geometry

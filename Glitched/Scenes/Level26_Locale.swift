@@ -101,7 +101,7 @@ final class LocaleScene: BaseLevelScene, SKPhysicsContactDelegate {
     }
 
     private func buildLevel() {
-        let groundY: CGFloat = 160
+        let groundY: CGFloat = 160 + courseOriginY(courseScale: courseScale)
 
         // Fits a 390-pt iPhone canvas. Two overlapping zigzag routes share
         // the same narrow column: the scrambled "wrong" route leads nowhere,
@@ -361,7 +361,7 @@ final class LocaleScene: BaseLevelScene, SKPhysicsContactDelegate {
     }
 
     private func setupBit() {
-        spawnPoint = CGPoint(x: courseX(45), y: 200)
+        spawnPoint = CGPoint(x: courseX(45), y: 200 + courseOriginY(courseScale: courseScale))
         bit = BitCharacter.make()
         bit.position = spawnPoint
         addChild(bit)

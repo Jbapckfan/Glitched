@@ -102,7 +102,7 @@ final class AppReviewScene: BaseLevelScene, SKPhysicsContactDelegate {
     // MARK: - Level Construction
 
     private func buildLevel() {
-        let groundY: CGFloat = 120
+        let groundY: CGFloat = 120 + courseOriginY()
 
         // Full-width ground platform for that "deceptively simple" look
         createPlatform(at: CGPoint(x: size.width / 2, y: groundY),
@@ -398,7 +398,7 @@ final class AppReviewScene: BaseLevelScene, SKPhysicsContactDelegate {
     // MARK: - Player Setup
 
     private func setupBit() {
-        spawnPoint = CGPoint(x: 50, y: 180)
+        spawnPoint = CGPoint(x: 50, y: 180 + courseOriginY())
         bit = BitCharacter.make()
         bit.position = spawnPoint
         addChild(bit)

@@ -89,7 +89,7 @@ final class LowPowerScene: BaseLevelScene, SKPhysicsContactDelegate {
     }
 
     private func buildLevel() {
-        let groundY: CGFloat = 160
+        let groundY: CGFloat = 160 + courseOriginY(courseScale: courseScale)
 
         // Fits a 390-pt logical course, centered on wider devices. courseScale is
         // clamped to <= 1.0, so horizontal logical pts == scene pts on both iPhone
@@ -390,7 +390,7 @@ final class LowPowerScene: BaseLevelScene, SKPhysicsContactDelegate {
     private func setupBit() {
         // Spawn above the Section-1 floor (logical x=40, top y=175); the player
         // settles onto it under normal gravity.
-        spawnPoint = CGPoint(x: courseX(40), y: 210)
+        spawnPoint = CGPoint(x: courseX(40), y: 210 + courseOriginY(courseScale: courseScale))
         bit = BitCharacter.make()
         bit.position = spawnPoint
         addChild(bit)

@@ -22,6 +22,7 @@ final class DeviceNameScene: BaseLevelScene, SKPhysicsContactDelegate {
     // space filled by decoration/UI, which still keys off size.width.
     private var courseScale: CGFloat { min(1.0, size.width / designSize.width) }
     private var courseOriginX: CGFloat { (size.width - designSize.width * courseScale) / 2 }
+    private var courseY: CGFloat { courseOriginY(courseScale: courseScale) }
     /// Map a logical x (0...designSize.width) into centered course space.
     private func courseX(_ logicalX: CGFloat) -> CGFloat { courseOriginX + logicalX * courseScale }
     /// Scale a logical length (platform width, etc.) into course space.
@@ -168,7 +169,7 @@ final class DeviceNameScene: BaseLevelScene, SKPhysicsContactDelegate {
     }
 
     private func buildLevel() {
-        let groundY: CGFloat = 160
+        let groundY: CGFloat = 160 + courseY
 
         // Gameplay is authored in fixed logical course space (0...430) so the
         // platform spacing, gaps, and the final exit jump stay constant across
@@ -367,7 +368,7 @@ final class DeviceNameScene: BaseLevelScene, SKPhysicsContactDelegate {
         if let real = exitDoors.first(where: { $0.isRealExit }) {
             return real.node.position
         }
-        return CGPoint(x: courseX(372), y: 210)
+        return CGPoint(x: courseX(372), y: 210 + courseY)
     }
 
     /// A decoy door position the doppelganger commits to (and is rejected at), so
@@ -376,7 +377,7 @@ final class DeviceNameScene: BaseLevelScene, SKPhysicsContactDelegate {
         if let decoy = exitDoors.first(where: { !$0.isRealExit }) {
             return decoy.node.position
         }
-        return CGPoint(x: courseX(332), y: 210)
+        return CGPoint(x: courseX(332), y: 210 + courseY)
     }
 
     private func createDoppelganger() {
@@ -432,7 +433,7 @@ final class DeviceNameScene: BaseLevelScene, SKPhysicsContactDelegate {
         label.position = CGPoint(x: 0, y: 45)
         doppel.addChild(label)
 
-        doppel.position = CGPoint(x: courseX(90), y: 200)
+        doppel.position = CGPoint(x: courseX(90), y: 200 + courseY)
         doppel.alpha = 0 // Hidden until triggered
 
         doppelganger = doppel
@@ -451,7 +452,7 @@ final class DeviceNameScene: BaseLevelScene, SKPhysicsContactDelegate {
         // so it commits to a DECOY door and is rejected there — it never sits on
         // (or blocks) the real exit, so completability is independent of it.
         // The player wins by reading their name and taking the matching door.
-        let groundY: CGFloat = 160
+        let groundY: CGFloat = 160 + courseY
         let decoyTarget = doppelgangerTargetPosition
 
         // Waypoints route through the centered platforms toward a decoy slot.
@@ -484,7 +485,7 @@ final class DeviceNameScene: BaseLevelScene, SKPhysicsContactDelegate {
         rejected.fontName = "Menlo-Bold"
         rejected.fontSize = 10
         rejected.fontColor = strokeColor
-        rejected.position = CGPoint(x: decoyTarget.x, y: 280)
+        rejected.position = CGPoint(x: decoyTarget.x, y: decoyTarget.y + 70)
         rejected.zPosition = 300
         addChild(rejected)
         rejected.run(.sequence([.wait(forDuration: 3), .fadeOut(withDuration: 0.5), .removeFromParent()]))
@@ -506,7 +507,7 @@ final class DeviceNameScene: BaseLevelScene, SKPhysicsContactDelegate {
         openLabel.fontName = "Menlo-Bold"
         openLabel.fontSize = 10
         openLabel.fontColor = strokeColor
-        openLabel.position = CGPoint(x: real.x, y: 120)
+        openLabel.position = CGPoint(x: real.x, y: real.y - 90)
         openLabel.zPosition = 300
         addChild(openLabel)
         openLabel.run(.sequence([.wait(forDuration: 3), .fadeOut(withDuration: 0.5), .removeFromParent()]))
@@ -551,7 +552,7 @@ final class DeviceNameScene: BaseLevelScene, SKPhysicsContactDelegate {
     }
 
     private func setupBit() {
-        spawnPoint = CGPoint(x: courseX(45), y: 200)
+        spawnPoint = CGPoint(x: courseX(45), y: 200 + courseY)
         bit = BitCharacter.make()
         bit.position = spawnPoint
         addChild(bit)

@@ -125,7 +125,7 @@ final class TimeOfDayScene: BaseLevelScene, SKPhysicsContactDelegate {
     }
 
     private func buildLevel() {
-        let groundY: CGFloat = 160
+        let groundY: CGFloat = 160 + courseOriginY(courseScale: courseScale)
 
         // Fits a 390-pt logical course and is centered on wider devices. The
         // P1->P2 span is the *forced* gap: with wide landing pads its
@@ -174,7 +174,7 @@ final class TimeOfDayScene: BaseLevelScene, SKPhysicsContactDelegate {
     }
 
     private func createEnemies() {
-        let groundY: CGFloat = 160
+        let groundY: CGFloat = 160 + courseOriginY(courseScale: courseScale)
 
         // Enemy patrol data is authored in LOGICAL course space (x and range)
         // and converted at placement via courseX()/courseLen(), so spikes stay
@@ -383,7 +383,7 @@ final class TimeOfDayScene: BaseLevelScene, SKPhysicsContactDelegate {
     }
 
     private func setupBit() {
-        spawnPoint = CGPoint(x: courseX(50), y: 200)
+        spawnPoint = CGPoint(x: courseX(50), y: 200 + courseOriginY(courseScale: courseScale))
         bit = BitCharacter.make()
         bit.position = spawnPoint
         addChild(bit)

@@ -101,7 +101,7 @@ final class BatteryPercentScene: BaseLevelScene, SKPhysicsContactDelegate {
     }
 
     private func buildLevel() {
-        let groundY: CGFloat = 160
+        let groundY: CGFloat = 160 + courseOriginY()
 
         // Start platform
         createPlatform(at: CGPoint(x: 60, y: groundY), size: CGSize(width: 100, height: 30))
@@ -335,7 +335,7 @@ final class BatteryPercentScene: BaseLevelScene, SKPhysicsContactDelegate {
     }
 
     private func setupBit() {
-        spawnPoint = CGPoint(x: 60, y: 200)
+        spawnPoint = CGPoint(x: 60, y: 200 + courseOriginY())
         bit = BitCharacter.make()
         bit.position = spawnPoint
         addChild(bit)

@@ -22,6 +22,7 @@ final class ShakeUndoScene: BaseLevelScene, SKPhysicsContactDelegate {
     // full-bleed at scale 0.907 (same shape as the previous fixed layout).
     private var courseScale: CGFloat { min(1.0, size.width / designSize.width) }
     private var courseOriginX: CGFloat { (size.width - designSize.width * courseScale) / 2 }
+    private var courseY: CGFloat { courseOriginY(courseScale: courseScale) }
     /// Map a logical x (0...designSize.width) into centered course space.
     private func courseX(_ logicalX: CGFloat) -> CGFloat { courseOriginX + logicalX * courseScale }
     /// Scale a logical length (platform width, etc.) into course space.
@@ -155,7 +156,7 @@ final class ShakeUndoScene: BaseLevelScene, SKPhysicsContactDelegate {
     }
 
     private func buildLevel() {
-        let groundY: CGFloat = 160
+        let groundY: CGFloat = 160 + courseY
 
         // Gameplay geometry is authored in the fixed 430-pt logical course (X via
         // courseX, widths via courseLen) so spacing/gaps stay device-independent;
@@ -196,7 +197,7 @@ final class ShakeUndoScene: BaseLevelScene, SKPhysicsContactDelegate {
         // "CAN'T DO THIS?" fallback). Wider than the final platform (90 vs 70 logical)
         // so a collapsing player always lands on it, but kept inside the course so it
         // doesn't overhang the screen edge on the narrowest (390-pt) device.
-        _ = createPlatform(at: CGPoint(x: courseX(designSize.width - 45), y: 40), size: CGSize(width: courseLen(90), height: 24))
+        _ = createPlatform(at: CGPoint(x: courseX(designSize.width - 45), y: 40 + courseY), size: CGSize(width: courseLen(90), height: 24))
 
         // Death zone — stays full-width so it always catches falls regardless of
         // course centering (decorative-scope geometry, intentionally not course-mapped).
@@ -355,7 +356,7 @@ final class ShakeUndoScene: BaseLevelScene, SKPhysicsContactDelegate {
     }
 
     private func setupBit() {
-        spawnPoint = CGPoint(x: courseX(45), y: 200)
+        spawnPoint = CGPoint(x: courseX(45), y: 200 + courseY)
         bit = BitCharacter.make()
         bit.position = spawnPoint
         addChild(bit)
@@ -697,7 +698,7 @@ final class ShakeUndoScene: BaseLevelScene, SKPhysicsContactDelegate {
 
         // Move platform
         platformPhase += CGFloat(deltaTime)
-        let baseY: CGFloat = 240
+        let baseY: CGFloat = 240 + courseY
         movingPlatform.position.y = baseY + sin(platformPhase * 2) * 40
     }
 
@@ -765,7 +766,7 @@ final class ShakeUndoScene: BaseLevelScene, SKPhysicsContactDelegate {
         removeAction(forKey: "trapFuse")
         finalPlatform.removeAllActions()
         finalPlatformSurface?.removeAction(forKey: "rot")
-        finalPlatform.position = CGPoint(x: courseX(designSize.width - 45), y: 160)
+        finalPlatform.position = CGPoint(x: courseX(designSize.width - 45), y: 160 + courseY)
         finalPlatform.alpha = 1.0
         finalPlatformSurface?.alpha = 1.0
         finalPlatformSurface?.xScale = 1.0

@@ -62,7 +62,8 @@ final class VoiceOverScene: BaseLevelScene, SKPhysicsContactDelegate {
 
     private var stones: [Stone] = []
 
-    private let groundY: CGFloat = 160
+    private var courseY: CGFloat { courseOriginY() }
+    private var groundY: CGFloat { 160 + courseY }
     private let stoneSize = CGSize(width: 40, height: 22)
 
     // MARK: VoiceOver state
@@ -477,7 +478,7 @@ final class VoiceOverScene: BaseLevelScene, SKPhysicsContactDelegate {
     }
 
     private func setupBit() {
-        spawnPoint = CGPoint(x: 58, y: 200)
+        spawnPoint = CGPoint(x: 58, y: groundY + 40)
         bit = BitCharacter.make()
         bit.position = spawnPoint
         addChild(bit)
@@ -607,7 +608,7 @@ final class VoiceOverScene: BaseLevelScene, SKPhysicsContactDelegate {
         hint.fontSize = 9
         hint.fontColor = strokeColor
         hint.alpha = 0.6
-        hint.position = CGPoint(x: size.width / 2, y: 116)
+        hint.position = CGPoint(x: size.width / 2, y: groundY - 44)
         hint.zPosition = 200
         addChild(hint)
         hint.run(.sequence([.wait(forDuration: 5), .fadeOut(withDuration: 1), .removeFromParent()]))
@@ -700,7 +701,7 @@ final class VoiceOverScene: BaseLevelScene, SKPhysicsContactDelegate {
                 hint.fontSize = 9
                 hint.fontColor = strokeColor
                 hint.alpha = 0.6
-                hint.position = CGPoint(x: size.width / 2, y: 116)
+                hint.position = CGPoint(x: size.width / 2, y: groundY - 44)
                 hint.zPosition = 200
                 addChild(hint)
                 hint.run(.sequence([.wait(forDuration: 5), .fadeOut(withDuration: 1), .removeFromParent()]))

@@ -19,7 +19,9 @@ macbook-pro (Claude + Codex):
   lane: L7, L8, L9, L10 (DONE, merged) + iPad-vertical-void pass (NEW, all
     in-scope flat Level*.swift scene files per MBP-TASK-ipad-vertical-void.md).
   branch: fix/ipad-vertical-void off origin/main.
-  files: any in-scope Level*.swift scene file (Mini has released all of them).
+  files:
+    Glitched/Scenes/BaseLevelScene.swift     # shared iPad vertical-centering helper
+    any in-scope Level*.swift scene file (Mini has released all of them).
 
 RESERVED — single serialized pass, one agent only:
   Glitched/App/GameRootView.swift            # fallback overlay buttons

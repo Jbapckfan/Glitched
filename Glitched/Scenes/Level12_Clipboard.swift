@@ -90,7 +90,7 @@ final class ClipboardScene: BaseLevelScene, SKPhysicsContactDelegate {
     }
 
     private func buildLevel() {
-        let groundY: CGFloat = 160
+        let groundY: CGFloat = 160 + courseOriginY(courseScale: courseScale)
 
         // Authored in a 390-pt logical course and centered on iPad. The old
         // mixed layout pinned the middle platform to size.width/2 and the exit
@@ -163,7 +163,7 @@ final class ClipboardScene: BaseLevelScene, SKPhysicsContactDelegate {
 
     private func createTerminal() {
         terminal = SKNode()
-        terminal.position = CGPoint(x: size.width / 2 - 50, y: 260)
+        terminal.position = CGPoint(x: size.width / 2 - 50, y: 260 + courseOriginY(courseScale: courseScale))
         terminal.zPosition = 50
         addChild(terminal)
 
@@ -318,7 +318,7 @@ final class ClipboardScene: BaseLevelScene, SKPhysicsContactDelegate {
     }
 
     private func setupBit() {
-        spawnPoint = CGPoint(x: courseX(80), y: 200)
+        spawnPoint = CGPoint(x: courseX(80), y: 200 + courseOriginY(courseScale: courseScale))
         bit = BitCharacter.make()
         bit.position = spawnPoint
         addChild(bit)

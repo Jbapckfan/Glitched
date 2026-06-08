@@ -251,7 +251,7 @@ final class NotificationScene: BaseLevelScene, SKPhysicsContactDelegate {
     // MARK: - Level Building
 
     private func buildLevel() {
-        let groundY: CGFloat = 160
+        let groundY: CGFloat = 160 + courseOriginY(courseScale: courseScale)
 
         // Layout fits a 390-pt logical course and is centered on wider devices.
         // Locked doors block forward travel until the notification event unlocks
@@ -441,7 +441,7 @@ final class NotificationScene: BaseLevelScene, SKPhysicsContactDelegate {
     // MARK: - Setup
 
     private func setupBit() {
-        spawnPoint = CGPoint(x: courseX(50), y: 200)
+        spawnPoint = CGPoint(x: courseX(50), y: 200 + courseOriginY(courseScale: courseScale))
         bit = BitCharacter.make()
         bit.position = spawnPoint
         addChild(bit)

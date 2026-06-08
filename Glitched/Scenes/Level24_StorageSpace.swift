@@ -42,7 +42,7 @@ final class StorageSpaceScene: BaseLevelScene, SKPhysicsContactDelegate {
     private var spawnPoint: CGPoint = .zero
 
     // Logical floor / surface (platform top sits at groundY + halfHeight=15 → 175).
-    private let groundY: CGFloat = 160
+    private var groundY: CGFloat { 160 + courseOriginY(courseScale: courseScale) }
     private var surfaceY: CGFloat { groundY + 15 }
 
     // Junk mass (the wall that blocks the exit). Built as several stacked
@@ -553,7 +553,7 @@ final class StorageSpaceScene: BaseLevelScene, SKPhysicsContactDelegate {
     }
 
     private func setupBit() {
-        spawnPoint = CGPoint(x: courseX(70), y: 220)
+        spawnPoint = CGPoint(x: courseX(70), y: groundY + 60)
         bit = BitCharacter.make()
         bit.position = spawnPoint
         addChild(bit)
