@@ -4,16 +4,28 @@
 # RULE: shared files are RESERVED for a single serialized pass, done LAST.
 
 mac-mini (Claude Opus):
-  scope: LEVEL-INTERNAL fixes + audio/compliance systems.
-  lane: CLEAR — no level scene files currently claimed.
-  DONE (all pushed to main): L3, L13, L15, L16, L19, L20, L21, L23, L24,
-    L25, L26, L29, L30, L33 fixes; centered-course pass; discovery-first
-    clue pass; camera+DiskSpace compliance; audio-death P0.
-  next (NOT level-scene files — no collision with MBP iPad-void pass):
-    Glitched/DeviceIntegration/VoiceCommandManager.swift  # record-session setup (L21 device input)
-  => All Level*.swift scene files are RELEASED by mac-mini. MBP may take
-     the full flat-level iPad-void set, INCLUDING L22/L25/L26/L29/L33/L30
-     (those are merged/done — the earlier "in progress" label was stale).
+  scope: NATIVE-IPAD REDESIGN — Phase 0 shared helper + POC reference levels.
+  PHASE 0 (DONE, pushed): BaseLevelScene native-iPad helpers — playableGroundY,
+    playableCanvasWidth, installCameraFollow(worldWidth:playerController:) +
+    per-frame camera tick, jump-reach constants (maxJumpableGap=130 /
+    maxJumpableRise=85). Mini OWNS BaseLevelScene.swift for this redesign pass.
+  POC (Mini, IN PROGRESS): redesign 3 reference levels to native-iPad —
+    L3 (courseX-flat), L18 (camera-convert), L22 (raw vertical-fill).
+    >>> MBP: HOLD the full fan-out until the operator approves these 3 <<<
+  prior work DONE+merged: all earlier level fixes, centered-course pass,
+    discovery-first clue pass, camera+DiskSpace compliance, audio-death P0,
+    L21 VoiceCommandManager record-session.
+
+NATIVE-IPAD REDESIGN — lane split (after POC approval; per roadmap w9w2c563y):
+  Design rule: add MORE content at SAME absolute spacing (gaps<=130, rise<=85);
+    raise floor via playableGroundY; installCameraFollow when course > screen.
+    NEVER scale geometry. Verify each level: build + iPad & iPhone screenshot.
+  mbp lane (L0-10): L0,L1,L2,L3,L4,L5,L6,L8,L10  (L3 POC by Mini; MBP takes rest)
+  mac-mini lane (L11+): L11,L12,L13,L14,L15,L16,L17,L19,L20,L21,L23,L24,L25,
+    L26,L27,L28,L32,L33  (L18,L22 POC by Mini)
+  either (camera levels): L7,L9,L29,L30,L31  (L9 heaviest: de-scale stretch first)
+  TRAP levels (fixed-jump-reach — translate only, never widen): L13,L15,L21,L9,
+    L12,L28,L23. Reuse clearGroundedIfStandingOn on any new toggled tier.
 
 macbook-pro (Claude + Codex):
   lane: L7, L8, L9, L10 (DONE, merged) + iPad-vertical-void pass (NEW, all

@@ -41,6 +41,72 @@ class BaseLevelScene: SKScene {
         return max(0, targetBottom - bandBottom)
     }
 
+    // MARK: - Native-iPad Layout System (Phase 0 shared helper)
+    //
+    // The iPad-native redesign authors MORE content at the SAME absolute spacing
+    // (never scaled geometry — Bit's physics are device-independent). These shared
+    // helpers give every level one source of truth for the jump-reach budget, a
+    // device-derived ground baseline (vertical fill), and a canonical
+    // horizontal camera-follow (when an extended course outgrows the viewport).
+    //
+    // DESIGN RULE for level authors: extend with more platforms at <= maxJumpableGap
+    // horizontal / <= maxJumpableRise vertical; raise the floor to playableGroundY;
+    // call installCameraFollow(worldWidth:) when the course is wider than the screen.
+    // Scaling X or widening any gap past these constants is a bug.
+
+    /// Bit's empirically-verified jump reach (device-INDEPENDENT — jumpImpulse=470,
+    /// cap=620, gravity dy=-14). Every authored gap/rise must stay within these.
+    /// `safe` values carry margin for imperfect timing; `max` are the hard ceiling.
+    static let maxJumpableRise: CGFloat = 85        // safe top-to-top vertical (apex ~91)
+    static let absoluteMaxRise: CGFloat = 91
+    static let maxJumpableGap: CGFloat = 130        // safe edge-to-edge horizontal
+    static let absoluteMaxGap: CGFloat = 145
+
+    /// Ground baseline that fills tall canvases instead of pinning gameplay to the
+    /// very bottom. On iPhone-class canvases returns the level's existing low ground
+    /// (so phone layout is unchanged); on iPad it lifts the floor toward lower-third
+    /// so a redesigned course + its added upper tiers fill the screen. Levels pass
+    /// the iPhone ground value they currently hard-code (e.g. 160) and use the
+    /// returned value as their ground origin; all gameplay Y stays ground-relative.
+    func playableGroundY(iphoneGround: CGFloat) -> CGFloat {
+        guard size.height > 1000 else { return iphoneGround }   // iPhone-class: unchanged
+        // Lift the floor to ~22% up the screen so the band + an upper tier fill iPad.
+        return max(iphoneGround, bottomSafeY + size.height * 0.22)
+    }
+
+    /// Logical width available to lay out a single-screen (non-scrolling) course.
+    /// On iPad this is the real screen width, so courses author to the edges instead
+    /// of clamping to a centered ~430pt iPhone strip. Levels wider than this should
+    /// scroll via installCameraFollow(worldWidth:).
+    var playableCanvasWidth: CGFloat { size.width }
+
+    // Camera-follow state (set by installCameraFollow; ticked in update()).
+    private(set) var cameraFollowWorldWidth: CGFloat?
+
+    /// Promote a level to horizontal camera-follow once its course is wider than the
+    /// viewport. Sets the player-controller world bound and registers a per-frame
+    /// X-clamp identical to the canonical Level29/Level31 updateCamera. Pass the
+    /// full course width; pass the level's player controller so its movement clamp
+    /// matches. Call once after the course + player are built. Camera Y stays at
+    /// scene center (vertical fill is handled by playableGroundY, not the camera).
+    func installCameraFollow(worldWidth: CGFloat, playerController: PlayerController) {
+        cameraFollowWorldWidth = worldWidth
+        playerController.worldWidth = worldWidth
+        updateCameraFollow(immediate: true)
+    }
+
+    /// Per-frame camera tick. Lerps the camera X toward the player, clamped so it
+    /// never shows past either end of the course. No-op unless camera-follow is on.
+    func updateCameraFollow(immediate: Bool = false) {
+        guard let worldWidth = cameraFollowWorldWidth,
+              let camera = gameCamera,
+              let player = playerNode else { return }
+        let half = size.width / 2
+        let playerX = player.parent?.convert(player.position, to: self).x ?? player.position.x
+        let targetX = max(half, min(playerX, worldWidth - half))
+        camera.position.x = immediate ? targetX : camera.position.x + (targetX - camera.position.x) * 0.1
+    }
+
     private var effectiveTopSafeInset: CGFloat {
         max(safeAreaInsets.top, hardwareCutoutFallbackInsets.top)
     }
@@ -615,6 +681,12 @@ class BaseLevelScene: SKScene {
         }
 
         updatePlaying(deltaTime: clampedDt)
+
+        // Tick the shared horizontal camera-follow (no-op unless the level called
+        // installCameraFollow). After updatePlaying so it tracks the player's
+        // latest position this frame. Levels with a bespoke updateCamera (L29/L31)
+        // don't set cameraFollowWorldWidth, so this stays inert for them.
+        updateCameraFollow()
     }
 
     /// FIX #13: Call this whenever the player makes meaningful progress
