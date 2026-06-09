@@ -564,13 +564,22 @@ final class FaceIDScene: BaseLevelScene, SKPhysicsContactDelegate {
 
     private func setupBit() {
         // Spawn (and the death-respawn point, which reuses spawnPoint) lifts with
-        // the band by the same amount as every platform/door/exit.
-        spawnPoint = CGPoint(x: courseX(80), y: 200 + gameplayLift)
+        // the band by the same amount as every platform/door/exit. The composed iPad
+        // path authors absolute coordinates and records its own teach-beat footing in
+        // spawnAnchor; the iPhone path uses the logical courseX system.
+        spawnPoint = isWideCanvas ? spawnAnchor : CGPoint(x: courseX(80), y: 200 + gameplayLift)
         bit = BitCharacter.make()
         bit.position = spawnPoint
         addChild(bit)
         registerPlayer(bit)
         playerController = PlayerController(character: bit, scene: self)
+        // iPad composed course (courseExtent ~2330) is far wider than the viewport, so
+        // the follow-camera + player movement clamp must extend to the full extent or
+        // Bit cannot walk past the first screen and the exit is unreachable (sibling
+        // levels install this; its absence made the iPad level uncompletable).
+        if isWideCanvas && courseExtent > size.width {
+            installCameraFollow(worldWidth: courseExtent, playerController: playerController)
+        }
     }
 
     private func triggerFaceIDPrompt() {
