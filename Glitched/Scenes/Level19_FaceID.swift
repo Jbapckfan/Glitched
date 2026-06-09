@@ -70,9 +70,11 @@ final class FaceIDScene: BaseLevelScene, SKPhysicsContactDelegate {
     private var vaultDoorAnchor: CGPoint = .zero       // door1 visual/scan center (y=door top)
     private var vaultBlockerAnchor: CGPoint = .zero    // door1 physics blocker center
     private var vaultFrameWidth: CGFloat = 80          // door1 frame + blocker width
+    private var vaultBlockerHeight: CGFloat = 100      // door1 physics blocker height (phone: 100)
     private var faceFrameWidth: CGFloat = 50           // door1 inner face frame width
     private var secondDoorAnchor: CGPoint = .zero      // door2 visual + blocker center
     private var secondDoorWidth: CGFloat = 60          // door2 frame + blocker width
+    private var secondDoorBlockerHeight: CGFloat = 100 // door2 physics blocker height (phone: 100)
     private var exitDoorAnchor: CGPoint = .zero        // exit door center
     private var exitDoorWidth: CGFloat = 40            // exit body width
     private var spawnAnchor: CGPoint = .zero           // Bit spawn / respawn
@@ -262,12 +264,15 @@ final class FaceIDScene: BaseLevelScene, SKPhysicsContactDelegate {
         gameplayLift = 0
 
         let iphoneGround: CGFloat = 160      // the level's hard-coded iPhone ground
-        let tierCount = 12                   // 12 tiers: T0 floor .. T11 near ceiling.
-                                             // On an 11" iPad the band/(tierCount-1)
-                                             // step is < maxJumpableRise so T11 lands
-                                             // right at the ceiling (full fill); on the
-                                             // 12.9" the step clamps to 85 and T11 still
-                                             // climbs deep into the upper band.
+        // Tier budget DERIVED from the device band (was a hard-coded 12). The shared
+        // helper returns ceil(bandHeight / maxJumpableRise) + 1 (capped at 16), the
+        // count at which verticalTier's clamped per-tier step actually carries the top
+        // tier up to playableCeilingY. A hard-coded 12 reached the ceiling on an 11"
+        // iPad but stranded ~147pt of dead sky on the 12.9" (its taller band needs 14
+        // tiers); deriving the count fills the full height on every iPad while every
+        // single-tier step stays <= maxJumpableRise.
+        let tierCount = fillTierCount(iphoneGround: iphoneGround)
+        let topTier = tierCount - 1          // the finale always lands on the top tier
         func tier(_ i: Int) -> CGFloat { verticalTier(i, of: tierCount, iphoneGround: iphoneGround) }
 
         let platH: CGFloat = 30
@@ -286,16 +291,22 @@ final class FaceIDScene: BaseLevelScene, SKPhysicsContactDelegate {
         let scanLandingX: CGFloat = 745
         createPlatform(at: CGPoint(x: scanLandingX, y: tier(3)), size: CGSize(width: 130, height: platH)) // SCAN landing (gap 15)
 
-        // DOOR 1 — first Face-ID gate, staged at the TOP of the staircase. Its blocker
-        // is an un-jumpable WALL across the path between the SCAN landing (T3) and the
-        // rest platform; step 1 clears it. Visual/scan frame center sits +20 above the
-        // blocker and the blocker bottom rests on the T3 platform (both offsets match
-        // the phone: door visual y=230, blocker y=210, ground=160 -> +70 / +50).
+        // DOOR 1 — first Face-ID gate, staged at the TOP of the staircase, ON the
+        // route between the SCAN landing (T3) and the rest platform. createVaultDoor()
+        // reads these anchors (previously it hard-coded courseX(275)/y=230, which on
+        // iPad landed the gate at x~572 OFF the climb so it blocked nothing and the
+        // first biometric gate was bypassed). The blocker is an un-jumpable WALL: its
+        // height (vaultBlockerHeight = 150, center tier(3)+50) puts its top at
+        // tier(3)+125 = 110pt above the T3 platform top (tier(3)+15) — clear of Bit's
+        // ~91 apex by the ~16pt project margin (Level8 standard), so the gate cannot be
+        // hopped over and step 1 is genuinely required to pass. The +70 visual / +50
+        // blocker offsets match the phone (door y=230, blocker y=210, ground=160).
         let door1x: CGFloat = 870
         vaultBlockerAnchor = CGPoint(x: door1x, y: tier(3) + 50)
         vaultDoorAnchor = CGPoint(x: door1x, y: tier(3) + 70)
         vaultFrameWidth = 80
         faceFrameWidth = 50
+        vaultBlockerHeight = 150             // taller than phone's 100 so it's un-jumpable on the route
 
         // ---- BEAT 3: REST / breath (wide safe pause just past door1, SAME tier) ----
         // Same tier as the SCAN landing -> no rise, a true breath. Wide.
@@ -305,47 +316,65 @@ final class FaceIDScene: BaseLevelScene, SKPhysicsContactDelegate {
         createPlatform(at: CGPoint(x: 1230, y: tier(4)), size: CGSize(width: 70, height: platH))    // gap 75, rise 1 tier (narrow)
 
         // ---- BEAT 5: ASCENT — varied left-to-right climb toward the ceiling ----
-        createPlatform(at: CGPoint(x: 1360, y: tier(5)), size: CGSize(width: 110, height: platH))   // gap 40
-        createPlatform(at: CGPoint(x: 1490, y: tier(6)), size: CGSize(width: 100, height: platH))   // gap 25
-        createPlatform(at: CGPoint(x: 1615, y: tier(7)), size: CGSize(width: 115, height: platH))   // gap 17.5
-        createPlatform(at: CGPoint(x: 1740, y: tier(8)), size: CGSize(width: 105, height: platH))   // gap 15
-        createPlatform(at: CGPoint(x: 1865, y: tier(9)), size: CGSize(width: 110, height: platH))   // gap 17.5
-        createPlatform(at: CGPoint(x: 1990, y: tier(10)), size: CGSize(width: 120, height: platH))  // gap 10
+        // One platform per tier from T5 up to the tier just below the finale (topTier-1),
+        // so the climb FILLS whatever height the device band provides (more tiers on a
+        // 12.9", fewer on a shorter canvas) instead of stopping at a fixed T10. Each
+        // step rises exactly one tier (<= maxJumpableRise) and advances +125 in x
+        // (edge-to-edge gap <= 90, well inside the 130 budget). Widths cycle for rhythm.
+        let ascentWidths: [CGFloat] = [110, 100, 115, 105, 110, 120]
+        let ascentStartX: CGFloat = 1360
+        let ascentStepX: CGFloat = 125
+        var lastAscentX: CGFloat = 1230      // falls back to the RISK ledge if no ascent tiers
+        var ascentIndex = 0
+        if topTier - 1 >= 5 {
+            for t in 5...(topTier - 1) {
+                let w = ascentWidths[ascentIndex % ascentWidths.count]
+                let x = ascentStartX + CGFloat(ascentIndex) * ascentStepX
+                createPlatform(at: CGPoint(x: x, y: tier(t)), size: CGSize(width: w, height: platH))
+                lastAscentX = x
+                ascentIndex += 1
+            }
+        }
 
         // ---- BEAT 6: ISOLATED FINALE near the ceiling — door2 guards the exit ----
         // The second sequential biometric gate + the exit sit on one wide finale
-        // platform at the TOP tier (T11). The exit body is placed BEHIND door2's
+        // platform at the TOP tier (topTier). The exit body is placed BEHIND door2's
         // blocker so it cannot be reached until the second scan (step 2) clears
         // secondDoorBlocker — the load-bearing trap, translated rigidly from the phone.
+        // The finale floats relative to the last ascent platform (+150 in x) so it
+        // always lands one jumpable step past the climb regardless of how many ascent
+        // tiers the device produced.
         //
-        // Trap math (absolute pt, Bit half-width ~11):
-        //   finale platform: center 2140, width 190 -> spans [2045, 2235] (solid
-        //                    ground under both blocker and exit once door2 opens).
-        //   door2 blocker:   center 2120, width 60  -> spans [2090, 2150].
-        //   exit body:       center 2175, width 40  -> spans [2155, 2195].
-        //   While door2 closed, Bit is stopped at the blocker's LEFT edge (2090); its
-        //   right edge reaches only ~2101 — still 54pt left of the exit's left edge
-        //   (2155). Unreachable until secondDoorBlocker is cleared at step 2. The 55pt
-        //   blocker-center-to-exit-center offset is WIDER than the phone's (20pt) so the
-        //   trap is strictly stronger, never weaker — and door2 is an un-jumpable WALL,
-        //   not a gap, so nothing is widened past a jumpable threshold.
-        let finaleTierY = tier(11)
-        let finalePlatCenter: CGFloat = 2140
-        createPlatform(at: CGPoint(x: finalePlatCenter, y: finaleTierY), size: CGSize(width: 190, height: platH)) // gap from T10: overlap
+        // Trap math (absolute pt, Bit half-width ~11), with finaleCx = lastAscentX+150:
+        //   finale platform: center finaleCx,     width 190 -> solid ground under both
+        //                    the blocker and the exit once door2 opens.
+        //   door2 blocker:   center finaleCx - 20, width 60  (un-jumpable WALL).
+        //   exit body:       center finaleCx + 35, width 40.
+        //   While door2 closed, Bit is stopped at the blocker's LEFT edge (finaleCx-50);
+        //   its right edge reaches only ~finaleCx-39 — still 54pt left of the exit's
+        //   left edge (finaleCx+15). Unreachable until secondDoorBlocker clears at step
+        //   2. The 55pt blocker-center-to-exit-center offset is WIDER than the phone's
+        //   (20pt) so the trap is strictly stronger, never weaker. door2's blocker is
+        //   also taller (secondDoorBlockerHeight = 120, center finaleTierY+70 -> top
+        //   finaleTierY+130 = 115pt above the finale platform top) so it cannot be
+        //   hopped over onto the exit side to skip the second gate.
+        let finaleTierY = tier(topTier)
+        let finaleCx = lastAscentX + 150
+        createPlatform(at: CGPoint(x: finaleCx, y: finaleTierY), size: CGSize(width: 190, height: platH))
 
-        let door2x: CGFloat = 2120
-        secondDoorAnchor = CGPoint(x: door2x, y: finaleTierY + 70)   // door2 visual + blocker center
+        secondDoorAnchor = CGPoint(x: finaleCx - 20, y: finaleTierY + 70)   // door2 visual + blocker center
         secondDoorWidth = 60
+        secondDoorBlockerHeight = 120        // taller than phone's 100 so it's un-jumpable on the route
         createSecondDoor(at: secondDoorAnchor)
 
-        exitDoorAnchor = CGPoint(x: 2175, y: finaleTierY + 50)
+        exitDoorAnchor = CGPoint(x: finaleCx + 35, y: finaleTierY + 50)
         exitDoorWidth = 40
         createExitDoor(at: exitDoorAnchor)
 
         // Course outgrows the screen -> scroll horizontally. Extent covers the full
         // authored width with a margin past the exit. Camera Y stays centered so the
         // full vertical climb is always visible.
-        courseExtent = 2330
+        courseExtent = finaleCx + 190
         deathZoneCenterX = courseExtent / 2
         deathZoneWidth = courseExtent * 2
 
@@ -395,10 +424,13 @@ final class FaceIDScene: BaseLevelScene, SKPhysicsContactDelegate {
         secondDoor!.addChild(lockLabel2)
 
         // Physics blocker for second door — the un-jumpable WALL that hides the exit
-        // until the second scan. Width matches the frame (secondDoorWidth).
+        // until the second scan. Width matches the frame (secondDoorWidth). Height is
+        // secondDoorBlockerHeight (phone: 100, byte-identical; iPad composed route:
+        // taller so its top clears Bit's jump apex with margin and the player cannot
+        // hop over door2 onto the exit side and skip the second biometric gate).
         secondDoorBlocker = SKNode()
         secondDoorBlocker!.position = position
-        secondDoorBlocker!.physicsBody = SKPhysicsBody(rectangleOf: CGSize(width: secondDoorWidth, height: 100))
+        secondDoorBlocker!.physicsBody = SKPhysicsBody(rectangleOf: CGSize(width: secondDoorWidth, height: secondDoorBlockerHeight))
         secondDoorBlocker!.physicsBody?.isDynamic = false
         secondDoorBlocker!.physicsBody?.categoryBitMask = PhysicsCategory.ground
         addChild(secondDoorBlocker!)
@@ -422,13 +454,20 @@ final class FaceIDScene: BaseLevelScene, SKPhysicsContactDelegate {
     }
 
     private func createVaultDoor() {
+        // Door1 visual/scan center comes from vaultDoorAnchor, resolved per device by
+        // buildPhoneLevel() (the original courseX(275)/230+lift) or
+        // buildComposedIPadLevel() (the on-route SCAN landing at the top of the
+        // staircase). Reading the anchor — instead of re-hardcoding courseX(275) —
+        // is what puts the first Face-ID gate ON the iPad climb route; phone output
+        // is byte-identical because buildPhoneLevel sets the anchor to the exact
+        // original value.
         vaultDoor = SKNode()
-        vaultDoor.position = CGPoint(x: courseX(275), y: 230 + gameplayLift)
+        vaultDoor.position = vaultDoorAnchor
         vaultDoor.zPosition = 50
         addChild(vaultDoor)
 
         // Vault frame
-        let frame = SKShapeNode(rectOf: CGSize(width: courseLen(80), height: 120), cornerRadius: 5)
+        let frame = SKShapeNode(rectOf: CGSize(width: vaultFrameWidth, height: 120), cornerRadius: 5)
         frame.fillColor = fillColor
         frame.strokeColor = strokeColor
         frame.lineWidth = lineWidth * 1.5
@@ -482,10 +521,16 @@ final class FaceIDScene: BaseLevelScene, SKPhysicsContactDelegate {
         statusLabel.position = CGPoint(x: 0, y: -50)
         vaultDoor.addChild(statusLabel)
 
-        // Door blocker physics (logical x 275, logical width 80 -> course space)
+        // Door1 blocker physics — the un-jumpable WALL the first scan (step 1) clears.
+        // Center/width/height come from vaultBlockerAnchor / vaultFrameWidth /
+        // vaultBlockerHeight (phone: courseX(275)/210+lift, courseLen(80), 100 — the
+        // exact original; iPad composed route: on the climb at the SCAN landing, with
+        // a taller blocker so its top clears Bit's jump apex with margin and the gate
+        // cannot be hopped over). On phone these equal the originals so output is
+        // byte-identical.
         doorBlocker = SKNode()
-        doorBlocker?.position = CGPoint(x: courseX(275), y: 210 + gameplayLift)
-        doorBlocker?.physicsBody = SKPhysicsBody(rectangleOf: CGSize(width: courseLen(80), height: 100))
+        doorBlocker?.position = vaultBlockerAnchor
+        doorBlocker?.physicsBody = SKPhysicsBody(rectangleOf: CGSize(width: vaultFrameWidth, height: vaultBlockerHeight))
         doorBlocker?.physicsBody?.isDynamic = false
         doorBlocker?.physicsBody?.categoryBitMask = PhysicsCategory.ground
         addChild(doorBlocker!)

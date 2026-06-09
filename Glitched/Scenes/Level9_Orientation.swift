@@ -57,24 +57,31 @@ final class OrientationScene: BaseLevelScene, SKPhysicsContactDelegate {
     private let designHeight: CGFloat = 420
     private var portraitFitScale: CGFloat = 1.0
 
-    // MARK: - Native-iPad vertical-fill composition
+    // MARK: - Native-iPad framing (FLAT crusher-chase, NOT a climb)
     //
-    // PROBLEM this fixes: the shipping fill strategy is uniform SCALE-TO-FIT
-    // (`portraitFitScale = min(w/designW, h/designH)`), which blows the whole
-    // 800x420 playfield UP on iPad AND leaves the single flat floor+corridor
-    // sitting in a low band with the TOP HALF of a tall iPad empty. This level
-    // was "horizontally full, vertically one lane."
+    // SOLUTION-DRIFT REVERT (operator: the iPad must SOLVE the SAME way as iPhone).
+    // The iPhone layout (buildPhoneLevel) is a FLAT single-floor crusher level:
+    // spawn, the crusher creeps horizontally, reach the narrow corridor, ROTATE to
+    // landscape (disarms the crusher AND widens the corridor 18->100pt), then walk
+    // through to the exit — NO jumping. An earlier iPad pass WRONGLY turned this
+    // into an 11+ tier vertical zig-zag CLIMB, which is a different solution.
     //
-    // THE FIX (iPad only, gated behind isWideCanvas): de-scale the base to 1.0
-    // (absolute, device-independent geometry — never scale Bit-relative spacing),
-    // pin the floor NEAR THE BOTTOM via playableGroundY, and build a true
-    // top-to-bottom CLIMB of jumpable tiers (verticalTier) up to a HIGH staged
-    // finale corridor + exit near the ceiling — like L30. The crusher still
-    // chases on the floor; rotating to landscape still both disarms it AND opens
-    // the corridor (the mechanic is byte-for-byte the same gate, only relocated
-    // to the top of the climb). "Up is opinion" is now tested VERTICALLY: the
-    // route is reachable only by climbing, and the finale only PASSES after a
-    // rotate. Phone path is byte-identical (all iPad work is gated).
+    // THE FIX (iPad only, gated behind isWideCanvas): lay out the SAME FLAT
+    // crusher-chase as iPhone — same spawn, same horizontally-creeping crusher,
+    // same narrow corridor that widens on rotate, same walk-to-exit, NO required
+    // jumps/climb — but USE the iPad framing helpers so it FILLS the iPad screen
+    // edge-to-edge instead of a centered iPhone strip:
+    //   * baseFitScale = 1.0   — de-scaled, absolute geometry (no scale-to-fit island)
+    //   * floor pinned NEAR THE BOTTOM via the cached playableGroundY (ipadWorldOriginY)
+    //   * a WIDER floor (ipadFloorWidth) centered at ipadFloorCenterLocalX
+    //   * camera-follow on X across the wide floor as Bit walks spawn -> exit
+    //   * a wider backdrop (grid/ceiling) that fills the visible band
+    // The corridor + exit keep the SAME flat local geometry as iPhone (corridor
+    // mouth at local 50, exit at local 450, both at the floor-level y = -60), so
+    // the SOLUTION is identical: walk right, rotate to widen the corridor, walk
+    // through to the door. The rotate mechanic, crusher, corridor-widen-on-rotate,
+    // death zone, and spawn/exit reachability are all preserved. Phone path is
+    // byte-identical (all iPad work is gated behind isWideCanvas).
     //
     // GATE is orientation-INVARIANT on purpose. This level FORCES landscape and
     // re-runs didChangeSize on every rotation, so a height-based gate would flip
@@ -83,52 +90,40 @@ final class OrientationScene: BaseLevelScene, SKPhysicsContactDelegate {
     // ONCE and never flips during a rotation.
     private var isWideCanvas: Bool { min(size.width, size.height) >= 700 }
 
-    // iPhone keeps scale-to-fit (byte-identical). iPad pins the base to 1.0 so
-    // geometry renders at absolute size and the tier helpers' scene-space Y maps
-    // 1:1 into worldNode-local Y (see ipadLocalY). The landscape mechanic still
-    // multiplies this base on X to widen the corridor; Y stays absolute on iPad so
-    // authored rises (<= maxJumpableRise) never inflate per orientation.
+    // iPhone keeps scale-to-fit (byte-identical). iPad pins the base to 1.0 so the
+    // flat geometry renders at absolute size (edge-to-edge, no scaled island). The
+    // landscape mechanic still multiplies this base on X to widen the corridor.
     private var baseFitScale: CGFloat { isWideCanvas ? 1.0 : portraitFitScale }
 
     // The iPhone ground baseline this level historically hard-codes; passed to the
-    // Phase-0 tier helpers. Only meaningful on the iPhone branch of those helpers
-    // (iPad returns bottomSafeY+90 and ignores this), but kept named for clarity.
+    // Phase-0 helper. Only meaningful on the iPhone branch of playableGroundY
+    // (iPad returns bottomSafeY+size.height*0.22 and ignores this), kept for clarity.
     private let iphoneGroundBaseline: CGFloat = 160
 
     // Floor visual/physics local Y (UNCHANGED on both devices). On iPad the
     // worldNode is Y-pinned (ipadWorldOriginY) so this local floor lands exactly at
-    // playableGroundY (near the bottom), and the climb is built UP from here.
+    // the cached playableGroundY (near the bottom) and the flat band lifts to fill.
     private let floorLocalY: CGFloat = -120
 
-    // Number of evenly-spaced tiers spanning the full iPad band. Chosen so
-    // bandHeight/(count-1) <= maxJumpableRise (~85): on a 1366-tall iPad the band
-    // is ~1080pt, so 14 tiers give a ~83pt step — a true full-height staircase.
-    // verticalTier clamps the step defensively, so a shorter canvas just spaces
-    // the same tiers tighter (still <= 85). Tier 0 == floor; tier 13 == near
-    // ceiling (the finale corridor/exit).
-    private let ipadTierCount: Int = 14
-
-    // iPad finale: the signature corridor + exit are STAGED HIGH (top of the
-    // climb) instead of buried at floor level. Local X for the high finale; the
-    // climb zig-zags up to here, then the corridor gates the last step.
-    private let ipadFinaleCorridorLocalX: CGFloat = 360   // corridor center (local, pre-offset)
-    private let ipadFinaleExitLocalX: CGFloat = 560       // exit just past the corridor
+    // iPad floor framing: a WIDER floor than the phone's 700, so the flat course
+    // fills the iPad width and the camera scrolls X across it. The flat traversal
+    // (spawn -120 .. exit 450, same locals as phone) sits comfortably inside it.
     private let ipadFloorWidth: CGFloat = 760             // floor span on iPad (camera scrolls X)
-    private let ipadFloorCenterLocalX: CGFloat = 120      // floor center (covers spawn..climb base)
-    private let ipadPlayerWorldWidthLocal: CGFloat = 920  // clamp right bound past the finale exit
+    private let ipadFloorCenterLocalX: CGFloat = 120      // floor center (covers spawn..exit)
+    private let ipadPlayerWorldWidthLocal: CGFloat = 920  // clamp right bound just past the exit
 
     // ROTATION-STABLE iPad framing cache.
     //
-    // The Phase-0 helpers (playableGroundY/playableCeilingY/verticalTier) gate on
+    // The Phase-0 helpers (playableGroundY/playableCeilingY) gate on
     // `size.height > 1000`, which is TRUE for an iPad in PORTRAIT but FALSE in
     // LANDSCAPE (iPad landscape height is 768..1024). This level FORCES landscape
     // and re-runs updateWorldScale on rotation, so reading those helpers live would
     // collapse the iPad framing to the iPhone fallback the moment we rotate — the
-    // floor + whole climb would jump. We therefore CACHE the band geometry ONCE
-    // (from the stable PORTRAIT-class dimension) and every iPad consumer reads the
-    // cache, so the framing is identical in both orientations.
+    // floor would jump. We therefore CACHE the band geometry ONCE (from the stable
+    // PORTRAIT-class dimension) and every iPad consumer reads the cache, so the
+    // framing is identical in both orientations.
     private var ipadGroundSceneY: CGFloat = 0     // floor scene-Y (== playableGroundY)
-    private var ipadTierStep: CGFloat = 0         // per-tier rise (<= maxJumpableRise)
+    private var ipadCeilingSceneY: CGFloat = 0    // band top scene-Y (== playableCeilingY)
     private var ipadFramingCached = false
 
     /// Capture the iPad band geometry from the stable portrait-class size so it
@@ -136,33 +131,27 @@ final class OrientationScene: BaseLevelScene, SKPhysicsContactDelegate {
     ///
     /// When the live canvas is portrait-class (size.height > 1000) the Phase-0
     /// helpers return their real iPad values, so we seed the cache straight from
-    /// playableGroundY / playableBandHeight / verticalTier. When we happen to be
-    /// caching while already in landscape (height <= 1000), those helpers would
-    /// return the iPhone fallback, so we reconstruct the SAME formulas from the LONG
-    /// dimension (portrait height) + the iPad fallback insets. Either way the cached
-    /// values match the canonical helpers' portrait result.
+    /// playableGroundY / playableCeilingY. When we happen to be caching while
+    /// already in landscape (height <= 1000), those helpers would return the iPhone
+    /// fallback, so we reconstruct the SAME formulas from the LONG dimension
+    /// (portrait height) + the iPad fallback insets. Either way the cached values
+    /// match the canonical helpers' portrait result.
     private func cacheIPadFramingIfNeeded() {
         guard isWideCanvas, !ipadFramingCached else { return }
         ipadFramingCached = true
 
         if size.height > 1000 {
-            // Portrait-class: seed straight from the canonical Phase-0 helpers. The
-            // per-tier step is taken from verticalTier itself (ground + 1*step), so
-            // the cached climb matches the shared helper's clamped rise exactly.
+            // Portrait-class: seed straight from the canonical Phase-0 helpers.
             ipadGroundSceneY = playableGroundY(iphoneGround: iphoneGroundBaseline)
-            let t1 = verticalTier(1, of: ipadTierCount, iphoneGround: iphoneGroundBaseline)
-            ipadTierStep = t1 - ipadGroundSceneY
+            ipadCeilingSceneY = playableCeilingY()
         } else {
             // Landscape at cache time: reconstruct the portrait result from the long
             // dimension so the framing is stable across rotation.
             let portraitH = max(size.width, size.height)
             let topInset: CGFloat = max(safeAreaInsets.top, 24)
             let bottomInset: CGFloat = max(safeAreaInsets.bottom, 20)
-            let ground = bottomInset + 90                 // == playableGroundY (iPad)
-            let ceiling = portraitH - topInset - 150      // == playableCeilingY (iPad)
-            let band = max(0, ceiling - ground)
-            ipadGroundSceneY = ground
-            ipadTierStep = min(band / CGFloat(ipadTierCount - 1), Self.maxJumpableRise)
+            ipadGroundSceneY = bottomInset + portraitH * 0.22   // == playableGroundY (iPad)
+            ipadCeilingSceneY = (portraitH - topInset) - 150     // == playableCeilingY (iPad)
         }
     }
 
@@ -170,14 +159,8 @@ final class OrientationScene: BaseLevelScene, SKPhysicsContactDelegate {
     // cached ground (near the bottom) in BOTH orientations.
     private var ipadWorldOriginY: CGFloat { ipadGroundSceneY - floorLocalY }
 
-    /// worldNode-LOCAL Y of tier `index` on the iPad path, from the cached step so
-    /// it is rotation-stable. Floor (tier 0) resolves to floorLocalY; each step is
-    /// the cached per-tier rise (<= maxJumpableRise). Mirrors verticalTier exactly,
-    /// minus the live-size gate that would flip in landscape.
-    private func ipadTierLocalY(_ index: Int) -> CGFloat {
-        // scene Y = ground + index*step; local = scene - worldOriginY.
-        (ipadGroundSceneY + CGFloat(index) * ipadTierStep) - ipadWorldOriginY
-    }
+    // worldNode-LOCAL Y of the cached band top (ceiling), for the backdrop fill.
+    private var ipadBandTopLocalY: CGFloat { ipadCeilingSceneY - ipadWorldOriginY }
 
     // Center of the rebased gameplay TRAVERSAL in worldNode local space. The
     // span the player must SEE (and that must stay on-screen) is spawn -> exit,
@@ -189,44 +172,36 @@ final class OrientationScene: BaseLevelScene, SKPhysicsContactDelegate {
     // 455 keeps spawn -> corridor -> exit fully on-screen in both orientations.
     // worldNode.position.x is derived from this so local x=playfieldCenterX maps
     // to screen center; backdrop layers center on the SAME value so they track
-    // the playfield with no double-applied offset.
-    private var playfieldCenterX: CGFloat {
-        // iPad: center the backdrop on the composed traversal (spawn .. finale exit)
-        // so the aspect grid covers the whole scrolled climb. Phone path is
-        // byte-identical: ((-120)+450)/2 + offset = 455 (unchanged).
-        if isWideCanvas {
-            return ((-120) + ipadFinaleExitLocalX) / 2 + worldOffsetX
-        }
-        return ((-120) + 450) / 2 + worldOffsetX
-    }
+    // the playfield with no double-applied offset. iPad uses the SAME flat
+    // traversal locals, so the center is the same 455 — only the framing differs.
+    private var playfieldCenterX: CGFloat { ((-120) + 450) / 2 + worldOffsetX }
 
     /// Backdrop (grid + ceiling) span. Phone keeps the 800-wide design backdrop;
-    /// iPad widens it to cover the extended climb so the aspect grid keeps
+    /// iPad widens it to cover the wider flat floor so the aspect grid keeps
     /// emphasizing the stretch across the whole scrolled course.
     private var backdropWidth: CGFloat { isWideCanvas ? (ipadFloorWidth + 360) : designWidth }
 
     /// Full scene-space width of the composed iPad course (post offset * xScale),
-    /// for the camera-follow clamp so it never scrolls past either end.
+    /// for the camera-follow clamp so it never scrolls past either end. The course
+    /// spans the wide floor and the flat exit (local 450 + offset).
     private func ipadCourseWorldWidth(xScale: CGFloat) -> CGFloat {
         let rightLocal = ipadFloorCenterLocalX + ipadFloorWidth / 2 + worldOffsetX
-        return max(rightLocal, ipadFinaleExitLocalX + worldOffsetX + 60) * xScale
+        return max(rightLocal, 450 + worldOffsetX + 60) * xScale
     }
 
     /// Backdrop vertical framing (LOCAL space). Phone keeps the original
-    /// design-height grid centered at y=0 (byte-identical). iPad widens the grid to
-    /// span the FULL climb band (floor up to the finale tier) so no part of the
-    /// top-to-bottom course is over bare background.
+    /// design-height grid centered at y=0 (byte-identical). iPad spans the grid from
+    /// the floor up to the cached band top so the whole visible band (bottom-pinned
+    /// floor up to the ceiling) is over the grid instead of bare background.
     private var ipadBackdropCenterY: CGFloat {
         guard isWideCanvas else { return 0 }
-        let top = ipadTierLocalY(ipadTierCount - 1)
-        return (floorLocalY + top) / 2
+        return (floorLocalY + ipadBandTopLocalY) / 2
     }
     private var ipadBackdropHalfHeight: CGFloat {
         guard isWideCanvas else { return designHeight / 2 }
-        let top = ipadTierLocalY(ipadTierCount - 1)
-        // Cover floor..topTier plus margin so the grid lines and ceiling beams
-        // bracket the whole climb.
-        return (top - floorLocalY) / 2 + 140
+        // Cover floor..band-top plus margin so the grid + ceiling beams bracket the
+        // full visible band.
+        return (ipadBandTopLocalY - floorLocalY) / 2 + 140
     }
 
     private var instructionPanel: SKNode?
@@ -270,7 +245,7 @@ final class OrientationScene: BaseLevelScene, SKPhysicsContactDelegate {
         isLandscape = UIDevice.current.orientation.isLandscape
 
         // Capture the rotation-stable iPad band geometry BEFORE any consumer
-        // (worldNode pin, backdrop, tiers) reads it. No-op on iPhone.
+        // (worldNode pin, backdrop, floor) reads it. No-op on iPhone.
         cacheIPadFramingIfNeeded()
 
         // Create world container (for scale transform). X is recentered on the
@@ -278,7 +253,7 @@ final class OrientationScene: BaseLevelScene, SKPhysicsContactDelegate {
         // corridor/exit don't render off the right edge; set a sane initial X
         // here too to avoid a one-frame off-screen flash before that runs. On iPad
         // the camera scrolls X (worldNode.x pinned 0) and worldNode.y is pinned to
-        // ipadWorldOriginY so the bottom-pinned floor + climb are framed from frame 1.
+        // ipadWorldOriginY so the bottom-pinned flat floor is framed from frame 1.
         worldNode = SKNode()
         worldNode.position = isWideCanvas
             ? CGPoint(x: 0, y: ipadWorldOriginY)
@@ -331,8 +306,8 @@ final class OrientationScene: BaseLevelScene, SKPhysicsContactDelegate {
         // stretches WITH the world in landscape and stays aligned to the gameplay
         // geometry, instead of being drawn at full screen width then stretched
         // 1.4x off-screen. Centered on the rebased playfield center. On iPad the
-        // span widens to the composed climb and the height grows to the full band
-        // so the grid covers the whole top-to-bottom course (phone: design size).
+        // span widens to the wider flat floor and the height grows to the full
+        // visible band so the grid covers the whole course (phone: design size).
         let halfW = backdropWidth / 2
         let halfH = ipadBackdropHalfHeight
         let cx = playfieldCenterX
@@ -371,10 +346,10 @@ final class OrientationScene: BaseLevelScene, SKPhysicsContactDelegate {
 
     private func drawOrientationArrows() {
         // Horizontal stretch arrows at top, centered over the rebased playfield.
-        // On iPad they ride near the TOP of the climb band (just under the finale)
-        // so they keep emphasizing the horizontal stretch without sitting in dead
-        // sky; phone keeps the original local y=180.
-        let arrowY: CGFloat = isWideCanvas ? (ipadTierLocalY(ipadTierCount - 1) + 60) : 180
+        // On iPad they ride near the TOP of the visible band (just under the
+        // ceiling) so they keep emphasizing the horizontal stretch without sitting
+        // in dead sky; phone keeps the original local y=180.
+        let arrowY: CGFloat = isWideCanvas ? (ipadBandTopLocalY - 40) : 180
         let cx = playfieldCenterX
 
         // Left arrow
@@ -417,8 +392,8 @@ final class OrientationScene: BaseLevelScene, SKPhysicsContactDelegate {
     private func drawCeilingBeams() {
         // Locked to the design playfield width (centered on the playfield) so the
         // beams stretch with the world instead of being drawn at screen width. On
-        // iPad the span widens to the composed climb and the beams ride at the very
-        // top of the band (above the finale corridor) so the climb has a ceiling.
+        // iPad the span widens to the wider flat floor and the beams ride at the very
+        // top of the visible band so the bottom-pinned course has a ceiling overhead.
         let halfW = backdropWidth / 2
         let cx = playfieldCenterX
         let beamY = isWideCanvas ? (ipadBackdropCenterY + ipadBackdropHalfHeight - 35) : (designHeight / 2 - 35)
@@ -486,12 +461,12 @@ final class OrientationScene: BaseLevelScene, SKPhysicsContactDelegate {
     // MARK: - Level Building
 
     /// Dispatch: iPhone keeps the shipping single-screen layout (byte-identical);
-    /// iPad gets the de-scaled, full-height CLIMB. Both share the same create*
-    /// builders, parameterized only by the per-device geometry resolvers, so there
-    /// is no cloned mechanic geometry to drift.
+    /// iPad gets the SAME flat crusher-chase, only re-framed to fill the screen.
+    /// Both share the same create* builders, parameterized only by the per-device
+    /// geometry resolvers, so there is no cloned mechanic geometry to drift.
     private func buildLevel() {
         if isWideCanvas {
-            buildClimbIPadLevel()
+            buildFlatIPadLevel()
         } else {
             buildPhoneLevel()
         }
@@ -516,35 +491,29 @@ final class OrientationScene: BaseLevelScene, SKPhysicsContactDelegate {
         installCrusherDeathZone()
     }
 
-    /// iPad path — de-scaled, hand-composed FULL-HEIGHT CLIMB.
+    /// iPad path — the SAME FLAT crusher-chase as iPhone (operator: the iPad must
+    /// solve the SAME way as iPhone), only re-framed via the iPad helpers so it
+    /// FILLS the screen instead of being a centered iPhone strip.
     ///
-    /// The route ascends from the spawn (on the bottom-pinned floor, with the
-    /// crusher looming behind) through a zig-zag of jumpable verticalTier platforms
-    /// that span the full band left-to-right as they climb, includes a wide REST
-    /// platform mid-climb (a breath beat), and STAGES the signature corridor as the
-    /// high finale gate — the exit sits just past it near the ceiling. Every rise
-    /// is a verticalTier step (auto-clamped <= maxJumpableRise=85); every horizontal
-    /// gap is authored <= maxJumpableGap=130. The crusher + corridor mechanic are
-    /// the SAME gate, only relocated to the top of the climb.
+    /// The route is identical to the phone solution: Bit spawns on the floor with
+    /// the crusher looming behind, the crusher creeps horizontally, Bit walks right
+    /// to the narrow corridor, ROTATES to landscape (which disarms the crusher AND
+    /// widens the corridor 18->100pt via the corridorGap swap), then walks through
+    /// to the exit — NO required jumps/climb. The crusher, corridor-widen-on-rotate,
+    /// death zone, and spawn/exit reachability are byte-for-byte the same gate.
     ///
-    ///   B1 SPAWN / TEACH  — Bit spawns low on the floor; the crusher looms behind
-    ///                       (the threat is taught at t=0). Tier 0.
-    ///   B2 LOWER ASCENT   — tiers 1..5 zig-zag up out of the crusher's lane.
-    ///   B3 REST BREATH    — a WIDE rest platform mid-climb (tier 6) to commit to
-    ///                       the rotation under no immediate pressure.
-    ///   B4 UPPER ASCENT   — tiers 7..11 continue the climb toward the ceiling.
-    ///   B5 FINALE CORRIDOR— the impossible-in-portrait corridor, staged HIGH
-    ///                       (tier ~12) as an isolated beat — the last gate.
-    ///   B6 EXIT           — the door just past the high corridor (tier ~12).
-    ///
-    /// Width is filled by the zig-zag + camera-follow; height by the bottom-pinned
-    /// floor + the tier climb to the ceiling.
-    private func buildClimbIPadLevel() {
-        createCrusher()                  // B1 threat (same local -220 start)
-        createFloor()                    // B1 floor (bottom-pinned via worldNode Y)
-        buildIPadClimbTiers()            // B2/B3/B4 ascending zig-zag + wide rest
-        createCorridor()                 // B5 staged finale corridor (high tier)
-        createExit()                     // B6 exit just past the corridor (high)
+    /// The ONLY difference from iPhone is FRAMING: baseFitScale=1.0 (absolute, not
+    /// scale-to-fit), a wider floor (ipadFloorWidth) pinned near the bottom
+    /// (ipadWorldOriginY), camera-follow on X across that floor, and a wider
+    /// backdrop — so the flat course fills the iPad edge-to-edge. Same call order
+    /// and the SAME create* builders as the phone, so the corridor + exit keep the
+    /// identical flat local geometry (corridor mouth at local 50, exit at 450, both
+    /// at floor-level y=-60). No tiers, no climb.
+    private func buildFlatIPadLevel() {
+        createCrusher()                  // threat (same local -220 start)
+        createFloor()                    // wide floor, bottom-pinned via worldNode Y
+        createCorridor()                 // narrow corridor (same flat local geometry)
+        createExit()                     // exit just past the corridor (same flat local)
         installCrusherDeathZone()        // trap geometry (same local -280)
     }
 
@@ -560,115 +529,6 @@ final class OrientationScene: BaseLevelScene, SKPhysicsContactDelegate {
         deathZone.physicsBody?.categoryBitMask = PhysicsCategory.hazard
         deathZone.name = "crusher_zone"
         worldNode.addChild(deathZone)
-    }
-
-    // MARK: - iPad Climb Tiers
-    //
-    // The ascending route (iPad only). Each platform is a static ground body at a
-    // verticalTier-derived local Y (rise auto-clamped <= maxJumpableRise) and an
-    // authored local X spread left-to-right (every step <= maxJumpableGap). Widths
-    // vary for rhythm; tier 6 is a WIDE rest. The route climbs from the floor (tier
-    // 0) up to the finale corridor's walking surface (tier ~12), so the corridor +
-    // exit are the high finale beat. NONE of this exists on iPhone.
-
-    /// Walking-surface local Y the finale corridor + exit sit at (top of the bottom
-    /// corridor wall in landscape: corridorCenter - landscapeGap/2). The last climb
-    /// platform aligns to this so Bit steps off it INTO the corridor mouth.
-    private var ipadFinaleSurfaceLocalY: CGFloat {
-        // Corridor center is at tier 12; Bit walks on the bottom wall's top edge,
-        // which is corridorCenterY - landscapeGap/2 once rotated (the only state in
-        // which the corridor is passable, i.e. when the finale is actually played).
-        ipadTierLocalY(12) - landscapeGap / 2
-    }
-
-    private func buildIPadClimbTiers() {
-        // (tierIndex, localCenterX (pre-offset), width). X zig-zags around the floor
-        // center; widths vary; tier 6 is the wide REST. Consecutive tier indices are
-        // 1 apart so each rise is exactly one verticalTier step (<= 85). Horizontal
-        // deltas are all <= maxJumpableGap (130) — verified in the geometry note.
-        let specs: [(tier: Int, x: CGFloat, w: CGFloat)] = [
-            (1,  -40, 110),   // B2 step up off the floor, back toward the crusher side
-            (2,   70, 100),   // forward
-            (3,  -20, 120),   // back (zig)
-            (4,   90,  96),   // forward (zag)
-            (5,   10, 130),   // back, wider
-            (6,  120, 240),   // B3 WIDE REST platform (the breath beat)
-            (7,   30, 100),   // B4 resume the climb, back
-            (8,  140,  96),   // forward
-            (9,   50, 120),   // back
-            (10, 150, 100),   // forward
-            (11,  60, 130),   // back, wider — feeds the finale approach
-        ]
-
-        for spec in specs {
-            let isRest = spec.tier == 6
-            addClimbPlatform(localX: spec.x + worldOffsetX,
-                             localY: ipadTierLocalY(spec.tier),
-                             width: spec.w,
-                             isRest: isRest)
-        }
-
-        // Finale feeder: a platform at the corridor's WALKING surface, just left of
-        // the corridor mouth, so Bit steps off it straight into the corridor. Its
-        // rise from tier 11 is <= one verticalTier step (the corridor surface is
-        // landscapeGap/2 BELOW tier 12, i.e. closer to tier 11 — strictly safe).
-        addClimbPlatform(localX: ipadFinaleCorridorLocalX - 150 + worldOffsetX,
-                         localY: ipadFinaleSurfaceLocalY,
-                         width: 120,
-                         isRest: false)
-    }
-
-    /// One climb platform (iPad only): static ground body + line-art visual, matched
-    /// to the level's style. Rest platforms get a subtle "REST" marker.
-    private func addClimbPlatform(localX: CGFloat, localY: CGFloat, width: CGFloat, isRest: Bool) {
-        let height: CGFloat = 22
-
-        let plat = SKShapeNode(rectOf: CGSize(width: width, height: height))
-        plat.fillColor = fillColor
-        plat.strokeColor = strokeColor
-        plat.lineWidth = lineWidth
-        plat.position = CGPoint(x: localX, y: localY)
-        plat.zPosition = 5
-        worldNode.addChild(plat)
-        lineElements.append(plat)
-
-        // Depth edge for the line-art look.
-        let depth: CGFloat = 5
-        let edge = SKShapeNode()
-        let edgePath = CGMutablePath()
-        edgePath.move(to: CGPoint(x: -width / 2, y: height / 2))
-        edgePath.addLine(to: CGPoint(x: -width / 2 - depth, y: height / 2 + depth))
-        edgePath.addLine(to: CGPoint(x: width / 2 - depth, y: height / 2 + depth))
-        edgePath.addLine(to: CGPoint(x: width / 2, y: height / 2))
-        edge.path = edgePath
-        edge.strokeColor = strokeColor
-        edge.lineWidth = lineWidth * 0.5
-        edge.position = CGPoint(x: localX, y: localY)
-        edge.zPosition = 4
-        worldNode.addChild(edge)
-        lineElements.append(edge)
-
-        if isRest {
-            let label = SKLabelNode(text: "REST")
-            label.fontName = "Menlo"
-            label.fontSize = 10
-            label.fontColor = strokeColor
-            label.alpha = 0.5
-            label.verticalAlignmentMode = .center
-            label.position = CGPoint(x: localX, y: localY + height / 2 + 12)
-            label.zPosition = 5
-            worldNode.addChild(label)
-            lineElements.append(label)
-        }
-
-        // Static ground physics.
-        let body = SKNode()
-        body.position = CGPoint(x: localX, y: localY)
-        body.physicsBody = SKPhysicsBody(rectangleOf: CGSize(width: width, height: height))
-        body.physicsBody?.isDynamic = false
-        body.physicsBody?.categoryBitMask = PhysicsCategory.ground
-        body.name = "ground"
-        worldNode.addChild(body)
     }
 
     private func createCrusher() {
@@ -836,9 +696,10 @@ final class OrientationScene: BaseLevelScene, SKPhysicsContactDelegate {
 
     private func createFloor() {
         // Floor span resolves per device: phone keeps width 700 / center 100+off
-        // (byte-identical); iPad uses the composed climb-base width/center. The
-        // floor's LOCAL y is unchanged (-120) on both — on iPad the worldNode is
-        // Y-pinned so this local floor lands at playableGroundY (near the bottom).
+        // (byte-identical); iPad uses the wider flat-floor width/center so the flat
+        // course fills the screen and the camera scrolls X across it. The floor's
+        // LOCAL y is unchanged (-120) on both — on iPad the worldNode is Y-pinned so
+        // this local floor lands at the cached playableGroundY (near the bottom).
         let fw: CGFloat = isWideCanvas ? ipadFloorWidth : 700
         let fcx: CGFloat = (isWideCanvas ? ipadFloorCenterLocalX : 100) + worldOffsetX
         let halfFW = fw / 2
@@ -878,17 +739,13 @@ final class OrientationScene: BaseLevelScene, SKPhysicsContactDelegate {
 
     private func createCorridor() {
         corridor = SKNode()
-        // Origin resolves per device: phone keeps 50+off / y=-60 (walls centered at
-        // 225 local, one step from spawn — byte-identical). iPad stages the corridor
-        // HIGH as the finale gate: walls centered at ipadFinaleCorridorLocalX, at
-        // the top tier's height (tier 12). The corridor's internal structure (gap
-        // swap 18->100, perspective lines, physics) is UNCHANGED — only relocated.
-        if isWideCanvas {
-            corridor.position = CGPoint(x: ipadFinaleCorridorLocalX - 175 + worldOffsetX,
-                                        y: ipadTierLocalY(12))
-        } else {
-            corridor.position = CGPoint(x: 50 + worldOffsetX, y: -60)
-        }
+        // Origin is the SAME flat position on BOTH devices: 50+off / y=-60 (walls
+        // centered at 225 local, on the floor, one walk from spawn). The iPad solves
+        // the SAME way as iPhone, so the corridor is NOT staged high — it sits at the
+        // floor-level corridor mouth, and the gap swap 18->100 on rotate is the gate.
+        // (On iPad the worldNode is Y-pinned, so this same local y=-60 lands just
+        // above the bottom-pinned floor, exactly mirroring the phone relationship.)
+        corridor.position = CGPoint(x: 50 + worldOffsetX, y: -60)
         worldNode.addChild(corridor)
 
         // Top wall of corridor
@@ -974,14 +831,11 @@ final class OrientationScene: BaseLevelScene, SKPhysicsContactDelegate {
     }
 
     private func createExit() {
-        // Exit center resolves per device: phone keeps 450+off / y=-60
-        // (byte-identical, door centered on the corridor gap). iPad mirrors that
-        // relationship HIGH: the door is centered on the finale corridor's gap
-        // (tier 12 center), just past the corridor's right edge, so Bit steps out
-        // of the corridor straight into it.
-        let exitPos: CGPoint = isWideCanvas
-            ? CGPoint(x: ipadFinaleExitLocalX + worldOffsetX, y: ipadTierLocalY(12))
-            : CGPoint(x: 450 + worldOffsetX, y: -60)
+        // Exit center is the SAME flat position on BOTH devices: 450+off / y=-60
+        // (door centered on the corridor gap, at floor level). The iPad solves the
+        // SAME way as iPhone — walk through the widened corridor to the door — so
+        // the exit is NOT staged high; it sits just past the corridor on the floor.
+        let exitPos = CGPoint(x: 450 + worldOffsetX, y: -60)
 
         // Door frame
         let doorFrame = SKShapeNode(rectOf: CGSize(width: 40, height: 60))
@@ -1068,9 +922,9 @@ final class OrientationScene: BaseLevelScene, SKPhysicsContactDelegate {
     ///
     /// iPad (camera child): worldNode.position.x is pinned to 0 and the camera
     /// scrolls, so a worldNode-local panel would slide off as the camera follows
-    /// Bit up the climb. Parenting to the camera keeps it a fixed viewport HUD;
+    /// Bit along the floor. Parenting to the camera keeps it a fixed viewport HUD;
     /// camera-local (0,0) is the viewport center, so we offset UP into the top band
-    /// (clear of the title and the climb).
+    /// (clear of the title and the course).
     private func instructionPanelLocalY() -> CGFloat {
         if isWideCanvas {
             return (size.height / 2) - 150
@@ -1085,7 +939,7 @@ final class OrientationScene: BaseLevelScene, SKPhysicsContactDelegate {
         instructionPanel?.position = CGPoint(x: 0, y: instructionPanelLocalY())
         instructionPanel?.zPosition = 200
         // iPad: fixed viewport HUD on the camera so it stays on-screen while the
-        // climb scrolls. Phone: worldNode child (byte-identical to shipping).
+        // course scrolls. Phone: worldNode child (byte-identical to shipping).
         if isWideCanvas, let cam = gameCamera {
             cam.addChild(instructionPanel!)
         } else {
@@ -1229,11 +1083,12 @@ final class OrientationScene: BaseLevelScene, SKPhysicsContactDelegate {
         playerController = PlayerController(character: bit, scene: self)
 
         // Publish the world-local right bound so the clamp's maxX sits just past
-        // the exit instead of collapsing to screen width. Phone: 450+off=740 ->
-        // playerWorldWidth(800). iPad: the finale exit sits at ipadFinaleExitLocalX
-        // + off, so the local clamp extends to ipadPlayerWorldWidthLocal. (On iPad
-        // this is also re-pinned after each rotation in updateWorldScale, but set it
-        // here so the very first frame — before updateWorldScale runs — clamps right.)
+        // the exit instead of collapsing to screen width. Both devices share the
+        // SAME flat exit at local 450+off=740. Phone: playerWorldWidth(800). iPad:
+        // the wider floor extends the local clamp to ipadPlayerWorldWidthLocal so the
+        // camera-follow has room to scroll past the exit. (On iPad this is also
+        // re-pinned after each rotation in updateWorldScale, but set it here so the
+        // very first frame — before updateWorldScale runs — clamps right.)
         playerController.worldWidth = isWideCanvas ? ipadPlayerWorldWidthLocal : playerWorldWidth
     }
 
@@ -1244,9 +1099,9 @@ final class OrientationScene: BaseLevelScene, SKPhysicsContactDelegate {
 
         // Bare stretch factors are relative to the BASE fit. On iPhone the base is
         // portraitFitScale (shipping scale-to-fit, byte-identical). On iPad the base
-        // is DE-SCALED to 1.0 so geometry renders at absolute size and the climb
-        // tiers' authored rises (<= maxJumpableRise) never inflate per device. The
-        // MECHANIC is preserved because the corridorGap 18->100 swap still happens.
+        // is DE-SCALED to 1.0 so the flat geometry renders at absolute size (edge-to-
+        // edge, no scaled island). The MECHANIC is preserved on both because the
+        // corridorGap 18->100 swap still happens on rotate.
         let base = baseFitScale
         let targetScaleX: CGFloat
         let targetScaleY: CGFloat
@@ -1254,8 +1109,8 @@ final class OrientationScene: BaseLevelScene, SKPhysicsContactDelegate {
         if isLandscape {
             // Stretch world horizontally.
             targetScaleX = 1.4 * base
-            // iPad keeps Y absolute (1.0) so the vertical CLIMB stays exactly as
-            // authored — no 0.85 compression that would shrink the band/rises. The
+            // iPad keeps Y absolute (1.0) so the flat floor + corridor stay exactly
+            // as authored — no 0.85 compression that would shrink the band. The
             // corridor still WIDENS via the corridorGap swap below (the real gate),
             // so the mechanic is intact. iPhone keeps the original 0.85 compression.
             targetScaleY = isWideCanvas ? base : (0.85 * base)
@@ -1271,12 +1126,12 @@ final class OrientationScene: BaseLevelScene, SKPhysicsContactDelegate {
         //  - iPhone (single-screen): recenter worldNode on the playfield so local
         //    x=playfieldCenterX lands at screen center; the course fits one screen.
         //    y stays at screen center. (Byte-identical to shipping.)
-        //  - iPad (camera-follow + vertical fill): the composed climb is taller AND
-        //    wider than the viewport, so worldNode.position.x is PINNED to 0 (the
-        //    camera scrolls X) and worldNode.position.y is PINNED to ipadWorldOriginY
-        //    (stable across rotation) so the bottom-pinned floor stays at
-        //    playableGroundY and the climb fills upward — rotation never re-centers
-        //    the band back to mid-screen.
+        //  - iPad (camera-follow + bottom-pin): the wider flat floor is wider than
+        //    the viewport, so worldNode.position.x is PINNED to 0 (the camera scrolls
+        //    X across the floor as Bit walks spawn -> exit) and worldNode.position.y
+        //    is PINNED to ipadWorldOriginY (stable across rotation) so the floor
+        //    stays at the cached playableGroundY near the bottom and the flat band
+        //    lifts to fill — rotation never re-centers the band back to mid-screen.
         let targetPosX: CGFloat = isWideCanvas ? 0 : (size.width / 2 - playfieldCenterX * targetScaleX)
         let targetPosY: CGFloat = isWideCanvas ? ipadWorldOriginY : (size.height / 2)
 

@@ -377,13 +377,13 @@ final class VoiceCommandScene: BaseLevelScene, SKPhysicsContactDelegate {
         let finaleMiddleCenter = chasmRight + 30              // 2140 (width 60)
         createPlatform(at: CGPoint(x: finaleMiddleCenter, y: finaleMiddleTop), size: CGSize(width: 60, height: 30))
 
-        // Locked DOOR on the finale-middle's right edge — door-top > apex invariant
-        // PRESERVED by anchoring it the SAME relative way as the iPhone path: door
-        // center = platform_top + 60, frame 90 tall, so the frame top sits +105
-        // above the platform top while the jump apex only reaches +91 (~14pt
-        // margin). It cannot be jumped before OPEN unlocks it.
+        // Locked DOOR on the finale-middle's right edge — must be UN-jumpable before
+        // OPEN. The platform top is finaleMiddleTop+15; a 107pt-tall blocker with its
+        // bottom on that surface tops out at +107 above the platform, clearing Bit's
+        // ~91pt apex by the project's ~16pt margin (the prior 90pt-tall/+60-centered
+        // door topped out at only +90 — a ~1pt margin a frame-perfect jump could skip).
         let doorX = finaleMiddleCenter + 30                  // 2170 (middle right edge)
-        createLockedDoor(at: CGPoint(x: doorX, y: finaleMiddleTop + 60))
+        createLockedDoor(at: CGPoint(x: doorX, y: finaleMiddleTop + 68.5), height: 107)
 
         // Small landing after the door (post-OPEN). Overlaps the door x so, once the
         // door clears, the floor is contiguous out to the FLY ascent point.
@@ -476,15 +476,15 @@ final class VoiceCommandScene: BaseLevelScene, SKPhysicsContactDelegate {
         addChild(bridge)
     }
 
-    private func createLockedDoor(at position: CGPoint) {
+    private func createLockedDoor(at position: CGPoint, height: CGFloat = 90) {
         let door = SKNode()
         door.position = position
         door.name = "locked_door"
 
-        // Door frame — 90 pt tall so the top (y=265 at door center y=220)
-        // sits above the player's jump-apex body bottom (~247), preventing
-        // a skip-over before OPEN unlocks it.
-        let frame = SKShapeNode(rectOf: CGSize(width: 10, height: 90))
+        // Door frame. iPhone default (90pt) is unchanged; the iPad finale passes a
+        // taller blocker so its top clears Bit's ~91pt apex with the project's ~16pt
+        // margin (the 90pt default left only a ~1pt margin — frame-perfect skip-over).
+        let frame = SKShapeNode(rectOf: CGSize(width: 10, height: height))
         frame.fillColor = strokeColor
         frame.strokeColor = strokeColor
         frame.lineWidth = lineWidth
@@ -507,7 +507,7 @@ final class VoiceCommandScene: BaseLevelScene, SKPhysicsContactDelegate {
 
         // Physical blocker
         doorBlocker = SKNode()
-        doorBlocker?.physicsBody = SKPhysicsBody(rectangleOf: CGSize(width: 10, height: 90))
+        doorBlocker?.physicsBody = SKPhysicsBody(rectangleOf: CGSize(width: 10, height: height))
         doorBlocker?.physicsBody?.isDynamic = false
         doorBlocker?.physicsBody?.categoryBitMask = PhysicsCategory.ground
         door.addChild(doorBlocker!)
