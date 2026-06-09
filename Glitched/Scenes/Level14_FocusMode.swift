@@ -231,12 +231,14 @@ final class FocusModeScene: BaseLevelScene, SKPhysicsContactDelegate {
     /// Tier budget for the composed route. SIZED so the climb actually REACHES
     /// composedCeilingY at a safe per-tier rise: count = ceil(band / maxJumpableRise)
     /// + 1. Passing too few tiers is the dead-sky bug (the step would clamp to 85 and
-    /// the top of the band would be stranded). Floored at 6, capped at 12 so the
-    /// rhythm (cluster/rest/dip/peak) still reads on giant canvases. Deterministic.
+    /// the top of the band would be stranded). Floored at 6, capped at 16 (matching the
+    /// base fillTierCount upper bound) so the tallest iPad portrait (1366pt → needed=14)
+    /// is never clamped below `needed`; the rhythm (cluster/rest/dip/peak) still reads.
+    /// Deterministic.
     private var composedTierCount: Int {
         let band = max(0, composedCeilingY - playableGroundY(iphoneGround: iphoneGround))
         let needed = Int((band / BaseLevelScene.maxJumpableRise).rounded(.up)) + 1
-        return min(max(6, needed), 12)
+        return min(max(6, needed), 16)
     }
 
     /// Y for tier `index` of the composed climb. Tier 0 == playableGroundY (floor

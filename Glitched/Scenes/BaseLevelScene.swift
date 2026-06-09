@@ -334,48 +334,16 @@ class BaseLevelScene: SKScene {
             return
         }
 
-        let accent = worldAccentColor
-
-        // Back-of-scene wash. This sits at zPosition -1000 and is largely
-        // occluded by opaque level art (the root cause of the "sub-perceptual"
-        // audit finding), so it stays subtle and we rely on the foreground
-        // edge-frame below for the actual per-world read. Modestly bumped from
-        // the old 0.12–0.16 band and tinted with each world's accent.
-        switch levelID.world {
-        case .world0:
-            tint.fillColor = SKColor.black.withAlphaComponent(0.16)
-        case .world1:
-            tint.fillColor = accent.withAlphaComponent(0.16)
-            addCircuitTracePattern(to: container)
-        case .world2:
-            tint.fillColor = accent.withAlphaComponent(0.16)
-            let rain = ParticleFactory.shared.createDigitalRain(in: self)
-            rain.alpha = 0.24
-            container.addChild(rain)
-        case .world3:
-            tint.fillColor = accent.withAlphaComponent(0.17)
-            addCorruptionArtifacts(to: container, color: accent)
-            addDataStreams(to: container, color: accent)
-        case .world4:
-            tint.fillColor = accent.withAlphaComponent(0.18)
-            addRealityTears(to: container)
-        case .world5:
-            tint.fillColor = accent.withAlphaComponent(0.20)
-            addWarningBars(to: container)
-        }
-
-        // Foreground per-world edge frame. This is the key fix: a colored
-        // vignette glow drawn ABOVE the level background/decor (which live in
-        // the ~-100…600 band) but BELOW gameplay-critical overlays and the HUD
-        // (5000+). Because it is an edge-only frame with a fully transparent
-        // center, it makes each world's hue clearly perceptible without
-        // washing the play area, occluding gameplay/HUD, or veiling the
-        // line-art. World 0 stays neutral (no colored frame) to keep the free
-        // tutorial visually plain. Skipped entirely in high-contrast mode via
-        // the early return above.
-        if levelID.world != .world0 {
-            addWorldEdgeFrame(accent: accent)
-        }
+        // Per-world COLOR TINTS removed per operator direction ("I don't like
+        // tints"). No colored back-of-scene wash, no colored edge-frame vignette,
+        // and no colored per-world decorations (circuit traces / digital rain /
+        // corruption artifacts / reality tears / warning bars) — the game reads as
+        // clean black-on-white line art, and each level keeps its own backgroundColor
+        // (so the dark levels — e.g. the flashlight cave — stay dark). The wash node
+        // stays clear; only the neutral mood juice below (black vignette / glitch
+        // rain) remains. worldAccentColor / addWorldEdgeFrame are retained but unused
+        // so a tint can be reinstated later if desired.
+        tint.fillColor = .clear
 
         switch mood {
         case .calm:
