@@ -50,7 +50,7 @@ final class AirDropScene: BaseLevelScene, SKPhysicsContactDelegate {
     private var terminalScreen: SKNode?
     private let designWidth: CGFloat = 390
 
-    // iPad vertical-void fix. Flat ground-anchored band: lowest gameplay surface is the
+    // iPhone vertical-void fix. Flat ground-anchored band: lowest gameplay surface is the
     // ground platforms at groundY (160); highest reachable obstruction is the locked
     // door body top at groundY + 75 + 60 = groundY + 135 (door is 120 tall, centered).
     // The helper returns 0 on iPhone-class canvases (height <= 1000) so phone layout is
@@ -58,10 +58,10 @@ final class AirDropScene: BaseLevelScene, SKPhysicsContactDelegate {
     // node Y, leaving all relative gaps/rises/jump distances unchanged.
     //
     // NOTE: `gameplayLift` ONLY applies to the iPhone single-screen layout
-    // (buildPhoneLevel). The composed iPad layout (buildComposedIPadLevel) raises the
-    // floor itself via playableGroundY(), so it must NOT also add gameplayLift (that
-    // would double-lift). The lazy guard returns 0 on iPhone-class canvases anyway, so
-    // the phone branch is unchanged either way.
+    // (buildPhoneLevel). The composed iPad layout (buildComposedIPadLevel) builds its OWN
+    // full-height vertical climb off verticalTier(), so it must NOT also add gameplayLift
+    // (that would double-lift). The lazy guard returns 0 on iPhone-class canvases anyway,
+    // so the phone branch is unchanged either way.
     private lazy var gameplayLift: CGFloat = gameplayVerticalLift(bandBottom: 160, bandTop: 295)
 
     private var courseScale: CGFloat { min(1.0, size.width / designWidth) }
@@ -69,14 +69,14 @@ final class AirDropScene: BaseLevelScene, SKPhysicsContactDelegate {
     private func courseX(_ logicalX: CGFloat) -> CGFloat { courseOriginX + logicalX * courseScale }
     private func courseLen(_ logical: CGFloat) -> CGFloat { logical * courseScale }
 
-    // MARK: - Native-iPad layout (hand-composed)
+    // MARK: - Native-iPad layout (hand-composed, full-height climb)
     //
     // iPhone keeps the original centered 390-wide single-screen layout (buildPhoneLevel),
     // byte-identical. iPad gets a HAND-COMPOSED, camera-scrolled course
-    // (buildComposedIPadLevel) with paced beats — teach -> stepped cluster -> REST ->
-    // tension peak -> short breath -> the SHARE-TO-DECODE + locked-door TRAP staged as an
-    // isolated finale beat -> exit. Bit's physics are device-independent, so every gap
-    // stays <= maxJumpableGap (130) horizontal and every rise <= maxJumpableRise (85)
+    // (buildComposedIPadLevel) that CLIMBS the full height: a switchback staircase from a
+    // low spawn near the bottom, through staged beats, to the SHARE-TO-DECODE + locked-door
+    // TRAP staged HIGH near the ceiling. Bit's physics are device-independent, so every
+    // gap stays <= maxJumpableGap (130) horizontal and every rise <= maxJumpableRise (85)
     // top-to-top. The course is wider than the viewport, so it scrolls via the Phase 0
     // installCameraFollow. Everything is gated on `isWideCanvas`; iPhone is unchanged.
 
@@ -193,83 +193,103 @@ final class AirDropScene: BaseLevelScene, SKPhysicsContactDelegate {
         addChild(death)
     }
 
-    // MARK: - iPad layout (HAND-COMPOSED, native — paced beats, scrolled)
+    // MARK: - iPad layout (HAND-COMPOSED, native — full-height vertical climb, scrolled)
     //
-    // Rather than clamping the AirDrop puzzle to a centered 390-wide strip, the iPad
-    // level is authored as a paced sequence of BEATS in ABSOLUTE points so jump reach
-    // is exact: platform centers step at `pitch` (120pt <= the 130 safe gap) and rises
-    // stay <= 78pt top-to-top (< the 85 safe ceiling). Heights vary across THREE tiers
-    // (base / +50 / +78) so no two adjacent platforms form a flat row. The level reads:
-    //   1. TEACH    — spawn platform, lone next step (learn the jump), easy.
-    //   2. CLUSTER  — stepped up/down platforms for rhythm.
-    //   3. REST     — a wider platform, a deliberate breath.
-    //   4. PEAK     — tightest stepped cluster, top tier: the tension peak.
-    //   5. BREATH   — a short pause before the twist.
-    //   6. FINALE   — the SIGNATURE TRAP staged alone: the SHARE-TO-DECODE terminal sits
-    //                 on a wide finale platform, and the 120pt un-jumpable LOCKED DOOR
-    //                 stands at its right edge. The door body is identical to iPhone
-    //                 (120 tall, un-jumpable) — the climax mechanic gets its own beat.
-    //   7. EXIT (the door, once unlocked).
-    // The course is wider than the viewport, so it scrolls via installCameraFollow
-    // (set up in setupBit). The floor is raised via playableGroundY for vertical fill.
+    // The prior iPad pass filled WIDTH but left the top half empty: the whole course sat
+    // in a thin low band. This rework spans the FULL HEIGHT — a switchback staircase that
+    // CLIMBS from a low spawn near the bottom up through staged beats to the SHARE-TO-DECODE
+    // + locked-door FINALE staged HIGH near the ceiling. Verticality comes from
+    // BaseLevelScene.verticalTier(): tiers are evenly spaced across the entire usable band
+    // (playableGroundY near the bottom -> playableCeilingY just under the title/HUD), and
+    // EVERY per-tier rise is auto-clamped to the safe jump rise (maxJumpableRise=85). The
+    // route also spreads across the WIDTH (centers march left->right, never a centered
+    // ladder), so the course outgrows the viewport and scrolls horizontally via
+    // installCameraFollow (set up in setupBit; camera Y stays centered, so the whole
+    // vertical band reads top-to-bottom at once).
+    //
+    // The level reads:
+    //   1. TEACH    — wide low spawn platform near the FLOOR (learn the jump), easy.
+    //   2. CLIMB    — switchback steps, one safe tier rise each, widths varied for rhythm.
+    //   3. REST     — a WIDE breath platform mid-climb (rise 0 — pure horizontal pause).
+    //   4. ASCEND   — resume the climb, tightening toward the top.
+    //   5. FINALE   — the SIGNATURE TRAP staged HIGH near the ceiling: the SHARE-TO-DECODE
+    //                 terminal on a wide finale platform, the 120pt un-jumpable LOCKED DOOR
+    //                 (the EXIT) at its right edge. Door body is IDENTICAL to iPhone (120
+    //                 tall, centered at finaleY+75) so it stays un-jumpable — the climax
+    //                 mechanic gets its own high beat at the top of the climb.
+    //
+    // Spacing budget (BaseLevelScene): horizontal gap <= 130 (maxJumpableGap), vertical
+    // rise <= 85 (maxJumpableRise). Every center steps by pitch=120 (edge-to-edge gap
+    // between adjacent mid platforms ~10..30, always < 130) and every rise is exactly one
+    // verticalTier step (<= 85), so the whole climb is within Bit's audited reach.
     private func buildComposedIPadLevel() {
-        // Raise the floor for iPad vertical fill (helper returns a higher baseline on
-        // tall canvases). The composed layout does its OWN lift here, so it must NOT also
-        // add gameplayLift (that lazy var is 0 on iPhone and unused on this branch).
-        let groundY: CGFloat = playableGroundY(iphoneGround: 160)
-        let pitch: CGFloat = 120                  // safe horizontal step (<= 130)
-        let tier1: CGFloat = 50                   // base -> +50 rise (<= 85)
-        let tier2: CGFloat = 78                   // base -> +78 rise (<= 85); +50 -> +78 = 28
-        let h: CGFloat = 30                        // platform thickness (matches iPhone)
-        let wide: CGFloat = 160                    // breath / finale platforms (visually a pause)
-        let mid: CGFloat = 96                      // normal step platform
+        let h: CGFloat = 30                         // platform thickness (matches iPhone)
+        let iphoneGround: CGFloat = 160            // the value buildPhoneLevel hard-codes
+        let pitch: CGFloat = 120                   // safe horizontal step (<= 130 gap)
 
-        // Left margin keeps the spawn platform off the screen edge.
-        let leftMargin: CGFloat = 90
-        func px(_ i: CGFloat) -> CGFloat { leftMargin + i * pitch }
-        func py(_ tier: CGFloat) -> CGFloat { groundY + tier }
+        // tierCount evenly-spaced tiers span the FULL band (floor near the bottom ->
+        // ceiling just under the HUD). step = bandHeight/(tierCount-1); 14 keeps the step
+        // ~83 on a 1024x1366 iPad — under maxJumpableRise(85), so verticalTier never
+        // clamps and each single-tier rise is a guaranteed-safe jump. The climb occupies
+        // tiers 0..10; the FINALE sits at tier 11 (a few tiers below the absolute top) so
+        // the tall terminal (146pt) and the 120pt door body clear the title/HUD band.
+        let tierCount = 14
+        func tierY(_ i: Int) -> CGFloat { verticalTier(i, of: tierCount, iphoneGround: iphoneGround) }
 
-        // Beat plan (index -> tier -> width). Center spacing is a UNIFORM 1.0 pitch
-        // (120pt <= the 130 safe gap); rhythm comes from TIER (height) and WIDTH variation
-        // — never from widening a gap. No two adjacent platforms share a tier (no flat row).
-        //  i:   0      1      2      3       4(rest) 5      6(peak) 7      8(breath) 9(finale)
-        //  tier:0      tier1  0      tier2   0       tier1  tier2   tier1  0         0
-        let plats: [(i: CGFloat, tier: CGFloat, w: CGFloat)] = [
-            (0,   0,     wide),   // TEACH — spawn, wide & safe
-            (1.0, tier1, mid),    // CLUSTER — step up
-            (2.0, 0,     mid),    // CLUSTER — step down (rhythm)
-            (3.0, tier2, mid),    // CLUSTER — step up high
-            (4.0, 0,     wide),   // REST — wider breath platform
-            (5.0, tier1, mid),    // PEAK — step up
-            (6.0, tier2, mid),    // PEAK — top tier (tension peak)
-            (7.0, tier1, mid),    // PEAK — step down off the peak
-            (8.0, 0,     wide),   // BREATH — relax before the twist
-            (9.0, 0,     wide)    // FINALE — terminal + locked door live here
+        // Switchback staircase, authored at ABSOLUTE x (never size.width fractions).
+        // Tuple: (centerX, width, tierIndex, label). Centers march left->right at a uniform
+        // pitch so the route SPREADS across the width; rhythm comes from TIER (height) and
+        // WIDTH variation, never from widening a gap. The tier-6 entry is a WIDE REST at
+        // the same horizontal step as the climb (rise 0 from tier 5 would be flat, so it is
+        // placed one tier up but extra-wide) — a deliberate breath platform.
+        struct Beat { let cx: CGFloat; let w: CGFloat; let tier: Int; let name: String }
+        let leftMargin: CGFloat = 120
+        func px(_ step: CGFloat) -> CGFloat { leftMargin + step * pitch }
+        let beats: [Beat] = [
+            Beat(cx: px(0),  w: 200, tier: 0,  name: "spawn / teach"),   // wide low breath near the floor
+            Beat(cx: px(1),  w: 120, tier: 1,  name: "step up"),
+            Beat(cx: px(2),  w: 110, tier: 2,  name: "step up"),
+            Beat(cx: px(3),  w: 100, tier: 3,  name: "step up"),
+            Beat(cx: px(4),  w: 110, tier: 4,  name: "step up"),
+            Beat(cx: px(5),  w: 100, tier: 5,  name: "cluster crest"),
+            Beat(cx: px(6),  w: 220, tier: 6,  name: "REST breath"),     // WIDE deliberate pause
+            Beat(cx: px(7),  w: 110, tier: 7,  name: "resume climb"),
+            Beat(cx: px(8),  w: 100, tier: 8,  name: "step up"),
+            Beat(cx: px(9),  w: 110, tier: 9,  name: "tension rise"),
+            Beat(cx: px(10), w: 90,  tier: 10, name: "staging ledge"),   // narrow exposed approach
         ]
-        for p in plats {
-            createPlatform(at: CGPoint(x: px(p.i), y: py(p.tier)), size: CGSize(width: p.w, height: h))
+        for beat in beats {
+            createPlatform(at: CGPoint(x: beat.cx, y: tierY(beat.tier)), size: CGSize(width: beat.w, height: h))
         }
 
-        composedSpawnX = px(0)
+        composedSpawnX = beats[0].cx               // spawn on the wide low teach platform
 
-        // FINALE beat: the signature TRAP, staged on its own wide platform.
-        // Terminal sits above the finale platform center; the locked door stands at the
-        // platform's right edge. Door body is IDENTICAL to iPhone (120 tall, centered at
-        // groundY+75 above the finale floor) so it stays un-jumpable. Terminal at
-        // groundY+110 matches iPhone's terminal offset above the ground.
-        let finaleX = px(9.0)
-        composedTerminalPoint = CGPoint(x: finaleX, y: groundY + 110)
-        // Door at the right edge of the wide finale platform (wide/2 from center),
+        // FINALE beat: the signature TRAP staged HIGH near the ceiling, on its own wide
+        // platform one safe tier rise above the staging ledge (tier 10 -> tier 11).
+        // Terminal sits above the finale platform center; the locked door (the EXIT)
+        // stands at the platform's right edge. Door body is IDENTICAL to iPhone (120 tall,
+        // centered at finaleY+75 above the finale floor) so it stays un-jumpable; terminal
+        // at finaleY+110 matches iPhone's terminal offset above the ground.
+        let finaleTier = 11
+        let finaleY = tierY(finaleTier)
+        let finaleWidth: CGFloat = 200
+        let finaleX = px(11)                        // one pitch right of the staging ledge
+        createPlatform(at: CGPoint(x: finaleX, y: finaleY), size: CGSize(width: finaleWidth, height: h))
+
+        composedTerminalPoint = CGPoint(x: finaleX, y: finaleY + 110)
+        // Door at the right edge of the wide finale platform (finaleWidth/2 from center),
         // matching the iPhone door's offset past the platform edge.
-        composedDoorPoint = CGPoint(x: finaleX + wide / 2 + 20, y: groundY + 75)
+        composedDoorPoint = CGPoint(x: finaleX + finaleWidth / 2 + 20, y: finaleY + 75)
 
         createTerminalScreen(at: composedTerminalPoint)
         createLockedDoor(at: composedDoorPoint)
 
-        // Course extent: door right edge + margin.
+        // Course extent: door right edge + margin (drives the death zone + camera clamp
+        // so the high finale + exit stay reachable on-screen).
         composedWorldWidth = composedDoorPoint.x + 44 / 2 + pitch
 
-        // Death zone spans the full course (so a fall anywhere along the scroll is fatal).
+        // Death zone spans the full course (so a fall anywhere along the scrolling climb
+        // is fatal). Sits well below the raised floor, mirroring the iPhone offset.
         let death = SKNode()
         death.position = CGPoint(x: composedWorldWidth / 2, y: -50)
         death.physicsBody = SKPhysicsBody(rectangleOf: CGSize(width: composedWorldWidth * 2, height: 100))
@@ -498,10 +518,11 @@ final class AirDropScene: BaseLevelScene, SKPhysicsContactDelegate {
 
     private func setupBit() {
         // Spawn (and the respawn target — handleDeath reuses spawnPoint).
-        // iPhone: x = courseX(80) on the spawn platform; y = groundY(160)+40 = 200, +0 lift.
-        // iPad: x = composedSpawnX (the leftmost TEACH platform); y = raised floor + 40.
+        // iPhone: x = courseX(80) on the spawn platform; y = 200 (groundY 160 + 40), lift 0.
+        // iPad: x = composedSpawnX (the leftmost low TEACH platform); y = the raised floor
+        // tier (verticalTier 0) + 40.
         if isWideCanvas {
-            let groundY = playableGroundY(iphoneGround: 160)
+            let groundY = verticalTier(0, of: 14, iphoneGround: 160)
             spawnPoint = CGPoint(x: composedSpawnX, y: groundY + 40)
         } else {
             spawnPoint = CGPoint(x: courseX(80), y: 200 + gameplayLift)
@@ -601,7 +622,8 @@ final class AirDropScene: BaseLevelScene, SKPhysicsContactDelegate {
         // On iPad the camera scrolls, so the keypad modal must ride the VIEWPORT, not the
         // world — attach it to the camera and position in camera-local coords (origin =
         // viewport center). On iPhone (no camera-follow) it stays a scene child at the
-        // original scene-space position, so phone output is byte-identical.
+        // original scene-space position, so phone output is byte-identical. (Positioned +
+        // parented at the end of this method, once all keys are built.)
 
         // Build the symbol set for the keypad.
         var keySet = Set(doorCode)             // the answer symbols

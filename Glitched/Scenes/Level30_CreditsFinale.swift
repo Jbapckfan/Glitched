@@ -130,7 +130,8 @@ final class CreditsFinaleScene: BaseLevelScene, SKPhysicsContactDelegate {
 
     private func buildLevel() {
         // iPhone path stays byte-identical; the iPad path is a separate hand-composed
-        // climb authored at ABSOLUTE jump-reach spacing (never scaled geometry).
+        // climb authored on the shared verticalTier ladder (full top-to-bottom fill,
+        // never scaled geometry).
         if isWideCanvas {
             buildComposedIPadLevel()
         } else {
@@ -243,79 +244,134 @@ final class CreditsFinaleScene: BaseLevelScene, SKPhysicsContactDelegate {
     //
     // Hand-composed native-iPad version of the credits climb. Same mechanic
     // (climb a ladder of bright credit "platforms" upward to a top exit, bugs are
-    // hazards, vertical camera follow), but authored as PACED BEATS that use the
-    // iPad's width for a richer lateral path and its height (via the existing
-    // vertical camera) to fill the screen — instead of the phone's narrow centred
-    // ±30 zigzag. Geometry is NEVER scaled: every absolute value below is a fixed
-    // jump-reach offset, identical in points to the phone budget.
+    // hazards, vertical camera follow), but authored to SPAN THE FULL HEIGHT: the
+    // route is pinned to the shared verticalTier ladder so tier 0 sits on the floor
+    // (playableGroundY, near the BOTTOM) and the FINALE pins to the top tier near
+    // playableCeilingY — a true top-to-bottom climb, no empty upper half. Geometry
+    // is NEVER scaled: tier Y's come from BaseLevelScene.verticalTier (rise auto-
+    // clamped to maxJumpableRise=85) and lateral offsets are fixed jump-reach points.
     //
-    // BEATS (bottom -> top):
-    //   1. TEACH      — wide centred start platform (the breath before the climb).
-    //   2. BUILD      — three stepped rungs, alternating left/centre/right, widths
-    //                   tapering, to establish the climbing rhythm.
-    //   3. REST       — one WIDE centred platform: a deliberate safe pause.
-    //   4. TENSION    — four tighter rungs zig-zagging the full lateral budget with
-    //                   the bugs concentrated here: the difficulty peak.
-    //   5. BREATH     — one WIDE platform: a short recovery before the finale.
-    //   6. APPROACH   — a single rung leading to the staged finale.
-    //   7. FINALE     — the "THANK YOU / FOR PLAYING" platform staged ALONE, centred,
-    //                   above a clean gap, with the exit door on top: the level's
-    //                   signature meta beat gets its own isolated moment.
+    // FULL-HEIGHT TIER MODEL:
+    //   verticalTier(i, of: N) spaces N platform tiers evenly across the whole usable
+    //   band (groundY..ceilingY), each rise clamped <=85. To actually REACH the
+    //   ceiling the ladder needs enough tiers that band/(N-1) <= 85; on a portrait
+    //   iPad the band is ~1000-1100pt, so N is DERIVED at runtime from the band (a
+    //   fixed 4-7 would clamp out at ~half height and leave the dead upper strip this
+    //   redesign removes). The 7 AUTHORED BEATS below colour that full ladder.
+    //
+    // BEATS (bottom -> top), each anchored to a tier on the full-height ladder:
+    //   1. TEACH      — wide centred floor platform (tier 0): the breath before climb.
+    //   2. BUILD      — stepped rungs, alternating left/centre/right, widths varying,
+    //                   establishing the climbing rhythm in the lower band.
+    //   3. REST       — one WIDE centred platform mid-climb: a deliberate safe pause.
+    //   4. TENSION    — tight zig-zag rungs spanning the full lateral budget with the
+    //                   bugs concentrated here: the difficulty peak, upper-mid band.
+    //   5. BREATH     — one WIDE platform: a short recovery just below the finale.
+    //   6/7. APPROACH/FINALE — the "THANK YOU / FOR PLAYING" platform staged centred,
+    //                   pinned to the TOP tier (near the ceiling), exit door on top:
+    //                   the signature meta beat owns the very top of the screen.
     //
     // Reach budget (all platforms 25pt thick, so center-to-center == top-to-top):
-    //   - every vertical RISE below is <= BaseLevelScene.maxJumpableRise (85).
+    //   - vertical RISE between consecutive tiers is the verticalTier step, clamped
+    //     <= BaseLevelScene.maxJumpableRise (85) by the helper itself.
     //   - every horizontal STEP (center-to-center) is <= BaseLevelScene.maxJumpableGap
     //     (130); the wide overlapping boxes make edge-to-edge far smaller still.
     private func buildComposedIPadLevel() {
         let cx = size.width / 2
-        // Vertical fill: raise the floor on iPad so the climb begins in the lower
-        // third and the camera reveals a full composition as Bit ascends. iPhone is
-        // unaffected (this branch never runs there). 100 is the phone's startY.
-        let groundY = playableGroundY(iphoneGround: 100)
+        // Lateral budget: spread tiers across the WIDTH (not a centred ladder). Keep
+        // every consecutive |Δcenter| <= maxJumpableGap (130). The spread pushes boxes
+        // toward the edges on a wide canvas while staying reachable; consecutive beats
+        // never swing more than one full spread (<=2*halfSpread is gated below).
+        // halfSpread is the max lateral offset from centre. The zig pattern only ever
+        // steps one slot at a time (frac changes by at most 1.0 between rungs), so the
+        // largest consecutive |Δcenter| is halfSpread. Cap it at 120 (< maxJumpableGap
+        // 130) so every horizontal hop is reachable, and never let it push a box off a
+        // narrow canvas. Wider canvases still read as a width-spanning route because the
+        // boxes themselves are wide and the left/centre/right rungs visibly fan out.
+        let halfSpread = max(60, min((size.width / 2) - 130, 120))
+        func lat(_ frac: CGFloat) -> CGFloat { halfSpread * max(-1, min(1, frac)) }
 
-        // Authored beats. dy = top-to-top rise from the platform below (<=85).
-        // dx = lateral center offset from cx (consecutive |Δcenter| <=130).
-        // width varies across tiers for rhythm; bug flags the difficulty beats.
+        // The phone's startY is 100; on iPad playableGroundY raises the floor near the
+        // BOTTOM safe edge so the route climbs UP through the full band. N is derived
+        // from the band so the top tier lands near playableCeilingY (full top-to-bottom
+        // fill) while every per-tier rise stays <= 85 (the helper clamps it too).
+        let iphoneGround: CGFloat = 100
+        let band = playableBandHeight(iphoneGround: iphoneGround)
+        // Tiers so band/(N-1) <= maxJumpableRise; +1, floored to a sane minimum so even
+        // a short band still reads as a real multi-tier climb.
+        let tierCount = max(8, Int(ceil(band / BaseLevelScene.maxJumpableRise)) + 1)
+        let topTier = tierCount - 1
+        let restTier = tierCount / 2
+
+        func tierY(_ i: Int) -> CGFloat {
+            verticalTier(min(max(i, 0), topTier), of: tierCount, iphoneGround: iphoneGround)
+        }
+
+        // Authored beat mapped onto a tier. tier = ladder index (0 floor .. topTier
+        // ceiling). dxFrac = lateral fraction of the spread budget. width varies for
+        // rhythm; bug flags the difficulty beats. The route visits CONSECUTIVE tiers,
+        // so every rise is exactly one safe verticalTier step.
         struct Beat {
-            let dy: CGFloat        // rise above the previous platform
-            let dx: CGFloat        // lateral center offset from cx
+            let tier: Int
+            let dxFrac: CGFloat
             let width: CGFloat
             let role: String
             let name: String
-            let bug: Bool          // place a scurrying bug hazard on this platform
+            let bug: Bool
         }
 
-        // credits[] order: 10 entries, consumed top-down into the build/tension/breath
-        // beats. The teach + finale platforms use bespoke copy (as on phone).
+        // Lateral zig-zag for the generic climbing rungs (left/centre/right/centre):
+        // |Δfrac| <= 1 between consecutive rungs, so |Δcenter| <= halfSpread <= 120 < 130.
+        let zig: [CGFloat] = [-1.0, 0.0, +1.0, 0.0]
         let c = credits
-        let beats: [Beat] = [
-            // TEACH (start)
-            Beat(dy: 0,  dx:    0, width: 170, role: "GLITCHED",   name: "THE FINAL LEVEL", bug: false),
-            // BUILD cluster — stepped, alternating, tapering width
-            Beat(dy: 74, dx: -100, width: 130, role: c[0].role, name: c[0].name, bug: false),
-            Beat(dy: 76, dx:    0, width: 120, role: c[1].role, name: c[1].name, bug: true),
-            Beat(dy: 74, dx: +100, width: 120, role: c[2].role, name: c[2].name, bug: false),
-            // REST — wide centred breath
-            Beat(dy: 74, dx:    0, width: 210, role: c[3].role, name: c[3].name, bug: false),
-            // TENSION peak — four tight zig-zag rungs, bugs concentrated
-            Beat(dy: 82, dx: -110, width: 110, role: c[4].role, name: c[4].name, bug: true),
-            Beat(dy: 82, dx:    0, width: 110, role: c[5].role, name: c[5].name, bug: true),
-            Beat(dy: 82, dx: +110, width: 110, role: c[6].role, name: c[6].name, bug: true),
-            Beat(dy: 82, dx:    0, width: 110, role: c[7].role, name: c[7].name, bug: true),
-            // BREATH — wide recovery
-            Beat(dy: 74, dx:  -90, width: 200, role: c[8].role, name: c[8].name, bug: false),
-            // APPROACH to finale
-            Beat(dy: 74, dx:    0, width: 130, role: c[9].role, name: c[9].name, bug: true),
-            // FINALE — staged alone, centred, above a clean gap
-            Beat(dy: 80, dx:    0, width: 200, role: "THANK YOU", name: "FOR PLAYING", bug: false),
-        ]
+        var creditIdx = 0
+        func nextCredit() -> (role: String, name: String) {
+            let v = c[min(creditIdx, c.count - 1)]
+            creditIdx += 1
+            return v
+        }
 
-        // Lay the beats out, accumulating Y. Record centres for the bugs/signs/exit.
-        var y = groundY
+        // Build the route tier-by-tier so no rung is skipped (each gap is one step).
+        // Tier indices are relative to topTier, so the FINALE always pins to the
+        // ceiling no matter how many tiers the band needs.
+        var beats: [Beat] = []
+        for tier in 0...topTier {
+            if tier == 0 {
+                // TEACH — wide centred floor platform.
+                beats.append(Beat(tier: 0, dxFrac: 0, width: 200,
+                                  role: "GLITCHED", name: "THE FINAL LEVEL", bug: false))
+            } else if tier == topTier {
+                // FINALE — staged alone, centred, pinned to the ceiling.
+                beats.append(Beat(tier: topTier, dxFrac: 0, width: 200,
+                                  role: "THANK YOU", name: "FOR PLAYING", bug: false))
+            } else if tier == restTier {
+                // REST — WIDE centred breath, mid-climb.
+                let cr = nextCredit()
+                beats.append(Beat(tier: tier, dxFrac: 0, width: 220,
+                                  role: cr.role, name: cr.name, bug: false))
+            } else if tier == topTier - 1 {
+                // BREATH — WIDE centred recovery just below the finale. Centred so the
+                // hop UP from any zig predecessor is <= halfSpread (<=120 < 130) and the
+                // final hop into the centred finale is purely vertical.
+                let cr = nextCredit()
+                beats.append(Beat(tier: tier, dxFrac: 0, width: 200,
+                                  role: cr.role, name: cr.name, bug: false))
+            } else {
+                // BUILD (below rest) / TENSION (above rest) — zig-zag climbing rungs.
+                // Bugs concentrated in the TENSION band (above the rest platform).
+                let isTension = tier > restTier
+                let frac = zig[tier % zig.count]
+                let cr = nextCredit()
+                beats.append(Beat(tier: tier, dxFrac: frac,
+                                  width: isTension ? 115 : 130,
+                                  role: cr.role, name: cr.name, bug: isTension))
+            }
+        }
+
+        // Lay the beats out on their tier Y's. Record centres for bugs/signs/exit.
         var centers: [CGPoint] = []
         for beat in beats {
-            y += beat.dy
-            let pos = CGPoint(x: cx + beat.dx, y: y)
+            let pos = CGPoint(x: cx + lat(beat.dxFrac), y: tierY(beat.tier))
             centers.append(pos)
             createCreditPlatform(at: pos, role: beat.role, name: beat.name, width: beat.width)
             if beat.bug {
@@ -323,16 +379,16 @@ final class CreditsFinaleScene: BaseLevelScene, SKPhysicsContactDelegate {
             }
         }
 
-        // Exit door on the staged finale platform.
+        // Exit door on the staged finale platform (top tier, near the ceiling).
         let finale = centers.last!
         createExitDoor(at: CGPoint(x: finale.x, y: finale.y + 50))
 
-        // Fourth-wall signs: placed in the clean centre-column band inside the BUILD
-        // cluster, between rung c[1] (index 2, centred) and rung c[2] (index 3, off to
-        // the right) — neither platform's box reaches this x/y, so the lines never
-        // crowd a credit caption (the same legibility 10pt / alpha 0.75 as phone).
-        let buildLowCenter = centers[2]   // c[1], centred
-        let signY = buildLowCenter.y + 55
+        // Fourth-wall signs: placed in the clean centre-column band just above the
+        // TEACH floor platform (tier 0, centred wide), where no climbing rung's box
+        // reaches — so the lines never crowd a credit caption. Same legibility as
+        // phone (10pt / alpha 0.75).
+        let teach = centers[0]
+        let signY = teach.y + 48
         let sign = SKLabelNode(text: "YOU'RE STANDING ON THE PEOPLE WHO MADE ME.")
         sign.fontName = "Menlo"
         sign.fontSize = 10
@@ -347,7 +403,7 @@ final class CreditsFinaleScene: BaseLevelScene, SKPhysicsContactDelegate {
         sign2.fontSize = 10
         sign2.fontColor = fillColor
         sign2.alpha = 0.75
-        sign2.position = CGPoint(x: cx, y: signY - 10)
+        sign2.position = CGPoint(x: cx, y: signY - 12)
         sign2.zPosition = 50
         worldContainer.addChild(sign2)
 
@@ -588,9 +644,12 @@ final class CreditsFinaleScene: BaseLevelScene, SKPhysicsContactDelegate {
     }
 
     private func setupBit() {
-        // Spawn 40pt above the start platform. On iPad the start platform is raised
-        // to playableGroundY (vertical fill), so the spawn rises with it; on iPhone
-        // the start platform stays at y=100 so this is the byte-identical y=140.
+        // Spawn 40pt above the TEACH (tier 0) platform. On iPad that floor is raised
+        // to playableGroundY near the BOTTOM safe edge, so the spawn rises with it and
+        // sits in the LOW band — well clear of the camera-anchored "LEVEL 30" title up
+        // top (SPAWN-OVERLAP FIX: the astronaut no longer materialises behind the
+        // title). On iPhone the start platform stays at y=100, so this is the
+        // byte-identical y=140.
         let startPlatformY: CGFloat = isWideCanvas ? playableGroundY(iphoneGround: 100) : 100
         spawnPoint = CGPoint(x: size.width / 2, y: startPlatformY + 40)
         bit = BitCharacter.make()

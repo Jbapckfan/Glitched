@@ -192,62 +192,112 @@ final class TimeOfDayScene: BaseLevelScene, SKPhysicsContactDelegate {
         addChild(death)
     }
 
-    // MARK: - Composed iPad Course (L3 template)
+    // MARK: - Composed iPad Course (Phase-0 vertical-fill — a true vertical climb)
     //
-    // A hand-authored, paced course at ABSOLUTE positions (NEVER size.width
-    // fractions, NEVER scaled). Spacing is fixed jump reach: every edge-to-edge
-    // gap <= BaseLevelScene.maxJumpableGap (130), every top-to-top rise <=
-    // BaseLevelScene.maxJumpableRise (85). Platform tops vary across three tiers
-    // for rhythm — never a flat row.
+    // A hand-authored, paced course at ABSOLUTE x positions (NEVER size.width
+    // fractions, NEVER scaled). The prior redesign filled the WIDTH but parked every
+    // platform in a low band (tops 0..80 above a low floor), leaving the top ~75% of
+    // the tall iPad canvas as dead sky — the void this pass eliminates. This rebuild
+    // authors each platform TOP on `verticalTier(index, of: tierCount, iphoneGround:
+    // 160)` — the Phase-0 API that spreads tiers across the FULL usable band (floor
+    // near the BOTTOM -> near the ceiling under the HUD). The route now CLIMBS and
+    // fills top-to-bottom, modeled on the L30 vertical climb, instead of crawling
+    // along a low strip. The level note is taken literally: the time-of-day twist
+    // (night-only safe landing) is revealed UP HIGH as the finale, so the formerly
+    // empty top of the screen becomes the payoff.
     //
-    // BEATS (left -> right):
-    //   P1  teach / spawn (wide, calm)
-    //   P2-P4 build cluster (stepped up/down for rhythm)
-    //   P5  REST breath (widest pad — a deliberate safe pause)
-    //   P6-P7 tension peak (higher tier, tighter gaps)
-    //   P8  short breath (lower, wide-ish)
-    //   P9  ISOLATED FINALE — the time-of-day twist staged alone: a guard spike
-    //       sweeps the only landing of this beat. The player MUST CYCLE TIME to
-    //       NIGHT (sleep the guard) to cross. This is the level's signature
-    //       mechanic given its own moment instead of being buried in the line.
-    //   P10 exit pad + door
+    // SAFETY: verticalTier clamps the per-tier rise to maxJumpableRise (85), so any
+    // +1-tier hop is jumpable. The route therefore NEVER increases its tier index by
+    // more than 1 between consecutive platforms (a +2 hop would be up to 2*step and
+    // could exceed 85). Dips (negative tier delta) and flat hops (same tier) are
+    // always safe. Every edge-to-edge horizontal gap is <= maxJumpableGap (130) —
+    // see the per-platform centers/widths below.
     //
-    // Tops are authored as offsets above `groundY` (the device floor from
-    // playableGroundY, which fills the tall iPad screen). Centers/widths are
-    // absolute. The course is ~1980pt wide — wider than any iPad viewport — so
-    // installCameraFollow scrolls it (camera ticks in BaseLevelScene.update()).
+    // BEATS (left -> right, low -> high — the empty top is now the PAYOFF). The route
+    // climbs one tier at a time from the floor (tier 0) all the way to the ceiling
+    // (tier 13), so it fills the FULL height of the canvas, not a low strip:
+    //   P1  tier 0   teach / spawn (wide, calm, on the low floor)
+    //   P2  tier 1   build (up)
+    //   P3  tier 2   build (up — the climb is established)
+    //   P4  tier 1   build (dip for rhythm — varied heights)
+    //   P5  tier 2   REST breath (widest pad — deliberate safe pause, low-mid)
+    //   P6  tier 3   ascent
+    //   P7  tier 4   ascent
+    //   P8  tier 5   ascent
+    //   P9  tier 4   dip (rhythm)
+    //   P10 tier 5   REST-2 breath (wide pad — a second safe pause, mid-climb)
+    //   P11 tier 6   ascent
+    //   P12 tier 7   ascent
+    //   P13 tier 8   ascent (high over the void now)
+    //   P14 tier 9   ascent
+    //   P15 tier 10  breath (wide-ish, high — catch your breath near the top)
+    //   P16 tier 11  ascent (approaching the summit)
+    //   P17 tier 12  ISOLATED FINALE near the ceiling: a guard spike sweeps the only
+    //       landing. The player MUST CYCLE TIME to NIGHT to make it safe (sleep the
+    //       guard). Staging the time twist UP HIGH turns the formerly empty sky into
+    //       the climax — exactly the level note.
+    //   P18 tier 13  exit pad + door (the SUMMIT, at the ceiling)
+    //
+    // Centers/widths are absolute; tier indices map to Y via verticalTier. The
+    // course is ~3420pt wide — far wider than any iPad viewport — so
+    // installCameraFollow scrolls it horizontally (camera Y stays centered; the
+    // vertical fill comes entirely from the authored tier Ys, which span the full
+    // band in a single fixed-camera viewport). The climb is spread across the width
+    // (x marches 120 -> 3300), not a centered ladder.
 
-    // Authored platform table for the composed course. (centerX, width, topOffset,
-    // height). topOffset = the platform TOP's height above the baseline ground top.
-    private let composedPlatforms: [(cx: CGFloat, w: CGFloat, topOff: CGFloat, h: CGFloat)] = [
-        (120,  150,  0,  30),   // P1  teach / spawn
-        (330,  120, 55,  26),   // P2  build (up)
-        (520,  110, 25,  26),   // P3  build (down)
-        (700,  110, 70,  24),   // P4  build (up, peak of cluster)
-        (930,  200, 30,  30),   // P5  REST breath (widest)
-        (1130, 100, 80,  24),   // P6  tension (high tier)
-        (1300, 100, 40,  26),   // P7  tension
-        (1470, 150, 15,  28),   // P8  short breath
-        (1690, 150, 50,  28),   // P9  FINALE guard pad (isolated)
-        (1870, 140, 10,  30),   // P10 exit pad
+    // Evenly-spaced tiers spanning the full usable band. 14 is chosen so the per-tier
+    // rise (bandHeight/13) stays <= maxJumpableRise (~85) on the tallest iPad portrait
+    // WITHOUT verticalTier needing to clamp — meaning the top tier reaches the ceiling
+    // and the route genuinely fills the full height. (Fewer tiers would clamp the step
+    // and leave the summit short of the top; more tiers also fit but waste density.)
+    private static let tierCount = 14
+
+    // Authored platform table for the composed course. (centerX, width, tier,
+    // height). `tier` is the verticalTier INDEX (0 = floor, tierCount-1 = ceiling);
+    // the platform TOP is placed at that tier's Y. Consecutive `tier` values never
+    // rise by more than 1 (see SAFETY note above). Widths vary (110..220); two wide
+    // REST pads (P5=220, P10=200) give genuine breath beats.
+    private let composedPlatforms: [(cx: CGFloat, w: CGFloat, tier: Int, h: CGFloat)] = [
+        (120,  170, 0,  30),   // P1  spawn / teach (low floor, wide)
+        (320,  130, 1,  26),   // P2  build (up)
+        (510,  120, 2,  26),   // P3  build (up)
+        (690,  120, 1,  24),   // P4  build (dip for rhythm)
+        (900,  220, 2,  30),   // P5  REST breath (widest pad)
+        (1100, 120, 3,  26),   // P6  ascent
+        (1280, 110, 4,  24),   // P7  ascent
+        (1450, 120, 5,  26),   // P8  ascent
+        (1630, 110, 4,  24),   // P9  dip (rhythm)
+        (1820, 200, 5,  30),   // P10 REST-2 breath (wide pad, mid-climb)
+        (2010, 120, 6,  26),   // P11 ascent
+        (2190, 110, 7,  24),   // P12 ascent
+        (2370, 110, 8,  26),   // P13 ascent (high over void)
+        (2550, 120, 9,  24),   // P14 ascent
+        (2740, 150, 10, 28),   // P15 breath (wide-ish, high)
+        (2920, 120, 11, 26),   // P16 ascent (near summit)
+        (3110, 150, 12, 28),   // P17 FINALE guard pad (isolated, near ceiling)
+        (3300, 160, 13, 30),   // P18 exit pad (summit, at ceiling)
     ]
 
-    private func buildComposedIPadLevel() {
-        // Floor raised to fill the tall canvas (returns iphoneGround on phones,
-        // but this builder only runs on iPad). All tops are authored relative to
-        // this so vertical fill is automatic; relative gaps/rises are unchanged.
-        let groundY = playableGroundY(iphoneGround: 160)
+    /// The platform TOP's scene Y for a composed-platform tier. Centralized so the
+    /// builder, the enemy placement, the spawn, and the exit door all agree on the
+    /// vertical-tier mapping.
+    private func composedTopY(forTier tier: Int) -> CGFloat {
+        verticalTier(tier, of: Self.tierCount, iphoneGround: 160)
+    }
 
+    private func buildComposedIPadLevel() {
         for p in composedPlatforms {
-            // center_y so that the platform TOP sits at groundY + topOff.
-            let centerY = groundY + p.topOff - p.h / 2 + 15
+            // center_y so the platform TOP sits exactly at its tier's Y.
+            let topY = composedTopY(forTier: p.tier)
+            let centerY = topY - p.h / 2
             createPlatform(at: CGPoint(x: p.cx, y: centerY), size: CGSize(width: p.w, height: p.h))
         }
 
-        // Exit door on the exit pad (P10). Sits 35pt above the pad top — the same
-        // pad-top-relative offset as the phone door — so the approach reads the same.
-        let exitPad = composedPlatforms[9]
-        let exitTopY = groundY + exitPad.topOff + 15
+        // Exit door on the exit pad (the LAST platform, P18 — the summit). Sits 35pt
+        // above the pad top — the same pad-top-relative offset as the phone door —
+        // so the approach reads the same.
+        let exitPad = composedPlatforms[composedPlatforms.count - 1]
+        let exitTopY = composedTopY(forTier: exitPad.tier)
         createExitDoor(at: CGPoint(x: exitPad.cx, y: exitTopY + 35))
 
         // Course extent = right edge of the exit pad + margin. Drives both the
@@ -256,9 +306,10 @@ final class TimeOfDayScene: BaseLevelScene, SKPhysicsContactDelegate {
 
         // Death zone spans the FULL course (not just the screen) so a fall
         // anywhere along the scrolled course kills + respawns. Centered on the
-        // course, well below the lowest platform.
+        // course, well below the lowest platform (the tier-0 floor).
+        let floorY = composedTopY(forTier: 0)
         let death = SKNode()
-        death.position = CGPoint(x: composedCourseExtent / 2, y: groundY - 210)
+        death.position = CGPoint(x: composedCourseExtent / 2, y: floorY - 210)
         death.physicsBody = SKPhysicsBody(rectangleOf: CGSize(width: composedCourseExtent + 400, height: 100))
         death.physicsBody?.isDynamic = false
         death.physicsBody?.categoryBitMask = PhysicsCategory.hazard
@@ -327,17 +378,17 @@ final class TimeOfDayScene: BaseLevelScene, SKPhysicsContactDelegate {
 
     /// Composed-iPad enemies. Same patrol/sleep mechanic, authored at ABSOLUTE
     /// positions pinned to the composed platforms. The GUARD (enemy 0) patrols
-    /// across the ISOLATED FINALE pad (P9, center 1690), so in DAY it sweeps the
-    /// only landing of the finale beat and the player MUST CYCLE TIME to NIGHT to
-    /// sleep it and cross — the signature twist staged as its own moment. The
-    /// other two are flavor patrols on earlier beats so the day/night read is
-    /// taught before the finale demands it.
+    /// across the ISOLATED FINALE pad (P17, center 3110) NEAR THE CEILING, so in DAY
+    /// it sweeps the only landing of the finale beat and the player MUST CYCLE TIME
+    /// to NIGHT to sleep it and cross — the signature twist staged high as the
+    /// payoff. The other two are flavor patrols on earlier/lower beats so the
+    /// day/night read is taught before the finale demands it.
     private func createComposedIPadEnemies() {
-        let groundY = playableGroundY(iphoneGround: 160)
-
-        // The platform TOP in scene space for a given composed-platform index.
+        // The platform TOP in scene space for a given composed-platform index —
+        // now derived from the platform's vertical TIER so spikes stay pinned to
+        // the platforms after the full-height climb rework.
         func topY(_ platIndex: Int) -> CGFloat {
-            groundY + composedPlatforms[platIndex].topOff + 15
+            composedTopY(forTier: composedPlatforms[platIndex].tier)
         }
 
         // Spike center sits ~10.5pt above the platform top — IDENTICAL to the
@@ -349,17 +400,18 @@ final class TimeOfDayScene: BaseLevelScene, SKPhysicsContactDelegate {
         let spikeClearance: CGFloat = 10.5
 
         // (centerX, range, platIndex)
-        // GUARD on P9 (finale): range 70 sweeps the pad span [1620,1760] (pad is
-        // [1615,1765]) — the ONLY safe landing of the isolated finale beat, so it
-        // CANNOT be timing-dodged and must be slept to cross. Flavor 1 is a small
-        // patrol on the P3 build platform (an early "moving spike" teach that
-        // hints at CYCLE TIME without forcing it); flavor 2 decorates the P7
-        // tension beat. The P5 REST pad is deliberately left CLEAN so the breath
-        // beat stays a genuine safe pause.
+        // GUARD on P17 (finale, idx 16): range 70 sweeps the pad span [3040,3180]
+        // (pad is [3035,3185]) — the ONLY safe landing of the isolated near-ceiling
+        // finale beat, so it CANNOT be timing-dodged and must be slept to cross.
+        // Flavor 1 is a small patrol on the P3 build platform (idx 2, an early
+        // "moving spike" teach low in the climb that hints at CYCLE TIME without
+        // forcing it); flavor 2 decorates the P13 ascent beat (idx 12, mid-climb).
+        // Both REST pads (P5 idx 4, P10 idx 9) are deliberately left CLEAN so the
+        // breath beats stay genuine safe pauses.
         let enemyData: [(cx: CGFloat, range: CGFloat, plat: Int)] = [
-            (1690, 70, 8),   // GUARD: finale pad P9 landing (required)
-            (520,  25, 2),   // flavor / teach: P3 build platform
-            (1300, 30, 6),   // flavor: P7 tension beat
+            (3110, 70, 16),  // GUARD: finale pad P17 landing (required)
+            (510,  25, 2),   // flavor / teach: P3 build platform (low)
+            (2370, 30, 12),  // flavor: P13 ascent beat (mid-climb)
         ]
 
         for (index, data) in enemyData.enumerated() {
@@ -578,10 +630,9 @@ final class TimeOfDayScene: BaseLevelScene, SKPhysicsContactDelegate {
 
     private func setupBit() {
         if isWideCanvas {
-            // Composed course: spawn ~40pt above P1's top (center 120).
-            let groundY = playableGroundY(iphoneGround: 160)
+            // Composed course: spawn ~40pt above P1's top (tier 0 floor, center 120).
             let p1 = composedPlatforms[0]
-            let p1Top = groundY + p1.topOff + 15
+            let p1Top = composedTopY(forTier: p1.tier)
             spawnPoint = CGPoint(x: p1.cx, y: p1Top + 40)
         } else {
             // Spawn (also the respawn point used by handleDeath) sits 40pt above
@@ -596,8 +647,8 @@ final class TimeOfDayScene: BaseLevelScene, SKPhysicsContactDelegate {
 
         // Composed course is wider than the viewport -> scroll it. Install once,
         // after the player controller exists; the camera ticks in base update().
-        // worldWidth == the full course extent so the clamp shows the exit pad
-        // (right edge 1940, extent 1980) within bounds.
+        // worldWidth == the full course extent so the clamp shows the summit exit
+        // pad (right edge 3380, extent 3420) within bounds.
         if isWideCanvas {
             installCameraFollow(worldWidth: composedCourseExtent, playerController: playerController)
         }

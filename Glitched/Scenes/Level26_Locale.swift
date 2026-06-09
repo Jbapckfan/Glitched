@@ -52,20 +52,23 @@ final class LocaleScene: BaseLevelScene, SKPhysicsContactDelegate {
     private func courseX(_ logicalX: CGFloat) -> CGFloat { courseOriginX + logicalX * courseScale }
     private func courseLen(_ logical: CGFloat) -> CGFloat { logical * courseScale }
 
-    // MARK: - Native-iPad layout (hand-composed)
+    // MARK: - Native-iPad layout split
     //
-    // iPhone uses the original fixed 390-wide vertical-puzzle column
-    // (buildPhoneLevel), unchanged & byte-identical. iPad gets a HAND-COMPOSED
-    // level (buildComposedIPadLevel) with paced beats — teach -> dual-route
-    // cluster -> rest -> tension peak (the visible WRONG route's dead-end) ->
-    // the unscramble REVEAL staged as a deliberate finale beat -> exit. Bit's
-    // physics are device-independent, so spacing stays within the fixed jump
-    // reach (gaps <= BaseLevelScene.maxJumpableGap, rises <= maxJumpableRise).
-    // The composed course is wider than the viewport, so it scrolls via the
-    // Phase 0 installCameraFollow. Everything is gated on `isWideCanvas`;
-    // iPhone is untouched. The locale mechanic is preserved verbatim: both
-    // layouts populate the SAME wrongPlatforms / hiddenPlatforms / signLabels
-    // arrays, so unscrambleWorld()/rescrambleWorld() work unchanged.
+    // PHASE-0 VERTICAL FILL (L26-locale): the prior iPad pass merely lifted the
+    // narrow iPhone band uniformly (gameplayLift) so it sat center-ish — but that
+    // still produced a "bottom-25% flat ribbon" with the top half of the tall
+    // canvas EMPTY (the whole band is only ~295pt tall). This split keeps the
+    // iPhone layout BYTE-IDENTICAL (buildPhoneLevel, gated off isWideCanvas) and
+    // gives iPad a HAND-COMPOSED FULL-HEIGHT climb (buildComposedIPadLevel) that
+    // staggers the signed-platform run across the WHOLE usable band via
+    // verticalTier(index, of: N) — a true vertical climb from a low spawn to a
+    // finale near the ceiling (model: L30). Bit's physics are device-independent,
+    // so spacing stays within fixed jump reach (gaps <= maxJumpableGap=130, rises
+    // <= maxJumpableRise=85; verticalTier guarantees safe rises). The composed
+    // course is wider than the viewport, so it scrolls via installCameraFollow.
+    // The locale mechanic is preserved verbatim: both layouts populate the SAME
+    // wrongPlatforms / hiddenPlatforms / signLabels arrays, so unscrambleWorld() /
+    // rescrambleWorld() / rescrambleTextOnly() work unchanged.
 
     /// True on iPad-proportioned canvases (matches the base helpers' gate).
     private var isWideCanvas: Bool { size.height > 1000 && size.width > designWidth }
@@ -142,7 +145,7 @@ final class LocaleScene: BaseLevelScene, SKPhysicsContactDelegate {
         }
 
         #if DEBUG
-        // Test button for simulator (both layouts)
+        // Test button for simulator (both layouts).
         createTestButton()
         #endif
     }
@@ -155,7 +158,9 @@ final class LocaleScene: BaseLevelScene, SKPhysicsContactDelegate {
         // wrong-route origin, the exit plateau and the exit door are positioned
         // as groundY + <offset>, lifting groundY shifts the entire band by the
         // same delta — all relative gaps/rises are byte-identical. On iPhone
-        // gameplayLift == 0 so groundY stays exactly 160 (no change).
+        // gameplayLift == 0 so groundY stays exactly 160 (no change). NOTE: on
+        // iPad this path is never taken (isWideCanvas routes to the composed
+        // full-height climb); kept intact so the iPhone layout is untouched.
         let groundY: CGFloat = 160 + gameplayLift
 
         // Fits a 390-pt iPhone canvas. Two overlapping zigzag routes share
@@ -221,55 +226,72 @@ final class LocaleScene: BaseLevelScene, SKPhysicsContactDelegate {
         addChild(death)
     }
 
-    // MARK: - iPad layout (HAND-COMPOSED, native — teach -> dual-route -> rest -> peak -> REVEAL)
+    // MARK: - iPad layout (HAND-COMPOSED, native — a FULL-HEIGHT vertical climb)
     //
-    // Rather than scaling the narrow iPhone column to a centered strip, the iPad
-    // level is authored as a paced, LEFT-TO-RIGHT sequence of BEATS in absolute
-    // points so jump reach is exact (gaps <= maxJumpableGap, rises <=
-    // maxJumpableRise across 3 height tiers for rhythm). The level reads:
-    //   1. TEACH       — spawn + the first scrambled signpost (learn "read the signs").
-    //   2. DUAL-ROUTE  — the corridor forks: a VISIBLE scrambled "wrong" route
-    //                    (w1->w2) climbs alongside a HIDDEN "correct" route (h1->h2,
-    //                    lower tier). Heights step across tiers, never a flat row.
-    //   3. REST        — a wider low platform: a deliberate breath + revert clue.
-    //   4. TENSION PEAK— the wrong route climbs one more to its DEAD-END (wend),
-    //                    high up, with a wide UN-JUMPABLE void to the far-right exit.
-    //                    The player can SEE the exit but cannot reach it scrambled.
-    //   5. REVEAL      — the signature twist staged as its own beat: changing the
-    //                    device language reveals the hidden bridge (h3->h4) that
-    //                    spans the void from the rest platform to the exit.
-    //   6. EXIT.
-    // The REVEAL bridge (h3/h4) is the design climax — its own beat, not buried in
-    // a uniform line. The wrong route's dead-end + void IS the trap: while
-    // scrambled, no platform within jump reach connects rest/wend to the exit.
+    // PHASE-0 VERTICAL FILL (L26-locale): the prior iPad pass filled WIDTH but
+    // stacked every beat off a low floor at +30/+80/.../+295pt, so the top half of
+    // the tall canvas sat EMPTY — the locale analysis flagged this as a "bottom-25%
+    // flat ribbon". This rebuild LIFTS + STAGGERS the signed-platform run across
+    // the FULL usable band via verticalTier(index, of: N): the route climbs from a
+    // low spawn (tier 0) through staged beats up to a finale near the CEILING
+    // (tier 5), so the level reads as a true vertical climb (model: L30). The
+    // signature unscramble/locale mechanic is the design climax, staged HIGH.
+    //
+    // Tier map (N=6 tiers spanning groundY..ceilingY; per-tier rise auto-clamped
+    // to maxJumpableRise=85, so every adjacent-tier hop is a guaranteed-safe jump):
+    //   1. TEACH       (T0, floor)  — spawn + first scrambled signpost.
+    //   2. DUAL-ROUTE  (T1)         — corridor forks: a VISIBLE scrambled "wrong"
+    //                                 platform (w1) climbs alongside a HIDDEN correct
+    //                                 alt (h1) at the same low rung; heights stagger.
+    //   3. REST        (T2)         — a WIDE rest platform: the deliberate breath
+    //                                 + revert clue, mid-climb.
+    //   4. TENSION     (T3..T4)     — the wrong route keeps climbing (w2->wend) to
+    //                                 a HIGH dead-end peak. From wend / rest there
+    //                                 is a wide UN-JUMPABLE void to the exit: the
+    //                                 player SEES the finale but cannot reach it.
+    //   5. REVEAL      (T3..T5)     — changing the device language reveals the
+    //                                 hidden staircase (h2->h3->h4) that climbs up
+    //                                 and over the void from the rest to the exit.
+    //   6. FINALE/EXIT (T5, ceiling)— exit plateau + door near the TOP of the band.
+    // The REVEAL staircase is the climax and lives in the upper third, not buried in
+    // a flat row. The wrong route's dead-end + void IS the trap: while scrambled, no
+    // platform within jump reach connects rest/wend to the exit. Tiers are spread
+    // across the WIDTH (lm+0 .. exit) as well as the height — not a centered ladder.
     private func buildComposedIPadLevel() {
-        // Vertical fill: raise the floor toward the lower-third on tall canvases.
+        // Vertical fill: floor near the BOTTOM; the route climbs the FULL band.
         let groundY = playableGroundY(iphoneGround: 160)
         composedGroundY = groundY
 
-        // 3 height tiers for rhythm. Adjacent-tier rise = 50pt (< 85 safe).
-        // Never require a tier-0 -> tier-2 jump directly (that would be 100pt).
-        func tierY(_ tier: CGFloat) -> CGFloat { groundY + tier * 50 }
+        // 6 tiers spanning floor -> near-ceiling. verticalTier clamps the per-tier
+        // rise to maxJumpableRise (85), so adjacent tiers are always jumpable and
+        // the band is filled top-to-bottom. Never require a 2-tier direct jump.
+        let tiers = 6
+        func tierY(_ tier: Int) -> CGFloat { verticalTier(tier, of: tiers, iphoneGround: 160) }
 
-        let wide: CGFloat = 110
+        let wide: CGFloat = 150  // wide REST platform (the breath)
+        let plateau: CGFloat = 120
         let mid: CGFloat = 70
         let start: CGFloat = 100
         let h: CGFloat = 28
         let lm: CGFloat = 90   // left margin
 
-        // ---- Always-solid spine: spawn + REST breath + exit plateau ----
-        createPlatform(at: CGPoint(x: lm + 0,   y: tierY(0)), size: CGSize(width: start, height: h))  // TEACH spawn
-        createPlatform(at: CGPoint(x: lm + 400, y: tierY(0)), size: CGSize(width: wide,  height: h))  // REST breath
-        createPlatform(at: CGPoint(x: lm + 800, y: tierY(0)), size: CGSize(width: wide,  height: h))  // EXIT plateau
+        // ---- Always-solid spine: spawn (T0) + WIDE REST (T2) + exit plateau (T5) ----
+        // Spawn low, rest mid, exit high — the spine alone spans the full height.
+        createPlatform(at: CGPoint(x: lm + 0,   y: tierY(0)), size: CGSize(width: start,   height: h))  // TEACH spawn (floor)
+        createPlatform(at: CGPoint(x: lm + 320, y: tierY(2)), size: CGSize(width: wide,    height: h))  // WIDE REST breath (mid)
+        createPlatform(at: CGPoint(x: lm + 720, y: tierY(5)), size: CGSize(width: plateau, height: h))  // EXIT plateau (near ceiling)
 
-        // ---- WRONG route (VISIBLE, scrambled): climbs and dead-ends ----
-        // From the dead-end (wend) and from the rest platform there is a wide,
-        // un-jumpable void to the exit (320pt / 290pt edge — far past the 145
-        // absolute max). This is the trap: scrambled, the level is uncompletable.
+        // ---- WRONG route (VISIBLE, scrambled): a climbable lure that dead-ends ----
+        // spawn->w1(T1)->w2(T2)->wend(T3) is a fully climbable corridor (each leg
+        // gap<=130, single safe tier rise), so the player is LURED up it — then it
+        // dead-ends. From wend(T3) to the exit plateau(T5) the gap is 235pt AND a
+        // 2-tier skip (both far past the 130/1-tier reach), so scrambled the route
+        // CANNOT reach the exit. The rest(T2) is likewise 265pt + 3 tiers from the
+        // exit. The ONLY way across is the hidden REVEAL staircase. This is the trap.
         let wrongPositions: [CGPoint] = [
-            CGPoint(x: lm + 140, y: tierY(1)),   // w1 — fork up
-            CGPoint(x: lm + 265, y: tierY(2)),   // w2 — climb
-            CGPoint(x: lm + 390, y: tierY(2))    // wend — DEAD-END peak (tension)
+            CGPoint(x: lm + 150, y: tierY(1)),   // w1 — fork up off spawn
+            CGPoint(x: lm + 270, y: tierY(2)),   // w2 — climb (gap 50 from w1)
+            CGPoint(x: lm + 390, y: tierY(3))    // wend — dead-end peak (235pt void to exit)
         ]
         for pos in wrongPositions {
             let p = createPlatformNode(at: pos, size: CGSize(width: mid, height: h))
@@ -278,15 +300,16 @@ final class LocaleScene: BaseLevelScene, SKPhysicsContactDelegate {
             addChild(p)
         }
 
-        // ---- CORRECT route (HIDDEN until unscrambled): the real path ----
-        // h1->h2 shadow the early fork at a lower tier; h3->h4 are the REVEAL
-        // bridge that spans the void from rest to exit. All gaps <=130 / rises
-        // <=85 along start->h1->h2->rest->h3->h4->exit.
+        // ---- CORRECT route (HIDDEN until unscrambled): the real climb ----
+        // h1 (T1) is the low alt of the fork (under w1); h2->h3->h4 are the REVEAL
+        // staircase that climbs from the rest (T2) up through T3/T4 to meet the exit
+        // plateau (T5), spanning the void. Every leg start->h1->rest->h2->h3->h4->
+        // exit keeps gaps <=130 and uses a single safe tier rise at a time.
         let correctPositions: [CGPoint] = [
-            CGPoint(x: lm + 140, y: tierY(0)),   // h1 — low alt of the fork
-            CGPoint(x: lm + 275, y: tierY(1)),   // h2 — steps toward rest
-            CGPoint(x: lm + 540, y: tierY(1)),   // h3 — REVEAL bridge 1 (over the void)
-            CGPoint(x: lm + 670, y: tierY(1))    // h4 — REVEAL bridge 2 (finale, into exit)
+            CGPoint(x: lm + 150, y: tierY(1)),   // h1 — low alt of the fork (under w1)
+            CGPoint(x: lm + 460, y: tierY(3)),   // h2 — REVEAL step up off the rest
+            CGPoint(x: lm + 580, y: tierY(4)),   // h3 — REVEAL step (over the void)
+            CGPoint(x: lm + 700, y: tierY(5))    // h4 — REVEAL finale, into the exit plateau
         ]
         for pos in correctPositions {
             let p = createPlatformNode(at: pos, size: CGSize(width: mid, height: h))
@@ -297,25 +320,26 @@ final class LocaleScene: BaseLevelScene, SKPhysicsContactDelegate {
             addChild(p)
         }
 
-        // ---- Scrambled signposts: one per beat, staging the read-the-signs teach ----
+        // ---- Scrambled signposts: one per beat, staged UP the climb ----
         let signPositions: [CGPoint] = [
-            CGPoint(x: lm + 70,  y: tierY(0) + 60),   // TEACH — above spawn
-            CGPoint(x: lm + 200, y: tierY(1) + 60),   // DUAL-ROUTE fork
-            CGPoint(x: lm + 400, y: tierY(0) + 60),   // REST breath
-            CGPoint(x: lm + 600, y: tierY(1) + 60)    // REVEAL — over the bridge
+            CGPoint(x: lm + 70,  y: tierY(0) + 60),   // TEACH — above spawn (floor)
+            CGPoint(x: lm + 210, y: tierY(1) + 60),   // DUAL-ROUTE fork
+            CGPoint(x: lm + 320, y: tierY(2) + 60),   // REST breath (mid)
+            CGPoint(x: lm + 560, y: tierY(4) + 60)    // REVEAL — high, over the bridge
         ]
         for (i, pos) in signPositions.enumerated() {
             createSignPost(at: pos, hintIndex: i)
         }
 
         composedSpawnX = lm + 0
-        composedExitDoorX = lm + 800
+        composedExitDoorX = lm + 720
 
-        // Exit door above the exit plateau (same +55 relation as the phone door).
-        createExitDoor(at: CGPoint(x: composedExitDoorX, y: tierY(0) + 55))
+        // Exit door above the exit plateau (same +55 relation as the phone door),
+        // near the CEILING tier so the finale tops out the band.
+        createExitDoor(at: CGPoint(x: composedExitDoorX, y: tierY(5) + 55))
 
         // Course extent: exit plateau right edge + margin.
-        composedWorldWidth = composedExitDoorX + wide / 2 + 90
+        composedWorldWidth = composedExitDoorX + plateau / 2 + 90
 
         // Death zone spans the FULL course width on iPad (not just the viewport)
         // so a fall anywhere along the scrolled course still resolves to death.
@@ -519,10 +543,10 @@ final class LocaleScene: BaseLevelScene, SKPhysicsContactDelegate {
 
     private func setupBit() {
         // Player spawn AND respawn point (handleDeath respawns at spawnPoint).
-        // iPhone: lift by the same gameplayLift as the band so Bit still lands
-        // 40pt above the start platform (groundY=160 → spawn 200; gameplayLift
-        // == 0 on phones). iPad: spawn over the composed start platform, 40pt
-        // above the raised floor.
+        // iPhone: lift by the same gameplayLift as the band so Bit still lands 40pt
+        // above the start platform (groundY=160 → spawn 200; gameplayLift == 0 on
+        // phones). iPad: spawn over the composed start platform, 40pt above the
+        // raised floor (tier 0).
         if isWideCanvas {
             spawnPoint = CGPoint(x: composedSpawnX, y: composedGroundY + 40)
         } else {
