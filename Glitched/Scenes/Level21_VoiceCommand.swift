@@ -276,79 +276,105 @@ final class VoiceCommandScene: BaseLevelScene, SKPhysicsContactDelegate {
     /// Hand-composed iPad course. Authored at ABSOLUTE pt positions (NOT
     /// size.width fractions, NEVER scaled). Spacing is the FIXED jump-reach budget:
     /// every reachable gap <= BaseLevelScene.maxJumpableGap (130) edge-to-edge and
-    /// every rise <= BaseLevelScene.maxJumpableRise (85) top-to-top. Platform tops
-    /// VARY across three tiers (low / mid / high) for rhythm — never a flat row.
+    /// every rise <= BaseLevelScene.maxJumpableRise (85) top-to-top.
     ///
-    /// BEATS (paced, per the L3 design philosophy, replicated for THIS level's
-    /// signature voice-trap mechanic):
-    ///   1. TEACH        — wide spawn pad + one easy step: learn to move/jump.
-    ///   2. CLUSTER      — stepped B/C platforms (height varies) build rhythm.
-    ///   3. REST         — a wide breath platform (deliberate safe pause).
-    ///   4. TENSION PEAK — D/E rise to the highest tier (the climb).
-    ///   5. SHORT BREATH — F drops back to a low pad before the finale.
-    ///   6. FINALE       — the signature TRAP staged in isolation: a pre-chasm pad,
-    ///                     the 250-pt un-jumpable VOICE chasm (BRIDGE), the locked
-    ///                     door on the far landing (OPEN), then the FLY-gated rise
-    ///                     to the exit. All three commands are required, in order,
-    ///                     and the chasm is wider than jump reach by design.
+    /// FULL-HEIGHT FIX (Phase 0 vertical-fill API): the prior pass laid the run on
+    /// small offsets above groundY (+0..+85), so on a tall iPad the whole course
+    /// sat in a low band and the TOP TWO-THIRDS were dead sky. This route now
+    /// CLIMBS THE FULL BAND — a true top-to-bottom ascent like L30 — using
+    /// verticalTier(index, of: N, iphoneGround:160). The floor is now
+    /// playableGroundY = bottomSafeY+90 (near the BOTTOM, so we build UPWARD) and
+    /// the climb tops out at the exit ledge just under playableCeilingY
+    /// (topSafeY-150). N=14 is chosen so the band (≈1080pt on a 1366 iPad) divides
+    /// into SAFE rises: each inter-tier step ≈ 83pt (< maxJumpableRise 85), and
+    /// tier 13 lands on the ceiling. Every CONSECUTIVE platform changes its tier
+    /// index by at most 1, so every authored rise is one safe step. Tiers spread
+    /// LEFT→RIGHT as they climb (never a centered vertical ladder); widths vary for
+    /// rhythm; TWO wide REST platforms give breath beats.
     ///
-    /// The course (extent ~1690pt) is wider than the iPad viewport, so vertical
-    /// fill is via playableGroundY(iphoneGround:160) and horizontal fill is via
-    /// installCameraFollow(worldWidth:) called once after build (see configureScene
-    /// ordering: build runs before setupBit, so the camera is installed in setupBit
-    /// where playerController exists). Death zone spans the full course width.
+    /// BEATS (paced, per the L3 design philosophy; the signature voice-trap is the
+    /// HIGH/finale beat — this level's vertical FLY beat reaches the highest ledge):
+    ///   1. TEACH         — wide spawn pad on the floor (tier 0) + one easy step.
+    ///   2. STEPPED CLIMB — B/C ascend tier-by-tier (widths vary) building rhythm.
+    ///   3. REST          — a wide breath platform mid-climb (tier 4).
+    ///   4. TENSION CLIMB — D/E push higher (tiers 5→6).
+    ///   5. DIP + RECOVER — F dips one tier (rhythm), then G/H/I re-ascend.
+    ///   6. REST 2        — a second wide breath platform (tier 9) before the push.
+    ///   7. FINALE (high) — the signature TRAP staged near the TOP: J + pre-chasm
+    ///                      land on tiers 10/11, then the 250-pt un-jumpable VOICE
+    ///                      chasm (BRIDGE), the locked door on the far landing
+    ///                      (OPEN), then the FLY-gated +100 rise to the EXIT HIGH
+    ///                      LEDGE near the ceiling. All three commands required, in
+    ///                      order; the chasm is wider than jump reach by design.
+    ///
+    /// The course (extent ~2400pt) is wider than the iPad viewport, so HORIZONTAL
+    /// fill is via installCameraFollow(worldWidth:) (armed in setupBit where the
+    /// player controller exists); VERTICAL fill is via the tiers above. Death zone
+    /// spans the full course width.
     private func buildComposedIPadLevel() {
-        // Device-derived floor: lifts gameplay off the bottom on tall iPad canvases
-        // while staying byte-identical math on iPhone (this path never runs there).
-        let groundY = playableGroundY(iphoneGround: 160)
+        // iPhone ground value this level hard-codes; the iPad floor is derived from
+        // it (playableGroundY → bottomSafeY+90, near the bottom so we build UPWARD).
+        // This path never runs on iPhone (gated by isWideCanvas).
+        let iphoneGround: CGFloat = 160
+        // 14 evenly-spaced tiers spanning the FULL usable band; each rise auto-clamps
+        // to maxJumpableRise. tier(0) = floor, tier(13) = near ceiling (~83pt/step).
+        let tierCount = 14
+        func tier(_ i: Int) -> CGFloat { verticalTier(i, of: tierCount, iphoneGround: iphoneGround) }
 
-        // Platform tops vary across three tiers (offsets above groundY).
-        // tierLow=0..45, tierMid=55..70, tierHigh=85. All inter-platform rises <=85.
+        // BEAT 1 — TEACH: wide spawn pad on the floor, then one easy step up.
+        createPlatform(at: CGPoint(x: 110, y: tier(0)), size: CGSize(width: 90, height: 30)) // start (floor, left)
+        createPlatform(at: CGPoint(x: 240, y: tier(1)), size: CGSize(width: 90, height: 30)) // step A
 
-        // BEAT 1 — TEACH: wide spawn pad, then one easy step up.
-        createPlatform(at: CGPoint(x: 120, y: groundY),      size: CGSize(width: 70,  height: 30)) // start, top +0
-        createPlatform(at: CGPoint(x: 240, y: groundY + 30), size: CGSize(width: 90,  height: 30)) // step A, top +30
+        // BEAT 2 — STEPPED CLIMB: ascend tier-by-tier, widths vary for rhythm.
+        createPlatform(at: CGPoint(x: 360, y: tier(2)), size: CGSize(width: 80, height: 30)) // B
+        createPlatform(at: CGPoint(x: 470, y: tier(3)), size: CGSize(width: 70, height: 30)) // C
 
-        // BEAT 2 — STEPPED CLUSTER: heights alternate for rhythm.
-        createPlatform(at: CGPoint(x: 355, y: groundY + 70), size: CGSize(width: 80,  height: 30)) // B (high) +70
-        createPlatform(at: CGPoint(x: 470, y: groundY + 25), size: CGSize(width: 80,  height: 30)) // C (low) +25
+        // BEAT 3 — REST: a wide, deliberate breath platform mid-climb.
+        createPlatform(at: CGPoint(x: 640, y: tier(4)), size: CGSize(width: 180, height: 30)) // REST 1 (wide)
 
-        // BEAT 3 — REST: a wide, deliberate breath platform.
-        createPlatform(at: CGPoint(x: 620, y: groundY + 55), size: CGSize(width: 150, height: 30)) // REST +55
+        // BEAT 4 — TENSION CLIMB: push two tiers higher.
+        createPlatform(at: CGPoint(x: 800, y: tier(5)), size: CGSize(width: 80, height: 30)) // D
+        createPlatform(at: CGPoint(x: 915, y: tier(6)), size: CGSize(width: 70, height: 30)) // E
 
-        // BEAT 4 — TENSION PEAK: climb to the highest tier.
-        createPlatform(at: CGPoint(x: 770, y: groundY + 85), size: CGSize(width: 80,  height: 30)) // D (peak) +85
-        createPlatform(at: CGPoint(x: 880, y: groundY + 40), size: CGSize(width: 70,  height: 30)) // E +40
+        // BEAT 5 — DIP + RECOVER: drop one tier for rhythm, then re-ascend.
+        createPlatform(at: CGPoint(x: 1030, y: tier(5)), size: CGSize(width: 110, height: 30)) // F dip (breath, wide)
+        createPlatform(at: CGPoint(x: 1150, y: tier(6)), size: CGSize(width: 80, height: 30))  // G
+        createPlatform(at: CGPoint(x: 1265, y: tier(7)), size: CGSize(width: 80, height: 30))  // H
+        createPlatform(at: CGPoint(x: 1380, y: tier(8)), size: CGSize(width: 90, height: 30))  // I
 
-        // BEAT 5 — SHORT BREATH: drop to a low pad before the finale.
-        createPlatform(at: CGPoint(x: 1000, y: groundY + 10), size: CGSize(width: 110, height: 30)) // F (breath) +10
+        // BEAT 6 — REST 2: a second wide breath platform before the finale push.
+        createPlatform(at: CGPoint(x: 1540, y: tier(9)), size: CGSize(width: 160, height: 30)) // REST 2 (wide)
 
-        // BEAT 6 — FINALE (signature voice-trap, staged in isolation).
-        // Pre-chasm landing. Its RIGHT edge (1130+45 = 1175) opens the trap chasm.
-        createPlatform(at: CGPoint(x: 1130, y: groundY + 45), size: CGSize(width: 90, height: 30)) // pre-chasm +45
+        // Climb toward the finale tier.
+        createPlatform(at: CGPoint(x: 1700, y: tier(10)), size: CGSize(width: 80, height: 30)) // J
 
-        // THE TRAP: a 250-pt un-jumpable VOICE chasm. pre-chasm.right (1175) ->
-        // finale-middle.left (1425) = 250pt absolute, FAR beyond the ~130 jump
+        // BEAT 7 — FINALE (signature voice-trap, staged HIGH near the ceiling). The
+        // whole finale plays out on one high altitude tier (11) so the trap is the
+        // CLIMAX of the climb, not a low-band afterthought.
+        // Pre-chasm landing. Its RIGHT edge (1815+45 = 1860) opens the trap chasm.
+        let finaleMiddleTop = tier(11)
+        createPlatform(at: CGPoint(x: 1815, y: finaleMiddleTop), size: CGSize(width: 90, height: 30)) // pre-chasm
+
+        // THE TRAP: a 250-pt un-jumpable VOICE chasm. pre-chasm.right (1860) ->
+        // finale-middle.left (2110) = 250pt absolute, FAR beyond the ~130 jump
         // reach (and beyond any FLY arc from a standing start — FLY is gated behind
         // BRIDGE+OPEN). This is the load-bearing trap geometry: it is NEVER widened
         // or narrowed — it is exactly 250pt, the same logical span the iPhone path
-        // makes un-jumpable, and the ONLY safe way to add this second segment is the
-        // camera-follow course. Crossing it requires the BRIDGE command.
-        let chasmLeft: CGFloat = 1175           // pre-chasm right edge
+        // makes un-jumpable. Crossing it requires the BRIDGE command.
+        let chasmLeft: CGFloat = 1860           // pre-chasm right edge
         let chasmWidth: CGFloat = 250           // un-jumpable (matches iPhone trap)
-        let chasmRight = chasmLeft + chasmWidth // 1425 = finale-middle left edge
+        let chasmRight = chasmLeft + chasmWidth // 2110 = finale-middle left edge
 
         // Bridge spans the chasm with 5pt overlap each side (matches the iPhone
         // span ratio: a 260-wide bridge over a 250 chasm). Center at the chasm
         // midpoint; physics width recorded for extendBridge().
         let bridgeWidth: CGFloat = chasmWidth + 10            // 260
-        let bridgeCenterX = chasmLeft + chasmWidth / 2        // 1300
-        let finaleMiddleTop = groundY + 45                    // finale-middle platform top
+        let bridgeCenterX = chasmLeft + chasmWidth / 2        // 1985
         bridgeRealizedWidth = bridgeWidth
         createBridge(at: CGPoint(x: bridgeCenterX, y: finaleMiddleTop), width: bridgeWidth)
 
-        // Finale middle landing (post-bridge). Left edge = chasmRight (1425).
-        let finaleMiddleCenter = chasmRight + 30              // 1455 (width 60)
+        // Finale middle landing (post-bridge). Left edge = chasmRight (2110).
+        let finaleMiddleCenter = chasmRight + 30              // 2140 (width 60)
         createPlatform(at: CGPoint(x: finaleMiddleCenter, y: finaleMiddleTop), size: CGSize(width: 60, height: 30))
 
         // Locked DOOR on the finale-middle's right edge — door-top > apex invariant
@@ -356,27 +382,29 @@ final class VoiceCommandScene: BaseLevelScene, SKPhysicsContactDelegate {
         // center = platform_top + 60, frame 90 tall, so the frame top sits +105
         // above the platform top while the jump apex only reaches +91 (~14pt
         // margin). It cannot be jumped before OPEN unlocks it.
-        let doorX = finaleMiddleCenter + 30                  // 1485 (middle right edge)
+        let doorX = finaleMiddleCenter + 30                  // 2170 (middle right edge)
         createLockedDoor(at: CGPoint(x: doorX, y: finaleMiddleTop + 60))
 
         // Small landing after the door (post-OPEN). Overlaps the door x so, once the
         // door clears, the floor is contiguous out to the FLY ascent point.
-        let smallCenter = doorX + 60                         // 1545 (width 50)
+        let smallCenter = doorX + 60                         // 2230 (width 50)
         createPlatform(at: CGPoint(x: smallCenter, y: finaleMiddleTop), size: CGSize(width: 50, height: 30))
 
-        // Exit plateau + door, FLY-gated: the rise from the small landing top
-        // (finaleMiddleTop) to the exit plateau top is 100pt > the ~91 jump apex,
-        // so FLY is REQUIRED to reach it (same FLY rise as the iPhone path, which
-        // climbs from groundY to groundY+100 / exit door groundY+155).
+        // Exit plateau + door — the FLY-gated HIGH LEDGE (this level's vertical beat
+        // tied to FLY). The rise from the small landing top (finaleMiddleTop) to the
+        // exit plateau is 100pt > the ~91 jump apex, so FLY is REQUIRED to reach it
+        // (same FLY rise as the iPhone path: groundY -> groundY+100). The plateau
+        // lands ~66pt under playableCeilingY, so the climb genuinely fills to the top.
         let exitPlateauTop = finaleMiddleTop + 100           // FLY-gated rise (100 > 91)
-        createPlatform(at: CGPoint(x: 1620, y: exitPlateauTop), size: CGSize(width: 70, height: 25))
-        createExitDoor(at: CGPoint(x: 1630, y: exitPlateauTop + 55))
+        createPlatform(at: CGPoint(x: 2320, y: exitPlateauTop), size: CGSize(width: 70, height: 25))
+        createExitDoor(at: CGPoint(x: 2330, y: exitPlateauTop + 55))
 
         // Full-course extent for camera-follow + death zone.
-        courseExtentIPad = 1690
+        courseExtentIPad = 2400
 
         // Death zone spans the FULL course width (centered on the course), catching
         // falls anywhere along the scrolling level — including into the trap chasm.
+        let groundY = tier(0)
         let death = SKNode()
         death.position = CGPoint(x: courseExtentIPad / 2, y: groundY - 210)
         death.physicsBody = SKPhysicsBody(rectangleOf: CGSize(width: courseExtentIPad + 400, height: 100))
@@ -672,10 +700,11 @@ final class VoiceCommandScene: BaseLevelScene, SKPhysicsContactDelegate {
 
     private func setupBit() {
         if isWideCanvas {
-            // iPad composed path: spawn 40pt above the start pad top (start pad at
-            // x=120, top = playableGroundY). Absolute pt — never course-scaled.
+            // iPad composed path: spawn 40pt above the start pad top. The start pad
+            // is the tier-0 floor platform at x=110 (verticalTier(0) == playableGroundY).
+            // Absolute pt — never course-scaled.
             let groundY = playableGroundY(iphoneGround: 160)
-            spawnPoint = CGPoint(x: 120, y: groundY + 40)
+            spawnPoint = CGPoint(x: 110, y: groundY + 40)
         } else {
             // iPhone path — BYTE-IDENTICAL: spawn (and respawn via handleDeath())
             // sits 40pt above the start platform top (groundY 160 -> spawn 200);

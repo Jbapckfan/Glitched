@@ -17,35 +17,41 @@ final class AppReviewScene: BaseLevelScene, SKPhysicsContactDelegate {
 
     // iPad vertical-void fix: uniform lift applied to the entire gameplay band.
     // 0 on iPhone (helper returns 0 for size.height <= 1000), positive on iPad.
-    // Computed in buildLevel() before any gameplay node is positioned, then added
-    // to the groundY anchor AND to the standalone spawn point and death zone so the
-    // whole band moves together and all relative geometry is preserved.
+    // Computed in buildPhoneLevel() before any gameplay node is positioned, then
+    // added to the groundY anchor AND to the standalone spawn point and death zone so
+    // the whole band moves together and all relative geometry is preserved.
     //
     // NOTE: only the iPhone path (buildPhoneLevel) uses gameplayLift. The composed
-    // iPad path (buildComposedIPadLevel) instead raises its whole floor via the
-    // Phase 0 playableGroundY() and scrolls via installCameraFollow, so it leaves
+    // iPad path (buildComposedIPadLevel) instead builds a true top-to-bottom vertical
+    // climb on the Phase 0 verticalTier() helper (floor near the bottom, finale near
+    // the ceiling) and scrolls horizontally via installCameraFollow, so it leaves
     // gameplayLift == 0 and never double-lifts.
     private var gameplayLift: CGFloat = 0
 
-    // MARK: - Native-iPad layout (hand-composed) — mirrors the L3 template.
+    // MARK: - Native-iPad layout (HAND-COMPOSED full-height climb).
     //
     // iPhone keeps the original flat, full-width walk-through corridor unchanged
-    // (buildPhoneLevel). iPad gets a HAND-COMPOSED course of paced BEATS that fills
-    // the screen with intent rather than stretching the phone corridor wider:
-    //   1. TEACH    — spawn + "LOOKS EASY, RIGHT?" sign (learn: just walk right).
-    //   2. CLUSTER A— stepped platforms (vary tier for rhythm) up to GATE 1 ("coin").
-    //   3. REST     — a wide breath platform after the first joke gate.
-    //   4. PEAK     — stepped tension cluster up to GATE 2 ("premium content").
-    //   5. BREATH   — a short pause platform before the finale.
-    //   6. FINALE   — an ISOLATED approach platform that stages the signature twist:
-    //                 the padlocked EXIT door + the optional "validate me" review beat.
-    // Bit's physics are device-independent so every gap stays <= maxJumpableGap (130)
-    // and every tier rise <= maxJumpableRise (85). The course is wider than the
-    // viewport, so it scrolls via the Phase 0 installCameraFollow (ticked in base
-    // update()). Everything is gated on isWideCanvas; iPhone is byte-identical.
+    // (buildPhoneLevel). iPad gets a real TOP-TO-BOTTOM climb that fills the whole
+    // vertical band (floor near the bottom -> finale near the ceiling) instead of a
+    // low flat ground line. The signature mechanic ("walk through joke gates to a
+    // padlocked EXIT") is preserved and STAGED as the climb: each gate guards a
+    // continuous run, and the padlocked exit is the last leap near the ceiling.
+    //   TIER 0  TEACH    — wide spawn shelf + "LOOKS EASY, RIGHT?" sign.
+    //   TIER 1  GATE 1   — continuous run holding GATE 1 ("Insert Coin").
+    //   TIER 2  REST     — a WIDE breath platform after the first gate.
+    //   TIER 3  GATE 2   — continuous run holding GATE 2 ("Premium Content").
+    //   TIER 4  BREATH   — a short pause shelf before the finale.
+    //   TIER 2  DROP     — a deliberate descent beat (the "drop").
+    //   TIER 5  FINALE   — the last leap UP to the isolated padlocked EXIT, near the
+    //                      ceiling, where the optional "validate me" review beat runs.
+    // Bit's physics are device-independent: every gap <= maxJumpableGap (130) and the
+    // tier-to-tier rises come from verticalTier(), which clamps each step to the safe
+    // maxJumpableRise (85). The course is wider than the viewport, so it scrolls via
+    // the Phase 0 installCameraFollow (ticked in base update()). Everything is gated
+    // on isWideCanvas; iPhone is byte-identical.
 
     /// Logical design width below which the canvas is treated as iPhone-class. iPad
-    /// portrait (>1000h) above this width gets the composed course.
+    /// portrait (>1000h) above this width gets the composed climb.
     private let designWidth: CGFloat = 820
 
     /// True on iPad-proportioned canvases (matches the base helpers' gate).
@@ -53,7 +59,9 @@ final class AppReviewScene: BaseLevelScene, SKPhysicsContactDelegate {
 
     // Composed iPad anchors (set in buildComposedIPadLevel; unused on iPhone).
     private var composedSpawnX: CGFloat = 0
+    private var composedSpawnY: CGFloat = 0
     private var composedExitDoorX: CGFloat = 0
+    private var composedExitDoorY: CGFloat = 0
     private var composedWorldWidth: CGFloat = 0
 
     // Gate system
@@ -156,15 +164,16 @@ final class AppReviewScene: BaseLevelScene, SKPhysicsContactDelegate {
     // MARK: - iPhone layout (unchanged, byte-identical to the shipped phone level)
 
     private func buildPhoneLevel() {
-        // iPad vertical-void fix: on tall iPhone-class canvases this flat, ground-
-        // anchored band renders bottom-stuck with a large empty band above. Lift the
-        // ENTIRE gameplay band uniformly by anchoring everything off `groundY` and
-        // adding the shared helper's lift to that single anchor. Because every
-        // platform, gate, trigger, sign and the exit door derives its Y from
-        // `groundY`, and the standalone spawn/respawn point and death zone are lifted
-        // by the SAME `gameplayVerticalLift`, all gaps/rises/jump distances stay
-        // byte-identical. On iPhone the helper returns 0, so groundY == 120 and the
-        // scene is unchanged. (iPad takes buildComposedIPadLevel instead.)
+        // iPad vertical-void fix: on tall iPad canvases this flat, ground-anchored
+        // band renders bottom-stuck with a large empty band above. Lift the ENTIRE
+        // gameplay band uniformly by anchoring everything off `groundY` and adding
+        // the shared helper's lift to that single anchor. Because every platform,
+        // gate, trigger, sign and the exit door derives its Y from `groundY`, and
+        // the standalone spawn/respawn point and death zone are lifted by the SAME
+        // `gameplayVerticalLift`, all gaps/rises/jump distances stay byte-identical.
+        // On iPhone the helper returns 0, so groundY == 120 and the scene is unchanged.
+        // (iPad takes buildComposedIPadLevel instead, so this lift only ever runs on
+        //  iPhone-class canvases where it returns 0.)
         //
         //   bandBottom = groundY (120, the lowest gameplay surface = ground top)
         //   bandTop    = groundY + 95 (215, the highest in-world gameplay marker:
@@ -209,110 +218,145 @@ final class AppReviewScene: BaseLevelScene, SKPhysicsContactDelegate {
         addChild(death)
     }
 
-    // MARK: - iPad layout (HAND-COMPOSED, native — teach -> gate -> rest -> gate -> finale)
+    // MARK: - iPad layout (HAND-COMPOSED full-height climb)
     //
-    // The mechanic is "walk through joke gates to a padlocked exit", so the critical
-    // route must be a CONTINUOUS walking surface that the gate walls genuinely block
-    // (no gap to jump the gate, no void to crawl under it). The phone level solves
-    // this with one long flat ground; the iPad version keeps a continuous corridor
-    // but builds it as a STAIRCASE of abutting segments so the surface varies height
-    // for rhythm without ever leaving a jumpable gap or an under-crawl. Each gate
-    // sits at a STEP RISER — the wall rises from the lower segment and the next
-    // segment rises 56pt right behind it, so the 80pt wall cannot be cleared in the
-    // run-up (mechanic preserved). Rest/breath shelves and the finale exit are the
-    // other beats. All geometry is ABSOLUTE points, no size.width fractions.
+    // The analysis note: this finale was the flattest of all — one ground line. This
+    // rebuild stages real vertical drama with the Phase 0 verticalTier() helper, which
+    // returns evenly-spaced tier Ys spanning the FULL usable band (floor near the
+    // bottom at playableGroundY, top tier near playableCeilingY) and clamps each step
+    // to the safe maxJumpableRise (85). The route ASCENDS spawn -> gate 1 -> rest ->
+    // gate 2 -> breath, DROPS for a beat, then takes a last leap UP to the exit near
+    // the ceiling so the closer is earned.
     //
-    // Spacing budget (all <= the Phase 0 ceilings, surface is continuous so there is
-    // no jump gap at all on the critical path; rises between abutting tops <= 56):
-    //   tier rise (top-to-top):     <= BaseLevelScene.maxJumpableRise (85)
-    //   (continuous floor => effective horizontal gap is 0 <= maxJumpableGap 130)
+    // MECHANIC PRESERVED (load-bearing): the gate is a walk-through wall on a
+    // CONTINUOUS surface — Bit must be unable to jump over it or crawl under it. Each
+    // gate therefore sits in the MIDDLE of an abutting continuous run at its own tier,
+    // and Bit reaches that run by climbing UP to it from below (never from above), so
+    // it never has a height advantage to arc the 80pt wall. The vertical drama lives
+    // in the JUMPS BETWEEN runs (tier transitions, all <= safe rise / gap), not at the
+    // gate walls.
     private func buildComposedIPadLevel() {
-        // Raise the whole floor toward the lower third so the corridor + its raised
-        // shelves fill the tall iPad canvas. Everything is anchored off this baseline;
-        // gameplayLift stays 0 here (we lift via the floor, not the band shift).
-        let baseGroundY: CGFloat = playableGroundY(iphoneGround: 120)
-
+        let iphoneGround: CGFloat = 120
         let platH: CGFloat = 25
-        let step: CGFloat = 56  // staircase riser, top-to-top (< 85 safe rise)
 
-        // The continuous corridor: a chain of ABUTTING segments (each segment's right
-        // edge meets the next segment's left edge, so there is never a horizontal gap
-        // to skip a gate). Segment heights step up/down across 3 tiers (0, +step,
-        // +2*step) for rhythm — adjacent segments differ by at most one `step` (56pt),
-        // within the safe rise.
-        //
-        // TRAP RULE (load-bearing): each gate's wall must stay un-jumpable, exactly as
-        // on the phone. The phone has Bit launch at the gate from the gate's OWN flat
-        // ground, so the 80pt wall is a near-impossible clear. We preserve that by
-        // making every gate AND the segment immediately BEFORE it sit at the SAME
-        // tier0 — Bit never gains a height advantage to arc over a gate. Peak/up steps
-        // are placed away from the gate approaches.
-        //   seg0 TEACH      tier0  wide  — spawn
-        //   seg1 CLUSTER A  tier1  mid   — step up (rhythm)
-        //   seg2 step down  tier0  mid   — descend to gate level
-        //   seg3 GATE1 base tier0  mid   — gate 1 (same tier as seg2 before it)
-        //   seg4 REST       tier0  wide  — breath after gate 1
-        //   seg5 PEAK       tier1  mid   — tension high shelf
-        //   seg6 step down  tier0  mid   — descend to gate level
-        //   seg7 GATE2 base tier0  mid   — gate 2 (same tier as seg6 before it)
-        //   seg8 BREATH     tier0  wide  — short pause
-        //   seg9 FINALE     tier0  wide  — isolated EXIT / review beat
-        let segs: [(tier: CGFloat, w: CGFloat)] = [
-            (0, 240),  // 0 TEACH / spawn
-            (1, 150),  // 1 CLUSTER A — up (rhythm)
-            (0, 160),  // 2 step down to gate level
-            (0, 170),  // 3 GATE 1 base
-            (0, 230),  // 4 REST
-            (1, 160),  // 5 PEAK (high shelf)
-            (0, 160),  // 6 step down to gate level
-            (0, 170),  // 7 GATE 2 base
-            (0, 230),  // 8 BREATH
-            (0, 240)   // 9 FINALE / EXIT
-        ]
-
-        // Lay the segments left-to-right with their edges abutting. `segCenterX`
-        // captures each segment center for placing gates/exit/signs on the right one.
-        var segCenterX: [CGFloat] = []
-        var cursorLeft: CGFloat = 140  // left margin
-        for s in segs {
-            let centerX = cursorLeft + s.w / 2
-            segCenterX.append(centerX)
-            createPlatform(at: CGPoint(x: centerX, y: baseGroundY + s.tier * step),
-                           size: CGSize(width: s.w, height: platH))
-            cursorLeft += s.w  // abut: next segment starts where this one ends
+        // FULL-HEIGHT TIERS. The iPad band (floor at playableGroundY ~110 up to
+        // playableCeilingY ~900-1200) is far taller than one safe jump, so pick a tier
+        // COUNT such that the per-tier step lands at/under the safe rise (85) AND the
+        // top tier reaches near the ceiling. verticalTier(i, of: N) returns those Ys;
+        // it clamps every step to maxJumpableRise defensively. N grows with the band so
+        // the climb fills the WHOLE height on every iPad size (≈12 tiers on 11", ≈14 on
+        // 12.9"). Each route hop moves exactly ONE tier, so every rise is one safe step.
+        let band = playableBandHeight(iphoneGround: iphoneGround)
+        let tierCount = max(6, Int((band / BaseLevelScene.maxJumpableRise).rounded(.up)) + 1)
+        let topTier = tierCount - 1
+        func tierY(_ i: Int) -> CGFloat {
+            verticalTier(min(max(i, 0), topTier), of: tierCount, iphoneGround: iphoneGround)
         }
-        let courseRight = cursorLeft
 
-        // BEAT 1 — TEACH sign over the spawn segment.
-        createSign(at: CGPoint(x: segCenterX[0], y: baseGroundY + 95), text: "LOOKS EASY, RIGHT?")
+        // Lay the course left-to-right, spreading the climb across the FULL width so it
+        // reads as a diagonal sweep, not a centered ladder. `x` is the left edge of the
+        // next platform; `gap` opens the empty space BETWEEN platform edges (<= 130).
+        let leftMargin: CGFloat = 140
+        var x = leftMargin
+        @discardableResult
+        func place(width w: CGFloat, tier: Int) -> CGFloat {
+            let centerX = x + w / 2
+            createPlatform(at: CGPoint(x: centerX, y: tierY(tier)),
+                           size: CGSize(width: w, height: platH))
+            x += w
+            return centerX
+        }
+        func gap(_ g: CGFloat) { x += g }
 
-        // BEAT 2 — GATE 1 ("Insert Coin") on seg3 (tier0). The wall rises 80pt from
-        // the seg3 surface; the seg2 approach before it is the SAME tier0, so Bit hits
-        // the wall from flat ground — identical un-jumpable walk-through as the phone.
-        // Trigger sits 40pt before the wall (same relative offset as the phone level).
-        let gate1X = segCenterX[3]
-        createGate1(at: CGPoint(x: gate1X, y: baseGroundY + 12))
-        createGateTrigger(name: "gate1Trigger", at: CGPoint(x: gate1X - 40, y: baseGroundY + 50))
-        createSign(at: CGPoint(x: gate1X - 80, y: baseGroundY + 50), text: "->")
+        // Climb stepping: from a shelf at `tier` jump up one tier across a 105pt gap.
+        // rise = one verticalTier step (<= 85 safe); horizontal gap 105 <= 130.
+        let climbGap: CGFloat = 105
 
-        // BEAT 4 — GATE 2 ("Premium Content") on seg7 (tier0). Same relative wall +
-        // trigger geometry as gate 1; the seg6 approach before it is also tier0, so
-        // the wall stays un-jumpable. The peak shelf (seg5) sits BEFORE seg6's descent
-        // so it never grants a height advantage at the gate.
-        let gate2X = segCenterX[7]
-        createGate2(at: CGPoint(x: gate2X, y: baseGroundY + 12))
-        createGateTrigger(name: "gate2Trigger", at: CGPoint(x: gate2X - 40, y: baseGroundY + 50))
+        // ───────────── BEAT 1 — TEACH (floor, tier 0): wide spawn shelf ─────────────
+        let teachX = place(width: 240, tier: 0)
+        createSign(at: CGPoint(x: teachX, y: tierY(0) + 95), text: "LOOKS EASY, RIGHT?")
+        composedSpawnX = teachX
+        composedSpawnY = tierY(0)
 
-        // BEAT 6 — FINALE: the padlocked EXIT door on its isolated last segment.
-        composedSpawnX = segCenterX[0]
-        composedExitDoorX = segCenterX[9]
-        createExitDoor(at: CGPoint(x: composedExitDoorX, y: baseGroundY + 50))
+        // Climb tier 0 -> tier 1.
+        gap(climbGap)
 
-        // Death zone spans the full course (not just size.width) so a fall anywhere
-        // along the scrolled corridor still respawns. Sits at the fall-floor (-50).
+        // ─────────── BEAT 2 — GATE 1 "Insert Coin" (continuous run, tier 1) ──────────
+        // MECHANIC + TRAP PRESERVED: the gate is a walk-through wall on a CONTINUOUS
+        // surface. Build the run as two abutting segments with the 80pt wall at the
+        // seam, exactly like the phone's flat-ground gate — un-jumpable and not
+        // crawlable-under. Bit arrives from BELOW (tier 0), never from above, so it has
+        // no height advantage to arc the wall.
+        let g1A = place(width: 150, tier: 1)                      // approach segment
+        createSign(at: CGPoint(x: g1A + 35, y: tierY(1) + 50), text: "->")
+        let gate1X = x                                            // wall sits at the seam
+        createGate1(at: CGPoint(x: gate1X, y: tierY(1) + 12))
+        createGateTrigger(name: "gate1Trigger", at: CGPoint(x: gate1X - 40, y: tierY(1) + 50))
+        place(width: 160, tier: 1)                                // run continues past wall
+
+        // Climb tier 1 -> tier 2.
+        gap(climbGap)
+
+        // ───────────── BEAT 3 — REST (tier 2): WIDE breath platform ─────────────
+        place(width: 280, tier: 2)
+
+        // Climb tier 2 -> tier 3, then 3 -> 4 (a stepping platform keeps each hop to
+        // one tier so the route keeps ascending toward the high gate).
+        gap(climbGap)
+        place(width: 120, tier: 3)                                // small step stone
+        gap(climbGap)
+
+        // ─────────── BEAT 4 — GATE 2 "Premium Content" (continuous run, tier 4) ──────
+        // Same abutting-segments-with-wall-between construction; Bit again arrives from
+        // below (tier 3), so the wall stays un-jumpable.
+        place(width: 150, tier: 4)                                // approach segment
+        let gate2X = x
+        createGate2(at: CGPoint(x: gate2X, y: tierY(4) + 12))
+        createGateTrigger(name: "gate2Trigger", at: CGPoint(x: gate2X - 40, y: tierY(4) + 50))
+        place(width: 160, tier: 4)                                // run continues past wall
+
+        // Climb tier 4 -> tier 5.
+        gap(climbGap)
+
+        // ───────────── BEAT 5 — BREATH (tier 5): short pause shelf ─────────────
+        let breathX = place(width: 150, tier: 5)
+        createSign(at: CGPoint(x: breathX, y: tierY(5) + 40), text: "ALMOST THERE")
+
+        // ───────────── BEAT 6 — DROP (tier 3): a deliberate descent beat ─────────────
+        // From the breath shelf (tier 5) Bit DROPS down to tier 3 across a 120pt gap.
+        // A downward step is always physics-safe (falling); the horizontal gap stays
+        // <= 130. This is the "drop" the closer needs before the final climb.
+        gap(120)
+        let dropX = place(width: 150, tier: 3)
+        createSign(at: CGPoint(x: dropX, y: tierY(3) + 50), text: "WAIT FOR IT...")
+
+        // ───── BEAT 7 — FINALE: the LAST LEAP up to the padlocked EXIT (top tier) ─────
+        // From the drop shelf (tier 3) climb tier-by-tier to the TOP tier near the
+        // ceiling via stepping stones, then a final wide shelf holds the exit. Each hop
+        // is exactly one safe verticalTier step. The number of stones scales with the
+        // band so the last leap always lands on the top tier (full-height finale).
+        var climbTier = 3
+        while climbTier < topTier - 1 {
+            gap(climbGap)
+            climbTier += 1
+            place(width: 120, tier: climbTier)                   // stepping stone
+        }
+        // Final leap onto the wide FINALE shelf at the top tier.
+        gap(climbGap)
+        let finaleX = place(width: 240, tier: topTier)
+
+        // The padlocked EXIT door sits on the finale shelf, near the ceiling.
+        composedExitDoorX = finaleX
+        composedExitDoorY = tierY(topTier) + 50
+        createExitDoor(at: CGPoint(x: composedExitDoorX, y: composedExitDoorY))
+
+        let courseRight = x
         composedWorldWidth = courseRight + 140  // + right margin
+
+        // Death zone spans the full scrolled course so a fall anywhere respawns. Sits
+        // well below the floor tier so it never clips the lowest shelf.
         let death = SKNode()
-        death.position = CGPoint(x: composedWorldWidth / 2, y: -50)
+        death.position = CGPoint(x: composedWorldWidth / 2, y: tierY(0) - 170)
         death.physicsBody = SKPhysicsBody(rectangleOf: CGSize(width: composedWorldWidth * 2, height: 100))
         death.physicsBody?.isDynamic = false
         death.physicsBody?.categoryBitMask = PhysicsCategory.hazard
@@ -579,10 +623,10 @@ final class AppReviewScene: BaseLevelScene, SKPhysicsContactDelegate {
         // iPhone: 180 == groundY(120)+60, lifted by the same band lift so the player
         //   still spawns 60pt above the (lifted) ground. gameplayLift == 0 on iPhone
         //   → spawn y == 180 (byte-identical).
-        // iPad (composed): spawn over the i0 platform (composedSpawnX) at 60pt above
-        //   the raised floor (playableGroundY); gameplayLift is 0 in that path.
+        // iPad (composed): spawn over the TEACH shelf (composedSpawnX) 60pt above the
+        //   floor tier (composedSpawnY); gameplayLift is 0 in that path.
         if isWideCanvas {
-            spawnPoint = CGPoint(x: composedSpawnX, y: playableGroundY(iphoneGround: 120) + 60)
+            spawnPoint = CGPoint(x: composedSpawnX, y: composedSpawnY + 60)
         } else {
             spawnPoint = CGPoint(x: 50, y: 180 + gameplayLift)
         }
@@ -592,9 +636,10 @@ final class AppReviewScene: BaseLevelScene, SKPhysicsContactDelegate {
         registerPlayer(bit)
         playerController = PlayerController(character: bit, scene: self)
 
-        // iPad: the composed course is wider than the viewport, so scroll it via the
-        // Phase 0 camera-follow (no-op on iPhone where isWideCanvas == false). The
-        // base update() ticks updateCameraFollow each frame.
+        // iPad: the composed climb is wider than the viewport, so scroll it via the
+        // Phase 0 camera-follow (no-op on iPhone where isWideCanvas == false). The base
+        // update() ticks updateCameraFollow each frame. Camera Y stays at scene center;
+        // vertical fill comes from the tiered geometry, not the camera.
         if isWideCanvas {
             installCameraFollow(worldWidth: composedWorldWidth, playerController: playerController)
         }
@@ -836,9 +881,13 @@ final class AppReviewScene: BaseLevelScene, SKPhysicsContactDelegate {
         reviewSequenceStarted = true
         resetProgressTimer()
 
-        // Big terminal — this is the main event
+        // Big terminal — this is the main event.
+        // iPhone: above the exit (byte-identical). iPad: the exit sits near the ceiling,
+        //   so place the 220pt-tall panel BELOW the exit so it stays inside the viewport
+        //   and clear of the level title/HUD.
+        let termY = isWideCanvas ? exitDoorNode.position.y - 150 : exitDoorNode.position.y + 80
         finalTerminal = createLargeTerminal(at: CGPoint(x: exitDoorNode.position.x - 80,
-                                                         y: exitDoorNode.position.y + 80))
+                                                         y: termY))
 
         // The monologue - building up to the ask. Split into beats; the panel is
         // cleared between beats so lines paginate instead of spilling past the floor.
@@ -910,7 +959,7 @@ final class AppReviewScene: BaseLevelScene, SKPhysicsContactDelegate {
         largeTerminalTextLeft = -panelWidth / 2 + 15
 
         // Center the panel within the safe area so it can't run off either edge
-        // (SE 320) or end up marooned at the far right (iPhone SE).
+        // (SE 320) or end up marooned at the far right.
         // On the composed iPad path the course scrolls under a camera, so "on-screen"
         // means within the CAMERA's current viewport (centered near the exit), NOT
         // within scene-space size.width. Clamp around the camera X there so the panel
@@ -1433,10 +1482,15 @@ final class AppReviewScene: BaseLevelScene, SKPhysicsContactDelegate {
     override func updatePlaying(deltaTime: TimeInterval) {
         playerController?.update()
 
-        // Detect proximity to exit door when the review sequence hasn't started
+        // Detect proximity to exit door when the review sequence hasn't started.
+        // iPhone: flat course, X-proximity alone is sufficient (byte-identical).
+        // iPad: the exit is high on the finale shelf, and Bit's X can pass under it
+        //   while still climbing on a lower tier — so also require Y-proximity there so
+        //   the closer only fires once Bit is actually ON the finale shelf.
         if !reviewSequenceStarted && gate1Opened && gate2Opened {
             let distToExit = abs(bit.position.x - exitDoorNode.position.x)
-            if distToExit < 80 {
+            let nearY = !isWideCanvas || abs(bit.position.y - exitDoorNode.position.y) < 90
+            if distToExit < 80 && nearY {
                 triggerReviewSequence()
             }
         }

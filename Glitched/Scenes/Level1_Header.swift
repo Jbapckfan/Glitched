@@ -9,9 +9,10 @@ final class HeaderScene: BaseLevelScene, SKPhysicsContactDelegate {
 
     private let designSize = CGSize(width: 430, height: 932)
 
-    /// NATIVE-iPad gate. Matches the L3 template: only fire the hand-composed
-    /// path on a genuinely large canvas (tall AND wider than the iPhone design
-    /// width). iPhone-proportioned canvases keep the byte-identical phone layout.
+    /// NATIVE-iPad gate. Only fire the hand-composed full-height climb on a
+    /// genuinely large canvas (tall AND wider than the iPhone design width).
+    /// iPhone-proportioned canvases keep the BYTE-IDENTICAL phone layout — every
+    /// iPad branch in this file is gated behind this flag.
     private var isWideCanvas: Bool { size.height > 1000 && size.width > designSize.width }
 
     private var layoutXScale: CGFloat {
@@ -40,24 +41,63 @@ final class HeaderScene: BaseLevelScene, SKPhysicsContactDelegate {
     private var phonePitEndX: CGFloat { 360 * layoutXScale }
     private var phoneGroundHeight: CGFloat { 100 * layoutYScale }
 
-    // NATIVE-iPad pit/ground (ABSOLUTE scene points — the hand-composed finale
-    // beat). These are populated by buildComposedIPadLevel() before the spike pit,
-    // bridge, drop-acceptance, and exit logic read them, so the shared mechanic
-    // code (setupSpikes / handleHeaderDrop / spawnBridge / setupExit) needs no
-    // per-device branching. The pit gap (pitEndX - pitStartX) is the LOAD-BEARING
-    // TRAP: it MUST stay un-jumpable (> Bit's ~184pt running-jump reach) so the
-    // player cannot bypass the header-drag mechanic. iPad keeps it at 240pt
+    // NATIVE-iPad pit/ground (ABSOLUTE scene points). On iPad the floor that hosts
+    // the spike-pit / bridge / exit is LIFTED to a high finale tier near the ceiling
+    // (set by buildComposedIPadLevel) so the signature header-drag beat stages at the
+    // TOP of a full-height climb. The pit gap (pitEndX - pitStartX) is the
+    // LOAD-BEARING TRAP: it MUST stay un-jumpable (> Bit's ~184pt running-jump reach)
+    // so the player cannot bypass the header-drag mechanic. iPad keeps it at 240pt
     // edge-to-edge — the same un-jumpable width the iPhone design intends — never
     // narrowed toward jumpable and never (mistakenly) scaled by layoutXScale.
     private var ipadPitStartX: CGFloat = 0
     private var ipadPitEndX: CGFloat = 0
     private var ipadGroundY: CGFloat = 0
+    // Composed-iPad spawn Y (the LOW first-tier platform top). Because the finale
+    // floor (groundHeight / ipadGroundY) is lifted HIGH, Bit must still spawn DOWN on
+    // the low tier; setupBit reads this on the wide path instead of groundHeight.
+    private var ipadSpawnY: CGFloat = 0
 
     /// Resolved pit/ground: composed-absolute on iPad, scaled-design on iPhone.
     private var pitStartX: CGFloat { isWideCanvas ? ipadPitStartX : phonePitStartX }
     private var pitEndX: CGFloat { isWideCanvas ? ipadPitEndX : phonePitEndX }
     private var groundHeight: CGFloat { isWideCanvas ? ipadGroundY : phoneGroundHeight }
     private var platformHeight: CGFloat { 40 * layoutYScale }
+
+    // MARK: - Local vertical-fill helpers (full-height climb)
+    //
+    // These mirror the documented Phase-0 BaseLevelScene API (playableCeilingY /
+    // playableBandHeight / verticalTier) but live in-scene so this level can author
+    // a full-height climb without modifying BaseLevelScene. All Y are ABSOLUTE scene
+    // points; all rises stay <= maxJumpableRise (85) by construction.
+
+    /// Top of the usable vertical band — just under the title/HUD drag band so the
+    /// highest finale platform never collides with the screen-space draggable title.
+    private func playableCeilingY() -> CGFloat { topSafeY - 80 }
+
+    /// Full usable vertical band on iPad: low floor -> ceiling.
+    private func playableBandHeight(iphoneGround: CGFloat) -> CGFloat {
+        max(0, playableCeilingY() - playableGroundY(iphoneGround: iphoneGround))
+    }
+
+    /// Number of evenly-spaced tiers needed so every tier-to-tier rise stays
+    /// <= maxJumpableRise (85). Spanning the FULL band requires ceil(band/85)+1 tiers;
+    /// this is what lets the climb actually reach the ceiling with only safe hops.
+    private func tierCount(iphoneGround: CGFloat) -> Int {
+        let band = playableBandHeight(iphoneGround: iphoneGround)
+        return max(2, Int((band / BaseLevelScene.maxJumpableRise).rounded(.up)) + 1)
+    }
+
+    /// Y (platform TOP) for tier `index` of `count` evenly-spaced tiers spanning the
+    /// FULL band. Tier 0 = floor, tier count-1 = near ceiling. Because `count` is
+    /// chosen so band/(count-1) <= 85, each adjacent-tier rise is auto-safe.
+    private func verticalTier(_ index: Int, of count: Int, iphoneGround: CGFloat) -> CGFloat {
+        guard count > 1 else { return playableGroundY(iphoneGround: iphoneGround) }
+        let floor = playableGroundY(iphoneGround: iphoneGround)
+        let band = playableBandHeight(iphoneGround: iphoneGround)
+        let step = band / CGFloat(count - 1)
+        let clamped = max(0, min(count - 1, index))
+        return floor + step * CGFloat(clamped)
+    }
 
     // Line art style
     private let fillColor = VisualConstants.Colors.foreground
@@ -89,9 +129,9 @@ final class HeaderScene: BaseLevelScene, SKPhysicsContactDelegate {
 
     // MARK: - Build (device-split)
 
-    /// iPhone path — byte-identical to the pre-redesign layout. The original
-    /// configureScene body (platforms -> spikes -> Bit -> exit) lives here verbatim;
-    /// nothing inside it changed, so phone output is unchanged.
+    /// iPhone path — BYTE-IDENTICAL to the pre-redesign layout. The original
+    /// configureScene body (platforms -> spikes -> Bit -> exit) runs here verbatim,
+    /// reading the phone-resolved pit/ground values; nothing inside changed.
     private func buildPhoneLevel() {
         setupPlatforms()
         setupSpikes()
@@ -99,89 +139,150 @@ final class HeaderScene: BaseLevelScene, SKPhysicsContactDelegate {
         setupExit()
     }
 
-    /// NATIVE-iPad path — a hand-composed, paced-beats course authored at ABSOLUTE
-    /// positions (never size.width fractions, never scaled geometry). It fills the
-    /// iPad screen by raising the floor (playableGroundY) and composing several
-    /// stepped beats across the full width, then stages the level's signature
-    /// twist — drag the title into the un-jumpable spike pit to bridge it — as an
-    /// isolated finale beat on the right. No camera-follow: the draggable title is a
-    /// SCREEN-SPACE HUD element, so the pit must stay on one visible screen or the
+    /// NATIVE-iPad path — a hand-composed FULL-HEIGHT climb authored at ABSOLUTE
+    /// positions (never size.width fractions, never scaled geometry — Bit's physics
+    /// are device-independent). Bit spawns LOW near the bottom, then ascends a
+    /// zig-zag of platforms that step LEFT<->RIGHT up evenly-spaced verticalTier
+    /// tiers spanning the entire band from floor to just under the title/HUD. The
+    /// level's signature twist — drag the title into the un-jumpable spike pit to
+    /// bridge it — is staged as the HIGH FINALE near the ceiling: the pit, bridge,
+    /// and exit all sit on the lifted finale floor (ipadGroundY).
+    ///
+    /// No camera-follow: the draggable title is a SCREEN-SPACE HUD element, so the
+    /// whole course (and the finale pit) must stay on one visible screen or the
     /// drop-target would scroll away and the mechanic would break.
     ///
-    /// BEATS (left -> right):
-    ///   1. spawn / teach   — wide floor platform, Bit spawns, title visible up top
-    ///   2. stepped cluster — three platforms across THREE height tiers for rhythm
-    ///   3. REST / breath   — a wider, lower platform (a deliberate pause)
-    ///   4. tension peak    — a higher platform, the level's only tight rise
-    ///   5. FINALE (twist)  — the isolated un-jumpable spike pit + exit landing;
-    ///                        the header drags here to spawn the bridge.
+    /// BEATS (low -> high, sweeping the FULL WIDTH as it climbs):
+    ///   1. spawn / teach   — wide LOW floor platform on the left; Bit reads the
+    ///                        objective with the draggable title visible up top.
+    ///   2. stepped ascent  — alternating left/right platforms up the tiers, with
+    ///                        VARIED widths for rhythm (narrow steps, wider beats).
+    ///   3. REST / breath   — one WIDE rest platform mid-climb (deliberate pause).
+    ///   4. FINALE approach  — a left landing platform at the high finale floor,
+    ///                        level with the bridge target.
+    ///   5. FINALE (twist)  — the isolated un-jumpable spike pit + right landing /
+    ///                        exit near the ceiling; the header drags here to bridge.
     private func buildComposedIPadLevel() {
-        // --- Vertical fill: raise the floor toward the lower third on iPad. ---
-        // gY is the ground SURFACE Y (platform tops sit here). Every beat platform
-        // is authored relative to gY; all rises stay <= maxJumpableRise (85).
-        let gY = playableGroundY(iphoneGround: phoneGroundHeight)
-        ipadGroundY = gY
-
-        // --- FINALE pit geometry (ABSOLUTE, un-jumpable trap preserved). ---
-        // Pit edge-to-edge = 240pt: deliberately UN-JUMPABLE (> Bit's ~184pt
-        // running-jump reach) so the player cannot bypass the header-drag mechanic.
-        // This is the load-bearing trap — never narrow it toward jumpable, never
-        // scale it. The pit anchors near the RIGHT edge so its right landing
-        // platform hosts the exit; the whole course fits within size.width (no
-        // camera-follow, since the draggable title is a screen-space HUD element).
-        let pitWidth: CGFloat = 240                      // LOAD-BEARING un-jumpable gap
-        let rightLandingWidth: CGFloat = 200             // hosts the exit
+        let iphoneGround = phoneGroundHeight
         let screenW = playableCanvasWidth
+
+        // Tier ladder spanning the FULL band (floor -> near ceiling). Count is chosen
+        // so every adjacent-tier rise <= 85; the FINALE sits on the top tier.
+        let count = tierCount(iphoneGround: iphoneGround)
+        let floorY = verticalTier(0, of: count, iphoneGround: iphoneGround)        // spawn / low
+        let finaleY = verticalTier(count - 1, of: count, iphoneGround: iphoneGround) // finale / high
+
+        // The finale floor (groundHeight) is the HIGH tier; spawn floor is the LOW one.
+        ipadGroundY = finaleY
+        ipadSpawnY  = floorY
+
+        // ===================== FINALE pit geometry (ABSOLUTE trap) =============
+        // Pit edge-to-edge = 240pt: deliberately UN-JUMPABLE (> Bit's ~184pt reach)
+        // so the header-drag mechanic cannot be bypassed. Anchored near the RIGHT
+        // edge so its right landing platform hosts the exit, fully on one screen.
+        let pitWidth: CGFloat = 240                  // LOAD-BEARING un-jumpable gap
+        let rightLandingWidth: CGFloat = 220         // hosts the exit
         let pitEnd = min(screenW - 40, screenW - rightLandingWidth + 60)
         ipadPitEndX = pitEnd
         ipadPitStartX = pitEnd - pitWidth
 
-        // ===================== BEAT 1: spawn / teach =====================
-        // Wide floor/spawn platform on the left. Bit spawns here on solid ground,
-        // with the draggable title visible at the top — read the objective, no risk.
-        let floorRight: CGFloat = 230
-        addGroundPlatform(left: 0, right: floorRight, top: gY)
+        // ===================== BEAT 1: spawn / teach (LOW, left) ===============
+        // Wide low floor on the left. Bit spawns here on solid ground; the title is
+        // visible up top — read the objective with no risk.
+        let spawnFloorLeft: CGFloat = 30
+        let spawnFloorRight: CGFloat = 30 + 240      // wide, generous spawn pad
+        addGroundPlatform(left: spawnFloorLeft, right: spawnFloorRight, top: floorY)
 
-        // ===================== BEATS 2-4: stepped cluster / rest / tension =====
-        // A left->right cursor places platforms at FIXED absolute gaps (each <= 130
-        // edge-to-edge) across THREE height tiers (rises <= 85 top-to-top) so the
-        // row reads as paced rhythm, never a flat clone-row. The pattern alternates
-        // narrow stepped platforms (build/tension beats) with wide low platforms
-        // (the rest/breath beats). The cursor stops once there's no room for one
-        // more beat plus the approach platform — so a narrow iPad gets a compact
-        // course (spawn -> 1 step -> breath approach -> finale) and a large iPad
-        // fills its extra width with more stepped beats. NO geometry is scaled.
-        let tiers:  [CGFloat] = [55,   0, 80, 30, 75, 25, 60,   0]   // relative to gY
-        let widths: [CGFloat] = [96, 150, 90, 96, 92, 110, 96, 150]   // wide+low = breaths
-        let gaps:   [CGFloat] = [44,  40, 55, 48, 60,  40, 50,  45]   // all <= 130
-        var prevRight = floorRight
-        var i = 0
-        while true {
-            let gap = gaps[i % gaps.count]
-            let w = widths[i % widths.count]
-            let left = prevRight + gap
-            let right = left + w
-            // Reserve room for the approach platform (>= 130) before the pit lip.
-            if right > ipadPitStartX - 130 { break }
-            let top = gY + tiers[i % tiers.count]
-            addPlatform(centerX: left + w / 2, width: w, top: top)
-            prevRight = right
-            i += 1
+        // ===================== BEATS 2-3: serpentine ascent + rest (climb up) ==
+        // The pit sits near the RIGHT edge (its exit landing must stay on one screen),
+        // so the climb canNOT march monotonically rightward — there isn't room. Instead
+        // it SERPENTINES up within the region LEFT of the pit: platforms alternate
+        // between a LEFT lane and a RIGHT lane, one tier higher each step, so the route
+        // uses the FULL WIDTH of that region AND the FULL HEIGHT of the band. Widths
+        // VARY for rhythm (narrow tension steps, medium beats) and the climb's MIDPOINT
+        // is a WIDE REST platform (a deliberate breath). Every left->right edge-to-edge
+        // gap is held <= 130; right->left steps land on a lane to the left (overlap or
+        // tiny gap, trivially reachable); every tier rise <= 85 (verticalTier proven).
+        let restTier = max(1, (count - 1) / 2)            // mid-climb breath beat
+        let intermediateCount = max(0, count - 2)         // tiers 1 .. count-2
+
+        // Climb region [climbXMin, climbXMax] = everything left of the pit lip. The two
+        // lanes live inside it; the right lane is kept within the jumpable gap of the
+        // left lane so the left->right hop is always clearable.
+        let climbXMin: CGFloat = 40
+        let climbXMax: CGFloat = ipadPitStartX - 40       // top ascent platform abuts the approach
+        let region = max(220, climbXMax - climbXMin)
+        let stepWidthNarrow: CGFloat = 118
+        let stepWidthMed: CGFloat = 158
+        // Left lane anchored near the left of the region; right lane offset so the
+        // left->right edge-to-edge gap is a safe, fixed value (<= 130). The lanes also
+        // drift slightly rightward across the climb so a wide iPad spreads the
+        // serpentine across more of the region instead of hugging the left.
+        let laneGap: CGFloat = 110                         // left.right-edge -> right.left-edge (<=130)
+        let leftLaneLeftBase: CGFloat = climbXMin + 10
+        let leftLaneRightBase = leftLaneLeftBase + stepWidthMed
+        let rightLaneLeftBase = min(leftLaneRightBase + laneGap, climbXMax - stepWidthNarrow)
+
+        // prevRight tracks the right edge of the last-placed platform so each forward
+        // hop's edge-to-edge gap can be held within the jumpable budget. Tier rises are
+        // already proven <= 85 by verticalTier, so only the horizontal gap needs care.
+        var prevRight = spawnFloorRight                    // spawn pad's right edge
+        if intermediateCount > 0 {
+            for step in 0..<intermediateCount {
+                let tier = step + 1                        // 1 .. count-2
+                let top = verticalTier(tier, of: count, iphoneGround: iphoneGround)
+                let isRest = (tier == restTier)
+                let goRight = (step % 2 == 0)              // first hop goes RIGHT, then serpentine
+                let w: CGFloat = isRest ? 240 : (goRight ? stepWidthNarrow : stepWidthMed)
+
+                // Slow rightward drift of both lanes across the climb (fills width on
+                // big iPads), clamped so the serpentine never reaches the pit lip.
+                let drift = intermediateCount > 1
+                    ? (region * 0.45) * (CGFloat(step) / CGFloat(intermediateCount - 1))
+                    : 0
+                var left: CGFloat
+                if isRest {
+                    // Rest platform: a wide breath centered in the region.
+                    left = max(climbXMin, min(climbXMax - w, climbXMin + (region - w) / 2))
+                } else if goRight {
+                    left = min(rightLaneLeftBase + drift, climbXMax - w)
+                } else {
+                    left = min(leftLaneLeftBase + drift, climbXMax - w)
+                }
+
+                // Reachability clamp: the LEFT->RIGHT hop (and any forward gap) must
+                // stay <= 130 edge-to-edge. If drift/lane choice would open a wider
+                // gap, pull this platform left to the gap ceiling. (Right->left hops
+                // land further left and only ever shrink the gap, so they're safe.)
+                if left - prevRight > BaseLevelScene.maxJumpableGap {
+                    left = prevRight + BaseLevelScene.maxJumpableGap
+                }
+                left = max(climbXMin, left)
+                addPlatform(centerX: left + w / 2, width: w, top: top)
+                prevRight = left + w
+            }
         }
 
-        // Approach platform: a solid run at ground level up to the LEFT lip of the
-        // finale pit. Lands the player level with the bridge target. The connecting
-        // gap from the last beat is fixed (45) and any drop onto it is <= 85.
-        let approachLeft = prevRight + 45
-        addGroundPlatform(left: approachLeft, right: ipadPitStartX, top: gY)
+        // ===================== BEAT 4: FINALE approach (HIGH, left lip) ========
+        // A solid run at the finale floor up to the LEFT lip of the pit, level with the
+        // bridge target. The last ascent platform is one tier BELOW the finale, so the
+        // hop up onto this approach is a safe single-tier rise (<= 85); the horizontal
+        // gap is held <= 130. This run gives the player a flat run-up before the spike
+        // pit (the finale's deliberate "run-up" beat).
+        var approachLeft = prevRight + 40
+        if approachLeft > ipadPitStartX - 90 { approachLeft = ipadPitStartX - 90 }   // ensure width
+        if approachLeft - prevRight > BaseLevelScene.maxJumpableGap {
+            approachLeft = prevRight + BaseLevelScene.maxJumpableGap
+        }
+        addGroundPlatform(left: max(0, approachLeft), right: ipadPitStartX, top: finaleY)
 
-        // ===================== BEAT 5: FINALE (the twist) =================
-        // Right landing platform across the un-jumpable pit, hosting the exit. The
-        // spike pit + bridge + exit are built by the shared mechanic code below,
-        // which now reads the ABSOLUTE ipadPit*/ipadGroundY set above. The signature
-        // mechanic — drag the level title into THIS pit to bridge it, then walk to
-        // the exit — is staged here as an isolated finale beat.
-        addGroundPlatform(left: ipadPitEndX, right: screenW, top: gY)
+        // ===================== BEAT 5: FINALE (the twist, HIGH) ================
+        // Right landing platform across the un-jumpable pit, hosting the exit, near
+        // the ceiling. The spike pit + bridge + exit are built by the shared mechanic
+        // code below, which reads the ABSOLUTE ipadPit*/ipadGroundY set above. The
+        // signature mechanic — drag the level title into THIS pit to bridge it, then
+        // walk to the exit — is the top-of-climb payoff.
+        addGroundPlatform(left: ipadPitEndX, right: screenW, top: finaleY)
 
         setupSpikes()
         setupBit()
@@ -189,7 +290,7 @@ final class HeaderScene: BaseLevelScene, SKPhysicsContactDelegate {
     }
 
     /// Composed-iPad platform helper: a visual platform (createPlatform) plus a thin
-    /// solid ground physics strip at `top`. Used for the stepped beat platforms.
+    /// solid ground physics strip at `top`. Used for every iPad beat platform.
     private func addPlatform(centerX: CGFloat, width: CGFloat, top: CGFloat) {
         let visual = createPlatform(width: width, height: platformHeight)
         visual.position = CGPoint(x: centerX, y: top - platformHeight / 2)
@@ -203,8 +304,8 @@ final class HeaderScene: BaseLevelScene, SKPhysicsContactDelegate {
         addChild(body)
     }
 
-    /// Composed-iPad ground-span helper for the wide floor / approach / landing
-    /// platforms, expressed as [left, right] edges so beat boundaries are explicit.
+    /// Composed-iPad ground-span helper expressed as [left, right] edges so beat
+    /// boundaries are explicit (wide floor / approach / landing platforms).
     private func addGroundPlatform(left: CGFloat, right: CGFloat, top: CGFloat) {
         let width = max(0, right - left)
         guard width > 0 else { return }
@@ -222,8 +323,14 @@ final class HeaderScene: BaseLevelScene, SKPhysicsContactDelegate {
         drawIndustrialPillar(at: CGPoint(x: size.width - 30 * layoutXScale, y: size.height / 2), height: size.height)
         drawIndustrialPillar(at: CGPoint(x: size.width - 70 * layoutXScale, y: size.height / 2), height: size.height * 0.7)
 
-        // Control panel on left
-        drawControlPanel(at: CGPoint(x: 50 * layoutXScale, y: groundHeight + 60 * layoutYScale))
+        // Control panel on left. iPad: anchor to the LOW spawn floor (groundHeight is
+        // the lifted HIGH finale tier on iPad, which would float the panel mid-screen).
+        // setupBackground runs before the iPad build sets ipadSpawnY, so derive the
+        // spawn-floor Y here from the same tier helper.
+        let panelGroundY: CGFloat = isWideCanvas
+            ? verticalTier(0, of: tierCount(iphoneGround: phoneGroundHeight), iphoneGround: phoneGroundHeight)
+            : groundHeight
+        drawControlPanel(at: CGPoint(x: 50 * layoutXScale, y: panelGroundY + 60 * layoutYScale))
     }
 
     private func drawIndustrialPillar(at position: CGPoint, height: CGFloat) {
@@ -412,11 +519,11 @@ final class HeaderScene: BaseLevelScene, SKPhysicsContactDelegate {
         let spikeHeight: CGFloat = 30 * layoutYScale
 
         // Vertical anchors for the pit floor / spikes / hazard band.
-        //   iPhone: the ORIGINAL absolute literals (byte-identical layout) — spikes
+        //   iPhone: the ORIGINAL absolute literals (BYTE-IDENTICAL layout) — spikes
         //   sit just below the ~90pt ground in the bottom band.
-        //   iPad: the floor is raised to groundHeight (gY ~320), so anchor the SAME
-        //   pit-floor geometry just under that raised ground so the spikes stay
-        //   visually IN the pit and the hazard band catches a fall into the
+        //   iPad: the finale floor is lifted to groundHeight (the HIGH tier), so
+        //   anchor the SAME pit-floor geometry just under that raised ground — the
+        //   spikes stay visually IN the pit and the hazard catches a fall into the
         //   un-bridged gap. Relative geometry (un-jumpable gap, bridge-above-spikes)
         //   is unchanged; only the absolute Y baseline moves with the floor.
         let pitBaseY: CGFloat = isWideCanvas ? groundHeight - 56 * layoutYScale : 10 * layoutYScale
@@ -468,7 +575,12 @@ final class HeaderScene: BaseLevelScene, SKPhysicsContactDelegate {
     }
 
     private func setupBit() {
-        spawnPoint = CGPoint(x: 70 * layoutXScale, y: groundHeight + 50 * layoutYScale)
+        // iPhone: original spawn on the low ground (BYTE-IDENTICAL).
+        // iPad: the finale floor (groundHeight) is the HIGH tier, so spawn DOWN on
+        // the low first-tier platform (ipadSpawnY) — Bit climbs UP to the finale.
+        spawnPoint = isWideCanvas
+            ? CGPoint(x: 90, y: ipadSpawnY + 50 * layoutYScale)
+            : CGPoint(x: 70 * layoutXScale, y: groundHeight + 50 * layoutYScale)
 
         bit = BitCharacter.make()
         bit.position = spawnPoint
@@ -479,11 +591,11 @@ final class HeaderScene: BaseLevelScene, SKPhysicsContactDelegate {
     }
 
     private func setupExit() {
-        // Exit X. iPhone: original (right edge, scaled). iPad: anchor onto the
-        // RIGHT LANDING platform [ipadPitEndX, screenW] — `size.width - 50*layoutX`
-        // can land LEFT of the landing (over the pit) on very wide iPads, so place
-        // the exit a fixed inset inside the landing's right edge instead. Guarantees
-        // the exit always sits on solid ground past the bridge.
+        // Exit X. iPhone: original (right edge, scaled — BYTE-IDENTICAL). iPad: anchor
+        // onto the RIGHT LANDING platform [ipadPitEndX, screenW] — `size.width - 50`
+        // can land LEFT of the landing (over the pit) on very wide iPads, so place the
+        // exit at the landing's center instead. Guarantees the exit always sits on
+        // solid ground past the bridge.
         let exitX: CGFloat = isWideCanvas
             ? min(playableCanvasWidth - 60, ipadPitEndX + (playableCanvasWidth - ipadPitEndX) / 2)
             : size.width - 50 * layoutXScale

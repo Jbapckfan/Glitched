@@ -30,17 +30,21 @@ final class TimeTravelScene: BaseLevelScene, SKPhysicsContactDelegate {
     // MARK: - Native-iPad composition gate
     //
     // iPhone keeps its original centered single-floor layout (buildPhoneLevel),
-    // byte-identical. iPad gets a HAND-COMPOSED approach (buildComposedIPadLevel):
-    // a teach pad -> a stepped build cluster (varied tiers for rhythm) -> a
-    // wide REST/LAUNCH breath platform, then the level's signature mechanic — the
-    // grown TREE as a vertical climb — staged as the finale beat rising off the
-    // launch platform to the cliff-top exit. Geometry is authored in ABSOLUTE
+    // byte-identical. iPad gets a HAND-COMPOSED full-height climb
+    // (buildComposedIPadLevel): an ASCENDING multi-tier route built with the
+    // Phase-0 verticalTier API that fills the canvas top-to-bottom — spawn low in
+    // the previously-empty LEFT third, stepping UP and rightward through staggered
+    // platforms (with a wide REST platform mid-climb) to a tier-near-ceiling
+    // REST/LAUNCH ledge, then the level's signature mechanic — the grown TREE as a
+    // vertical climb — staged as the FINALE rising off that launch ledge to the
+    // cliff-top exit pinned near the ceiling. Geometry is authored in ABSOLUTE
     // points (never size.width fractions, never scaled) so jump reach is exact:
-    // platform centres step at <= maxJumpableGap (130) horizontally and rises
-    // stay <= maxJumpableRise (85). The entire tree/sign/clock/cliff/exit cluster
-    // derives from `cliffX`, so the composed path only RELOCATES that one anchor
-    // (and the floor + spawn) — the verified branch-ladder climb geometry is
-    // untouched and rides along rigidly. Gated on isWideCanvas; iPhone unchanged.
+    // horizontal centre steps stay <= maxJumpableGap (130) and rises come from
+    // verticalTier (auto-clamped to maxJumpableRise 85). The whole tree/sign/clock/
+    // cliff/exit cluster derives from `cliffX`/`groundY`, so the composed path only
+    // RELOCATES those anchors (and the floor + spawn) — the verified branch-ladder
+    // climb geometry is untouched and rides along rigidly. Gated on isWideCanvas;
+    // iPhone unchanged.
     private var isWideCanvas: Bool { size.height > 1000 && size.width > designWidth }
 
     // Composed iPad anchors (set in buildComposedIPadLevel; unused on iPhone).
@@ -348,7 +352,16 @@ final class TimeTravelScene: BaseLevelScene, SKPhysicsContactDelegate {
     private var exitDoorY: CGFloat = 470
 
     private func buildLevel() {
-        // --- Shared vertical-fill preamble (identical on both devices) ---------
+        if isWideCanvas {
+            buildComposedIPadLevel()
+        } else {
+            buildPhoneLevel()
+        }
+    }
+
+    // MARK: - iPhone layout (unchanged, byte-identical to the shipped phone level)
+
+    private func buildPhoneLevel() {
         // Lift the ground off the bottom safe area but keep the iPhone value
         // close to the original 160 via the max() floor; on iPad this pushes
         // the whole puzzle up out of the very-bottom strip.
@@ -364,34 +377,13 @@ final class TimeTravelScene: BaseLevelScene, SKPhysicsContactDelegate {
 
         // iPad vertical-void fix: lift the ENTIRE flat gameplay band uniformly
         // so it sits center-ish on a tall canvas instead of hugging the bottom.
-        // The band runs from the floor (lowest gameplay node, center y=groundY)
-        // up to the exit door (highest gameplay node, y=exitDoorY). Because
-        // EVERY gameplay node — floor, cliff, exit, treeContainer (and all its
-        // branch footholds), sign, clock, spawn — is positioned as
-        // `groundY + <fixed constant>`, lifting the single `groundY` anchor
-        // shifts the whole band by exactly `lift` and leaves every relative
-        // gap / rise / jump distance byte-identical. On iPhone the helper
-        // returns 0 (size.height <= 1000) so groundY is unchanged and the layout
-        // is byte-identical. The death zone stays at y=-50 (below the lowest
-        // lifted platform, which only moves up) so it still catches falls.
+        // (Retained on the iPhone path for completeness; the helper returns 0 on
+        // iPhone-class canvases so groundY is unchanged and the layout is
+        // byte-identical. iPad now takes buildComposedIPadLevel instead.)
         let lift = gameplayVerticalLift(bandBottom: groundY, bandTop: exitDoorY)
         groundY += lift
-        // exitDoorY derives from the now-lifted groundY (same +cliffHeight+30
-        // offset), so it rises by the identical lift; cliffHeight is a sizing
-        // value (not a band-relative gap) and is intentionally left unchanged.
         exitDoorY = groundY + cliffHeight + 30
 
-        // --- Device-specific floor + cliff anchor ------------------------------
-        if isWideCanvas {
-            buildComposedIPadLevel()
-        } else {
-            buildPhoneLevel()
-        }
-    }
-
-    // MARK: - iPhone layout (unchanged, byte-identical to the shipped phone level)
-
-    private func buildPhoneLevel() {
         // Anchor the cliff (and therefore the whole climbable cluster) in the
         // centered logical course so the tree always reads as a bridge toward the
         // exit and the spawn→tree→cliff spacing stays a rigid unit at any width
@@ -419,72 +411,134 @@ final class TimeTravelScene: BaseLevelScene, SKPhysicsContactDelegate {
         addChild(deathZone)
     }
 
-    // MARK: - iPad layout (HAND-COMPOSED, native — teach -> build -> rest -> climb finale)
+    // MARK: - iPad layout (HAND-COMPOSED, native — full-height ascending climb)
     //
-    // Level 10's signature mechanic is the grown TREE as a vertical climb. On the
-    // wide iPad canvas the old single `size.width-100` floor was a long blank
-    // strip with the tree clinging to one side. Instead we author a paced
-    // horizontal APPROACH at ABSOLUTE positions that fills the canvas and leads
-    // the player to the tree base, then stage the tree-climb as the finale:
-    //   1. TEACH        — a calm intro pad (spawn region context), tier 0.
-    //   2. BUILD-1      — stepped up (tier 1): rhythm begins.
-    //   3. BUILD-2      — approach PEAK (tier 2): the highest stepping stone.
-    //   4. BUILD-3      — stepped back down (tier 1): release.
-    //   5. REST/LAUNCH  — a WIDE breath platform (tier 0): the deliberate pause
-    //                     AND the climb-launch floor the tree roots into. Bit
-    //                     spawns here, climb-ready, exactly as on iPhone.
-    //   6. CLIMB FINALE — the grown tree's branch ladder rises vertically off the
-    //                     launch platform to the cliff-top EXIT (the device twist,
-    //                     untouched: it rides on the relocated cliffX cluster).
-    // Platform centres step at <= maxJumpableGap (130) horizontally; tier rises
-    // (0/+44/+76) stay <= maxJumpableRise (85). The whole tree/sign/clock/cliff/
-    // exit cluster derives from cliffX, so we only relocate that anchor + the
-    // floor + the spawn. If the course is wider than the screen, camera-follow
-    // scrolls it; the death zone spans the full course.
+    // Level 10's signature mechanic is the grown TREE as a vertical climb, with a
+    // HARD constraint: Bit must spawn exactly 50pt left of the tree base for the
+    // verified first-branch head-squeeze clearance, so the spawn is rigidly tied to
+    // the LAUNCH ledge (it can't start low and walk up to the tree). The prior iPad
+    // redesign filled the WIDTH but parked the whole route in a low band (top half
+    // empty, course centre-weighted, left third dead). This native pass makes a
+    // true full-height climb like L30 by (a) staging the tree-ladder finale UP to a
+    // ceiling-pinned exit and (b) hanging a reachable DESCENDING staircase down+left
+    // BELOW the launch ledge that fills the lower band and the previously-empty left
+    // third. Bit spawns on the launch ledge (mid-upper, by the tree); the staircase
+    // is bidirectionally reachable (every step 1 tier == <= 85 rise, centre gap
+    // <= 130) so it's real explorable territory that balances the frame, not dead
+    // scenery. Built with the Phase-0 verticalTier API as a 10-tier zig-zag that
+    // weaves left/right while ALWAYS rising, across the FULL band:
+    //
+    //   TIER 0  BASE PAD   — far LEFT, foot of the staircase (fills the empty left
+    //                        third + the lowest band).
+    //   TIER 1-2           — step + narrow stagger, the rhythm begins.
+    //   TIER 3  REST/BREATH— a WIDE breath platform (the deliberate pause beat) —
+    //                        a generous horizontal landing mid-climb.
+    //   TIER 4-8           — the route weaves back left then climbs right with
+    //                        varied widths (narrow staggers + wider steps).
+    //   TIER 9  LAUNCH     — the WIDE rightmost tree-root LAUNCH ledge where BIT
+    //                        SPAWNS: the verified floor->first-foothold climb roots
+    //                        here, so the tree branch ladder rises off it exactly
+    //                        as on iPhone.
+    //   FINALE  TREE CLIMB — the grown tree's branch ladder rises vertically off
+    //                        the launch ledge up the GROWING PILLAR to the cliff-top
+    //                        EXIT pinned near the ceiling (the device twist,
+    //                        untouched: it rides on the relocated cliffX/groundY
+    //                        cluster).
+    //
+    // verticalTier(_:of:iphoneGround:) supplies each tier Y across the full band
+    // (rise per tier auto-clamped to maxJumpableRise 85). Horizontal centre steps
+    // stay <= maxJumpableGap (130). The tree/sign/clock/cliff/exit cluster derives
+    // from cliffX/groundY, so we only relocate those anchors (+ floor + spawn);
+    // the verified branch-ladder geometry is byte-identical and just spans the
+    // full height instead of a low strip. The course is wider than the viewport,
+    // so camera-follow scrolls it and the death zone spans the full course.
     private func buildComposedIPadLevel() {
         let h: CGFloat = 35                              // platform thickness (= phone floor)
-        let pitch: CGFloat = 124                         // centre-to-centre step (<= 130 safe)
-        let tier0: CGFloat = 0
-        let tier1: CGFloat = 44                          // rise to tier 1 (<= 85)
-        let tier2: CGFloat = 76                          // rise to tier 2 (<= 85)
+
+        // PHASE-0 VERTICAL FILL: tier 0 sits near the BOTTOM (playableGroundY ==
+        // bottomSafeY+90) and the tiers build UPWARD through the full height. The
+        // tree's LAUNCH ledge — where the verified climb roots and Bit spawns — is
+        // the TOP staircase tier (count-1), so the climb's cliff/exit cluster (all
+        // `groundY + const`) tops the staircase off near the ceiling. groundY is
+        // anchored at the LAUNCH tier; the lower tiers form a reachable zig-zag
+        // staircase that fills the lower + left frame.
+        //
+        // tierCount=10 is chosen so verticalTier's per-tier rise lands exactly on
+        // the clamp (band/(count-1) > 85 → step == maxJumpableRise 85): every
+        // single-tier hop is a full, safe 85pt rise and the launch tier sits high
+        // (~875 on a 1366-tall iPad) so launch + cliff(280, bridged by the 309pt
+        // tree ladder) puts the exit ~near playableCeilingY.
+        let tierCount = 10
+        func tierY(_ i: Int) -> CGFloat { verticalTier(i, of: tierCount, iphoneGround: 160) }
+        let launchTier = tierCount - 1
+        groundY = tierY(launchTier)
+
+        // Cliff/exit reach derives from the (high) launch groundY. Lean into the
+        // GROWING PILLAR: keep the cliff tall (up to 280) so the tree-pillar finale
+        // dominates the top third and the door lands near the ceiling. cliffHeight
+        // stays <= the tree ladder's 309pt reach so the top branch still bridges to
+        // the cliff top; it's also capped so the exit doesn't push into the title.
+        let headroom = max(0, topSafeY - groundY)
+        let maxCliffForExit = max(120, (topSafeY - 90) - 30 - groundY)  // exit <= topSafeY-90
+        cliffHeight = min(280, min(headroom, maxCliffForExit))
+        exitDoorY = groundY + cliffHeight + 30
+
+        // --- Ascending ZIG-ZAG staircase (fills the full band + left third) -----
+        // Authored at ABSOLUTE X so jump reach is exact. Every consecutive tier is
+        // +1 (rise == step <= 85) and every horizontal centre step is <= pitch
+        // (<= maxJumpableGap 130). The X column weaves left/right while always
+        // rising, so the route spreads across the width instead of stacking a
+        // central ladder; the LAUNCH tier is the rightmost so the cliff/exit extend
+        // up-and-right off it.
         let leftMargin: CGFloat = 150                    // breathing room at the left edge
+        let pitch: CGFloat = 122                         // centre-to-centre step (<= 130)
 
-        // Approach beats (left -> right), authored at absolute X.
-        // (centre index, tier offset, width)
-        let teachX  = leftMargin                         // TEACH pad
-        let build1X = teachX  + pitch                    // BUILD-1 (step up)
-        let build2X = build1X + pitch                    // BUILD-2 (approach peak)
-        let build3X = build2X + pitch                    // BUILD-3 (step down)
+        // (horizontal slot in pitch units, platform width). Index == tier.
+        // Slots weave 0,1,2,3,2,3,4,5,6,7 (each consecutive delta <= 1 == one
+        // pitch, so every horizontal step <= 130). Widths vary for rhythm; tier 3
+        // is the WIDE REST/breath platform, tier 9 the WIDE tree LAUNCH ledge.
+        let route: [(slot: CGFloat, width: CGFloat, label: String)] = [
+            (0, 160, "base"),       // tier 0 — far-left base pad (low + left fill)
+            (1, 110, "step"),       // tier 1
+            (2,  95, "stagger"),    // tier 2 — narrow precision ledge
+            (3, 210, "REST"),       // tier 3 — WIDE rest / breath beat
+            (2, 100, "weave"),      // tier 4 — weave back left
+            (3, 130, "step"),       // tier 5
+            (4,  95, "stagger"),    // tier 6 — narrow
+            (5, 110, "step"),       // tier 7
+            (6, 140, "step"),       // tier 8
+            (7, 300, "LAUNCH"),     // tier 9 — WIDE tree-root LAUNCH ledge (spawn)
+        ]
 
-        _ = createPlatform(at: CGPoint(x: teachX,  y: groundY + tier0), size: CGSize(width: 130, height: h))
-        _ = createPlatform(at: CGPoint(x: build1X, y: groundY + tier1), size: CGSize(width: 110, height: h))
-        _ = createPlatform(at: CGPoint(x: build2X, y: groundY + tier2), size: CGSize(width: 100, height: h))
-        _ = createPlatform(at: CGPoint(x: build3X, y: groundY + tier1), size: CGSize(width: 110, height: h))
-
-        // REST / LAUNCH: a wide tier-0 breath platform. Bit spawns on it and the
-        // tree roots into it; its surface-top (groundY + 17.5) matches the iPhone
-        // floor exactly, so the verified floor->first-foothold climb rise is
-        // unchanged. Centre it one pitch past BUILD-3 so the step down lands here.
-        let launchWidth: CGFloat = 280
-        let launchX = build3X + pitch
-        let launch = createPlatform(at: CGPoint(x: launchX, y: groundY + tier0),
-                                    size: CGSize(width: launchWidth, height: h))
-        launch.name = "ground"
+        var launchX: CGFloat = 0
+        for (tier, beat) in route.enumerated() {
+            let x = leftMargin + beat.slot * pitch
+            let plat = createPlatform(at: CGPoint(x: x, y: tierY(tier)),
+                                      size: CGSize(width: beat.width, height: h))
+            // The base pad and the launch ledge are solid "ground" footing; the
+            // launch ledge (groundY tier) is where Bit spawns and the tree roots —
+            // its surface-top (groundY + 17.5) matches the iPhone floor exactly so
+            // the verified floor->first-foothold climb rise is unchanged.
+            if tier == 0 || tier == launchTier { plat.name = "ground" }
+            if tier == launchTier { launchX = x }
+        }
 
         // Anchor the cliff so the tree base (cliffX - 200) sits on the launch
         // platform and the spawn (cliffX - 250, set in setupBit) sits 50pt to its
-        // left — i.e. the SAME rigid spawn->tree->cliff unit as iPhone, just
-        // translated. Place the tree base 30pt right of the launch centre so the
-        // cliff clears the launch right edge.
+        // left — the SAME rigid spawn->tree->cliff unit as iPhone, just translated
+        // up onto the launch tier. Place the tree base 30pt right of the launch
+        // centre so the cliff clears the launch right edge.
         let treeBaseX = launchX + 30
         cliffX = treeBaseX + 200
 
-        // The cliff/tree/exit/treeContainer structures derive from cliffX.
+        // The cliff/tree/exit/treeContainer structures derive from cliffX/groundY.
         buildClusterStructures()
 
-        // Course extent: from the TEACH left edge to the cliff right edge (+margin).
-        let courseLeft = teachX - 65 - leftMargin       // include the left margin as scenery
-        let courseRight = cliffX + 40 + 80              // cliff half-width 40 + tail margin
+        // Course extent: from the base-pad left edge to the cliff right edge.
+        // The base pad sits at x == leftMargin (tier 0, slot 0); include its
+        // half-width (160/2=80) and a left scenery margin.
+        let courseLeft = leftMargin - 80 - leftMargin    // include the left margin as scenery
+        let courseRight = cliffX + 40 + 80               // cliff half-width 40 + tail margin
         composedWorldWidth = max(size.width, courseRight - max(0, courseLeft))
 
         // Death zone spans the full composed course (still the fall-floor at y=-50).
@@ -499,7 +553,7 @@ final class TimeTravelScene: BaseLevelScene, SKPhysicsContactDelegate {
 
     /// Builds the cliff, cliff-depth shading, exit door and tree container from
     /// the already-set `cliffX` / `groundY`. Shared by both layouts so the climb
-    /// geometry is authored exactly once and only its X anchor differs.
+    /// geometry is authored exactly once and only its X/Y anchor differs.
     private func buildClusterStructures() {
         // Cliff on right (where exit is)
         let cliff = SKShapeNode(rectOf: CGSize(width: 80, height: cliffHeight))
@@ -971,7 +1025,7 @@ final class TimeTravelScene: BaseLevelScene, SKPhysicsContactDelegate {
         // so spawn == cliffX-250) on BOTH devices — preserving the verified
         // spawn→first-foothold clearance / head-squeeze geometry that the branch
         // ladder depends on. On iPhone-390 cliffX==350, so cliffX-250 == 100,
-        // byte-identical to the old courseX(100). On iPad the launch platform is
+        // byte-identical to the old courseX(100). On iPad the launch ledge is
         // sized to host both this spawn and the tree base.
         spawnPoint = CGPoint(x: cliffX - 250, y: groundY + 40)
 
@@ -983,8 +1037,8 @@ final class TimeTravelScene: BaseLevelScene, SKPhysicsContactDelegate {
         playerController = PlayerController(character: bit, scene: self)
 
         // iPad-only: once the composed course is wider than the viewport, promote
-        // the level to horizontal camera-follow so the approach beats and the
-        // tree-climb finale both fill the screen as Bit moves. No-op on iPhone
+        // the level to horizontal camera-follow so the ascending approach beats and
+        // the tree-climb finale both fill the screen as Bit moves. No-op on iPhone
         // (isWideCanvas is false) and on iPads where the course already fits.
         if isWideCanvas && composedWorldWidth > size.width {
             installCameraFollow(worldWidth: composedWorldWidth, playerController: playerController)
@@ -1343,6 +1397,9 @@ final class TimeTravelScene: BaseLevelScene, SKPhysicsContactDelegate {
 
     override func updatePlaying(deltaTime: TimeInterval) {
         playerController.update()
+        // Tick the horizontal camera-follow on the composed iPad course. No-op on
+        // iPhone / non-scrolling iPads (cameraFollowWorldWidth is nil).
+        updateCameraFollow()
     }
 
     // MARK: - Input Handling

@@ -72,6 +72,16 @@ final class NotificationScene: BaseLevelScene, SKPhysicsContactDelegate {
     // never trips the composed path.
     private var isWideCanvas: Bool { size.height > 1000 && size.width > designWidth }
 
+    // iPhone ground baseline this level has always used; fed to the Phase-0
+    // vertical-fill helpers (playableGroundY / verticalTier) on the iPad path.
+    private let iphoneGround: CGFloat = 160
+
+    // The mid-air platform the SIGNAL drops in when door 0 unlocks. Authored
+    // off-screen-high on iPad and animated down into its tier slot so the unlock
+    // visibly REVEALS the upper climb. Nil on iPhone (no drop mechanic).
+    private var signalDroppedPlatform: SKNode?
+    private var signalDropTargetY: CGFloat = 0
+
     // MARK: - Configuration
 
     override func configureScene() {
@@ -280,7 +290,8 @@ final class NotificationScene: BaseLevelScene, SKPhysicsContactDelegate {
 
     /// iPhone-class layout — byte-identical to the original buildLevel() body.
     /// Fits a 390-pt logical course centered on the device, with the uniform
-    /// band lift (0 on phone) applied to ground/doors/exit/death zone/spawn.
+    /// band lift (0 on phone) applied to ground/doors/exit/death zone. Spawn is
+    /// set in setupBit(). The iPad path never runs this.
     private func buildPhoneLevel() {
         // Band: lowest gameplay surface anchor = groundY (160); highest gameplay
         // anchor = groundY + 50 (locked doors / exit door = 210). Compute the
@@ -305,9 +316,6 @@ final class NotificationScene: BaseLevelScene, SKPhysicsContactDelegate {
         createPlatform(at: CGPoint(x: courseX(345), y: groundY), size: CGSize(width: courseLen(70), height: 30))
         createExitDoor(at: CGPoint(x: courseX(355), y: groundY + 50))
 
-        // Spawn 40pt above groundY (byte-identical to the original setupBit()).
-        spawnPoint = CGPoint(x: courseX(50), y: 200 + gameplayLift)
-
         // Death zone — lifted with the band so it stays the SAME distance below
         // the lowest platform (groundY). On iPhone gameplayLift == 0 → y == -50.
         let deathZone = SKNode()
@@ -318,81 +326,120 @@ final class NotificationScene: BaseLevelScene, SKPhysicsContactDelegate {
         addChild(deathZone)
     }
 
-    /// Native-iPad layout — a HAND-COMPOSED, camera-followed course authored at
-    /// ABSOLUTE positions (never size.width fractions). Same fixed jump-reach
-    /// budget as the phone (gaps <= 130, rises <= 85); platform heights vary
-    /// across three tiers (g / g+45 / g+80) for rhythm. The notification
-    /// mechanic is preserved exactly: still TWO sequential locked doors (door
-    /// indices 0 and 1 → doorStates stays [false,false]); door 1 is the
-    /// signature finale, staged in isolation just before the exit. Floor rises
-    /// via playableGroundY for vertical fill; camera-follow installed in
-    /// installIPadCameraIfNeeded() once the course is wider than the screen.
+    /// Native-iPad layout — a HAND-COMPOSED, camera-followed course that ASCENDS
+    /// the FULL vertical band one safe tier at a time: floor near the bottom
+    /// (playableGroundY) → finale near the top (playableCeilingY). Every platform
+    /// top sits exactly on a verticalTier(_:of:iphoneGround:160) Y, and the route
+    /// climbs ONE tier per step, so each top-to-top rise is a single tier step
+    /// (verticalTier clamps it to <= maxJumpableRise=85). Horizontal spacing is a
+    /// fixed march (xStep) chosen so every edge-to-edge gap stays <= maxJumpableGap
+    /// =130. The number of rungs scales with canvas height (more tiers on a taller
+    /// iPad) so the climb always reaches near the ceiling — no dead sky up top.
     ///
-    /// BEATS (left→right):
-    ///   1. SPAWN / TEACH   — wide low platform; learn to walk.
-    ///   2. STEP CLUSTER    — three platforms stepping up then down (varied
-    ///                        heights) for rhythm, ending on a low pre-door pad.
-    ///   3. DOOR 0          — first locked door, the mechanic's teach moment.
-    ///   4. REST / BREATH   — extra-wide low platform; a deliberate safe pause.
-    ///   5. TENSION CLUSTER — two stepped platforms climbing to the peak tier,
-    ///                        then a sharp step-down to an isolated pre-door pad.
-    ///   6. DOOR 1 (FINALE) — second locked door staged alone (the "I'LL OPEN IT
-    ///                        MYSELF" / decoy-vs-genuine twist), separated from
-    ///                        the cluster so it reads as its own moment.
-    ///   7. FINALE LANDING + EXIT — landing pad and exit door.
+    /// The notification mechanic is preserved EXACTLY: still TWO sequential locked
+    /// doors (indices 0 and 1 → doorStates stays [false,false]); each blocks
+    /// forward travel with the same un-jumpable 115pt frame. Door 0 gates the very
+    /// FIRST rise off the floor, so the entire climb is locked until the signal
+    /// arrives; door 1 is staged near the ceiling, gating the final rise to the
+    /// exit. The level SIGNATURE beat — "the signal visibly drops a mid-air
+    /// platform" — fires on door 0's unlock: a mid-climb rung, authored but parked
+    /// off-screen-high, descends into its tier slot. Until it drops that rung is a
+    /// gap in the ladder, so the unlock literally REVEALS / completes the climb.
+    ///
+    /// BEATS (left→right, low→high):
+    ///   1. SPAWN / TEACH  — wide low REST platform on tier 0.
+    ///   2. DOOR 0         — locked door gating the first rise; its unlock both
+    ///                       opens the path AND drops the mid-climb rung (#4).
+    ///   3. CLIMB          — one rung per tier, marching up and to the right, so
+    ///                       gameplay spans top-to-bottom and left-to-right.
+    ///   4. SIGNAL-DROP RUNG — a mid-climb tier left empty until door 0 drops it
+    ///                       in (the signature visual).
+    ///   5. REST / BREATH  — extra-wide platform partway up (deliberate pause).
+    ///   6. DOOR 1 (FINALE) — locked door near the ceiling gating the last rise.
+    ///   7. EXIT LANDING   — top-tier landing + exit door, near playableCeilingY.
     private func buildComposedIPadLevel() {
-        // Lowest tier = playable ground (raised on iPad for vertical fill). The
-        // composed band spans [g, g + doorTopOffset]; gameplayLift stays 0 here
-        // because the floor is lifted directly via playableGroundY instead.
-        let g: CGFloat = playableGroundY(iphoneGround: 160)
-        gameplayLift = 0
+        gameplayLift = 0   // floor is lifted directly via verticalTier, not by a band shift
 
-        let pH: CGFloat = 30          // platform height (same as phone)
-        let tierLow = g               // tier 0
-        let tierMid = g + 45          // tier 1 (rise 45 from low)
-        let tierHigh = g + 80         // tier 2 (rise 80 from low — <= 85)
-        let doorYOffset: CGFloat = 50 // door center sits groundY+50 (phone-identical)
+        let pH: CGFloat = 30
+        // Enough tiers that the TOP tier reaches near playableCeilingY with each
+        // per-tier rise ~maxJumpableRise (verticalTier clamps the step to 85; too
+        // few tiers would top out mid-screen and leave dead sky). +1 keeps a small
+        // margin so tier 0 == floor and tier (count-1) == near ceiling.
+        let band = playableBandHeight(iphoneGround: iphoneGround)
+        let tierCount = max(6, Int(ceil(band / BaseLevelScene.maxJumpableRise)) + 1)
+        let topTier = tierCount - 1
+        func tierY(_ i: Int) -> CGFloat {
+            verticalTier(min(max(i, 0), topTier), of: tierCount, iphoneGround: iphoneGround)
+        }
+        let doorYOffset: CGFloat = 50   // door center sits ground+50 (phone-identical)
 
-        // 1. SPAWN / TEACH
-        createPlatform(at: CGPoint(x: 90, y: tierLow), size: CGSize(width: 150, height: pH))
+        // Horizontal march. Platforms are ~120 wide (rests wider); xStep 150 keeps
+        // the edge-to-edge gap at ~30 (<= 130) even between two 120-wide pads, and
+        // wider rest pads only SHRINK the gap. The course therefore spreads the
+        // climb across the full width instead of a center ladder.
+        let xStart: CGFloat = 130
+        let xStep: CGFloat = 150
+        func rungX(_ tier: Int) -> CGFloat { xStart + CGFloat(tier) * xStep }
 
-        // 2. STEP CLUSTER (varied heights for rhythm)
-        createPlatform(at: CGPoint(x: 290, y: tierMid), size: CGSize(width: 110, height: pH))
-        createPlatform(at: CGPoint(x: 470, y: tierHigh), size: CGSize(width: 110, height: pH))
-        createPlatform(at: CGPoint(x: 645, y: tierMid), size: CGSize(width: 110, height: pH))
-        createPlatform(at: CGPoint(x: 800, y: tierLow), size: CGSize(width: 120, height: pH))
+        // Which mid tier the signal drops in, and which high tier the rest sits on.
+        let dropTier = max(2, topTier / 2)          // a real mid-climb rung
+        let restTier = max(dropTier + 1, topTier - 2)
 
-        // 3. DOOR 0 — sits in the seam after the pre-door pad. Un-jumpable 115pt
-        //    frame (preserved from createLockedDoor) blocks forward travel.
-        doors.append(createLockedDoor(at: CGPoint(x: 880, y: tierLow + doorYOffset), index: 0))
+        // 1. SPAWN / TEACH — wide low REST platform on the floor tier.
+        createPlatform(at: CGPoint(x: rungX(0), y: tierY(0)), size: CGSize(width: 200, height: pH))
 
-        // 4. REST / BREATH — extra-wide low platform (deliberate safe pause).
-        createPlatform(at: CGPoint(x: 990, y: tierLow), size: CGSize(width: 200, height: pH))
+        // 2. DOOR 0 — gates the first rise off the floor (whole climb locked until
+        //    the signal). Sits in the seam between tier-0 pad and the tier-1 rung;
+        //    its un-jumpable 115pt frame blocks the jump up.
+        doors.append(createLockedDoor(at: CGPoint(x: rungX(0) + 100, y: tierY(0) + doorYOffset), index: 0))
 
-        // 5. TENSION CLUSTER (climb to peak, then sharp drop to isolate the finale)
-        createPlatform(at: CGPoint(x: 1230, y: tierMid), size: CGSize(width: 110, height: pH))
-        createPlatform(at: CGPoint(x: 1410, y: tierHigh), size: CGSize(width: 110, height: pH))
-        createPlatform(at: CGPoint(x: 1585, y: tierLow), size: CGSize(width: 120, height: pH))
+        // 3+4. CLIMB — one rung per tier, ascending. The dropTier rung is the
+        //    SIGNAL-DROPPED platform (parked off-screen until door 0 unlocks); the
+        //    restTier rung is an extra-wide breather. All others are standard
+        //    rungs with widths varied for rhythm. Door 1 + exit handled after.
+        for tier in 1...topTier {
+            let x = rungX(tier)
+            let y = tierY(tier)
+            if tier == dropTier {
+                // SIGNATURE: authored at its final X/Y but started off-screen high,
+                // animated down on door-0 unlock (dropSignalPlatform()). Until then
+                // this rung is missing, so the ladder has a gap here.
+                signalDropTargetY = y
+                signalDroppedPlatform = createDroppablePlatform(
+                    at: CGPoint(x: x, y: y),
+                    size: CGSize(width: 120, height: pH),
+                    startY: playableCeilingY() + 140
+                )
+            } else if tier == restTier {
+                // REST / BREATH — extra-wide platform partway up.
+                createPlatform(at: CGPoint(x: x, y: y), size: CGSize(width: 210, height: pH))
+            } else if tier == topTier {
+                // Top-tier rung is the finale EXIT LANDING (wider so the finish
+                // reads as a destination).
+                createPlatform(at: CGPoint(x: x, y: y), size: CGSize(width: 170, height: pH))
+            } else {
+                // Standard rung; alternate widths for rhythm.
+                let w: CGFloat = (tier % 2 == 0) ? 130 : 110
+                createPlatform(at: CGPoint(x: x, y: y), size: CGSize(width: w, height: pH))
+            }
+        }
 
-        // 6. DOOR 1 (FINALE) — staged alone after the step-down. Same 115pt
-        //    un-jumpable frame; this is the door the "give-up" auto-unlock and
-        //    decoy-vs-genuine choice culminate on.
-        doors.append(createLockedDoor(at: CGPoint(x: 1665, y: tierLow + doorYOffset), index: 1))
+        // 6. DOOR 1 (FINALE) — gates the last rise onto the top tier, staged near
+        //    the ceiling (the "I'LL OPEN IT MYSELF" / decoy-vs-genuine beat). Sits
+        //    in the seam just before the top-tier exit landing.
+        doors.append(createLockedDoor(at: CGPoint(x: rungX(topTier) - 70, y: tierY(topTier) + doorYOffset), index: 1))
 
-        // 7. FINALE LANDING + EXIT
-        createPlatform(at: CGPoint(x: 1780, y: tierLow), size: CGSize(width: 160, height: pH))
-        createExitDoor(at: CGPoint(x: 1810, y: tierLow + doorYOffset))
+        // 7. EXIT — on the top-tier landing rung built in the loop above.
+        createExitDoor(at: CGPoint(x: rungX(topTier) + 30, y: tierY(topTier) + doorYOffset))
 
-        // Spawn 40pt above the first platform (same offset relationship as phone).
-        spawnPoint = CGPoint(x: 90, y: tierLow + 40)
+        // Course extent past the exit for camera bound + death-zone width (scales
+        // with tier count so taller iPads with more rungs still fit the exit).
+        composedCourseWidth = rungX(topTier) + 200
 
-        // Course extent past the exit for camera bound + death-zone width.
-        composedCourseWidth = 1950
-
-        // Death zone spans the FULL course (not just the screen) so a fall
-        // anywhere along the scrolling course kills, same distance below ground.
+        // Death zone spans the FULL course (not just the screen) so a fall anywhere
+        // along the scrolling course kills, a fixed distance below the floor tier.
         let deathZone = SKNode()
-        deathZone.position = CGPoint(x: composedCourseWidth / 2, y: g - 210)
+        deathZone.position = CGPoint(x: composedCourseWidth / 2, y: tierY(0) - 210)
         deathZone.physicsBody = SKPhysicsBody(rectangleOf: CGSize(width: composedCourseWidth * 2, height: 100))
         deathZone.physicsBody?.isDynamic = false
         deathZone.physicsBody?.categoryBitMask = PhysicsCategory.hazard
@@ -456,6 +503,55 @@ final class NotificationScene: BaseLevelScene, SKPhysicsContactDelegate {
         container.physicsBody = SKPhysicsBody(rectangleOf: platformSize)
         container.physicsBody?.isDynamic = false
         container.physicsBody?.categoryBitMask = PhysicsCategory.ground
+    }
+
+    /// iPad-only: a platform authored at its FINAL X but parked off-screen-high at
+    /// `startY`, so it isn't part of the route until the signal drops it in. Its
+    /// static ground physics rides with the node (kinematic move), so once it
+    /// settles at `signalDropTargetY` it is a solid surface. Returned so
+    /// dropSignalPlatform() can animate it. The drop is triggered by door 0's
+    /// unlock, making the unlock visibly REVEAL the upper climb.
+    private func createDroppablePlatform(at finalPosition: CGPoint, size platformSize: CGSize, startY: CGFloat) -> SKNode {
+        let container = SKNode()
+        container.position = CGPoint(x: finalPosition.x, y: startY)
+        container.alpha = 0
+        addChild(container)
+
+        let surface = SKShapeNode(rectOf: platformSize)
+        surface.fillColor = fillColor
+        surface.strokeColor = strokeColor
+        surface.lineWidth = lineWidth
+        surface.zPosition = 5
+        container.addChild(surface)
+
+        container.physicsBody = SKPhysicsBody(rectangleOf: platformSize)
+        container.physicsBody?.isDynamic = false
+        container.physicsBody?.categoryBitMask = PhysicsCategory.ground
+
+        return container
+    }
+
+    /// Animate the signal-dropped platform down into its tier slot. Called once,
+    /// on door 0's unlock (iPad path only). The descent + settle "thud" sells the
+    /// 4th-wall conceit that the notification literally placed the platform that
+    /// reveals the upper climb. No-op on iPhone (signalDroppedPlatform is nil).
+    private func dropSignalPlatform() {
+        guard let platform = signalDroppedPlatform else { return }
+        signalDroppedPlatform = nil   // fire once
+
+        let drop = SKAction.group([
+            SKAction.fadeIn(withDuration: 0.15),
+            SKAction.moveTo(y: signalDropTargetY, duration: 0.45)
+        ])
+        drop.timingMode = .easeIn
+        let settle = SKAction.sequence([
+            SKAction.scaleX(to: 1.06, y: 0.88, duration: 0.06),
+            SKAction.scale(to: 1.0, duration: 0.10)
+        ])
+        platform.run(.sequence([drop, settle]))
+
+        let generator = UIImpactFeedbackGenerator(style: .rigid)
+        generator.impactOccurred()
     }
 
     private func createLockedDoor(at position: CGPoint, index: Int) -> SKNode {
@@ -606,11 +702,17 @@ final class NotificationScene: BaseLevelScene, SKPhysicsContactDelegate {
     // MARK: - Setup
 
     private func setupBit() {
-        // spawnPoint is set by the active build path:
-        //   - buildPhoneLevel(): courseX(50), 200 + gameplayLift (byte-identical
-        //     to the original; sits 40pt above groundY=160, lift 0 on iPhone).
-        //   - buildComposedIPadLevel(): first composed platform + 40pt.
-        // setupBit() consumes it as-is so spawn/respawn stays correct on both.
+        // Spawn (and respawn, via spawnPoint in handleDeath).
+        //   iPhone: sits 40pt above groundY (200 = 160 + 40). Add the SAME
+        //     gameplayLift computed in buildPhoneLevel() so spawn rises with the
+        //     band and its relation to the ground is byte-identical. gameplayLift
+        //     == 0 on iPhone → y == 200.
+        //   iPad: spawn on the composed floor-tier spawn pad (120, tier0 + 40).
+        if isWideCanvas {
+            spawnPoint = CGPoint(x: 120, y: verticalTier(0, of: 2, iphoneGround: iphoneGround) + 40)
+        } else {
+            spawnPoint = CGPoint(x: courseX(50), y: 200 + gameplayLift)
+        }
         bit = BitCharacter.make()
         bit.position = spawnPoint
         addChild(bit)
@@ -815,6 +917,14 @@ final class NotificationScene: BaseLevelScene, SKPhysicsContactDelegate {
                 .scale(to: 1.1, duration: 0.1),
                 .scale(to: 1.0, duration: 0.1)
             ]))
+        }
+
+        // SIGNATURE BEAT (iPad): unlocking door 0 makes the signal visibly drop
+        // the mid-air platform that reveals the upper climb. signalDroppedPlatform
+        // is nil on iPhone and after the first fire, so this is a one-shot no-op
+        // elsewhere and never affects the phone layout.
+        if currentDoorIndex == 0 {
+            dropSignalPlatform()
         }
 
         // Clear waiting state

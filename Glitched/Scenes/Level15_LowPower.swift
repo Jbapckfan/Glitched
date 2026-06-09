@@ -39,27 +39,27 @@ final class LowPowerScene: BaseLevelScene, SKPhysicsContactDelegate {
     private func courseLen(_ logical: CGFloat) -> CGFloat { logical * courseScale }
 
     // Native-iPad gate: a TALL + WIDE canvas (iPad portrait) gets the hand-composed
-    // course (buildComposedIPadLevel); everything else keeps the byte-identical
-    // iPhone layout (buildPhoneLevel). Mirrors gameplayVerticalLift's height>1000
-    // guard so the two paths can never disagree about which device they're on, and
-    // adds a width floor (> designWidth) so a wide-but-short canvas never trips it.
+    // full-height climb (buildComposedIPadLevel); everything else keeps the
+    // byte-identical iPhone layout (buildPhoneLevel). Mirrors the height>1000 guard
+    // used by the Phase-0 helpers (playableGroundY etc) so the two paths can never
+    // disagree about which device they're on, plus a width floor (> designWidth) so a
+    // wide-but-short canvas never trips it.
     private var isWideCanvas: Bool { size.height > 1000 && size.width > designWidth }
 
     // iPad composed-course geometry (set in buildComposedIPadLevel, reused by
-    // setupBit/death-zone/camera). 0 until the iPad path runs; the phone path never
-    // reads these. groundY is the device-filled floor anchor; spawnX/courseExtent
-    // drive the spawn and the camera-follow world width.
-    private var composedGroundY: CGFloat = 0
-    private var composedSpawnX: CGFloat = 0
+    // setupBit / camera-follow). 0 until the iPad path runs; the phone path never
+    // reads these. composedSpawn is the spawn-floor anchor; composedCourseExtent is
+    // the camera-follow world width (the climb marches rightward as it ascends).
+    private var composedSpawn: CGPoint = .zero
     private var composedCourseExtent: CGFloat = 0
 
-    /// Attach a HUD node so it stays fixed on-screen. On the phone path it parents
-    /// to the scene at its existing absolute position (BYTE-IDENTICAL — no change).
-    /// On the composed iPad course the camera pans horizontally, so the HUD must
-    /// ride the camera: we reparent to gameCamera and convert the scene-space
-    /// position into camera-local space (camera starts at scene center). Vertical
-    /// stays put (camera Y is fixed at scene center); horizontal becomes an offset
-    /// from center so the HUD holds its screen corner as the course scrolls.
+    /// Attach a HUD node so it stays fixed on-screen. On the phone path it parents to
+    /// the scene at its existing absolute position (BYTE-IDENTICAL — no change). On
+    /// the composed iPad climb the camera pans horizontally, so the HUD must ride the
+    /// camera: we reparent to gameCamera and convert the scene-space position into
+    /// camera-local space (camera starts at scene center). Vertical stays put (camera
+    /// Y is fixed at scene center); horizontal becomes an offset from center so the
+    /// HUD holds its screen corner as the course scrolls.
     private func attachHUD(_ node: SKNode, sceneSpacePosition: CGPoint) {
         if isWideCanvas, let cam = gameCamera {
             node.position = CGPoint(x: sceneSpacePosition.x - size.width / 2,
@@ -131,10 +131,10 @@ final class LowPowerScene: BaseLevelScene, SKPhysicsContactDelegate {
     }
 
     private func buildLevel() {
-        // Native-iPad split (L3 template): iPhone path UNCHANGED (byte-identical),
-        // iPad path = a hand-composed, paced-beat course. The phone body is the old
-        // buildLevel verbatim; the iPad body is authored at ABSOLUTE positions with
-        // the gravity-gate finale's RELATIVE offsets preserved exactly.
+        // Native-iPad split: iPhone path UNCHANGED (byte-identical), iPad path = a
+        // hand-composed FULL-HEIGHT climb. The phone body is the old buildLevel
+        // verbatim; the iPad body ascends through verticalTier tiers from a low spawn
+        // to a high low-gravity float finale near the ceiling.
         if isWideCanvas {
             buildComposedIPadLevel()
         } else {
@@ -257,122 +257,149 @@ final class LowPowerScene: BaseLevelScene, SKPhysicsContactDelegate {
         addChild(death)
     }
 
-    // MARK: - iPad layout (hand-composed, paced beats — L3 template)
+    // MARK: - iPad layout (hand-composed FULL-HEIGHT climb — Phase-0 vertical-fill API)
 
     private func buildComposedIPadLevel() {
-        // Hand-composed iPad course. Authored at ABSOLUTE scene-X with Y as offsets
-        // from a device-filled ground anchor (NEVER size.width fractions, NEVER
-        // scaled geometry). Spacing stays inside the device-independent jump budget
-        // (BaseLevelScene.maxJumpableGap 130 edge-to-edge / maxJumpableRise 85
-        // top-to-top) for every TRAVERSAL hop; platform heights vary across 3 tiers
-        // for rhythm. The two MECHANIC beats — the narrow-drop trap (NEEDS normal
-        // gravity) and the gravity-gate finale (NEEDS low gravity) — are translated
-        // RIGIDLY from the phone version: their relative offsets, the effective-width
-        // gap formula, the 125-pt chasm and the groundY+200 height-gate are copied
-        // verbatim so the apex math holds.
+        // FULL-HEIGHT climb. The old iPad fix only lifted a flat band into the lower
+        // third (top half empty). This route now SPANS THE WHOLE BAND: spawn sits on
+        // the floor near the bottom (playableGroundY = bottomSafeY+90) and the player
+        // ascends a diagonal staircase of evenly-spaced verticalTier tiers — each rise
+        // auto-clamped to the safe 85pt jump — sweeping LEFT->RIGHT across the full
+        // width (camera-follows) up to a high low-gravity FLOAT FINALE just under the
+        // ceiling (playableCeilingY). The signature LOW-POWER FLOAT is staged as the
+        // high finale beat: a float-only shelf reachable ONLY by the lunar-gravity arc.
         //
-        // Beats: spawn/teach -> stepped cluster (3 tiers) -> wide REST breath ->
-        // tension-peak approach -> NARROW-DROP TRAP (normal-gravity gate) -> catch
-        // ledge breath/launch -> ISOLATED GRAVITY-GATE FINALE (low-gravity gate) ->
-        // shelf + exit.
+        // The two MECHANIC beats are translated RIGIDLY from the phone version so the
+        // apex math is byte-for-byte the same in RELATIVE terms:
+        //   • the narrow-drop TRAP (NEEDS normal gravity) — high ledge / mini ledges /
+        //     catch ledge with the playerEffectiveBodyWidth+12 gap formula, and
+        //   • the gravity-gate FINALE (NEEDS low gravity) — the 125-pt chasm + the
+        //     +200 height-gate shelf. The whole finale unit is TRANSLATED UPWARD as a
+        //     block (launch ledge AND shelf shift together), so its internal offsets —
+        //     and therefore the apex re-derivation — are unchanged; only its absolute
+        //     altitude moves up to cap the band.
+        //
+        // ---- Physics model (no clampVelocity; jump launches at the 620 dy cap;
+        //      apex = v^2 / (2 * |g| * 150)) ----
+        //   • Launch surface = the finale catch-ledge top.
+        //   • Normal gravity (-14): apex = 91.52pt -> peak body-bottom = launchTop+91.5.
+        //   • Low gravity (-5): apex = 256.27pt -> peak body-bottom = launchTop+256.3.
+        //   • Finale shelf TOP = launchTop + 220: 128.5pt ABOVE the normal peak
+        //     (undershoots into the chasm = mechanic required) and 36.3pt BELOW the low
+        //     peak (the low arc clears). Device- AND altitude-independent (offsets
+        //     cancel), exactly as on iPhone.
 
-        // Device-filled floor anchor: raises the floor on iPad for vertical fill.
-        // All beats are authored as groundY + offset, so this single anchor controls
-        // vertical placement. The gravity-gate finale is groundY-relative, so any
-        // lift translates its launch ledge AND its shelf by the same amount — the
-        // apex re-derivation below is identical after the lift.
-        let groundY = playableGroundY(iphoneGround: 160)
-        composedGroundY = groundY
+        let groundY = playableGroundY(iphoneGround: 160)   // floor near the bottom
+        let ceilingY = playableCeilingY()                  // top of the usable band
 
-        // ---- Physics model (this scene does NOT call clampVelocity, so the jump
-        //      launches at the 620 dy cap; apex = v^2 / (2 * |g| * 150)) ----
-        //   • Launch surface = catch-ledge top = groundY - 20.
-        //   • Normal gravity (-14): apex = 620^2/(2*14*150) = 91.52pt
-        //       -> peak body-bottom = groundY + 71.52.
-        //   • Low gravity (-5): apex = 620^2/(2*5*150) = 256.27pt
-        //       -> peak body-bottom = groundY + 236.27.
-        //   • Shelf TOP = groundY + 200: 128.5pt ABOVE the normal peak (undershoots
-        //     into the chasm = mechanic required) and 36.3pt BELOW the low peak (the
-        //     low arc clears). Device- AND lift-independent (offsets cancel).
+        // === FINALE GEOMETRY (anchored to the CEILING so the climb caps the band) ===
+        // The float-only shelf is the HIGHEST element, sitting just under the ceiling.
+        // Everything else in the finale is derived from it by the RIGID phone offsets:
+        //   shelfTop = launchTop + 220 ; highLedgeTop = launchTop + 80.
+        let shelfHeight: CGFloat = 12
+        let shelfTopY = ceilingY - 60                      // highest surface, under ceiling
+        let launchTopY = shelfTopY - 220                   // catch-ledge top (apex anchor)
+        let highLedgeTopY = launchTopY + 80                // trap high ledge top
 
-        // === BEAT 1 — SPAWN / TEACH (normal gravity) ===
-        // Wide spawn floor + a low step the player walks/hops onto. Spawn sits on
-        // the floor; the step is a free rise to teach the jump under normal gravity.
-        let spawnX: CGFloat = 80
-        composedSpawnX = spawnX
-        createPlatform(at: CGPoint(x: spawnX,  y: groundY),       size: CGSize(width: 120, height: 30)) // top groundY+15
-        createPlatform(at: CGPoint(x: 225,     y: groundY + 34),  size: CGSize(width: 80,  height: 22)) // top +45  (gap45/rise30)
+        // === TRAVERSAL STAIRCASE (verticalTier tiers, full-height, swept across width) ===
+        // Pick the tier count so the TOP tier lands within one safe jump (<=85) BELOW
+        // the trap high ledge: nTiers = floor((highLedgeTop - groundY) / maxRise) + 1.
+        // verticalTier(i, of: nTiers) then returns evenly-spaced tops whose per-tier
+        // rise is auto-clamped to maxJumpableRise (~85), so every climb hop is safe by
+        // construction and the tiers fill the band from floor to just under the finale.
+        let maxRise = BaseLevelScene.maxJumpableRise
+        let nTiers = max(4, Int(((highLedgeTopY - groundY) / maxRise).rounded(.down)) + 1)
 
-        // === BEAT 2 — STEPPED CLUSTER (3 height tiers for rhythm) ===
-        // Heights step low -> mid -> high so the row is never flat; each hop stays
-        // inside the 130/85 budget.
-        createPlatform(at: CGPoint(x: 365, y: groundY + 12),  size: CGSize(width: 80, height: 24)) // top +24  (gap60/rise-21)
-        createPlatform(at: CGPoint(x: 500, y: groundY + 56),  size: CGSize(width: 72, height: 22)) // top +67  (gap59/rise+43)
-        createPlatform(at: CGPoint(x: 635, y: groundY + 92),  size: CGSize(width: 72, height: 22)) // top +103 (gap63/rise+36)
+        // Horizontal march: accumulate centers so every consecutive edge-to-edge gap is
+        // a chosen value <= maxJumpableGap (130). Widths VARY for rhythm; index 4 is the
+        // deliberately-WIDE REST platform and a later index is a second, higher rest.
+        // The course extends rightward (camera-follows) — tiers spread across the FULL
+        // width as they climb instead of stacking a ladder in the centre.
+        let tierWidths: [CGFloat] = [120, 86, 100, 80, 160, 84, 104, 140, 88, 100, 88, 96, 92]
+        let tierGaps:   [CGFloat] = [60, 110, 55, 95, 50, 100, 60, 90, 55, 100, 60, 90]
+        func tierWidth(_ i: Int) -> CGFloat { tierWidths[min(i, tierWidths.count - 1)] }
+        func tierGap(_ i: Int) -> CGFloat { tierGaps[min(i, tierGaps.count - 1)] }
 
-        // === BEAT 3 — REST / BREATH (deliberate wide pause) ===
-        // A visibly wider platform, a clear step DOWN from the cluster peak: a safe
-        // place to stop before the tension peak.
-        createPlatform(at: CGPoint(x: 835, y: groundY + 40), size: CGSize(width: 190, height: 28)) // top +54 (gap69/rise-49)
+        var tierCenterX: [CGFloat] = [90]
+        for i in 1..<nTiers {
+            let dx = tierGap(i - 1) + tierWidth(i - 1) / 2 + tierWidth(i) / 2
+            tierCenterX.append(tierCenterX[i - 1] + dx)
+        }
 
-        // === BEAT 4 — TENSION PEAK: NARROW-DROP TRAP (NEEDS NORMAL GRAVITY) ===
-        // High ledge the player walks onto, then must thread a body-width drop down
-        // to the catch ledge. Low gravity floats the player into the mini ledges, so
-        // this gate REQUIRES normal gravity. Geometry translated rigidly from the
-        // phone version: high ledge groundY+50, mini ledges groundY+20 flanking a
-        // gap sized to playerEffectiveBodyWidth+12 (so the center window is ~12pt on
-        // iPhone 1.0x AND iPad 1.25x alike), catch ledge groundY-30 spanning the
-        // full fall corridor.
-        let trapHighX: CGFloat = 1010
-        createPlatform(at: CGPoint(x: trapHighX, y: groundY + 50), size: CGSize(width: 50, height: 20)) // top +60 (gap55/rise+6 from rest)
+        // BEAT 1 — SPAWN floor (tier 0, low, near the bottom).
+        // BEATS 2..N-2 — ascending staircase, including the WIDE REST (idx 4) and a
+        //                second higher rest (idx 7) for breath beats.
+        // BEAT N-1 — the top tier that feeds the trap high ledge.
+        composedSpawn = CGPoint(x: tierCenterX[0], y: groundY)
+        for i in 0..<nTiers {
+            let topY = verticalTier(i, of: nTiers, iphoneGround: 160)
+            let h: CGFloat = (i == 4 || i == 7) ? 30 : 22   // rest beats read as thicker
+            createPlatform(at: CGPoint(x: tierCenterX[i], y: topY - h / 2),
+                           size: CGSize(width: tierWidth(i), height: h))
+        }
 
-        let narrowGap = playerEffectiveBodyWidth + 12          // iPhone 34 / iPad 39.5 (window ~12)
+        // === BEAT (tension peak): NARROW-DROP TRAP (NEEDS NORMAL GRAVITY) ===
+        // High ledge the player jumps UP onto from the top tier (rise <=85, gap <=130),
+        // then threads a body-width drop down to the catch ledge. Low gravity floats
+        // the player into the mini ledges, so this gate REQUIRES normal gravity. The
+        // geometry is translated rigidly from the phone version (high ledge / mini
+        // ledges / catch with the effective-width gap formula).
+        let lastTierRightEdge = tierCenterX[nTiers - 1] + tierWidth(nTiers - 1) / 2
+        let trapWidth: CGFloat = 50
+        let trapGap: CGFloat = 70                           // edge-to-edge from top tier
+        let trapHighX = lastTierRightEdge + trapGap + trapWidth / 2
+        createPlatform(at: CGPoint(x: trapHighX, y: highLedgeTopY - 20 / 2),
+                       size: CGSize(width: trapWidth, height: 20))   // top = highLedgeTopY
+
+        let narrowGap = playerEffectiveBodyWidth + 12        // iPhone 34 / iPad 39.5 (window ~12)
         let gapCenterX = trapHighX
         let miniLedgeWidth: CGFloat = 15
         let leftMiniX  = gapCenterX - narrowGap / 2 - miniLedgeWidth / 2
         let rightMiniX = gapCenterX + narrowGap / 2 + miniLedgeWidth / 2
-        createPlatform(at: CGPoint(x: leftMiniX,  y: groundY + 20), size: CGSize(width: miniLedgeWidth, height: 15))
-        createPlatform(at: CGPoint(x: rightMiniX, y: groundY + 20), size: CGSize(width: miniLedgeWidth, height: 15))
+        // Mini ledges 40pt below the high-ledge top, mirroring the phone offset
+        // (high ledge groundY+50 top, mini ledges groundY+20 -> top groundY+27.5).
+        let miniTopY = highLedgeTopY - 52
+        createPlatform(at: CGPoint(x: leftMiniX,  y: miniTopY - 15 / 2), size: CGSize(width: miniLedgeWidth, height: 15))
+        createPlatform(at: CGPoint(x: rightMiniX, y: miniTopY - 15 / 2), size: CGSize(width: miniLedgeWidth, height: 15))
 
-        // === BEAT 5 — CATCH LEDGE = breath + the finale LAUNCH surface ===
-        // The trap drops the player onto this ledge (top groundY-20). It doubles as
+        // === BEAT — CATCH LEDGE = breath + the finale LAUNCH surface ===
+        // The trap drops the player onto this ledge (top = launchTopY). It doubles as
         // the short breath before the isolated finale and as the gate's launch surface.
-        createPlatform(at: CGPoint(x: gapCenterX, y: groundY - 30), size: CGSize(width: 50, height: 20)) // top groundY-20 = LAUNCH
+        createPlatform(at: CGPoint(x: gapCenterX, y: launchTopY - 20 / 2),
+                       size: CGSize(width: 50, height: 20))   // top = launchTopY = LAUNCH
 
-        // === BEAT 6 — ISOLATED GRAVITY-GATE FINALE (NEEDS LOW GRAVITY) ===
-        // The signature twist, staged alone. A 125-pt chasm (catch right edge ->
-        // shelf left edge, NO platform between) so the normal arc (peak body-bottom
-        // groundY+71.5) falls into the death zone, while the low arc (peak body-bottom
-        // groundY+236.3) rises above the shelf top (groundY+200) before its leading
-        // edge reaches the shelf face, then floats over and lands on top. The 125-pt
-        // chasm and the groundY+200 height-gate are copied verbatim from the phone
-        // version — NEVER widened.
-        let catchRightEdge = gapCenterX + 50 / 2               // 1035
-        let chasmWidth: CGFloat = 125                          // identical to phone
+        // === BEAT (finale): ISOLATED GRAVITY-GATE FLOAT (NEEDS LOW GRAVITY) ===
+        // The signature lunar-float twist, staged HIGH and alone. A 125-pt chasm
+        // (catch right edge -> shelf left edge, NO platform between) so the normal arc
+        // (peak body-bottom launchTop+91.5) falls into the death zone, while the low
+        // arc (peak body-bottom launchTop+256.3) rises above the shelf top
+        // (launchTop+220) before its leading edge reaches the shelf face, then floats
+        // over and lands on top. The 125-pt chasm and the +200 height-gate are copied
+        // verbatim from the phone version — NEVER widened.
+        let catchRightEdge = gapCenterX + 50 / 2
+        let chasmWidth: CGFloat = 125                        // identical to phone
         let shelfWidth: CGFloat = 138
-        let shelfLeftEdge = catchRightEdge + chasmWidth        // 1160
-        let shelfCenterX = shelfLeftEdge + shelfWidth / 2      // 1229
-        let shelfTopY = groundY + 200                          // HEIGHT GATE — fixed
-        let shelfHeight: CGFloat = 12
+        let shelfLeftEdge = catchRightEdge + chasmWidth
+        let shelfCenterX = shelfLeftEdge + shelfWidth / 2
         let shelfCenterY = shelfTopY - shelfHeight / 2
         createPlatform(at: CGPoint(x: shelfCenterX, y: shelfCenterY),
                        size: CGSize(width: shelfWidth, height: shelfHeight))
 
-        // Exit sits ON the finale shelf — unreachable until Low Power is engaged
-        // (the normal arc can't land on the shelf at all), so the gravity puzzle is
+        // Exit sits ON the finale shelf — unreachable until Low Power is engaged (the
+        // normal arc can't land on the shelf at all), so the gravity puzzle is
         // mandatory exactly as on iPhone.
         createExitDoor(at: CGPoint(x: shelfCenterX, y: shelfTopY + 30))
 
-        // Course extent for camera-follow + death zone (full course on iPad).
-        let courseExtent = (shelfCenterX + shelfWidth / 2) + 60
+        // Course extent for camera-follow + death zone (full climb width on iPad).
+        let courseExtent = shelfCenterX + shelfWidth / 2 + 60
         composedCourseExtent = courseExtent
 
-        // Death zone spans the FULL course and sits the same 260pt below the floor
-        // top as the phone version (relative geometry preserved): phone death y=-100
-        // sits 260 below the floor top (160 - (-100) + ... ); here we anchor it
-        // groundY-260 so a missed normal-gravity gate arc dies in the chasm.
+        // Death zone spans the FULL course at groundY-120 (well below the floor top, so
+        // a missed normal-gravity finale arc — which falls down the platform-free chasm
+        // to the right of every tier — dies, exactly as on iPhone). Relative geometry
+        // preserved: it stays a fixed drop below the lowest gameplay surface.
         let death = SKNode()
-        death.position = CGPoint(x: courseExtent / 2, y: groundY - 260)
+        death.position = CGPoint(x: courseExtent / 2, y: groundY - 120)
         death.physicsBody = SKPhysicsBody(rectangleOf: CGSize(width: courseExtent * 2, height: 100))
         death.physicsBody?.isDynamic = false
         death.physicsBody?.categoryBitMask = PhysicsCategory.hazard
@@ -576,11 +603,11 @@ final class LowPowerScene: BaseLevelScene, SKPhysicsContactDelegate {
 
     private func setupBit() {
         if isWideCanvas {
-            // iPad composed course: spawn above the composed spawn floor (top
-            // composedGroundY+15), 35pt clear, matching the phone spawn-above-floor
-            // margin. Then promote to horizontal camera-follow because the composed
-            // course (~1358pt) is wider than any iPad portrait viewport.
-            spawnPoint = CGPoint(x: composedSpawnX, y: composedGroundY + 50)
+            // iPad composed climb: spawn above the spawn floor (tier 0 top
+            // composedSpawn.y + 15), ~35pt clear, matching the phone spawn-above-floor
+            // margin, then promote to horizontal camera-follow because the climb
+            // marches wider than any iPad portrait viewport as it ascends.
+            spawnPoint = CGPoint(x: composedSpawn.x, y: composedSpawn.y + 50)
         } else {
             // Spawn above the Section-1 floor (logical x=40, top y=175); the player
             // settles onto it under normal gravity. iPad vertical-void fix: add the
@@ -594,7 +621,7 @@ final class LowPowerScene: BaseLevelScene, SKPhysicsContactDelegate {
         registerPlayer(bit)
         playerController = PlayerController(character: bit, scene: self)
 
-        // Camera-follow only on the composed iPad course (when it's wider than the
+        // Camera-follow only on the composed iPad climb (when it's wider than the
         // viewport). The phone single-screen layout never scrolls. Called once after
         // the player + controller exist; the base update() ticks the camera.
         if isWideCanvas && composedCourseExtent > size.width {

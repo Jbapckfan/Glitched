@@ -34,9 +34,10 @@ final class ClipboardScene: BaseLevelScene, SKPhysicsContactDelegate {
     /// geometry (gaps/rises/jump distances) is preserved on every canvas.
     ///
     /// NOTE: gameplayLift is the iPhone-path vertical-fill mechanism. The COMPOSED iPad
-    /// path (buildComposedIPadLevel) does NOT use it — it fills the screen via
-    /// playableGroundY (vertical) + installCameraFollow (horizontal scroll) instead, and
-    /// is the only path that runs on iPad. So on iPhone lift==0 and the phone layout is
+    /// path (buildComposedIPadLevel) does NOT use it — it fills the screen via the
+    /// Phase-0 vertical-fill API (playableGroundY/playableCeilingY/verticalTier, a real
+    /// top-to-bottom climb) + installCameraFollow (horizontal scroll) instead, and is
+    /// the only path that runs on iPad. So on iPhone lift==0 and the phone layout is
     /// byte-identical; on iPad the composed path supersedes the lift entirely.
     private lazy var gameplayLift: CGFloat = gameplayVerticalLift(bandBottom: 160, bandTop: 340)
 
@@ -49,13 +50,15 @@ final class ClipboardScene: BaseLevelScene, SKPhysicsContactDelegate {
     //
     // iPhone uses the original fixed 390-wide single-screen layout (buildPhoneLevel),
     // byte-identical to the shipped phone level. iPad gets a HAND-COMPOSED level
-    // (buildComposedIPadLevel) with paced beats — teach -> cluster -> rest -> peak ->
-    // breath -> the password-terminal/locked-door FINALE -> exit — that fills the
-    // screen with intent rather than centering a phone strip. Bit's physics are
-    // device-independent, so every authored gap stays <= 130 (horizontal, center-to-
-    // center) and every rise <= 85 (top-to-top). The composed course is wider than the
-    // viewport, so it scrolls via the Phase 0 installCameraFollow. Everything is gated
-    // on `isWideCanvas`; iPhone is unchanged.
+    // (buildComposedIPadLevel) authored as a FULL-HEIGHT vertical climb — spawn low,
+    // ascend through evenly-spaced verticalTier tiers, rest mid-climb, and reach the
+    // password-terminal/locked-door FINALE staged HIGH near the ceiling — so the iPad
+    // canvas fills top-to-bottom instead of centering a phone strip in a low band.
+    // Bit's physics are device-independent, so every authored gap stays <= 130
+    // (horizontal, edge-to-edge) and every rise <= 85 (top-to-top, guaranteed by
+    // verticalTier). The composed course is wider than the viewport, so it scrolls via
+    // the Phase 0 installCameraFollow. Everything is gated on `isWideCanvas`; iPhone is
+    // unchanged.
 
     /// True on iPad-proportioned canvases (matches the base helpers' gate).
     private var isWideCanvas: Bool { size.height > 1000 && size.width > designWidth }
@@ -64,15 +67,16 @@ final class ClipboardScene: BaseLevelScene, SKPhysicsContactDelegate {
     /// composed course. 118 < the 130 safe gap; because platforms are wide the actual
     /// edge-to-edge gap is far smaller, so traversal is comfortable.
     private let composedPitch: CGFloat = 118
-    /// Absolute (device-independent) tier rise. 64 < the 85 safe top-to-top rise.
-    private let composedStepUp: CGFloat = 64
 
     // Composed iPad layout anchors (set in buildComposedIPadLevel; unused on iPhone).
     private var composedSpawnX: CGFloat = 0
+    private var composedSpawnY: CGFloat = 0
     private var composedTerminalX: CGFloat = 0
     private var composedTerminalY: CGFloat = 0
     private var composedExitDoorX: CGFloat = 0
+    private var composedExitDoorY: CGFloat = 0
     private var composedLockedDoorX: CGFloat = 0
+    private var composedLockedDoorY: CGFloat = 0
     private var composedGroundY: CGFloat = 0
     private var composedWorldWidth: CGFloat = 0
 
@@ -134,8 +138,12 @@ final class ClipboardScene: BaseLevelScene, SKPhysicsContactDelegate {
             columns = [size.width / 2]
         }
 
+        // Tile the binary tall enough to cover the full canvas height (the climb now
+        // fills the whole screen, so the backdrop must too). On iPhone the loop count
+        // resolves to the original 20 rows at the original spacing — byte-identical.
+        let rowCount = isWideCanvas ? max(20, Int(size.height / 40) + 2) : 20
         for col in columns {
-            for i in 0..<20 {
+            for i in 0..<rowCount {
                 let binary = SKLabelNode(text: String(repeating: "01", count: 10))
                 binary.fontName = "Menlo"
                 binary.fontSize = 10
@@ -209,94 +217,129 @@ final class ClipboardScene: BaseLevelScene, SKPhysicsContactDelegate {
         addChild(death)
     }
 
-    // MARK: - iPad layout (HAND-COMPOSED, native — teach -> cluster -> rest -> peak -> FINALE)
+    // MARK: - iPad layout (HAND-COMPOSED, native — FULL-HEIGHT vertical climb -> FINALE)
     //
-    // Rather than centering the iPhone strip, the iPad level is authored as a paced
-    // sequence of BEATS that fill the screen with intent. All geometry is in ABSOLUTE
-    // points (not size.width fractions) so jump reach is exact: platform centers are
-    // spaced at `composedPitch` (118 < 130 safe) and tier rises are `composedStepUp`
-    // (64 < 85 safe). The level reads:
-    //   1. TEACH    — spawn platform, flat & wide. The COPY: GLITCH3D hint lives here.
-    //   2. CLUSTER A— stepped platforms (up/down/up) for rhythm, not a flat row.
-    //   3. REST     — a wider platform, a deliberate breath.
-    //   4. PEAK     — three tightly-stepped platforms climbing to the highest tier.
-    //   5. BREATH   — a short pause before the twist.
-    //   6. FINALE   — the level's SIGNATURE beat, staged in isolation: the password
-    //                 TERMINAL platform with the PASTE control, then the un-jumpable
-    //                 LOCKED DOOR gating the exit. Copy GLITCH3D, return, tap PASTE,
-    //                 the blocker's physics is removed, and only then is the exit
-    //                 reachable. The locked door keeps the EXACT un-jumpable trap
-    //                 geometry of the iPhone level (door top ~16.5pt above Bit's apex).
-    //   7. EXIT.
+    // ANALYSIS FIX (worst dead space): the prior iPad layout tiled identical low-band
+    // platforms (tiers 0/1/2, a ~128pt strip anchored near the bottom 12%), leaving the
+    // top ~80% of the iPad canvas as dead sky and the extract target sitting low. The
+    // redesign turns L12 into a TRUE top-to-bottom climb (like L30): a serpentine
+    // staircase that ASCENDS through evenly-spaced verticalTier tiers from a low-left
+    // spawn to the password TERMINAL staged HIGH near the ceiling, forcing the player to
+    // climb to the extract target rather than walking a flat strip.
+    //
+    // Geometry source of truth (Phase-0 vertical-fill API in BaseLevelScene):
+    //   • groundY  = playableGroundY(iphoneGround:160)    — floor near the BOTTOM safe edge
+    //   • ceilingY = playableCeilingY()                   — just under the title/HUD
+    //   • band     = playableBandHeight(iphoneGround:160) — full usable vertical span
+    //   • tierY(i) = verticalTier(i, of: tierCount, …)    — evenly spaced; per-tier rise
+    //     auto-clamped to maxJumpableRise (85). tierCount is DERIVED from the band so the
+    //     top tier reaches the ceiling on ANY iPad size (a fixed small N would stop short
+    //     of the ceiling on a tall 12.9" portrait canvas and re-create the dead-sky gap).
+    //
+    // The route climbs exactly ONE tier index per upward hop (rise == one safe step,
+    // <= 85), advancing in X each hop and swinging left/right so tiers spread across the
+    // full width rather than stacking a vertical ladder in the center. Horizontal
+    // edge-to-edge gaps stay <= 130 (centers pitched at 118). Widths vary for rhythm and
+    // the climb includes one deliberately WIDE REST platform (a breath, mid-climb).
+    //
+    // BEATS (bottom -> top):
+    //   1. SPAWN/TEACH — wide platform on tier 0, low-left. COPY: GLITCH3D hint above it.
+    //   2. ASCENT      — alternating-width platforms each climbing +1 tier, swinging
+    //                    left/right across the width (the body of the full-height climb).
+    //   3. REST        — one extra-wide platform partway up: the breath beat.
+    //   4. FINALE      — the SIGNATURE beat, staged HIGH on the top tier: the password
+    //                    TERMINAL platform (PASTE control), the un-jumpable LOCKED DOOR
+    //                    in the gap after it, then the EXIT platform on the SAME tier.
+    //                    Copy GLITCH3D, climb, tap PASTE, the blocker physics is removed,
+    //                    and only then is the exit reachable. The terminal/door/exit keep
+    //                    the iPhone level's EXACT relative geometry (door body 145 tall,
+    //                    center tierY+50 -> top tierY+122.5, ~16.5pt above Bit's ~91pt
+    //                    apex from a tierY+15 platform top), so the un-jumpable trap is
+    //                    preserved on every canvas.
     // The course is wider than the viewport, so it scrolls via installCameraFollow.
+    // Camera Y is fixed at scene center, so the full ground..ceiling climb is on-screen.
     private func buildComposedIPadLevel() {
-        // Vertical fill: raise the floor on iPad (returns 160 on iPhone, but iPhone
-        // never reaches this path). All composed Y is ground-relative from here.
-        let groundY = playableGroundY(iphoneGround: 160)
+        // Vertical fill: floor near the bottom safe edge; build UPWARD from here.
+        // (On iPhone these helpers collapse to the level's own ground, but iPhone never
+        // reaches this path — it's gated on isWideCanvas.)
+        let iphoneGround: CGFloat = 160
+        let groundY = playableGroundY(iphoneGround: iphoneGround)
+        let band = playableBandHeight(iphoneGround: iphoneGround)
         composedGroundY = groundY
 
-        let pitch = composedPitch
-        let stepUp = composedStepUp
+        // Choose tierCount so the top tier reaches near the ceiling: with the per-tier
+        // rise clamped to 85, we need (tierCount-1) steps to cover `band`. Clamp to a
+        // sane range so even a short tablet canvas still gets a real multi-tier climb
+        // and a huge 12.9" canvas does not produce an absurd platform count.
+        let tierCount = max(5, min(16, Int((band / Self.maxJumpableRise).rounded(.up)) + 1))
+        let topTier = tierCount - 1
+        func tierY(_ i: Int) -> CGFloat { verticalTier(i, of: tierCount, iphoneGround: iphoneGround) }
+
         let platH: CGFloat = 30
+        let pitch = composedPitch          // 118 horizontal pitch (< 130 safe edge gap)
+        let restTier = max(1, topTier / 2) // the breath, mid-climb
 
-        let leftMargin: CGFloat = pitch * 1.2
-        func px(_ i: CGFloat) -> CGFloat { leftMargin + i * pitch }
-        func py(_ tier: CGFloat) -> CGFloat { groundY + tier * stepUp }
-
-        // Hand-placed beats. tier 0/1/2 = ground / +64 / +128. Widths vary so REST and
-        // FINALE read as deliberate breaths; centers stepped at <= 1.1*pitch (<=130)
-        // and every adjacent pair leaves a real positive edge-to-edge gap (visible
-        // beats, not a continuous slab — verified: min edge gap 9.8pt, all <=130).
-        //
-        // idx  pitch  tier  width  beat
-        //  0    0.0    0      96    TEACH (spawn, COPY hint above it)
-        //  1    1.0    1      84    CLUSTER A — up
-        //  2    2.0    0      84    CLUSTER A — down
-        //  3    3.0    1      84    CLUSTER A — up
-        //  4    4.1    0     120    REST (wider breath)
-        //  5    5.2    1      84    PEAK — up
-        //  6    6.2    2      84    PEAK — highest tier
-        //  7    7.2    1      84    PEAK — down
-        //  8    8.3    0     110    BREATH
-        //  9    9.4    0     130    FINALE — terminal platform (PASTE control)
-        // 10   10.5    0      96    EXIT platform
-        let plats: [(i: CGFloat, tier: CGFloat, w: CGFloat)] = [
-            (0.0,  0,  96),
-            (1.0,  1,  84),
-            (2.0,  0,  84),
-            (3.0,  1,  84),
-            (4.1,  0, 120),
-            (5.2,  1,  84),
-            (6.2,  2,  84),
-            (7.2,  1,  84),
-            (8.3,  0, 110),
-            (9.4,  0, 130),
-            (10.5, 0,  96)
-        ]
-        for p in plats {
-            createPlatform(at: CGPoint(x: px(p.i), y: py(p.tier)), size: CGSize(width: p.w, height: platH))
+        // Per-tier width: wide TEACH (spawn), wide REST (breath), wide FINALE (terminal),
+        // alternating narrow/medium for the rest so the climb reads as rhythmic beats.
+        func widthFor(_ tier: Int) -> CGFloat {
+            if tier == 0 { return 120 }              // wide TEACH / spawn
+            if tier == restTier { return 150 }       // wide REST breath
+            if tier == topTier { return 130 }        // wide FINALE terminal platform
+            return tier.isMultiple(of: 2) ? 92 : 80  // alternating rhythm
         }
 
-        composedSpawnX = px(0.0)
-        // Terminal sits above the FINALE platform (idx 9). createTerminal() reads these.
-        composedTerminalX = px(9.4)
-        composedTerminalY = groundY + 100   // same relative lift as the iPhone terminal (260 vs 160)
+        // Build the ASCENT: tiers 0..topTier. Each hop advances the X cursor by `pitch`
+        // and applies a small alternating horizontal swing so the staircase serpentines
+        // across the full width (even tiers lean left of the cursor, odd tiers lean
+        // right) — never a centered vertical ladder. The top tier carries the FINALE
+        // terminal platform.
+        var cursorX: CGFloat = pitch * 1.2          // left start margin
+        var maxRightEdge: CGFloat = 0
+        var finalePlatformX: CGFloat = 0
+        var spawnPlatformX: CGFloat = 0
+        func swing(_ tier: Int) -> CGFloat { (tier.isMultiple(of: 2) ? -1 : 1) * pitch * 0.18 }
 
-        // LOCKED DOOR — the signature gate. Placed in the gap between the FINALE
-        // terminal platform (idx 9) and the EXIT platform (idx 10), at the gap
-        // midpoint. Its center is groundY+50 and its body is 145 tall (see
-        // createLockedDoor), so the door top is groundY+122.5 — ~16.5pt above Bit's
-        // ~91pt apex from a platform top (groundY+15), preserving the EXACT
-        // un-jumpable trap from the iPhone layout. The blocker physics is removed on
-        // unlock, so the exit is reachable only after the password is pasted.
-        composedLockedDoorX = (px(9.4) + px(10.5)) / 2
-        composedExitDoorX = px(10.5)
+        for tier in 0...topTier {
+            let w = widthFor(tier)
+            let cx = cursorX + swing(tier)
+            createPlatform(at: CGPoint(x: cx, y: tierY(tier)), size: CGSize(width: w, height: platH))
+            maxRightEdge = max(maxRightEdge, cx + w / 2)
+            if tier == 0 { spawnPlatformX = cx }
+            if tier == topTier { finalePlatformX = cx }
+            if tier < topTier { cursorX += pitch }
+        }
 
-        createLockedDoor(at: CGPoint(x: composedLockedDoorX, y: groundY + 50))
-        createExitDoor(at: CGPoint(x: composedExitDoorX, y: groundY + 50))
+        composedSpawnX = spawnPlatformX
+        composedSpawnY = tierY(0) + 40              // 40pt above the spawn platform top-anchor
 
-        // Course extent: last platform right edge + margin.
-        composedWorldWidth = px(10.5) + 96 / 2 + pitch
+        // Terminal sits above the FINALE platform (top tier). createTerminal() reads these.
+        composedTerminalX = finalePlatformX
+        composedTerminalY = tierY(topTier) + 100    // same relative lift as the iPhone terminal (+100)
+
+        // EXIT platform: one pitch to the right of the finale platform, on the SAME top
+        // tier so the locked-door trap relationship is identical to the iPhone layout.
+        let exitPlatformX = finalePlatformX + pitch
+        let exitPlatW: CGFloat = 96
+        createPlatform(at: CGPoint(x: exitPlatformX, y: tierY(topTier)), size: CGSize(width: exitPlatW, height: platH))
+        maxRightEdge = max(maxRightEdge, exitPlatformX + exitPlatW / 2)
+
+        // LOCKED DOOR — the signature gate, in the gap between the FINALE terminal
+        // platform and the EXIT platform (gap midpoint), on the top tier. Its center is
+        // tierY(topTier)+50 and its body is 145 tall (see createLockedDoor), so the door
+        // top is tierY+122.5 — ~16.5pt above Bit's ~91pt apex from a platform top
+        // (tierY+15), preserving the EXACT un-jumpable trap from the iPhone layout. The
+        // blocker physics is removed on unlock, so the exit is reachable only after the
+        // password is pasted.
+        composedLockedDoorX = (finalePlatformX + exitPlatformX) / 2
+        composedLockedDoorY = tierY(topTier) + 50
+        composedExitDoorX = exitPlatformX
+        composedExitDoorY = tierY(topTier) + 50
+
+        createLockedDoor(at: CGPoint(x: composedLockedDoorX, y: composedLockedDoorY))
+        createExitDoor(at: CGPoint(x: composedExitDoorX, y: composedExitDoorY))
+
+        // Course extent: rightmost platform edge + margin.
+        composedWorldWidth = maxRightEdge + pitch
 
         // Death zone spans the full composed course, well below the (raised) floor.
         let death = SKNode()
@@ -359,9 +402,10 @@ final class ClipboardScene: BaseLevelScene, SKPhysicsContactDelegate {
         // Terminal is the gameplay interactable (PASTE control + COPY hint live as its
         // children at relative offsets). On iPhone its anchor rides the band lift so it
         // stays the same relative distance above groundY; on iPad it is anchored over
-        // the FINALE platform (composedTerminalX/Y) so the signature mechanic is staged
-        // as its own beat. All child offsets are untouched, so the PASTE hit-target keeps
-        // its exact position relative to the terminal on every canvas.
+        // the FINALE platform (composedTerminalX/Y) — the high/finale beat of the climb —
+        // so the signature mechanic is staged near the ceiling. All child offsets are
+        // untouched, so the PASTE hit-target keeps its exact position relative to the
+        // terminal on every canvas.
         terminal = SKNode()
         if isWideCanvas {
             terminal.position = CGPoint(x: composedTerminalX, y: composedTerminalY)
@@ -477,7 +521,7 @@ final class ClipboardScene: BaseLevelScene, SKPhysicsContactDelegate {
         //   2) Narrow to 200 wide so on iPhone 390 (center x=195) the right edge is 295,
         //      clearing the pause column's left edge at x=300.
         // The text "EXTRACT & RETURN" (~136pt) stays comfortably inside 200pt, and at
-        // topSafeY-155 the panel is still far above the terminal (y=260) and course.
+        // topSafeY-155 the panel is still far above the terminal and course.
         //
         // On iPad the camera scrolls, so the panel rides the viewport (camera child,
         // centered on origin at the same relative height). On iPhone it's a scene child
@@ -533,11 +577,11 @@ final class ClipboardScene: BaseLevelScene, SKPhysicsContactDelegate {
 
     private func setupBit() {
         // Spawn (and respawn — handleDeath reuses spawnPoint). On iPad the composed
-        // layout sets composedSpawnX (the leftmost TEACH platform) and the raised
-        // composedGroundY; on iPhone the spawn is the original P0 — byte-identical
-        // (lift==0 -> y=200, x=courseX(80)).
+        // layout sets composedSpawnX/Y (the leftmost, lowest TEACH platform on tier 0);
+        // on iPhone the spawn is the original P0 — byte-identical (lift==0 -> y=200,
+        // x=courseX(80)).
         if isWideCanvas {
-            spawnPoint = CGPoint(x: composedSpawnX, y: composedGroundY + 40)
+            spawnPoint = CGPoint(x: composedSpawnX, y: composedSpawnY)
         } else {
             spawnPoint = CGPoint(x: courseX(80), y: 200 + gameplayLift)
         }

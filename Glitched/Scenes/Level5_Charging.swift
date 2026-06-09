@@ -24,25 +24,76 @@ final class ChargingScene: BaseLevelScene, SKPhysicsContactDelegate {
 
     private let shaftWidth: CGFloat = 300
 
-    // MARK: - Native-iPad layout (minimal composition)
+    // MARK: - Native-iPad layout
     //
-    // Level 5 is a VERTICAL plug-elevator: Bit boards the central shaft, the giant
-    // plug bursts up to his feet and carries him the full height to the exit. That
-    // mechanic already fills the iPad screen VERTICALLY (the shaft walls + plug span
-    // the whole height) and centers responsively on width (everything is
-    // `centerX = size.width/2`-relative). So per the Phase-0 step-2 rule this is a
-    // MINIMAL-COMPOSITION level, NOT a phone/iPad rewrite: we keep the entire shaft,
-    // burst gate, coplanar dismount, and every trap constant byte-identical and only
-    // fill the otherwise-empty HORIZONTAL flank on iPad with a short, paced APPROACH
-    // run that leads INTO the central shaft (teach -> stepped cluster -> tension peak
-    // -> the wide start platform as a REST/breath -> the plug-elevator as the staged
-    // FINALE beat -> exit). The approach is gated on `isWideCanvas`; iPhone authors
-    // nothing new and is unchanged.
+    // The iPhone build is a VERTICAL plug-elevator: Bit boards the central shaft at
+    // the bottom, the giant plug bursts to his feet and carries him the full height
+    // to the exit. On an iPad canvas, though, that single central shaft leaves both
+    // side GUTTERS (outside the shaft walls) and the whole UPPER region empty — the
+    // gameplay sits in a low central band with the top half dead.
     //
-    // `designWidth` matches the world-1 logical author width (430) used by the other
-    // composed levels, so the gate threshold is consistent across the campaign.
+    // FIX (gated entirely behind isWideCanvas — iPhone authors NOTHING new and is
+    // byte-identical): build a real TOP-TO-BOTTOM climb that fills the full height
+    // AND both gutters, then hands off to the plug as the staged FINALE.
+    //   • A LEFT-gutter switchback ASCENDS one tier per hop from a low spawn up to a
+    //     far-left PEAK near the ceiling (fills the empty top-left + left gutter); a
+    //     WIDE REST ledge sits partway up as the breath beat.
+    //   • A TOP BRIDGE drops one tier off the peak and crosses the center on a short
+    //     level chain to the right gutter (fills the empty top band). The bridge sits
+    //     > maxJumpableRise BELOW the exit, so the exit stays unreachable from it.
+    //   • A RIGHT-gutter switchback DESCENDS (always-safe down-steps) back to a wide
+    //     FUNNEL ledge beside the central shaft.
+    //   • From the funnel, a short step lands on the existing central start platform —
+    //     the boarding point. The plug-elevator then bursts up and rides Bit to the
+    //     exit: the staged FINALE, untouched.
+    // The central shaft / start platform / plug / exit / death zone are all built
+    // exactly as on iPhone; the iPad route only ADDS gutter/bridge platforms and (in
+    // setupBit) relocates the iPad spawn onto the bottom-left teach tier.
     private let designWidth: CGFloat = 430
     private var isWideCanvas: Bool { size.height > 1000 && size.width > designWidth }
+
+    // MARK: - Phase-0 vertical-fill (local mirror of the BaseLevelScene API)
+    //
+    // The campaign-wide Phase-0 API (playableGroundY / playableCeilingY /
+    // playableBandHeight / verticalTier) lifts the iPad floor NEAR THE BOTTOM
+    // (bottomSafeY+90) so a level builds UPWARD through evenly-spaced tiers that span
+    // the FULL usable height (floor -> just under the title/HUD) with per-tier rises
+    // auto-clamped to maxJumpableRise (85). These local helpers reproduce that exact
+    // contract so this scene compiles standalone; every call site is gated behind
+    // isWideCanvas, so the iPhone path never touches them.
+
+    /// iPad floor: near the bottom so the route is built UPWARD.
+    private var padPlayableGroundY: CGFloat { bottomSafeY + 90 }
+
+    /// Top of the usable band: just under the title / HUD. Level 5's title underline
+    /// bottom is ~topSafeY-44; we keep margin below it so a near-ceiling platform
+    /// body never collides with the title band.
+    private var padPlayableCeilingY: CGFloat { topSafeY - 130 }
+
+    /// Full usable vertical band on iPad.
+    private var padPlayableBandHeight: CGFloat { max(0, padPlayableCeilingY - padPlayableGroundY) }
+
+    /// Number of evenly-spaced tiers spanning the full band such that the per-tier
+    /// rise stays within the safe jump budget (maxJumpableRise = 85). Chosen so that
+    /// (count-1) * perTierRise actually REACHES the ceiling (band height), i.e.
+    /// count-1 >= band / maxJumpableRise. We use a slightly conservative rise (78)
+    /// to leave timing margin on every hop.
+    private var padTierCount: Int {
+        let safePerTierRise: CGFloat = 78
+        return max(2, Int(ceil(padPlayableBandHeight / safePerTierRise)) + 1)
+    }
+
+    /// Y for tier `index` of `padTierCount` evenly-spaced tiers spanning the full
+    /// band. Tier 0 == floor; tier count-1 == near ceiling. Per-tier rise is the
+    /// band height / (count-1), which by construction of padTierCount stays <= 78
+    /// (well inside maxJumpableRise = 85).
+    private func padVerticalTier(_ index: Int) -> CGFloat {
+        let count = padTierCount
+        guard count > 1 else { return padPlayableGroundY }
+        let perTierRise = padPlayableBandHeight / CGFloat(count - 1)
+        let clamped = min(perTierRise, BaseLevelScene.maxJumpableRise)
+        return padPlayableGroundY + CGFloat(index) * clamped
+    }
 
     // Sinking platform state
     private var plugPlatformBaseY: CGFloat = 0
@@ -338,9 +389,9 @@ final class ChargingScene: BaseLevelScene, SKPhysicsContactDelegate {
         createExitDoor(at: CGPoint(x: centerX + 30, y: topSafeY - 70))
 
         // Death zone. Spans the full canvas width so a fall off ANY platform —
-        // including the iPad approach beats below, which all sit at y >= 180 well
-        // above the death-zone top (y=0) — is lethal exactly as the original floor
-        // void was. On iPhone this is byte-identical to the original.
+        // including the iPad climb beats below, which all sit well above the
+        // death-zone top (y=0) — is lethal exactly as the original floor void was.
+        // On iPhone this is byte-identical to the original.
         let deathZone = SKNode()
         deathZone.position = CGPoint(x: size.width / 2, y: -50)
         deathZone.physicsBody = SKPhysicsBody(rectangleOf: CGSize(width: size.width, height: 100))
@@ -349,50 +400,135 @@ final class ChargingScene: BaseLevelScene, SKPhysicsContactDelegate {
         deathZone.name = "death_zone"
         addChild(deathZone)
 
-        // iPad-only: a paced APPROACH run that fills the empty horizontal flank to
-        // the LEFT of the central shaft and leads Bit into the elevator. No-op on
-        // iPhone (isWideCanvas == false), so phone layout is unchanged. The central
-        // shaft / start platform / plug / exit are all untouched — this only adds
-        // lead-in platforms and (in setupBit) relocates the iPad spawn onto beat 1.
+        // iPad-only: a full-height top-to-bottom climb that fills both gutters and
+        // the upper region, then funnels Bit onto the central start platform to
+        // board the plug-elevator FINALE. No-op on iPhone (isWideCanvas == false),
+        // so the phone layout is unchanged. The central shaft / start platform /
+        // plug / exit are all untouched — this only adds gutter-climb platforms and
+        // (in setupBit) relocates the iPad spawn onto the bottom-left teach tier.
         if isWideCanvas {
-            buildIPadApproach(startPlatformTopY: groundY + 10, startPlatformLeftX: centerX - (shaftWidth - 40) / 2)
+            buildIPadClimb(centerX: centerX, startPlatformTopY: groundY + 10)
         }
     }
 
-    /// iPad-only paced approach into the central plug-elevator shaft.
+    /// iPad-only full-height climb feeding the central plug-elevator finale.
     ///
-    /// Beats (left -> right, increasing then dropping into the rest platform):
-    ///   1 TEACH (spawn)      low tier   top y = 190  (coplanar with start platform)
-    ///   2 STEP cluster       mid tier   top y = 255  (rise +65 from beat 1)
-    ///   3 TENSION PEAK       high tier  top y = 310  (rise +55 from beat 2)
-    ///   4 REST = existing start platform (the deliberate breath, top y = 190)
-    ///   FINALE = the existing plug-elevator (staged, untouched)
+    /// Route (a continuous vertical loop using the FULL height and BOTH gutters):
+    ///   LEFT-gutter ASCENT — one platform PER tier (tiers 0 -> T-1), zig-zagging
+    ///     between two close x-columns so each up-hop is exactly ONE tier
+    ///     (rise ~73pt <= maxJumpableRise 85) and each horizontal step is <= 130.
+    ///       tier 0  = TEACH (spawn), a wide low ledge
+    ///       a WIDE REST ledge is dropped in partway up (the breath beat)
+    ///       tier T-1 = far-LEFT PEAK, held > maxJumpableGap from the exit
+    ///   TOP BRIDGE — from the peak, DROP one tier (to T-2) and cross the center on a
+    ///     short level chain of stones to the right gutter. The bridge sits at tier
+    ///     T-2, which is > maxJumpableRise BELOW the exit platform, so the exit can
+    ///     NOT be reached from the bridge — the plug stays the only way to the exit.
+    ///   RIGHT-gutter DESCENT — one platform per tier (T-3 -> 1; the bridge's right
+    ///     stone already covers tier T-2), zig-zagging down; every step is a DOWN-step
+    ///     (always safe) and <= 130 horizontally.
+    ///   FINALE — tier 1 lands a wide funnel ledge beside the central START platform;
+    ///     a short step onto it boards the plug-elevator, which rides Bit up to the
+    ///     exit (untouched). The plug is the staged finale.
     ///
-    /// All horizontal gaps are <= 35pt and all up-rises <= 65pt — comfortably inside
-    /// the Phase-0 budget (maxJumpableGap 130 / maxJumpableRise 85). The drop from
-    /// the peak (310) down onto the rest platform (190) is a -120 STEP DOWN, which is
-    /// always safe. The approach never crosses into the start platform's span
-    /// [startPlatformLeftX, ...] so it cannot interfere with the boarding geometry.
-    private func buildIPadApproach(startPlatformTopY: CGFloat, startPlatformLeftX: CGFloat) {
-        // Author at ABSOLUTE positions (not size.width fractions). On iPad portrait
-        // (width 1024) centerX = 512 and startPlatformLeftX = 382, leaving the band
-        // [~45, 382] free to the left. These three beats fit inside it with margin
-        // and stay clear of the start platform's left edge.
-        struct Beat { let center: CGPoint; let width: CGFloat }
-        let beats: [Beat] = [
-            // 1 TEACH (spawn lands here) — low, coplanar with the rest/start tier.
-            Beat(center: CGPoint(x: 110, y: startPlatformTopY - 10), width: 120),  // top 190, spans [50,170]
-            // 2 STEP cluster — mid tier, a step UP for rhythm.
-            Beat(center: CGPoint(x: 245, y: startPlatformTopY + 55), width: 80),   // top 255, spans [205,285]
-            // 3 TENSION PEAK — high tier, the last hop before the breath.
-            Beat(center: CGPoint(x: 340, y: startPlatformTopY + 110), width: 70),  // top 310, spans [305,375]
+    /// Reach budget (verified): every ASCENT up-hop is exactly one tier (<= 78,
+    /// inside 85); the peak->bridge and all bridge/descent steps are level or down;
+    /// every horizontal step is <= 130 edge-to-edge. The peak and bridge are kept
+    /// unreachable-from-exit (peak by > maxJumpableGap horizontally; the bridge by
+    /// being > maxJumpableRise below the exit), preserving the device mechanic.
+    private func buildIPadClimb(centerX: CGFloat, startPlatformTopY: CGFloat) {
+        let T = padTierCount
+        guard T >= 4 else { return }   // need room for ascent + bridge + descent
+        // Decorative shaft walls sit at centerX +- (shaftWidth/2 + 20); they carry NO
+        // physics body, so the climb may cross them freely. The ascent fills the LEFT
+        // gutter, the descent fills the RIGHT gutter, and a top bridge crosses center.
+        let leftWallX = centerX - shaftWidth / 2 - 20     // iPad 1024: 342
+        let rightWallX = centerX + shaftWidth / 2 + 20    // iPad 1024: 682
+
+        func tier(_ i: Int) -> CGFloat { padVerticalTier(min(max(0, i), T - 1)) }
+
+        struct Beat { var center: CGPoint; var width: CGFloat }
+        var beats: [Beat] = []
+
+        let exitLeftX = centerX - 120
+        // To make the tier T-1 peak unambiguously unreachable from the exit (the
+        // peak->exit rise is only ~20pt), hold a horizontal clearance > absoluteMaxGap.
+        let exitClearance = BaseLevelScene.absoluteMaxGap + 5   // 150
+
+        // --- LEFT-gutter ASCENT: tiers 0 .. T-1, zig-zag two close columns. ---
+        let ascColA: CGFloat = 130
+        let ascColB: CGFloat = 235
+        let restTierIndex = max(2, T / 3)
+        for i in 0..<T {
+            let isRest = (i == restTierIndex)
+            var width: CGFloat = (i == 0) ? 160 : (isRest ? 210 : 110)
+            var cx: CGFloat = isRest ? (ascColA + ascColB) / 2 : ((i % 2 == 0) ? ascColA : ascColB)
+            if i == T - 1 {
+                // Topmost ascent platform = the far-LEFT PEAK. Clamp its right edge so
+                // it stays > exitClearance left of the exit (can't hop onto the exit).
+                width = 150
+                let maxRight = exitLeftX - exitClearance
+                cx = min(cx, maxRight - width / 2)
+            }
+            beats.append(Beat(center: CGPoint(x: cx, y: tier(i)), width: width))
+        }
+
+        // --- TOP BRIDGE at tier T-2: cross center from the left gutter to the right
+        // gutter. Each stone is level with the next; the whole bridge is one tier
+        // below the peak (a down-step onto the first stone). At tier T-2 the rise to
+        // the exit is > maxJumpableRise, so no bridge stone can reach the exit. ---
+        let bridgeY = tier(T - 2)
+        let bridgeStoneW: CGFloat = 120
+        // Stones centered to chain across center with small (<=130) gaps.
+        let bridgeCenters: [CGFloat] = [
+            leftWallX + 30,      // 372 — first stone, just right of the peak/left wall
+            centerX,             // 512 — over the shaft center
+            rightWallX - 30,     // 652
+            rightWallX + 80      // 762 — hands off into the right gutter
         ]
+        for bx in bridgeCenters {
+            beats.append(Beat(center: CGPoint(x: bx, y: bridgeY), width: bridgeStoneW))
+        }
+
+        // --- RIGHT-gutter DESCENT: tiers (T-3 .. 1), zig-zag down two columns. ---
+        // The bridge already placed a platform at tier T-2 in the right gutter
+        // (rightWallX+80), so the descent picks up from T-3. Every step is a down-step.
+        let descColA: CGFloat = size.width - 130
+        let descColB: CGFloat = size.width - 235
+        for i in stride(from: T - 3, through: 1, by: -1) {
+            var width: CGFloat = 110
+            var cx: CGFloat = (i % 2 == 0) ? descColA : descColB
+            if i == 1 {
+                // tier 1 = wide FUNNEL ledge beside the shaft; the short final step
+                // onto the central start platform boards the plug.
+                width = 200
+                cx = rightWallX + 40
+            }
+            beats.append(Beat(center: CGPoint(x: cx, y: tier(i)), width: width))
+        }
+
         for beat in beats {
             let platform = createPlatform(width: beat.width, height: 20, position: beat.center)
             platform.name = "ground"
             addChild(platform)
         }
-        _ = startPlatformLeftX  // peak right edge (375) clears start left edge (382)
+
+        // Decorative "bead column" enrichment. The two power-line conduits at x=30 /
+        // x=size.width-30 read as identical mirrored bead ladders. On iPad, tie a few
+        // extra junction "beads" to the LEFT conduit at the climb tiers only, so the
+        // two columns are no longer mirror-identical and the left ladder visually
+        // connects to the ascent. Purely cosmetic (no physics body).
+        for i in stride(from: 1, to: T - 1, by: 2) {
+            let bead = SKShapeNode(circleOfRadius: 5)
+            bead.fillColor = fillColor
+            bead.strokeColor = strokeColor
+            bead.lineWidth = lineWidth * 0.6
+            bead.position = CGPoint(x: 30, y: padVerticalTier(i))
+            bead.zPosition = -8
+            addChild(bead)
+        }
+
+        _ = startPlatformTopY  // tier 1 funnel ledge connects to the start platform
     }
 
     private func createPlatform(width: CGFloat, height: CGFloat, position: CGPoint) -> SKNode {
@@ -554,15 +690,14 @@ final class ChargingScene: BaseLevelScene, SKPhysicsContactDelegate {
 
     private func setupBit() {
         // iPhone: spawn on the central start platform (byte-identical to original).
-        // iPad: spawn on approach beat 1 (the teach platform, center x=110, top
-        // y=190) so the paced lead-in is actually traversed before boarding the
-        // elevator. Beat 1's top is y=190, identical to the start platform's top, so
-        // the same +30pt spawn margin the original used (220 over a top of 190) is
-        // reused — the drop-onto-platform behavior is identical. The central boarding
-        // geometry (start platform, burst gate, coplanar dismount) is untouched; the
-        // post-arrival respawn still relocates onto the exit platform exactly as before.
+        // iPad: spawn on the bottom-left TEACH tier of the climb (x=130, tier 0) so
+        // the full-height route is actually traversed before boarding the elevator.
+        // The teach tier top is padVerticalTier(0)+10; the original spawn used a
+        // +30 feet margin over a top of 190, so we reuse the same +30 over the teach
+        // tier top. The central boarding geometry (start platform, burst gate,
+        // coplanar dismount) and the post-arrival respawn are untouched.
         if isWideCanvas {
-            spawnPoint = CGPoint(x: 110, y: 220)   // beat-1 top (190) + 30 feet margin
+            spawnPoint = CGPoint(x: 130, y: padVerticalTier(0) + 10 + 30)
         } else {
             spawnPoint = CGPoint(x: size.width / 2, y: 220)
         }

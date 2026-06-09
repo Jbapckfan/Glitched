@@ -58,8 +58,10 @@ final class MultiTouchScene: BaseLevelScene, SKPhysicsContactDelegate {
     private var instructionLabel: SKLabelNode?
 
     // MARK: - Ground Y
-    // iPhone byte-identical baseline. On iPad it is lifted by playableGroundY so the
-    // gameplay band + screen-space plate HUD fill the tall canvas (see buildLevel).
+    // iPhone byte-identical baseline (120). On iPad it is lifted toward the BOTTOM by
+    // playableGroundY so the level builds UPWARD through the full height (see buildLevel
+    // + buildComposedIPadLevel). groundY is the only authored Y baseline everything is
+    // relative to, so reassigning it on the iPad path moves the whole course as a unit.
     private var groundY: CGFloat = 120
 
     // MARK: - iPad Composition
@@ -67,8 +69,10 @@ final class MultiTouchScene: BaseLevelScene, SKPhysicsContactDelegate {
     // must be simultaneously reachable AND the gameplay band must stay visible while
     // the player walks through the freshly-opened gate. A scrolling camera would pull
     // held plates and gates apart, so the iPad path is a HAND-COMPOSED SINGLE-SCREEN
-    // course (no installCameraFollow): wider absolute layout + raised floor + tiered,
-    // varied-height platforms + paced beats. Plates stay camera-children (HUD).
+    // climb (no installCameraFollow): the floor drops near the bottom, the physical
+    // route ASCENDS through verticalTier tiers to a high finale pedestal, and the
+    // screen-space plate HUD is fanned across the FULL vertical band so the finger
+    // reach spans top-to-bottom. Plates stay camera-children (HUD).
     private var isWideCanvas: Bool { size.height > 1000 && size.width > 700 }
 
     // MARK: - Configuration
@@ -196,9 +200,9 @@ final class MultiTouchScene: BaseLevelScene, SKPhysicsContactDelegate {
 
     private func buildLevel() {
         if isWideCanvas {
-            // iPad: raise the floor so the band + plate HUD fill the tall canvas.
-            // groundY is the only authored Y baseline everything below is relative to.
-            groundY = playableGroundY(iphoneGround: 120)
+            // iPad: drop the floor near the bottom so the route builds UPWARD and
+            // fills the full height. groundY is the baseline everything is relative to.
+            groundY = playableGroundY(iphoneGround: ipadIphoneGround)
             buildComposedIPadLevel()
         } else {
             buildPhoneLevel()
@@ -326,60 +330,89 @@ final class MultiTouchScene: BaseLevelScene, SKPhysicsContactDelegate {
         exitDoor = door
     }
 
-    // MARK: - iPad Composed Level (hand-composed, paced beats)
+    // MARK: - iPad Composed Level (full-height vertical climb, paced beats)
     //
-    // The mechanic is screen-space (hold all plates in a group AT ONCE while the
-    // gameplay band stays visible), so this is a SINGLE-SCREEN course — NOT a
-    // scrolling one. We do NOT installCameraFollow: the camera stays centered and
-    // static, exactly like the phone build, which is what keeps every plate in a
-    // group simultaneously reachable. We fill the iPad instead by:
-    //   - raising the floor (groundY = playableGroundY) for vertical fill,
-    //   - keeping a CONTINUOUS safety ground (no fall-trap; the phone level has no
-    //     death zone and no pits, so introducing a fallable gap would be a new death
-    //     vector that nothing handles — we preserve that invariant exactly),
-    //   - adding tiered rhythm platforms ABOVE the ground so the band varies height
-    //     instead of being one flat strip,
-    //   - fanning the screen-space plate HUD across the full canvas (plates are
-    //     camera-children, so fractional screen positions are the CORRECT space for
-    //     them — that is how the phone build already places them).
+    // FIX: the prior redesign filled WIDTH but left gameplay in a low band with the
+    // top half empty. This rebuild fills the FULL HEIGHT two complementary ways:
+    //   1. PHYSICAL CLIMB — Bit ascends a real multi-tier route built on
+    //      verticalTier(i, of: tierCount, iphoneGround: 120). The floor sits near the
+    //      BOTTOM (playableGroundY = bottomSafeY+90) and platforms step UPWARD
+    //      left-to-right through evenly-spaced tiers, up to the top of the safe jump
+    //      reach. Each tier's per-tier rise is auto-clamped to maxJumpableRise (85)
+    //      by the helper, so no rise is ever unjumpable.
+    //   2. PLATE HUD SPAN — the screen-space plates (camera children) are fanned
+    //      across the ENTIRE band, from near the floor up to playableCeilingY, so the
+    //      multi-touch finger reach genuinely spans top-to-bottom (the L32-specific
+    //      note: push pressure-plate nodes HIGHER so the reach spans the vertical
+    //      space). The 4-plate finale group reaches the highest, near the ceiling.
     //
-    // BEATS (left -> right): spawn/teach (group 1) -> stepped cluster (group 2,
-    // tiered rhythm blocks) -> a wide REST breath platform -> the 4-plate TENSION
-    // PEAK staged on an isolated raised finale pedestal (group 3, the signature
-    // twist) -> exit.
+    // The mechanic is screen-space (hold ALL plates in a group at once while the gate
+    // stays visible), so this is a SINGLE-SCREEN course — we do NOT installCameraFollow.
+    // A CONTINUOUS safety ground is preserved beneath the whole climb (the phone level
+    // has no death zone / no pits — a fallable gap would be a new untracked death
+    // vector, so we keep that invariant exactly). Every climb platform has the ground
+    // below it, so a missed jump just drops Bit back to walk-and-retry.
     //
-    // WIDTH-ADAPTIVE: the REQUIRED traversal path is the flat continuous ground
-    // (no jumps needed between gates), so the gate/exit/beat ANCHORS are placed as
-    // fractions of the real canvas width — this fits every iPad (mini portrait 744
-    // .. 13" 1366 / landscape) AND fills wider screens edge to edge. Only the
-    // OVERHEAD rhythm-block clusters (the optional hop-on platforms) carry the jump
-    // budget, and those keep ABSOLUTE inter-block spacing (gaps/rises fixed) — only
-    // their cluster CENTER is anchored proportionally. Scaling never widens a gap.
-    private var ipadGate1X: CGFloat { size.width * 0.24 }
-    private var ipadGate2X: CGFloat { size.width * 0.58 }
-    private var ipadGate3X: CGFloat { size.width * 0.86 }
-    private var ipadClusterCenterX: CGFloat { size.width * 0.44 }   // group-2 rhythm cluster
-    private var ipadRestCenterX: CGFloat { size.width * 0.70 }      // breath platform
-    private var ipadPedestalX: CGFloat { size.width * 0.82 }        // finale pedestal
+    // BEATS (spawn low -> finale high):
+    //   1 teach   : group-1 2 plates low, gate 1 (first wall)
+    //   2 ascent  : group-1 plate region steps up; group-2 3 plates fanned over a
+    //               stepped stair-climb cluster, gate 2 (second wall)
+    //   3 rest    : a wide flat BREATH platform between the ascent and the climax
+    //   4 finale  : group-3 4 plates fanned the WIDEST + HIGHEST (the signature twist)
+    //               staged at the high pedestal, gate 3 (final wall)
+    //   5 exit    : door beyond gate 3, revealed after the finale group opens
+    //
+    // WIDTH-ADAPTIVE: the REQUIRED traversal path is the continuous ground (no jumps
+    // needed between gates), so gate/exit/beat/rung ANCHORS are fractions of the real
+    // canvas width — fits every iPad (mini portrait 744 .. 13" 1366 / landscape) and
+    // fills wide screens edge to edge. The climb rungs use fractional X anchors whose
+    // edge-to-edge gaps were verified <= maxJumpableGap (130) from the NARROWEST iPad
+    // (mini, gaps go NEGATIVE = overlapping reach) to the WIDEST (13" landscape, max
+    // gap ~56) — wider canvases only spread the staircase further apart but never past
+    // a jumpable gap. Tier HEIGHTS come from verticalTier, so rises stay safe (<= 85)
+    // on any canvas height.
 
-    // Plate HUD vertical tiers, anchored ABOVE the (lifted) gameplay band so plates
-    // never overlap platforms/gates on any iPad height. groundY is already lifted by
-    // playableGroundY (~22% up), so these tiers fill the upper screen for vertical
-    // fill while staying clear of the band top (<= groundY + 84) and the title HUD.
-    private var ipadPlateLowY: CGFloat { groundY + 150 }
-    private var ipadPlateMidY: CGFloat { groundY + 270 }
-    private var ipadPlateHighY: CGFloat { groundY + 390 }
+    /// iPhone ground baseline this level historically hard-codes; passed to every
+    /// vertical helper so iPhone collapses to its original ground and iPad gets the
+    /// lifted floor + full band.
+    private let ipadIphoneGround: CGFloat = 120
+
+    /// Number of evenly-spaced vertical tiers spanning the full iPad band. The route
+    /// climbs floor (tier 0) -> finale (high tier). verticalTier auto-clamps the
+    /// per-tier rise to maxJumpableRise, so this is safe on any iPad height.
+    private let ipadTierCount = 6
+
+    /// Y of a vertical tier (full-band, safe-rise). Tier 0 == floor; higher == up.
+    private func ipadTierY(_ index: Int) -> CGFloat {
+        verticalTier(index, of: ipadTierCount, iphoneGround: ipadIphoneGround)
+    }
+
+    // Gate / beat horizontal anchors (proportional, edge-to-edge on every iPad).
+    private var ipadGate1X: CGFloat { size.width * 0.28 }
+    private var ipadGate2X: CGFloat { size.width * 0.58 }
+    private var ipadGate3X: CGFloat { size.width * 0.88 }
+
+    // Plate HUD vertical bands — the screen-space finger targets, fanned across the
+    // FULL band (floor tier .. near ceiling) so the multi-touch reach is genuinely
+    // top-to-bottom rather than crammed into the lower band. Anchored to the
+    // verticalTier grid and the ceiling so they scale with canvas height and never
+    // collide with the title/HUD.
+    private var ipadPlateLowY: CGFloat { ipadTierY(1) + 40 }                      // low
+    private var ipadPlateMidY: CGFloat { (ipadTierY(0) + playableCeilingY()) / 2 } // band center
+    private var ipadPlateHighY: CGFloat { playableCeilingY() - 120 }              // high
+    private var ipadPlateTopY: CGFloat { playableCeilingY() - 40 }                // near ceiling
 
     private func buildComposedIPadLevel() {
         buildComposedGround()
-        buildComposedRhythmTiers()
-        buildComposedSection1()   // teach beat
-        buildComposedSection2()   // stepped cluster beat
-        buildComposedSection3()   // rest beat + isolated finale beat + exit
+        buildComposedClimbTiers()
+        buildComposedSection1()   // teach beat (low)
+        buildComposedSection2()   // stepped-ascent beat (mid)
+        buildComposedSection3()   // rest beat + high finale beat + exit
     }
 
-    /// Continuous full-width safety ground (same role as the phone ground): the
-    /// single walking surface gates stand on. No pits => no fall death, preserved.
+    /// Continuous full-width safety ground (same role as the phone ground): the single
+    /// walking surface gates stand on, beneath the whole climb. No pits => no fall
+    /// death, invariant preserved.
     private func buildComposedGround() {
         let ground = createPlatform(
             width: size.width,
@@ -390,71 +423,75 @@ final class MultiTouchScene: BaseLevelScene, SKPhysicsContactDelegate {
         addChild(ground)
     }
 
-    /// Tiered overhead standing blocks ABOVE the continuous ground. Purely for
-    /// height rhythm + visual fill. They are HOP-ONTO platforms (top within jump
-    /// reach) whose UNDERSIDE clears the player's standing/walking lane, so they
-    /// never block forward progress on the ground and the player can never be
-    /// trapped (the safety ground is always beneath). Bit's body is ~54pt tall, so
-    /// every block base is kept >= groundY + 66 (Bit's body is ~54pt; that leaves
-    /// >=12pt walk clearance). Tops vary across tiers for rhythm and every top stays
-    /// within BaseLevelScene.maxJumpableRise (85) of the ground; block-to-block gaps
-    /// stay within maxJumpableGap (130).
-    private func buildComposedRhythmTiers() {
-        // top, centerX, width  (top = centerY + height/2, height = 12 => base = top-12)
-        struct Tier { let centerX: CGFloat; let width: CGFloat; let top: CGFloat }
-        let h: CGFloat = 12
-        // Group-2 stepped cluster: 3 blocks at ABSOLUTE 110pt centerspacing around
-        // the proportional cluster center (edge-to-edge gap = 110-90 = 20pt <= 130).
-        // Tops step low -> high -> low for rhythm; all rises from ground <= 85.
-        let cc = ipadClusterCenterX
-        let tiers: [Tier] = [
-            Tier(centerX: cc - 110, width: 90, top: groundY + 78),   // rise 78; base 66
-            Tier(centerX: cc,        width: 90, top: groundY + 84),  // rise 84; base 72
-            Tier(centerX: cc + 110, width: 90, top: groundY + 78),   // rise 78; base 66
-            // finale-pedestal approach (group-3 region): a raised block that visually
-            // lifts the climax beat above the rest platform.
-            Tier(centerX: ipadPedestalX, width: 120, top: groundY + 84),  // rise 84; base 72
+    /// The PHYSICAL multi-tier climb: a clean MONOTONIC staircase whose rungs ascend
+    /// floor -> near-ceiling AND left -> right (never a centered ladder), so the
+    /// climb order is the X order. Each rung top sits exactly on a verticalTier Y, so
+    /// the rise between consecutive rungs is one tier == the clamped safe rise
+    /// (<= maxJumpableRise=85), and the rungs are spaced so every edge-to-edge gap
+    /// stays <= maxJumpableGap=130 on every iPad (verified narrowest..widest). The
+    /// continuous safety ground is always beneath, so a missed jump just drops Bit
+    /// back to walk-and-retry — never a trap. Widths vary for rhythm and one rung is
+    /// a WIDE REST breath platform. Tier 0 is the floor itself, so rungs use
+    /// tiers 1..N-1. Rung tops are above gate height (gate top = groundY+100 ~= just
+    /// above tier 1) but the gates' walk-through path is on the GROUND, so the climb
+    /// never blocks forward progress.
+    private func buildComposedClimbTiers() {
+        // (tier, centerXFraction, width, isRest). Strictly increasing tier AND X.
+        // Heights are tier indices => verticalTier guarantees +85 (safe) per step.
+        struct Rung { let tier: Int; let fx: CGFloat; let width: CGFloat; let isRest: Bool }
+        let rungs: [Rung] = [
+            Rung(tier: 1, fx: 0.22, width: 120, isRest: false),  // first step off the floor
+            Rung(tier: 2, fx: 0.34, width: 110, isRest: false),  // ascending
+            Rung(tier: 3, fx: 0.50, width: 220, isRest: true),   // WIDE REST breath beat
+            Rung(tier: 4, fx: 0.66, width: 110, isRest: false),  // ascending toward finale
+            Rung(tier: 5, fx: 0.80, width: 160, isRest: false),  // finale pedestal (highest)
         ]
-        for t in tiers {
+        let h: CGFloat = 14
+        for r in rungs {
+            let top = ipadTierY(r.tier)
             let block = createPlatform(
-                width: t.width,
+                width: r.width,
                 height: h,
-                position: CGPoint(x: t.centerX, y: t.top - h / 2)
+                position: CGPoint(x: size.width * r.fx, y: top - h / 2)
             )
             block.zPosition = 2
+            if r.isRest { block.name = "rest_platform" }
             addChild(block)
         }
     }
 
-    // BEAT 1 — spawn / teach: the 2-plate group, gate 1 as the first wall.
+    // BEAT 1 — spawn / teach: the 2-plate group LOW, gate 1 as the first wall.
+    // Plates are staggered low/mid so they read as two distinct finger targets even
+    // on the narrowest iPad (centers stay > 2*hit-radius apart in BOTH axes).
     private func buildComposedSection1() {
-        let plateY = ipadPlateMidY
-        let plateX1 = size.width * 0.14
-        let plateX2 = size.width * 0.26
+        let plateX1 = size.width * 0.08
+        let plateX2 = size.width * 0.22
+        let plateY1 = ipadPlateLowY
+        let plateY2 = ipadPlateMidY
 
-        pressurePlates.append(createPressurePlate(at: CGPoint(x: plateX1, y: plateY), group: 1))
-        pressurePlates.append(createPressurePlate(at: CGPoint(x: plateX2, y: plateY), group: 1))
+        pressurePlates.append(createPressurePlate(at: CGPoint(x: plateX1, y: plateY1), group: 1))
+        pressurePlates.append(createPressurePlate(at: CGPoint(x: plateX2, y: plateY2), group: 1))
 
-        // Gate 1 wall stands ON the ground (base at ground top).
+        // Gate 1 wall stands ON the ground (center at groundY+50, top at groundY+100).
         let gateX = ipadGate1X
         let gate1 = createGate(at: CGPoint(x: gateX, y: groundY + 50), group: 1)
         gates.append(gate1)
 
         circuitLines[1] = createCircuitConnections(
-            from: [CGPoint(x: plateX1, y: plateY), CGPoint(x: plateX2, y: plateY)],
+            from: [CGPoint(x: plateX1, y: plateY1), CGPoint(x: plateX2, y: plateY2)],
             to: CGPoint(x: gateX, y: groundY + 50),
             group: 1
         )
     }
 
-    // BEAT 2 — stepped cluster: 3 plates fanned over the tiered rhythm blocks,
-    // gate 2 as the second wall.
+    // BEAT 2 — stepped ascent: 3 plates fanned LOW -> MID over the stair-climb
+    // cluster, gate 2 as the second wall.
     private func buildComposedSection2() {
-        let plateX1 = size.width * 0.40
-        let plateX2 = size.width * 0.52
-        let plateX3 = size.width * 0.46
+        let plateX1 = size.width * 0.34
+        let plateX2 = size.width * 0.46
+        let plateX3 = size.width * 0.40
         let plateY1 = ipadPlateLowY
-        let plateY2 = ipadPlateLowY
+        let plateY2 = ipadPlateMidY
         let plateY3 = ipadPlateHighY
 
         pressurePlates.append(createPressurePlate(at: CGPoint(x: plateX1, y: plateY1), group: 2))
@@ -476,38 +513,25 @@ final class MultiTouchScene: BaseLevelScene, SKPhysicsContactDelegate {
         )
     }
 
-    // BEAT 3+4+5 — REST breath platform -> ISOLATED FINALE (4-plate signature twist)
-    // staged on the raised pedestal -> exit.
+    // BEAT 4+5 — HIGH FINALE (4-plate signature twist, fanned the widest + highest)
+    // staged over the pedestal -> exit. (BEAT 3, the WIDE REST breath platform, is
+    // the tier-3 rung built in buildComposedClimbTiers.)
     private func buildComposedSection3() {
-        // BEAT 3 — REST: a wide, flat breath platform (a deliberate safe pause)
-        // bridging the cluster and the climax. An overhead landing one tier up
-        // (top within jump reach, base clearing the walking lane like the rhythm
-        // blocks) so it reads as a distinct breath; the safety ground stays beneath.
-        let restTop = groundY + 84          // rise 84 from ground (<= 85)
-        let restH: CGFloat = 14             // base = groundY + 70, clears the walk lane
-        let rest = createPlatform(
-            width: 200,
-            height: restH,
-            position: CGPoint(x: ipadRestCenterX, y: restTop - restH / 2)
-        )
-        rest.zPosition = 2
-        rest.name = "rest_platform"
-        addChild(rest)
-
-        // BEAT 4 — TENSION PEAK / FINALE: the 4 plates (the level's signature
-        // twist) fanned to the screen corners/edges, deliberately spread the
-        // WIDEST of any group so the finger-stretch reads as the climax.
+        // BEAT 4 — TENSION PEAK / FINALE: the 4 plates (the level's signature twist)
+        // fanned to the screen corners/edges, deliberately the WIDEST horizontal AND
+        // HIGHEST vertical spread of any group so the finger-stretch reads as the
+        // climax and the reach reaches the ceiling (top half no longer empty).
         let positions: [CGPoint] = [
-            CGPoint(x: size.width * 0.68, y: ipadPlateLowY),
-            CGPoint(x: size.width * 0.88, y: ipadPlateMidY),
-            CGPoint(x: size.width * 0.68, y: ipadPlateHighY),
-            CGPoint(x: size.width * 0.88, y: ipadPlateHighY + 80),
+            CGPoint(x: size.width * 0.66, y: ipadPlateMidY),
+            CGPoint(x: size.width * 0.90, y: ipadPlateMidY),
+            CGPoint(x: size.width * 0.66, y: ipadPlateTopY),
+            CGPoint(x: size.width * 0.90, y: ipadPlateTopY),
         ]
         for pos in positions {
             pressurePlates.append(createPressurePlate(at: pos, group: 3))
         }
 
-        // Gate 3 (final wall) staged at the raised finale pedestal anchor.
+        // Gate 3 (final wall) staged at the high finale pedestal anchor.
         let gateX = ipadGate3X
         let gateY = groundY + 50
         let gate3 = createGate(at: CGPoint(x: gateX, y: gateY), group: 3)

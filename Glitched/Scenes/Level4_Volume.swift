@@ -43,49 +43,65 @@ final class VolumeScene: BaseLevelScene, SKPhysicsContactDelegate {
         min(1.25, max(1.0, min(size.width / designSize.width, size.height / designSize.height)))
     }
 
-    // MARK: - Native-iPad layout (hand-composed, horizontal camera-follow)
+    // MARK: - Native-iPad layout (hand-composed, FULL-HEIGHT vertical climb)
     //
     // iPhone keeps the original FLAT single-screen "walk-past-the-sleeping-wolf"
-    // band (buildPhoneLevel), unchanged. iPad gets a HAND-COMPOSED level
-    // (buildComposedIPadLevel) with paced beats — teach -> stepped cluster ->
-    // wider REST -> tension peak (the flood beat) -> short breath -> the SLEEPING
-    // WOLF staged as an isolated finale beat (the signature twist) -> exit. The
-    // wolf's mechanic is unchanged in absolute terms: same detection radius, same
-    // volume thresholds, same flood/drown rule; it is simply relocated to its own
-    // clearing near the end of a wider, scrolling course instead of sitting at the
-    // dead-center of a one-screen strip.
+    // band (buildPhoneLevel), unchanged & byte-identical. iPad gets a HAND-COMPOSED
+    // level (buildComposedIPadLevel) that ASCENDS top-to-bottom through six tiers
+    // (BaseLevelScene.verticalTier) so gameplay spans the FULL usable height instead
+    // of floating in a thin lower-third band:
+    //   TIER 0  spawn floor (left)           — the rising-flood danger band
+    //   TIER 1  first step up (right)
+    //   TIER 2  WIDE REST pedestal (left)     — the breath beat
+    //   TIER 3  mid traverse (right)
+    //   TIER 4  approach (center-left)
+    //   TIER 5  WOLF DEN FINALE (right, near the ceiling) -> EXIT above it
+    // Tiers zig-zag left<->right so the climb uses the FULL WIDTH too (no centered
+    // ladder), and the FLOOD now lives in the bottom dead band: rising water tied to
+    // volume submerges the spawn floor / lower tiers, making the volume->water link
+    // visible exactly where the screen used to be empty.
     //
-    // The continuous floor underneath every beat guarantees spawn->exit
-    // reachability with NO required jumps (this is a quiet-traversal level, not a
-    // platformer): the stepped rhythm platforms are optional hops that always sit
-    // on top of a walkable floor, so no gap is ever load-bearing or un-jumpable.
-    // Vertical fill is already handled by `activeGroundY`'s lift; this layer adds
-    // the missing HORIZONTAL fill + paced beats. Everything below is gated on
-    // `isWideCanvas`; iPhone output stays byte-identical.
+    // The wolf's mechanic is unchanged in absolute terms — same detection radius,
+    // same volume thresholds, same flood/drown rule — it is simply staged as the
+    // HIGH finale beat near the ceiling instead of mid-screen. Every tier rise is
+    // <= BaseLevelScene.maxJumpableRise (verticalTier auto-clamps), every lateral
+    // center step is <= BaseLevelScene.maxJumpableGap (<=130), so every hop from
+    // spawn to exit is reachable. Everything below is gated on `isWideCanvas`;
+    // iPhone output stays byte-identical.
 
     /// True on iPad-proportioned canvases (matches the base helpers' gate).
     private var isWideCanvas: Bool { size.height > 1000 && size.width > designSize.width }
 
-    /// Absolute horizontal center pitch of one rhythm platform (<= 130 safe gap).
-    private let ipadPitch: CGFloat = 120
+    /// The iPhone ground baseline this level hard-codes; fed to the verticalTier /
+    /// playableGroundY / playableCeilingY helpers so they collapse correctly on
+    /// iPhone-class canvases (where this whole path never runs anyway).
+    private let iphoneGroundBaseline: CGFloat = 160
 
-    // Composed iPad anchors (set in buildComposedIPadLevel; unused on iPhone).
+    // Composed iPad anchors (set in computeComposedAnchors; unused on iPhone).
     private var composedSpawnX: CGFloat = 0
     private var composedExitX: CGFloat = 0
     private var composedWolfX: CGFloat = 0
+    private var composedWolfY: CGFloat = 0      // wolf-den finale tier Y (near ceiling)
+    private var composedFloorY: CGFloat = 0     // tier-0 spawn-floor Y (flood band)
     private var composedWorldWidth: CGFloat = 0
     private var activeGroundY: CGFloat {
-        // iPad vertical-void fix: this is a flat, single-screen, ground-anchored
-        // band (no follow-camera, no world scroll). EVERY gameplay node derives
-        // from this single anchor — the ground, the exit door (+30), Bit's spawn
-        // (+40), the sleeping-wolf hazard (+20), and the volume-driven water flood
-        // hazard (all `activeGroundY - ...` math). Folding the uniform lift in here
-        // shifts the entire gameplay band by the SAME amount, so every gap/rise/
-        // spawn/exit/hazard distance stays byte-identical. On iPhone the helper
-        // returns 0 (size.height <= 1000) so this expression is unchanged. The
-        // HUD, LEVEL title, instruction panel, and background all key off
-        // topSafeAreaY / size and intentionally do NOT use this anchor, so they
-        // stay put.
+        // iPad: the spawn-floor tier (tier 0) of the full-height climb — sits NEAR
+        // THE BOTTOM (playableGroundY = bottomSafeY + 90) so the level builds UPWARD
+        // and the flood now fills the bottom dead band. Returns composedFloorY once
+        // the course is composed (it is set BEFORE buildLevel via
+        // computeComposedAnchors, so every iPad-path reader below — the flood/water
+        // math, the wolf settle, the spawn — keys off the same single floor anchor).
+        //
+        // iPhone (size.height <= 1000): UNCHANGED. The original flat single-screen
+        // band math + gameplayVerticalLift is preserved byte-for-byte; the HUD,
+        // LEVEL title, instruction panel and background all key off topSafeAreaY /
+        // size and intentionally do NOT use this anchor.
+        if isWideCanvas {
+            return composedFloorY > 0 ? composedFloorY
+                                      : playableGroundY(iphoneGround: iphoneGroundBaseline)
+        }
+        // Non-iPad fallthrough (iPhone + any large landscape canvas) — UNCHANGED
+        // from the original expression so iPhone output is byte-identical.
         let base: CGFloat
         if min(size.width, size.height) >= 700 {
             base = min(size.height * 0.34, max(160 * visualScale, size.height * 0.32))
@@ -133,7 +149,17 @@ final class VolumeScene: BaseLevelScene, SKPhysicsContactDelegate {
     private var waterNode: SKShapeNode!
     private var waterLevel: CGFloat = 0
     private let maxWaterHeight: CGFloat = 200
-    private var scaledWaterHeight: CGFloat { maxWaterHeight * visualScale }
+    private var scaledWaterHeight: CGFloat {
+        // iPad: a TALLER column (absolute scene points) so the volume-driven flood
+        // fills the bottom dead band — from below the screen up past the low spawn
+        // floor — and visibly submerges the lower tiers at peak volume. composedFloorY
+        // is already in scene points, so it is NOT re-scaled. iPhone: original 200pt
+        // column (* visualScale), unchanged.
+        if isWideCanvas {
+            return max(maxWaterHeight * visualScale, composedFloorY + 240)
+        }
+        return maxWaterHeight * visualScale
+    }
     private var bubbles: [SKShapeNode] = []
     private var waterHazardActive = false
     /// Full width spanned by the volume-driven flood: one screen on iPhone, the
@@ -233,15 +259,17 @@ final class VolumeScene: BaseLevelScene, SKPhysicsContactDelegate {
 
         // Warning label — names the flood hazard explicitly so the player
         // understands the water/volume link. Persists (no auto-fade) while the
-        // wolf/flood area matters, instead of the old 3s fade that hid the clue.
-        // iPhone: mid-screen. iPad: over the flood-peak beat (pitch ~6.8) so the
-        // clue reads as the player enters the water-tension stretch of the course.
-        let floodLabelX = isWideCanvas ? (90 * visualScale + ipadPitch * 6.8) : size.width / 2
+        // flood band matters. iPhone: mid-screen. iPad: anchored over the BOTTOM
+        // flood band beside the spawn floor (just above the rising water) so the
+        // clue reads exactly where the flood will appear.
+        let floodLabelX = isWideCanvas ? composedSpawnX : size.width / 2
+        let floodLabelY = isWideCanvas ? composedFloorY + 56 * visualScale
+                                       : activeGroundY + 110 * visualScale
         let warningLabel = SKLabelNode(text: "TOO LOUD = FLOOD")
         warningLabel.fontName = "Menlo-Bold"
         warningLabel.fontSize = 10
         warningLabel.fontColor = strokeColor
-        warningLabel.position = CGPoint(x: floodLabelX, y: activeGroundY + 110 * visualScale)
+        warningLabel.position = CGPoint(x: floodLabelX, y: floodLabelY)
         warningLabel.zPosition = 200
         warningLabel.alpha = 0.7
         warningLabel.name = "flood_warning"
@@ -417,13 +445,15 @@ final class VolumeScene: BaseLevelScene, SKPhysicsContactDelegate {
 
     private func drawDenElements() {
         // Rock/cave texture behind the creature's den. Centered on the wolf's
-        // actual position (iPad: the finale clearing; iPhone: mid-screen).
+        // actual position: iPhone mid-screen at the floor; iPad the WOLF DEN finale
+        // platform near the CEILING (composedWolfX/composedWolfY).
         let denCenterX = isWideCanvas ? composedWolfX : size.width / 2
+        let denBaseY = isWideCanvas ? composedWolfY + 11 * visualScale : activeGroundY
         for i in 0..<5 {
             let rock = SKShapeNode()
             let rockPath = CGMutablePath()
             let baseX = denCenterX - 100 + CGFloat(i) * 50
-            let baseY = activeGroundY
+            let baseY = denBaseY
 
             rockPath.move(to: CGPoint(x: baseX, y: baseY))
             rockPath.addLine(to: CGPoint(x: baseX + 20, y: baseY + CGFloat.random(in: 30...60)))
@@ -489,97 +519,214 @@ final class VolumeScene: BaseLevelScene, SKPhysicsContactDelegate {
         createExitDoor(at: CGPoint(x: size.width - 70 * visualScale, y: groundY + 30 * visualScale))
     }
 
-    // MARK: - iPad layout (HAND-COMPOSED, native — teach -> cluster -> rest ->
-    //          flood peak -> breath -> WOLF finale -> exit)
+    // MARK: - iPad layout (HAND-COMPOSED, native — FULL-HEIGHT vertical climb:
+    //          spawn floor -> cluster -> WIDE REST -> traverse -> WOLF DEN finale)
     //
-    // A paced traversal authored at ABSOLUTE points. The course is a continuous
-    // walkable floor (so the no-jump quiet-traversal mechanic is preserved exactly
-    // and every beat is reachable), with stepped rhythm platforms varying height
-    // for cadence. The sleeping wolf gets its own isolated clearing as the finale
-    // beat — the level's signature twist staged deliberately instead of buried at
-    // mid-screen. All rhythm-platform rises stay <= BaseLevelScene.maxJumpableRise
-    // and all center pitches <= BaseLevelScene.maxJumpableGap; because the floor is
-    // continuous, no gap is ever load-bearing.
+    // A top-to-bottom climb authored on BaseLevelScene.verticalTier tiers so the
+    // route spans the ENTIRE usable height (playableGroundY near the bottom up to
+    // playableCeilingY just under the title/HUD) instead of a thin lower band. Each
+    // step rises by one tier (auto-clamped to <= maxJumpableRise=85, so every jump
+    // is reachable) and shifts laterally (|Δcenter| <= maxJumpableGap=130) so the
+    // climb also uses the FULL WIDTH — a left<->right zig-zag, never a centered
+    // ladder. Widths vary for rhythm and at least one WIDE REST pedestal gives the
+    // breath beat. The sleeping wolf is staged as the HIGH finale near the ceiling
+    // (its own platform), the exit sits just past it. The flood (volume->water) now
+    // fills the bottom dead band and submerges the spawn floor at high volume, so
+    // the signature water hazard is visible exactly where the screen was empty.
+    //
+    // The wolf mechanic is unchanged in absolute terms (detection radius, volume
+    // thresholds, drown rule). spawn->exit reachability is guaranteed because every
+    // consecutive platform is one tier apart (rise <= 85) and laterally <= 130.
 
-    /// Single source of truth for the composed iPad course anchors (spawn, wolf
-    /// finale clearing, exit, total world width). Called before any decor/build so
-    /// background den/flood elements can key off the same numbers. No-op on iPhone.
+    /// Authored climb beat: tier index (0 = floor … topTierIndex = near ceiling),
+    /// lateral X as a 0…1 fraction of the usable width, platform width, and role.
+    private struct ClimbBeat {
+        let tier: Int
+        let xFrac: CGFloat   // 0 = left margin, 1 = right margin
+        let width: CGFloat
+        let role: String     // "spawn" | "step" | "rest" | "wolf"
+    }
+
+    /// How many tiers the climb spans. Chosen so the per-tier CENTER rise stays
+    /// <= ~70pt even on the tallest iPad. The spawn floor's TOP sits at its tier
+    /// center while every other tier's TOP sits +11pt above its center (half the
+    /// 22pt platform), so the worst-case TOP-to-TOP rise (spawn floor -> tier 1) is
+    /// step+11 <= 81 — still inside maxJumpableRise=85. Every mid-climb step is
+    /// top-to-top == step <= 70. So tier (count-1) genuinely reaches near
+    /// playableCeilingY: a real full-height climb with provably safe jumps.
+    private var ipadTierCount: Int {
+        let band = playableBandHeight(iphoneGround: iphoneGroundBaseline)
+        // ceil(band / 70) + 1 tiers => consecutive center rise = band/(count-1) <= 70.
+        return max(6, Int((band / 70).rounded(.up)) + 1)
+    }
+
+    /// Lateral margin from the screen edges that the climb keeps its centers within.
+    private var climbMargin: CGFloat { 120 * visualScale }
+
+    /// Left / right bounds for tier centers (keeps platforms fully on-screen).
+    private var climbLeftX: CGFloat { climbMargin }
+    private var climbRightX: CGFloat { max(climbMargin + 1, composedWorldWidth - climbMargin) }
+
+    /// Safe per-tier lateral budget — a hair under maxJumpableGap so paired with a
+    /// one-tier rise the diagonal hop is always inside Bit's reach.
+    private var lateralStepBudget: CGFloat { min(BaseLevelScene.maxJumpableGap, 120) }
+
+    /// X (scene coords) where the wolf-den finale must finish — the LEFT region,
+    /// clear of the top-right volume HUD column (the den is 168pt wide and sits at
+    /// HUD height, so it would otherwise collide on narrow iPads).
+    private var wolfFinaleTargetX: CGFloat { climbLeftX + 40 * visualScale }
+
+    /// Absolute X center for each tier of the climb, precomputed by walking left<->
+    /// right across the FULL width by at most `lateralStepBudget` per tier and
+    /// reflecting at the edges, so the route uses the whole horizontal span (a long
+    /// zig-zag, never a centered ladder) while every consecutive |Δcenter| stays
+    /// within the safe gap. tier 0 starts at the LEFT (spawn floor reads bottom-left).
+    /// The final approach is steered LEFT toward wolfFinaleTargetX so the TOP tier
+    /// (the wolf-den finale, at HUD height) lands on the left, clear of the HUD —
+    /// each approach step is still <= the budget, so reachability is preserved.
+    private func composedTierCentersX(top: Int) -> [CGFloat] {
+        guard top >= 0 else { return [] }
+        let budget = lateralStepBudget
+        // How many trailing tiers we need to march left to reach the target from the
+        // far right within budget — so the finale always arrives on the left.
+        let approachTiers = max(2, Int(((climbRightX - wolfFinaleTargetX) / budget).rounded(.up)))
+        let steerFrom = max(1, top - approachTiers)
+
+        var xs: [CGFloat] = []
+        var x = climbLeftX
+        var dir: CGFloat = 1   // start moving right
+        for tier in 0...top {
+            if tier >= steerFrom { dir = -1 }   // steer the finale leftward
+            xs.append(x)
+            var next = x + dir * budget
+            // Snap the last tier exactly onto the (reachable) left target.
+            if tier == top - 1 {
+                next = max(wolfFinaleTargetX, x - budget)
+            }
+            if next > climbRightX { next = climbRightX; dir = -1 }
+            else if next < climbLeftX { next = climbLeftX; dir = 1 }
+            if x >= climbRightX { dir = -1 } else if x <= climbLeftX { dir = 1 }
+            x = next
+        }
+        return xs
+    }
+
+    /// The full authored climb, generated from ipadTierCount so it always reaches
+    /// the ceiling: a spawn floor (left), a stepped zig-zag sweep up the FULL width,
+    /// a WIDE REST mid-climb, and the WOLF DEN finale on the top tier. Every
+    /// consecutive rise is one tier (<= maxJumpableRise) and every lateral step
+    /// <= lateralStepBudget (<= maxJumpableGap).
+    private func composedClimbBeats() -> [ClimbBeat] {
+        let n = ipadTierCount
+        let top = n - 1
+        let centersX = composedTierCentersX(top: top)
+        let usableW = max(1, climbRightX - climbLeftX)
+        var beats: [ClimbBeat] = []
+        let stepW: CGFloat = 96 * visualScale
+        let restW: CGFloat = 168 * visualScale   // the wide REST / spawn / den pedestals
+        let restTier = max(2, top / 2)           // a wide breath roughly mid-climb
+
+        for tier in 0...top {
+            let role: String
+            let width: CGFloat
+            if tier == 0 {
+                role = "spawn"; width = restW            // generous starting floor
+            } else if tier == restTier {
+                role = "rest";  width = restW            // WIDE REST breath beat
+            } else if tier == top {
+                role = "wolf";  width = restW            // WOLF DEN finale platform
+            } else {
+                role = "step";  width = stepW
+            }
+            let xFrac = (centersX[tier] - climbLeftX) / usableW
+            beats.append(ClimbBeat(tier: tier, xFrac: xFrac, width: width, role: role))
+        }
+        return beats
+    }
+
+    /// X (scene coords) for a 0…1 lateral fraction across the usable width.
+    private func climbX(_ xFrac: CGFloat) -> CGFloat {
+        let usableW = max(1, climbRightX - climbLeftX)
+        return climbLeftX + xFrac * usableW
+    }
+
+    /// Single source of truth for the composed iPad course anchors (spawn floor,
+    /// wolf-den finale tier, exit, total world width). Called before any decor/build
+    /// so the background den/flood decor can key off the same numbers. No-op on
+    /// iPhone. The course fills the FULL viewport width; composedTierCentersX walks
+    /// the climb edge-to-edge with every per-tier lateral step <= the safe gap.
     private func computeComposedAnchors() {
         guard isWideCanvas else { return }
-        let pitch = ipadPitch
-        let leftMargin: CGFloat = 90 * visualScale
-        composedSpawnX = leftMargin
-        // Beats span ~11 pitches; the wolf finale clearing is a deliberate stretch
-        // of flat floor (no rhythm platforms) so the wolf reads as its own moment.
-        composedWolfX = leftMargin + pitch * 10.0
-        composedExitX = leftMargin + pitch * 12.0
-        composedWorldWidth = composedExitX + 90 * visualScale + pitch
+        // Use the FULL screen width so tiers spread edge-to-edge (no centered ladder).
+        composedWorldWidth = size.width
+        let top = ipadTierCount - 1
+        let centersX = composedTierCentersX(top: top)
+        composedFloorY = playableGroundY(iphoneGround: iphoneGroundBaseline)
+        composedSpawnX = centersX.first ?? climbLeftX                 // tier-0 floor (left)
+        // Wolf-den tier (top). The generator forces the final approach LEFT so the
+        // top tier (which sits at HUD height) finishes on the left half, clear of the
+        // right-side volume HUD column — without a hard clamp that could desync the
+        // platform from the creature or break the (top-1)->top jump budget.
+        composedWolfX = centersX.last ?? climbLeftX
+        composedWolfY = wolfTierY(top: top)
+        // Exit sits ON the same wide (168pt) den platform but offset 56pt to the side
+        // of the wolf toward screen-center, so the door + bobbing arrow stay on-screen
+        // and don't render on top of the creature. Reaching it still means entering
+        // the wolf's detection zone — the finale tension is preserved.
+        let towardCenter: CGFloat = composedWolfX > composedWorldWidth / 2 ? -1 : 1
+        composedExitX = composedWolfX + towardCenter * 56 * visualScale
+    }
+
+    /// Y of the WOLF DEN finale platform. The raw top tier lands at playableCeilingY,
+    /// which already reserves 150pt below the LEVEL title; the den furniture (door +30,
+    /// arrow ~+66 above the platform top) fits inside that margin. A small extra
+    /// headroom guarantees the arrow tip clears the title baseline. Clamping the top
+    /// tier DOWN only SHORTENS the final jump (raw -> raw-24 stays a safe rise above
+    /// tier top-1), so reachability is preserved.
+    private func wolfTierY(top: Int) -> CGFloat {
+        let raw = verticalTier(top, of: ipadTierCount, iphoneGround: iphoneGroundBaseline)
+        let finaleHeadroom: CGFloat = 44 * visualScale
+        return min(raw, playableCeilingY() - finaleHeadroom)
     }
 
     private func buildComposedIPadLevel() {
-        let groundY = activeGroundY
-        let groundHeight = 40 * visualScale
-        let pitch = ipadPitch
-        let leftMargin: CGFloat = 90 * visualScale
+        let n = ipadTierCount
+        let beats = composedClimbBeats()
 
-        // Continuous walkable floor across the whole scrolling course. Reachability
-        // and the quiet-traversal mechanic both depend on this being unbroken.
-        let ground = createPlatform(
-            width: composedWorldWidth,
-            height: groundHeight,
-            position: CGPoint(x: composedWorldWidth / 2, y: groundY - groundHeight / 2)
-        )
-        ground.name = "ground"
-        addChild(ground)
-
-        // Stepped rhythm platforms (optional hops on top of the floor). Tier
-        // heights are ABSOLUTE points (NOT scaled) so the rise stays within Bit's
-        // device-independent jump reach on every iPad. Heights are chosen so that
-        // even a hypothetical DIRECT floor-to-platform-TOP jump clears safely:
-        // platform half-height is 22*1.25/2 ≈ 13.75pt, so floor->tier2 TOP =
-        // 68 + 13.75 ≈ 82pt and floor->tier1 TOP ≈ 58pt — both <=
-        // BaseLevelScene.maxJumpableRise (85). Every tier-to-tier step is <= 24.
-        // Centers are spaced one `pitch` (120pt, <= maxJumpableGap 130) apart along
-        // the course. Because the floor below is continuous, these hops are purely
-        // for rhythm — no gap is ever load-bearing or un-jumpable.
-        // Beats: TEACH (flat spawn) -> CLUSTER A (stepped 3) -> REST (wide, low) ->
-        // FLOOD PEAK (stepped 3, the water-tension beat) -> BREATH ->
-        // WOLF finale clearing (flat floor, indices 9..11) -> EXIT.
-        let tier1: CGFloat = 44
-        let tier2: CGFloat = 68
-        let tierRest: CGFloat = 24   // low, wide breath pedestal (well under 85)
-        let restW: CGFloat = 150 * visualScale
-        let stepW: CGFloat = 92 * visualScale
-        let floorTopY = groundY  // floor surface (ground center + groundHeight/2)
-
-        // (integerPitchIndex, riseAboveFloorSurface, width). Skipped indices
-        // (4 = REST sits a touch lower as a wide breath; 8 = BREATH; 9..11 = the
-        // wolf clearing) keep the cadence reading as deliberate beats, not a row.
-        let beats: [(i: CGFloat, rise: CGFloat, w: CGFloat)] = [
-            (1, tier1, stepW),   // CLUSTER A — step up
-            (2, tier2, stepW),   // CLUSTER A — peak (rhythm high)
-            (3, tier1, stepW),   // CLUSTER A — step down
-            (4, tierRest, restW),// REST — a wide, low breath pedestal (deliberate pause)
-            (5, tier1, stepW),   // FLOOD PEAK — step into the water-tension beat
-            (6, tier2, stepW),   // FLOOD PEAK — high point over the flood clue
-            (7, tier1, stepW)    // FLOOD PEAK — step down toward the breath
-            // index 8 = BREATH; 9..11 = WOLF finale clearing (flat floor).
-        ]
-        for b in beats where b.rise > 0 {
-            let center = CGPoint(x: leftMargin + b.i * pitch, y: floorTopY + b.rise)
-            let plat = createPlatform(width: b.w, height: 22 * visualScale, position: center)
+        // Lay each tier platform at its verticalTier Y and lateral X. Tier 0 is the
+        // spawn floor near the BOTTOM; tier (n-1) is the wolf den near the ceiling.
+        var wolfPlatformTop: CGFloat = composedWolfY
+        for beat in beats {
+            // Mid tiers sit at their verticalTier center & swept X; the WOLF DEN
+            // finale uses the headroom-clamped composedWolfY and the HUD-clear
+            // composedWolfX so its platform, creature, decor and exit all agree.
+            let isWolf = beat.role == "wolf"
+            let y = isWolf
+                ? composedWolfY
+                : verticalTier(beat.tier, of: n, iphoneGround: iphoneGroundBaseline)
+            let x = isWolf ? composedWolfX : climbX(beat.xFrac)
+            let h: CGFloat = beat.role == "spawn" ? 40 * visualScale : 22 * visualScale
+            // Spawn floor: anchor so its TOP sits at the tier Y (so spawn/flood math
+            // matching activeGroundY == composedFloorY lines up). Other tiers are
+            // centered at the tier Y.
+            let pos = beat.role == "spawn"
+                ? CGPoint(x: x, y: y - h / 2)
+                : CGPoint(x: x, y: y)
+            let plat = createPlatform(width: beat.width, height: h, position: pos)
+            plat.name = beat.role == "spawn" ? "ground" : "tier_\(beat.tier)"
             addChild(plat)
+            if beat.role == "wolf" { wolfPlatformTop = y + h / 2 }
         }
 
-        // Exit door — past the wolf clearing, on the continuous floor.
-        createExitDoor(at: CGPoint(x: composedExitX, y: groundY + 30 * visualScale))
+        // Exit door — staged on the wolf-den finale platform, near the ceiling.
+        createExitDoor(at: CGPoint(x: composedExitX, y: wolfPlatformTop + 30 * visualScale))
 
-        // Full-course fall floor. The continuous ground above means a fall is
-        // never actually possible, but a death zone spanning the whole scrolling
-        // course matches the native-iPad template and guards any edge case as the
-        // camera pans. iPad-only — iPhone never had one, so its behavior is intact.
+        // Full-course fall floor BELOW the spawn tier. On iPad the climb requires
+        // real jumps between tiers, so a fall is now possible — this death zone (and
+        // the rising flood above it) catches a missed jump. iPad-only; iPhone never
+        // had one, so its behavior is intact.
         let deathZone = SKNode()
-        deathZone.position = CGPoint(x: composedWorldWidth / 2, y: groundY - 220 * visualScale)
+        deathZone.position = CGPoint(x: composedWorldWidth / 2, y: composedFloorY - 140 * visualScale)
         deathZone.physicsBody = SKPhysicsBody(rectangleOf: CGSize(width: composedWorldWidth * 2, height: 100))
         deathZone.physicsBody?.isDynamic = false
         deathZone.physicsBody?.categoryBitMask = PhysicsCategory.hazard
@@ -714,16 +861,24 @@ final class VolumeScene: BaseLevelScene, SKPhysicsContactDelegate {
 
     // MARK: - Creature
 
-    private func createCreature() {
-        let groundY = activeGroundY
+    /// The wolf's resting Y. iPhone: 20pt above the floor (unchanged). iPad: 20pt
+    /// above the WOLF DEN platform TOP near the ceiling (den platform is 22pt tall,
+    /// centered on composedWolfY). Used by createCreature AND the return-to-sleep
+    /// settle so the wolf never teleports off its den.
+    private var wolfRestY: CGFloat {
+        isWideCanvas
+            ? composedWolfY + (11 + 20) * visualScale   // den platform top + original +20
+            : activeGroundY + 20 * visualScale
+    }
 
+    private func createCreature() {
         // iPhone: wolf at dead-center of the one-screen strip (unchanged). iPad:
-        // wolf relocated to its own isolated finale clearing near the course end
-        // (composedWolfX) — the signature twist staged as a deliberate moment.
+        // wolf staged on the WOLF DEN finale platform near the CEILING (composedWolfX
+        // / composedWolfY) — the signature twist as the high finale beat.
         let wolfX = isWideCanvas ? composedWolfX : size.width / 2
 
         creature = SKNode()
-        creature.position = CGPoint(x: wolfX, y: groundY + 20 * visualScale)
+        creature.position = CGPoint(x: wolfX, y: wolfRestY)
         creature.setScale(visualScale)
         creature.zPosition = 50
         addChild(creature)
@@ -1177,7 +1332,7 @@ final class VolumeScene: BaseLevelScene, SKPhysicsContactDelegate {
 
                 let settle = SKAction.sequence([
                     SKAction.scaleY(to: 1.0, duration: 0.3),
-                    SKAction.moveTo(y: activeGroundY + 20 * visualScale, duration: 0.3)
+                    SKAction.moveTo(y: wolfRestY, duration: 0.3)
                 ])
                 creature.run(settle)
                 animateCreatureState()
@@ -1226,16 +1381,20 @@ final class VolumeScene: BaseLevelScene, SKPhysicsContactDelegate {
         // on iPhone 390/402 and iPad 1024 alike. Wording and cycling order are
         // preserved.
         // Anchor above the wolf's actual head. iPhone: mid-screen (the wolf sits
-        // there). iPad: over the relocated finale clearing, so the aside still
-        // emanates from the creature as the player approaches it.
+        // there) — original +160 offset. iPad: just above the wolf-den finale near
+        // the ceiling, capped under playableCeilingY so it never collides with the
+        // title / HUD band, so the aside still emanates from the creature.
         let talkX = isWideCanvas ? composedWolfX : size.width / 2
+        let talkY = isWideCanvas
+            ? min(playableCeilingY() - 20, wolfRestY + 70 * visualScale)
+            : activeGroundY + 160 * visualScale
         let label = SKLabelNode(fontNamed: VisualConstants.Fonts.secondary)
         label.text = sleepTalkLines[sleepTalkIndex % sleepTalkLines.count]
         label.fontSize = 11 * visualScale
         label.fontColor = strokeColor
         label.horizontalAlignmentMode = .center
         label.verticalAlignmentMode = .center
-        label.position = CGPoint(x: talkX, y: activeGroundY + 160 * visualScale)
+        label.position = CGPoint(x: talkX, y: talkY)
         label.zPosition = 200
         label.alpha = 0
         addChild(label)

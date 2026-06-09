@@ -678,17 +678,15 @@ final class BrightnessScene: BaseLevelScene, SKPhysicsContactDelegate {
 
     // MARK: - Level Building
 
-    /// iPad-native gate. The hand-composed climb (paced beats, varied tiers, a
-    /// finale staged under the sun) runs on tall tablet canvases that can hold the
-    /// FIXED-height climb (its rises never scale); iPhone-class canvases fall
-    /// through to `buildPhoneLevel()` and stay byte-identical.
+    /// iPad-native gate. Tall tablet canvases get the hand-composed full-height
+    /// climb (`buildComposedIPadLevel`); iPhone-class canvases fall through to
+    /// `buildPhoneLevel()` and stay byte-identical to the pre-redesign layout.
     ///
     /// The `height > 1000 && width > 700` test mirrors BaseLevelScene.playableGroundY
     /// and excludes EVERY iPhone in either orientation (no iPhone point height
-    /// exceeds ~956). It deliberately also excludes short tablet landscapes (e.g.
-    /// 11" iPad landscape, ~834pt tall) where the fixed ~920pt climb + exit + sun +
-    /// HUD cannot fit without scaling geometry — those keep their prior path. The
-    /// width floor pulls in narrow portrait iPads (iPad mini, 744pt).
+    /// exceeds ~956). The width floor pulls in narrow portrait iPads (iPad mini,
+    /// 744pt). Short tablet landscapes (~834pt tall) stay on the phone path so the
+    /// fixed-rise tiers + summit + exit + sun + HUD never overlap.
     private var isWideCanvas: Bool { size.height > 1000 && size.width > 700 }
 
     private func buildLevel() {
@@ -772,117 +770,127 @@ final class BrightnessScene: BaseLevelScene, SKPhysicsContactDelegate {
         addChild(deathZone)
     }
 
-    // MARK: - iPad Path (hand-composed paced climb)
+    // MARK: - iPad Path (hand-composed full-height climb)
 
-    /// Hand-composed iPad climb. Where the phone path generates a uniform zig-zag,
-    /// the iPad climb is authored as PACED BEATS up the tall canvas: a teach beat,
-    /// two build clusters with platforms varied across three height tiers for
-    /// rhythm, a wider REST breath, a tension-peak cluster, a short breath, and an
-    /// ISOLATED finale beat — a wide summit slab staged directly beneath the sun /
-    /// burn zone so the level's signature twist (hold the high-but-not-max band:
-    /// solid enough to stand, not so bright it burns) gets its own moment instead
-    /// of being buried in the staircase.
+    /// Hand-composed iPad climb. The phone path builds a zig-zag column hugging
+    /// center, which on an iPad fills the HEIGHT but leaves a narrow center ribbon
+    /// with the lateral acreage empty. This rebuild spans BOTH axes:
     ///
-    /// Every rise is top-to-top <= BaseLevelScene.maxJumpableRise (85); every
-    /// horizontal step center-to-center <= BaseLevelScene.maxJumpableGap (130).
-    /// Geometry is authored at ABSOLUTE positions (never size.width fractions);
-    /// the climb is sized to fit the iPad height, so no horizontal camera-follow is
-    /// needed (the course is a single tall screen, filled top-to-bottom).
+    ///  - VERTICAL: the route is anchored to FULL-BAND `verticalTier` tiers — tier 0
+    ///    is the near-bottom floor (playableGroundY == bottomSafeY+90) and the finale
+    ///    sits on the top tier near `playableCeilingY`, so gameplay fills top-to-bottom.
+    ///  - HORIZONTAL: each step is staggered WIDE left<->right across the canvas so the
+    ///    player traverses the screen's width as they climb, not a center ladder.
+    ///
+    /// Pacing (bottom -> top): teach step, a build cluster that swings wide, a WIDE
+    /// REST slab (the breath), a tension cluster of tighter swings, a short breath,
+    /// then an ISOLATED FINALE — a wide summit slab staged directly beneath the sun /
+    /// burn hazard, with the exit door planted on top so it reads as the DESTINATION.
+    /// The signature LUX twist governs the whole climb: brightness >= 0.8 makes the UV
+    /// platforms solid, but >= 0.95 burns; the finale is where you must hold that
+    /// high-but-not-max band longest, right under the sun. The LUX bar's marked sweet
+    /// spot is the tell.
+    ///
+    /// Y comes from `verticalTier(_:of:iphoneGround:)` so every top-to-top rise is
+    /// auto-clamped to BaseLevelScene.maxJumpableRise (85). The tier COUNT is derived
+    /// from the band so the tiers reach all the way to the ceiling (a fixed small
+    /// count would clamp the per-tier step to 85 and leave the top half empty again).
+    /// X swings are clamped so no consecutive hop exceeds maxJumpableGap (130)
+    /// EDGE-TO-EDGE (see audit below). Single tall screen — no camera-follow needed.
     private func buildComposedIPadLevel() {
-        let centerX = size.width / 2
-
-        // Platform widths. The UV steps stay near the phone's reach-friendly width;
-        // rest / summit slabs are deliberately wider to READ as a safe pause.
-        let stepW: CGFloat = 96
-        let restW: CGFloat = 168
-        let summitW: CGFloat = 196
         let uvH: CGFloat = 30
-        let startSize = CGSize(width: 124, height: 34)
+        let startSize = CGSize(width: 132, height: 34)
+        let iphoneGround: CGFloat = 150   // this level's phone-path ground baseline
 
-        // The climb's vertical extent is FIXED (sum of the authored rises) because
-        // geometry must never scale. We therefore choose a ground baseline that
-        // (a) fills tall portrait iPads via the shared playableGroundY helper, but
-        // (b) on shorter tablet canvases (e.g. 11" landscape, ~834pt) drops far
-        // enough that the summit + exit + sun still clear the top HUD. The whole
-        // climb is translated RIGIDLY — every rise/gap is unchanged.
-        let totalRise: CGFloat = 64 + 72 + 68 + 76 + 60 + 76 + 78 + 76 + 66 + 72
-        let topMargin: CGFloat = 150   // headroom for exit door + sun hazard + HUD
-        let summitTopAllowance = startSize.height / 2 + totalRise + 48 // exit above summit
-        let liftedGround = playableGroundY(iphoneGround: 150)
-        let maxGroundForFit = layoutTopY - topMargin - summitTopAllowance
-        let groundY = max(layoutBottomY + 40, min(liftedGround, maxGroundForFit))
+        // Platform widths VARY for rhythm: skinny challenge steps, medium steps, and
+        // two deliberately WIDE slabs (rest + summit) that read as safe pauses.
+        let thinW: CGFloat = 88
+        let stepW: CGFloat = 104
+        let restW: CGFloat = 196    // wide REST breath slab
+        let summitW: CGFloat = 220  // wide FINALE summit slab (the destination)
 
-        // Four lateral TIERS (x offsets from center) give rhythm without ever
-        // exceeding the 130pt center-to-center jump budget. Tiers are deliberately
-        // kept tight: the WIDEST authored hop is inner-one-side -> outer-other-side
-        // = 44 + 72 = 116pt center-to-center (edge-to-edge 116 - 96 = 20pt), safely
-        // under maxJumpableGap (130). Left/right alternation makes each hop a
-        // diagonal the player can clear at 245 pt/s.
-        let nearL = centerX - 44   // inner-left
-        let nearR = centerX + 44   // inner-right
-        let farL  = centerX - 72   // outer-left
-        let farR  = centerX + 72   // outer-right
+        // TIER COUNT derived from the usable band so the climb FILLS THE FULL HEIGHT:
+        // pick enough tiers that the per-tier rise sits just under maxJumpableRise and
+        // the top tier lands at playableCeilingY. verticalTier still clamps each step
+        // to 85 defensively. Tier 0 == near-bottom floor; top tier == near ceiling.
+        let band = playableBandHeight(iphoneGround: iphoneGround)
+        let tierCount = max(6, Int(ceil(band / BaseLevelScene.maxJumpableRise)) + 1)
+        let topTier = tierCount - 1
+        func tierY(_ i: Int) -> CGFloat { verticalTier(i, of: tierCount, iphoneGround: iphoneGround) }
 
-        // Beat blueprint: (x, riseFromPrevTop, width). riseFromPrevTop is the
-        // top-to-top climb from the previous platform; the first entry is measured
-        // from the start platform top. All rises <= 85.
+        // LATERAL swing. To keep the horizontal acreage in play WITHOUT ever blowing
+        // the 130pt edge-to-edge budget, every left<->right hop uses one fixed swing
+        // span: center-to-center == maxJumpableGap + thinnest platform width. With the
+        // narrowest pair (thinW=88) that yields edge-to-edge exactly maxJumpableGap;
+        // wider platforms only shrink the edge-to-edge gap, so all hops stay <= 130.
+        // The swing is also clamped so the widest slab never runs off either side.
+        let cX = size.width / 2
+        let maxSwingForGap = BaseLevelScene.maxJumpableGap + thinW   // c2c giving <=130 edge-to-edge
+        let sideMargin: CGFloat = 120
+        let maxSwingForScreen = (size.width - 2 * sideMargin) - summitW  // keep widest slab on-screen
+        let swing = max(160, min(maxSwingForGap, maxSwingForScreen))
+        let L  = cX - swing / 2     // left swing target
+        let R  = cX + swing / 2     // right swing target
+
+        // Beat blueprint, expressed as a list of (tier, x, width). EVERY tier from 1
+        // up to the top tier carries exactly one platform so the climb is continuous
+        // (no clamped gap), and the x alternates L<->R so the route traverses the
+        // WIDTH as it rises. Two anchor tiers host the WIDE slabs: a centered REST
+        // slab roughly mid-climb (the breath), and the centered FINALE summit on the
+        // top tier under the sun. We compute those anchor tiers from the count so the
+        // pacing scales with device height.
         //
-        // BEAT 1  teach        - first UV step, close & low (learn: bright = solid)
-        // BEAT 2  build A      - 3 steps varied across tiers (rhythm)
-        // BEAT 3  REST breath  - wide centered slab (deliberate pause)
-        // BEAT 4  tension peak - 3 tighter alternating steps
-        // BEAT 5  short breath - one modest step
-        // BEAT 6  FINALE       - wide summit slab under the sun/burn hazard
-        struct Step { let x: CGFloat; let rise: CGFloat; let w: CGFloat }
-        let blueprint: [Step] = [
-            // BEAT 1 — teach
-            Step(x: nearR, rise: 64, w: stepW),
-            // BEAT 2 — build cluster A (tiers vary: near, far, near)
-            Step(x: farL,  rise: 72, w: stepW),
-            Step(x: nearR, rise: 68, w: stepW),
-            Step(x: farL,  rise: 76, w: stepW),
-            // BEAT 3 — REST breath (wide, centered, low rise to feel safe)
-            Step(x: centerX, rise: 60, w: restW),
-            // BEAT 4 — tension peak (tight alternation, steeper). Rises stay <=78
-            // here because each of these hops also carries 116pt of horizontal
-            // travel (a diagonal); keeping the vertical component a touch below the
-            // 85 ceiling preserves timing margin on the hardest beat.
-            Step(x: farR,  rise: 76, w: stepW),
-            Step(x: nearL, rise: 78, w: stepW),
-            Step(x: farR,  rise: 76, w: stepW),
-            // BEAT 5 — short breath
-            Step(x: nearL, rise: 66, w: stepW),
-            // BEAT 6 — FINALE summit (wide slab staged under the sun)
-            Step(x: centerX, rise: 72, w: summitW)
-        ]
+        // EDGE-TO-EDGE GAP AUDIT (must be <= 130):
+        //   * Each rise is exactly ONE tier step (verticalTier-clamped <= 85). PASS.
+        //   * L<->R hops are `swing` center-to-center; edge-to-edge = swing - w1/2 -
+        //     w2/2. Worst (two thinW) = swing - thinW <= maxJumpableGap = 130. PASS.
+        //   * Hops onto/off the centered slabs cover only swing/2 c2c — well inside
+        //     budget. PASS.
+        let restTier = max(2, tierCount / 2)            // mid-climb REST breath
+        struct Beat { let tier: Int; let x: CGFloat; let w: CGFloat }
+        var blueprint: [Beat] = []
+        for tier in 1...topTier {
+            let onLeft = (tier % 2 == 0)                // alternate sides per tier
+            if tier == restTier {
+                // WIDE REST breath: centered slab (the deliberate pause mid-climb)
+                blueprint.append(Beat(tier: tier, x: cX, w: restW))
+            } else if tier == topTier {
+                // FINALE summit: wide centered slab under the sun (the destination)
+                blueprint.append(Beat(tier: tier, x: cX, w: summitW))
+            } else {
+                // Climb step: alternate L/R, vary thin vs medium for rhythm. Tiers in
+                // the tension stretch just below the summit use the thinner width.
+                let nearSummit = tier >= topTier - 2
+                let w = nearSummit ? thinW : (tier % 3 == 0 ? thinW : stepW)
+                blueprint.append(Beat(tier: tier, x: onLeft ? L : R, w: w))
+            }
+        }
 
-        // Starting platform (always solid) at the base, just left of center so the
-        // first UV step is a reachable diagonal to the right.
-        let startCenter = CGPoint(x: nearL, y: groundY)
+        // Starting platform (always solid) on tier 0 at the LEFT swing, so the first
+        // UV step is a reachable diagonal up-and-right into the climb.
+        let startCenter = CGPoint(x: L, y: tierY(0))
         playerSpawnPoint = CGPoint(x: startCenter.x, y: startCenter.y + 60)
         let startPlatform = createPlatform(at: startCenter, size: startSize, isUV: false)
         startPlatform.name = "start_platform"
 
         generatedPlatformFrames = []
-        var prevTopY = startCenter.y + startSize.height / 2
         var lastCenter = startCenter
-        for step in blueprint {
-            let topY = prevTopY + step.rise          // rise is top-to-top
-            let centerY = topY - uvH / 2
-            let pos = CGPoint(x: step.x, y: centerY)
-            let uvSize = CGSize(width: step.w, height: uvH)
+        for beat in blueprint {
+            let centerY = tierY(beat.tier) - uvH / 2   // platform TOP sits at the tier line
+            let pos = CGPoint(x: beat.x, y: centerY)
+            let uvSize = CGSize(width: beat.w, height: uvH)
             let platform = createUVPlatform(at: pos, size: uvSize)
             uvPlatforms.append(platform)
             generatedPlatformFrames.append(
                 CGRect(x: pos.x - uvSize.width / 2, y: pos.y - uvSize.height / 2,
                        width: uvSize.width, height: uvSize.height)
             )
-            prevTopY = topY
             lastCenter = pos
         }
 
-        // Exit door above the finale summit slab.
-        climbExitPoint = CGPoint(x: lastCenter.x, y: lastCenter.y + 48)
+        // Exit door planted ON TOP of the finale summit slab so it reads as the
+        // destination, directly under the sun / burn hazard.
+        climbExitPoint = CGPoint(x: lastCenter.x, y: lastCenter.y + 50)
         createExitDoor(at: climbExitPoint)
         layoutMaxBrightnessSun()
 

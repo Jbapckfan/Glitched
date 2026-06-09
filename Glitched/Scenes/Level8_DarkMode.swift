@@ -139,8 +139,8 @@ final class DarkModeScene: BaseLevelScene, SKPhysicsContactDelegate {
         setupBit()
         createShadowEnemy()
 
-        // iPad: the composed course is wider than the viewport, so promote to
-        // horizontal camera-follow (ticked in BaseLevelScene.update()). worldWidth is
+        // iPad: the composed full-height climb is wider than the viewport, so promote
+        // to horizontal camera-follow (ticked in BaseLevelScene.update()). worldWidth is
         // the full course extent computed in buildComposedIPadLevel; the exit sits at
         // doorX + 20 < courseExtent, inside the camera's right clamp. No-op on iPhone.
         if isWideCanvas, courseExtent > size.width {
@@ -383,9 +383,9 @@ final class DarkModeScene: BaseLevelScene, SKPhysicsContactDelegate {
     // MARK: - Level Building
 
     /// Dispatcher: iPhone keeps the original single-screen climb byte-identical;
-    /// iPad gets a NEW hand-composed, camera-followed course. The iPad branch is the
-    /// ONLY geometry change and it is fully gated on isWideCanvas, so iPhone output is
-    /// untouched.
+    /// iPad gets a NEW hand-composed, camera-followed FULL-HEIGHT climb. The iPad
+    /// branch is the ONLY geometry change and it is fully gated on isWideCanvas, so
+    /// iPhone output is untouched.
     private func buildLevel() {
         if isWideCanvas {
             buildComposedIPadLevel()
@@ -533,51 +533,85 @@ final class DarkModeScene: BaseLevelScene, SKPhysicsContactDelegate {
         updateDualPlatforms()
     }
 
-    // MARK: - Composed iPad Level (hand-authored, camera-followed)
+    // MARK: - Composed iPad Level (hand-authored, camera-followed, FULL-HEIGHT climb)
     //
-    // L3-template philosophy applied to the dark-mode mechanic. Paced beats:
-    //   1 spawn/teach (wide low ledge) -> 2 teach DARK flip (moon dual) ->
-    //   3 stepped cluster teaching the LIGHT flip (always ledge + sun dual; the
-    //     shadow enemy patrols this sun ledge, harmless in light but a hazard if you
-    //     flip to dark while lingering) -> 4 wider REST breath -> 5 tension peak
-    //     (high moon dual, dark-mode pressure) -> 6 short breath -> 7 ISOLATED
-    //     FINALE beat that stages the signature twist (a lone sun-only ledge you MUST
-    //     cross in light, with no always-solid bypass) -> 7.5 safe always-solid
-    //     anchor to flip back to dark -> 8 exit door (opens only in dark).
-    // Every platform varies height across 3 tiers for rhythm (never a flat row);
-    // spacing is FIXED jump-reach in ABSOLUTE points (never width fractions, never
-    // scaled), so jump physics is byte-identical to iPhone — just MORE composed
-    // content. The course is wider than the viewport, so it scrolls via
-    // installCameraFollow (called from configureScene after the player exists).
+    // The dark-mode mechanic staged as a true bottom-to-top ascent (the L30 model):
+    // alternate sun/moon flips UP a climb that fills the WHOLE iPad height, instead of
+    // a flat low band with the top 80% empty. The route spans the full playable band:
+    // tier 0 == floor (near the bottom safe area, so you build UPWARD), the TOP tier ==
+    // near the ceiling just under the title/HUD — so the finale literally reaches the
+    // top of the screen rather than floating in the lower sixth.
     //
-    // Flip is still REQUIRED and un-skippable: consecutive always-solid platforms are
-    // spaced > absoluteMaxGap apart (edge-to-edge), so a single mode cannot flat-run
-    // the course — you must land the intervening moon (dark) / sun (light) duals,
-    // which alternate the required appearance. The door only spawns its exit trigger
-    // in dark mode (updateDoorState), so the finale forces a flip back to dark.
+    // FULL-HEIGHT is achieved by deriving the TIER COUNT from the band so the per-tier
+    // rise stays <= maxJumpableRise (85) yet the cumulative climb reaches the ceiling.
+    // A fixed handful of tiers (the old 6) clamps to ~85*5=425pt of climb and leaves
+    // the upper half empty on a 1366pt iPad; instead tierCount = ceil(band/85)+1 (≈14
+    // portrait, ≈10 landscape), so the topmost tier sits AT the ceiling on every iPad.
+    //
+    // The climb is generated programmatically as a tier-by-tier ascent (each landed
+    // beat is exactly one tier above the previous — rise == tierStep <= 85), with the
+    // signature mechanic alternated UP the height:
+    //   - BEAT 0  spawn: wide always-solid floor ledge (tier 0).
+    //   - then repeat: a DUAL (the mode gate: moon=dark / sun=light, ALTERNATING) one
+    //     tier up, then an always-SOLID safe footing one more tier up.
+    //   - one wide REST/breath pair (two same-tier always-solid ledges, a flat hop) is
+    //     inserted near the middle of the climb as the pause beat.
+    //   - FINALE: a lone SUN dual at the TOP tier (near the ceiling) — the signature
+    //     twist staged alone; you MUST be in LIGHT to cross it, no always-solid bypass.
+    //   - ANCHOR: an always-solid ledge one tier below the finale (a safe descent) to
+    //     flip BACK to dark with no vanishing-footing trap.
+    //   - DOOR: always-solid, same tier as the anchor (a flat short hop) — opens in dark.
+    //
+    // Heights VARY tier-by-tier across the whole band (never a flat row); widths vary
+    // (wide floor, wide REST breath, mid always-ledges, narrow duals). Horizontal pitch
+    // is a FIXED jump-reach distance in ABSOLUTE points (never width fractions, never
+    // scaled), so jump physics is byte-identical to iPhone — just MORE composed content
+    // spread up the height AND across the width (each beat advances one pitch right and
+    // one tier up, so tiers fan out left-to-right as they climb — not a center ladder).
+    // The course is wider than the viewport; it scrolls via installCameraFollow. Camera
+    // Y stays at scene center and the viewport spans the whole height, so the full-band
+    // climb is what fills the screen — no camera trickery.
+    //
+    // Flip is still REQUIRED and un-skippable: every consecutive landed transition is a
+    // single tier (rise <= tierStep <= 85), and any two ALWAYS-solid platforms are
+    // separated by a DUAL that is BOTH one tier off AND >= 2*pitch apart edge-to-edge
+    // (>> absoluteMaxGap) from its always-solid neighbors — so a single mode can never
+    // flat-run the climb; you must land the intervening moon (dark) / sun (light) duals,
+    // which alternate the required appearance up the height. The only adjacent same-tier
+    // always pairs (the REST breath, and the anchor+door) are intentional flat footing.
+    // The door only spawns its exit trigger in dark mode (updateDoorState), so the
+    // finale forces a flip back to dark.
     private func buildComposedIPadLevel() {
-        // Vertical fill: lift the floor toward the lower third on a tall canvas. All
-        // gameplay Y derives from baseY, so the band fills the iPad screen and the
-        // door/sensor/exit derived geometry (doorPlatformTopY/Point, light1Point)
-        // keeps working unchanged.
-        let baseY = playableGroundY(iphoneGround: bottomSafeY + 120)
-        groundY = baseY
+        // FULL-HEIGHT band. Floor sits NEAR THE BOTTOM safe area so the climb builds
+        // UPWARD through the whole height; ceiling sits just under the title/HUD. All
+        // gameplay Y derives from the tier helpers, so the band fills the iPad screen
+        // and the door/sensor/exit derived geometry (doorPlatformTopY/Point,
+        // light1Point) keeps working. (BaseLevelScene at this commit exposes
+        // playableGroundY()/maxJumpableRise; the ceiling + tier math is replicated here
+        // locally — the same formula the Phase-0 verticalTier()/playableCeilingY()
+        // helpers use — rather than editing the shared base class.)
+        let floorY: CGFloat = bottomSafeY + 90          // build UPWARD from near the bottom
+        let ceilingY: CGFloat = topSafeY - 150          // clear of title + instruction band
+        groundY = floorY
 
-        // Three height tiers above baseY (top-surface offsets). The largest single
-        // jump in the route is low(0) -> high(75) at the rest -> tension-peak beat;
-        // 75 <= BaseLevelScene.maxJumpableRise (85) and leaves ~16pt under Bit's ~91pt
-        // apex. Every other consecutive rise is <= 50. Heights vary across all three
-        // tiers for rhythm (never a flat row).
-        let tierLow: CGFloat  = 0      // baseY tops
-        let tierMid: CGFloat  = 50
-        let tierHigh: CGFloat = 75
+        // TIER COUNT derived from the band so the per-tier rise stays <= the safe jump
+        // rise (85) AND the topmost tier reaches the ceiling — this is what makes the
+        // climb fill the full height instead of clamping into a low strip. tierY returns
+        // the TOP-surface Y for a tier; platforms place their CENTER at tierY - h/2 so
+        // the walking surface lands exactly on the tier line.
+        let band = max(0, ceilingY - floorY)
+        let maxRise = BaseLevelScene.maxJumpableRise        // 85
+        let tierCount = max(4, Int(ceil(band / maxRise)) + 1)   // >=4 so the climb is rich
+        let tierStep = band / CGFloat(tierCount - 1)            // <= maxRise by construction
+        let topTier = tierCount - 1
+        func tierY(_ i: Int) -> CGFloat { floorY + CGFloat(i) * tierStep }
 
         // Horizontal: FIXED center-to-center pitch in absolute points (NOT a width
         // fraction). With ~130-wide always-solid platforms (halfW 65) and ~100-wide
-        // dual platforms (halfW 50), a 200pt pitch yields ~85pt edge-to-edge on every
-        // intended jump (<= maxJumpableGap 130), while any two ALWAYS-solid platforms
-        // are 400pt apart center-to-center => ~270pt edge-to-edge (>> absoluteMaxGap
-        // 145), so the flip can never be flat-run-skipped.
+        // dual platforms (halfW 50), a 200pt pitch yields <= ~85pt edge-to-edge on
+        // every intended jump (<= maxJumpableGap 130), while any two ALWAYS-solid
+        // platforms separated by a dual are 400pt apart center-to-center => ~270pt
+        // edge-to-edge (>> absoluteMaxGap 145), so the flip can never be flat-run-skipped.
         let pitch: CGFloat = 200
         let startCX: CGFloat = 200     // absolute, leaves a left margin on iPad
 
@@ -588,104 +622,120 @@ final class DarkModeScene: BaseLevelScene, SKPhysicsContactDelegate {
         let dualW: CGFloat   = 100
         let dualH: CGFloat   = 25
 
-        // Helper: build an always-solid platform whose TOP sits at baseY + topOffset.
-        func solid(_ cx: CGFloat, _ topOffset: CGFloat, w: CGFloat, h: CGFloat, name: String) -> SKNode {
-            let center = CGPoint(x: cx, y: baseY + topOffset - h / 2)
+        // Helper: build an always-solid platform whose TOP sits at tier line `topY`.
+        func solid(_ cx: CGFloat, _ topY: CGFloat, w: CGFloat, h: CGFloat, name: String) -> SKNode {
+            let center = CGPoint(x: cx, y: topY - h / 2)
             let p = createPlatform(at: center, size: CGSize(width: w, height: h))
             p.name = name
             return p
         }
-        // Helper: build a dual (mode-gated) platform whose TOP sits at baseY + topOffset.
-        func dual(_ cx: CGFloat, _ topOffset: CGFloat, darkOnly: Bool) -> (node: SKNode, center: CGPoint) {
-            let center = CGPoint(x: cx, y: baseY + topOffset - dualH / 2)
+        // Helper: build a dual (mode-gated) platform whose TOP sits at tier line `topY`.
+        func dual(_ cx: CGFloat, _ topY: CGFloat, darkOnly: Bool) -> (node: SKNode, center: CGPoint) {
+            let center = CGPoint(x: cx, y: topY - dualH / 2)
             let p = createDualPlatform(at: center, size: CGSize(width: dualW, height: dualH), isDarkModeOnly: darkOnly)
             if darkOnly { darkModePlatforms.append(p) } else { lightModePlatforms.append(p) }
             return (p, center)
         }
 
-        // BEAT 1 - spawn / teach. Wide, low, always-solid.
-        let x0 = startCX
-        _ = solid(x0, tierLow, w: 160, h: 40, name: "start_platform")
-        // Spawn sits 40pt above the start platform top center (matches iPhone offset).
-        ipadStartPoint = CGPoint(x: x0, y: baseY + 40)
+        // ---- Build the beat sequence as (tier, kind) climbing one tier per beat. ----
+        // kind: .start/.solid/.cluster/.rest/.anchor/.door are always-solid; .moon/.sun
+        // are the alternating mode gates; .sunFinale is the top-tier signature beat.
+        enum Kind { case start, solid, cluster, rest, anchor, door, moon, sun, sunFinale }
+        var beats: [(tier: Int, kind: Kind)] = [(0, .start)]
+        var t = 0
+        var dualParity = 0          // even -> moon (dark gate); odd -> sun (light gate)
+        var restInserted = false
+        // Climb: alternate DUAL gate (one tier up) then SOLID footing (one tier up),
+        // until the pre-finale footing tier (topTier - 1).
+        while t < topTier - 1 {
+            t += 1
+            beats.append((t, dualParity % 2 == 0 ? .moon : .sun))
+            dualParity += 1
+            if t < topTier - 1 {
+                t += 1
+                if !restInserted && t >= topTier / 2 {
+                    // REST/breath: a wide ledge plus a same-tier flat companion ledge.
+                    beats.append((t, .cluster))
+                    beats.append((t, .rest))
+                    restInserted = true
+                } else {
+                    beats.append((t, .solid))
+                }
+            }
+        }
+        // Guarantee a solid footing on tier (topTier - 1) right before the finale.
+        if beats.last?.tier != topTier - 1 {
+            beats.append((topTier - 1, .solid))
+        }
+        // FINALE (top tier, near ceiling) -> ANCHOR (one tier below) -> DOOR (flat).
+        beats.append((topTier, .sunFinale))
+        beats.append((topTier - 1, .anchor))
+        beats.append((topTier - 1, .door))
 
-        // BEAT 2 - teach DARK flip: first moon platform (solid only in dark), stepped up.
-        let x1 = x0 + pitch
-        _ = dual(x1, tierMid, darkOnly: true)
+        // ---- Materialize the beats left-to-right, one pitch apart. ----
+        var doorX: CGFloat = startCX
+        for (i, beat) in beats.enumerated() {
+            let cx = startCX + CGFloat(i) * pitch
+            let y = tierY(beat.tier)
+            switch beat.kind {
+            case .start:
+                _ = solid(cx, y, w: 160, h: 40, name: "start_platform")
+                // Spawn 40pt above the start platform top (matches iPhone offset).
+                ipadStartPoint = CGPoint(x: cx, y: y + 40)
+            case .solid:
+                _ = solid(cx, y, w: alwaysW, h: alwaysH, name: "climb_ledge_\(i)")
+            case .cluster:
+                _ = solid(cx, y, w: alwaysW, h: alwaysH, name: "cluster_ledge")
+            case .rest:
+                _ = solid(cx, y, w: restW, h: restH, name: "rest_platform")
+            case .anchor:
+                _ = solid(cx, y, w: alwaysW, h: alwaysH, name: "finale_anchor")
+            case .door:
+                let doorH: CGFloat = 35
+                let doorPlatformY = y - doorH / 2
+                let doorPlatform = createPlatform(
+                    at: CGPoint(x: cx, y: doorPlatformY),
+                    size: CGSize(width: 140, height: doorH)
+                )
+                doorPlatform.name = "door_platform"
+                doorPlatformPoint = CGPoint(x: cx, y: doorPlatformY)
+                doorPlatformTopY = doorPlatformY + doorH / 2
+                doorX = cx
+            case .moon:
+                _ = dual(cx, y, darkOnly: true)
+            case .sun:
+                // The FIRST sun gate is where the shadow enemy patrols (light1Point):
+                // it's solid (occupied) only in LIGHT, where the shadow is harmless;
+                // it only bites if the player flips to dark while lingering here --
+                // exactly the original light-platform semantics, never a guaranteed-death
+                // required platform.
+                let s = dual(cx, y, darkOnly: false)
+                if light1Point == .zero { light1Point = s.center }
+            case .sunFinale:
+                // ISOLATED FINALE at the TOP tier (near the ceiling): a lone sun dual
+                // (solid only in LIGHT) flanked by the pre-finale solid and the anchor,
+                // both one tier BELOW and >= 2*pitch away from each other, so it cannot
+                // be bypassed -- the only way across is to be in LIGHT. The level's last
+                // word is "you must be in light here", right before a door that only
+                // opens in dark.
+                let s = dual(cx, y, darkOnly: false)
+                if light1Point == .zero { light1Point = s.center }
+            }
+        }
 
-        // BEAT 3 - stepped cluster teaching the LIGHT flip. An always-solid mid ledge
-        // (a momentary safe footing during the flip) then a sun platform (solid only
-        // in light), heights varied for rhythm (mid -> high -> mid). The shadow enemy
-        // patrols THIS sun platform: it is solid (occupied) only in LIGHT, where the
-        // shadow is invisible/harmless; it only bites if the player flips to dark while
-        // lingering here -- exactly the original light-platform semantics, never a
-        // guaranteed-death required platform.
-        let x2 = x0 + pitch * 2
-        _ = solid(x2, tierHigh, w: alwaysW, h: alwaysH, name: "cluster_ledge")
-        let x3 = x0 + pitch * 3
-        let lightTeach = dual(x3, tierMid, darkOnly: false)
-        light1Point = lightTeach.center
+        // Fallback: if (degenerate band) no sun gate ever set light1Point, anchor the
+        // shadow enemy on the start platform so createShadowEnemy never reads .zero.
+        if light1Point == .zero { light1Point = ipadStartPoint }
 
-        // BEAT 4 - REST breath: a deliberately WIDER always-solid platform, lower
-        // tier, a visual pause before the tension peak.
-        let x4 = x0 + pitch * 4
-        _ = solid(x4, tierLow, w: restW, h: restH, name: "rest_platform")
-
-        // BEAT 5 - tension peak: a moon platform (dark-only) at the high tier. This is
-        // the dark-mode pressure beat -- you must be in dark to land it, and the shadow
-        // enemy back on the BEAT-3 sun platform is live in dark, so backtracking is
-        // discouraged. No hazard ON this platform itself (that would be a
-        // guaranteed-death required platform), keeping the tension fair.
-        let x5 = x0 + pitch * 5
-        _ = dual(x5, tierHigh, darkOnly: true)
-
-        // BEAT 6 - short breath: a small always-solid ledge to recover, mid tier.
-        let x6 = x0 + pitch * 6
-        _ = solid(x6, tierMid, w: alwaysW, h: alwaysH, name: "breath_platform")
-
-        // BEAT 7 - ISOLATED FINALE: the signature twist staged alone. A sun platform
-        // (solid only in LIGHT) at the high tier, isolated between two always-solid
-        // ledges. The whole final stretch (breath -> sun finale -> anchor -> door) is
-        // all always-solid EXCEPT this one sun ledge, and the always-solid neighbors
-        // are 400pt apart, so you CANNOT bypass it: the only way across the finale is
-        // to be in LIGHT to land the sun ledge. That is the staged signature beat --
-        // the level's last word is "you must be in light here", immediately before a
-        // door that only opens in dark.
-        let x7 = x0 + pitch * 7
-        _ = dual(x7, tierHigh, darkOnly: false)
-
-        // BEAT 7.5 - SAFE ANCHOR: an always-solid landing past the sun finale where the
-        // player safely flips BACK to dark (no vanishing-footing timing trap). It is
-        // always-solid, so flipping to dark here never drops the player; the door then
-        // unlocks and is one short jump away. This makes the finale FAIR while keeping
-        // the required final flip (light to cross the sun ledge -> dark to open door).
-        let xAnchor = x0 + pitch * 8
-        _ = solid(xAnchor, tierMid, w: alwaysW, h: alwaysH, name: "finale_anchor")
-
-        // BEAT 8 - EXIT: always-solid door platform at mid tier (level with the anchor,
-        // a flat short hop) so the dark-mode jump-to-door is comfortably within reach.
-        let doorX = x0 + pitch * 9
-        let doorTopOffset = tierMid
-        let doorH: CGFloat = 35
-        let doorPlatformY = baseY + doorTopOffset - doorH / 2
-        let doorPlatform = createPlatform(
-            at: CGPoint(x: doorX, y: doorPlatformY),
-            size: CGSize(width: 140, height: doorH)
-        )
-        doorPlatform.name = "door_platform"
-
-        doorPlatformPoint = CGPoint(x: doorX, y: doorPlatformY)
-        doorPlatformTopY = doorPlatformY + doorH / 2
-
-        // Course extent: rightmost edge = door platform right edge + door visual + sensor
-        // margin. Drives the death zone span and installCameraFollow worldWidth.
-        let courseLeftEdge = x0 - 160 / 2 - 80          // left margin before start
+        // Course extent: rightmost edge = door platform right edge + margin for the door
+        // visual + sensor. Drives the death zone span and installCameraFollow worldWidth.
+        let courseLeftEdge = startCX - 160 / 2 - 80     // left margin before start
         let courseRightEdge = doorX + 140 / 2 + 80      // right margin past door
         courseExtent = courseRightEdge - min(0, courseLeftEdge)
 
         // Death zone spans the FULL course (not just the viewport) so a fall anywhere
         // along the scrolling course is caught. Centered on the course, well below the
-        // lowest platform (baseY tops), fixed at y: -50 like the iPhone path.
+        // lowest platform (floor tier), fixed at y: -50 like the iPhone path.
         let deathZone = SKNode()
         deathZone.position = CGPoint(x: courseExtent / 2, y: -50)
         deathZone.physicsBody = SKPhysicsBody(rectangleOf: CGSize(width: courseExtent + 400, height: 100))

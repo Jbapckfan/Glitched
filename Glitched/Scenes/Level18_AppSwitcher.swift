@@ -28,16 +28,16 @@ final class AppSwitcherScene: BaseLevelScene, SKPhysicsContactDelegate {
     private let designWidth: CGFloat = 390
 
     // Native-iPad gate (matches the L3 template): only the tall, wide canvas gets
-    // the hand-composed course; everything else keeps the byte-identical phone
-    // layout. iPad min portrait width is 744 (iPad mini); 700 clears every iPad
-    // while staying above any phone.
+    // the hand-composed full-height climb; everything else keeps the byte-identical
+    // phone layout. iPad min portrait width is 744 (iPad mini); 700 clears every
+    // iPad while staying above any phone.
     private var isWideCanvas: Bool { size.height > 1000 && size.width > 700 }
 
     // Center a phone-sized gameplay course on wider devices (PHONE PATH ONLY).
-    // The hazard stones and final exit must share one coordinate system;
-    // otherwise iPad creates an impossible final gap from the last fixed stone to
-    // the size.width-pinned exit. On the native-iPad path this is bypassed
-    // entirely in favor of absolute hand-composed positions.
+    // The hazard stones and final exit must share one coordinate system; otherwise
+    // iPad creates an impossible final gap from the last fixed stone to the
+    // size.width-pinned exit. On the native-iPad path this is bypassed entirely in
+    // favor of absolute hand-composed tier positions.
     private var courseScale: CGFloat { min(1.0, size.width / designWidth) }
     private var courseOriginX: CGFloat { (size.width - designWidth * courseScale) / 2 }
     private func courseX(_ logicalX: CGFloat) -> CGFloat { courseOriginX + logicalX * courseScale }
@@ -46,6 +46,10 @@ final class AppSwitcherScene: BaseLevelScene, SKPhysicsContactDelegate {
     // Full extent of the composed iPad course (left margin .. exit beat). Used for
     // the camera-follow world bound and the iPad death-zone width/center.
     private var composedCourseExtent: CGFloat = 0
+
+    // Camera-relative top inset: distance from camera center (scene center on the
+    // iPad path) down to topSafeY, used to pin camera-parented HUD to the safe top.
+    private var effectiveTopInsetForHUD: CGFloat { size.height - topSafeY }
 
     override func configureScene() {
         levelID = LevelID(world: .world2, index: 18)
@@ -63,13 +67,13 @@ final class AppSwitcherScene: BaseLevelScene, SKPhysicsContactDelegate {
             buildComposedIPadLevel()
             createIPadHazards()
         } else {
-            buildPhoneLevel()
+            buildLevel()
             createHazards()
         }
         createPeekOverlay()
         showInstructionPanel()
         setupBit()
-        // The composed iPad course is wider than the viewport, so promote to the
+        // The composed iPad climb is wider than the viewport, so promote to the
         // shared horizontal camera-follow. Done AFTER setupBit so the player
         // controller exists. Camera Y stays at scene center; the freeze overlay /
         // timer are camera-parented (see createPeekOverlay) so they stay aligned
@@ -114,10 +118,6 @@ final class AppSwitcherScene: BaseLevelScene, SKPhysicsContactDelegate {
         }
     }
 
-    // Camera-relative top inset: distance from camera center (scene center on the
-    // iPad path) down to topSafeY, used to pin camera-parented HUD to the safe top.
-    private var effectiveTopInsetForHUD: CGFloat { size.height - topSafeY }
-
     // iPad vertical-void fix: uniform upward lift applied to EVERY gameplay node
     // (platforms, exit, spawn, respawn, hazards, death zone). Returns 0 on
     // iPhone-class canvases so the phone layout is byte-identical; positive on
@@ -127,10 +127,10 @@ final class AppSwitcherScene: BaseLevelScene, SKPhysicsContactDelegate {
     // is added to all gameplay Y, every gap/rise/jump distance is unchanged.
     private var gameplayLift: CGFloat { gameplayVerticalLift(bandBottom: 160, bandTop: 265) }
 
-    // PHONE PATH — byte-identical to the original buildLevel(). Only reached when
-    // NOT isWideCanvas, so iPhone output is unchanged. courseX/courseLen still
-    // center the 390-pt course on any non-iPad wide-ish canvas exactly as before.
-    private func buildPhoneLevel() {
+    // PHONE PATH — byte-identical to the original. Only reached when NOT
+    // isWideCanvas, so iPhone output is unchanged. courseX/courseLen still center
+    // the 390-pt course on any non-iPad wide-ish canvas exactly as before.
+    private func buildLevel() {
         let lift = gameplayLift
         let groundY: CGFloat = 160 + lift
 
@@ -155,69 +155,118 @@ final class AppSwitcherScene: BaseLevelScene, SKPhysicsContactDelegate {
         addChild(death)
     }
 
-    // MARK: - Native-iPad Composed Course (paced beats)
+    // MARK: - Native-iPad Composed Course (full-height vertical climb)
     //
-    // Hand-composed per the L3 template: ABSOLUTE positions (no size.width
-    // fractions, no courseScale), every platform varies height across 3 tiers for
-    // rhythm, and the App-Switcher peek (freeze time + read hazard trajectories)
-    // is staged as an ISOLATED finale beat — a dense un-eye-timeable crossfire
-    // that's only readable with the freeze snapshot — instead of being smeared
-    // across a uniform line. Spacing is fixed jump-reach: every center-to-center
-    // step ≤ BaseLevelScene.maxJumpableGap (130) and every top-to-top rise ≤
-    // BaseLevelScene.maxJumpableRise (85). Vertical fill via playableGroundY.
+    // Phase-0 redesign: on iPad the old course was a flat low band (every platform
+    // within ~80pt of one ground line) that filled the WIDTH but left the top ~65%
+    // of the tall canvas empty. This rebuild makes the course ASCEND through the
+    // FULL usable band — from a low spawn (playableGroundY, near the bottom) up to
+    // a finale near playableCeilingY — using verticalTier() so every rise is auto-
+    // clamped to a safe jump (<= maxJumpableRise = 85). Tiers are spread LEFT-to-
+    // RIGHT (the course scrolls horizontally under camera-follow) as they climb, so
+    // it reads as a diagonal staircase, NOT a centered ladder, and uses the full
+    // width too.
     //
-    // Beat geometry is captured here so createIPadHazards() can stage each spike
-    // over the right beat, and setupBit() / death zone can reference spawn + extent.
+    // The signature App-Switcher peek (freeze time + read fast-spike trajectories)
+    // escalates UP the climb: a single slow telegraphed spike on the teach beat,
+    // crossing pairs through the mid tiers, and a dense 3-spike crossfire over the
+    // HIGH FINALE landing (createIPadHazards) that is genuinely un-eye-timeable —
+    // the freeze snapshot is the only reliable read before the final step to the
+    // exit. Mechanic + fallback (appBackgrounded / appSwitcherPeeked) are unchanged.
+    //
+    // Reach budget: every center-to-center horizontal step <= maxJumpableGap (130)
+    // and every top-to-top rise is ONE tier (verticalTier clamps each tier step to
+    // <= maxJumpableRise = 85, so consecutive beats are always jumpable).
+    // Beat geometry is captured (ipadBeats) so createIPadHazards() can stage each
+    // spike over the right beat, and setupBit()/death zone reference spawn + extent.
     private var ipadGroundY: CGFloat = 0
     private var ipadSpawnX: CGFloat = 0
+    // Captured (x, y == platform CENTER) per beat, in build order, for hazard staging.
+    private var ipadBeats: [CGPoint] = []
+    // Beat indices needing special hazard handling (resolved in buildComposedIPadLevel).
+    private var ipadRestBeatIndex: Int = -1
+    private var ipadFinaleBeatIndex: Int = -1
 
     private func buildComposedIPadLevel() {
-        // Vertical fill: raise the floor toward the lower-third of the tall canvas
-        // (helper returns the iPhone ground unchanged on phones; never reached here).
+        // Vertical fill: floor now sits NEAR THE BOTTOM (helper returns bottomSafeY+90
+        // on iPad; the iPhone ground unchanged on phones — this branch never runs
+        // there). We build UPWARD from here through one beat PER TIER so the climb
+        // reaches all the way to playableCeilingY, filling the full height.
         let g = playableGroundY(iphoneGround: 160)
         ipadGroundY = g
+
+        // One beat per tier means consecutive rises are always a single tier step.
+        // Pick N so the top tier lands near playableCeilingY without verticalTier's
+        // 85pt clamp shrinking the climb: band/(N-1) <= 85  ==>  N >= band/85 + 1.
+        // No upper cap — taller iPads simply get more tiers (each rise still <=85),
+        // so the route genuinely tops out at the ceiling instead of in a low strip.
+        let band = playableBandHeight(iphoneGround: 160)
+        let neededSteps = max(1, Int(ceil(band / BaseLevelScene.maxJumpableRise)))  // steps of <=85
+        let tierCount = max(5, neededSteps + 1)
+
+        // Tier Y for index i (0 == floor, tierCount-1 == near ceiling). The per-tier
+        // rise is guaranteed <= maxJumpableRise by the helper's clamp.
+        func tierY(_ i: Int) -> CGFloat { verticalTier(i, of: tierCount, iphoneGround: 160) }
 
         // Left start margin so the spawn platform isn't hard against the edge.
         let m: CGFloat = 110
         ipadSpawnX = m
 
-        // --- Beat 1: SPAWN / TEACH ---------------------------------------------
-        // Wide, low start platform. A single slow spike (added in createIPadHazards)
-        // sweeps overhead so the player learns the peek-freeze + trajectory read
-        // on a forgiving beat.
-        createPlatform(at: CGPoint(x: m, y: g), size: CGSize(width: 120, height: 30))            // top = g+15
+        ipadBeats.removeAll()
 
-        // --- Beat 2: STEPPED CLUSTER (rhythm — 3 tiers) ------------------------
-        createPlatform(at: CGPoint(x: m + 120, y: g + 35), size: CGSize(width: 60, height: 20))  // top = g+45
-        createPlatform(at: CGPoint(x: m + 235, y: g + 70), size: CGSize(width: 60, height: 20))  // top = g+80 (peak tier)
-        createPlatform(at: CGPoint(x: m + 350, y: g + 35), size: CGSize(width: 60, height: 20))  // top = g+45
+        // Place a platform AND record its CENTER as a beat anchor (for hazards).
+        func beat(x: CGFloat, y: CGFloat, w: CGFloat, h: CGFloat = 26) {
+            createPlatform(at: CGPoint(x: x, y: y), size: CGSize(width: w, height: h))
+            ipadBeats.append(CGPoint(x: x, y: y))
+        }
 
-        // --- Beat 3: REST / BREATH ---------------------------------------------
-        // Wide low platform, deliberately clear of any hazard sweep: a safe pause.
-        createPlatform(at: CGPoint(x: m + 475, y: g), size: CGSize(width: 130, height: 30))       // top = g+15
+        // Insert the wide REST roughly mid-climb (a calm breath). It is a SECOND
+        // platform on the SAME tier as the beat before it, so its rise is 0 (always
+        // safe) and it widens the rhythm. Choose the tier just below the midpoint.
+        let restTier = max(1, tierCount / 2)
 
-        // --- Beat 4: TENSION-PEAK CLUSTER --------------------------------------
-        createPlatform(at: CGPoint(x: m + 595, y: g + 45), size: CGSize(width: 60, height: 20))   // top = g+55
-        createPlatform(at: CGPoint(x: m + 710, y: g + 15), size: CGSize(width: 60, height: 20))   // top = g+25
+        // Walk the tiers bottom -> top, one rung per tier, zig-zagging X across the
+        // FULL width budget (each horizontal step <= maxJumpableGap = 130) so the
+        // climb is a diagonal staircase, not a centered ladder. Vary widths for
+        // rhythm. The TEACH tier (0) and FINALE tier (top) get wide bespoke pads.
+        let stepX: CGFloat = 125        // center-to-center horizontal advance (<=130)
+        // Lateral zig-zag offset applied alternately so tiers fan left/right of the
+        // marching X — keeps gaps within budget while using lateral space.
+        let zig: CGFloat = 22
+        var x = m
+        for tier in 0..<tierCount {
+            let isTeach = (tier == 0)
+            let isFinale = (tier == tierCount - 1)
+            // Width rhythm: wide teach, wide finale, alternating narrow rungs between.
+            let w: CGFloat = isTeach ? 150 : (isFinale ? 120 : (tier % 2 == 0 ? 90 : 80))
+            let h: CGFloat = (isTeach || isFinale) ? 30 : 26
+            let lateral: CGFloat = (isTeach || isFinale) ? 0 : (tier % 2 == 0 ? zig : -zig)
+            beat(x: x + lateral, y: tierY(tier), w: w, h: h)
 
-        // --- Beat 5: SHORT BREATH ----------------------------------------------
-        createPlatform(at: CGPoint(x: m + 825, y: g + 45), size: CGSize(width: 60, height: 20))   // top = g+55
+            if isFinale {
+                ipadFinaleBeatIndex = ipadBeats.count - 1
+                createExitDoor(at: CGPoint(x: x + lateral + 10, y: tierY(tier) + 50))
+            }
 
-        // --- Beat 6: FINALE — staged signature twist ---------------------------
-        // Isolated landing platform under the level's signature moment: a dense
-        // multi-spike crossfire (createIPadHazards stages 3 spikes here) that is
-        // genuinely un-timeable by eye. The peek-freeze + trajectory snapshot is
-        // the ONLY reliable way to read the safe window, then step to the exit.
-        let finaleX = m + 945
-        createPlatform(at: CGPoint(x: finaleX, y: g), size: CGSize(width: 110, height: 30))       // top = g+15
-        createExitDoor(at: CGPoint(x: finaleX + 10, y: g + 50))
+            // Drop the wide REST right after the chosen rest tier: a second platform
+            // on the SAME tier (zero rise) before continuing the climb.
+            if tier == restTier && !isFinale {
+                x += stepX
+                beat(x: x, y: tierY(tier), w: 180, h: 30)   // wide breath
+                ipadRestBeatIndex = ipadBeats.count - 1
+            }
 
-        // Course extent for camera-follow + death zone (right edge of finale beat).
-        composedCourseExtent = finaleX + 60 + 40   // platform half-width + margin
+            x += stepX
+        }
+
+        // Course extent for camera-follow + death zone (right edge of the last beat).
+        let lastBeat = ipadBeats.last ?? CGPoint(x: x, y: g)
+        composedCourseExtent = lastBeat.x + 60 + 40   // platform half-width + margin
 
         // Death zone spanning the FULL composed course (not just the viewport), so
-        // a fall anywhere along the scrolling course is fatal. Sits the same 210pt
-        // below the ground baseline as the platform tops, mirroring the phone gap.
+        // a fall anywhere along the scrolling climb is fatal. Sits the same 210pt
+        // below the LOWEST ground baseline (g, tier 0) as the phone gap below its
+        // ground, well under the lowest platform.
         let death = SKNode()
         death.position = CGPoint(x: composedCourseExtent / 2, y: g - 210)
         death.physicsBody = SKPhysicsBody(rectangleOf: CGSize(width: composedCourseExtent + 400, height: 100))
@@ -241,48 +290,6 @@ final class AppSwitcherScene: BaseLevelScene, SKPhysicsContactDelegate {
         platform.physicsBody?.categoryBitMask = PhysicsCategory.ground
 
         addChild(platform)
-    }
-
-    // Native-iPad hazards. Same desynced oscillation + trajectory mechanism as the
-    // phone path (createSpike / startDesyncedOscillation / hazardDirections feed
-    // showTrajectoryLines), just MORE of them composed over the paced beats at
-    // ABSOLUTE positions. Each spike hovers above the platform tops the same way
-    // the phone spikes do, so the peek-freeze read is unchanged in feel. The
-    // finale beat (beat 6) gets a 3-spike crossfire — the staged signature twist.
-    private func createIPadHazards() {
-        let g = ipadGroundY
-        let m: CGFloat = 110
-
-        // (leftX anchor, sweep range, base speed, hover Y). Ranges/speeds mirror
-        // the phone hazards (40–55 pt, 0.6–0.8s) so individual spikes stay just as
-        // fast/un-eye-timeable; positions are absolute, never size.width-relative.
-        let hazardData: [(pos: CGPoint, range: CGFloat, speed: TimeInterval)] = [
-            // Beat 1 (teach) — slow, telegraphed, wide forgiving platform below.
-            (CGPoint(x: m - 20, y: g + 95), 60, 1.0),
-            // Beat 2 (stepped cluster) — one fast spike over the peak tier.
-            (CGPoint(x: m + 205, y: g + 120), 50, 0.6),
-            // Beat 4 (tension-peak cluster) — two crossing spikes, desynced.
-            (CGPoint(x: m + 580, y: g + 100), 50, 0.65),
-            (CGPoint(x: m + 690, y: g + 75), 45, 0.7),
-            // Beat 6 (FINALE crossfire) — three spikes over the isolated landing,
-            // staggered in Y so their trajectory lines stack into a dense band that
-            // is only readable frozen. This is the signature staged moment.
-            (CGPoint(x: m + 905, y: g + 70), 55, 0.6),
-            (CGPoint(x: m + 905, y: g + 100), 50, 0.7),
-            (CGPoint(x: m + 905, y: g + 130), 55, 0.65)
-        ]
-
-        for (index, data) in hazardData.enumerated() {
-            let hazard = createSpike()
-            let phase = CGFloat.random(in: 0...1)
-            hazard.position = CGPoint(x: data.pos.x + data.range * phase, y: data.pos.y)
-            hazard.name = "hazard_\(index)"
-            addChild(hazard)
-            movingHazards.append(hazard)
-            hazardDirections.append(CGVector(dx: data.range, dy: 0))
-            startDesyncedOscillation(hazard, leftX: data.pos.x, range: data.range,
-                                     baseSpeed: data.speed, goingRight: phase < 1)
-        }
     }
 
     private func createHazards() {
@@ -322,6 +329,64 @@ final class AppSwitcherScene: BaseLevelScene, SKPhysicsContactDelegate {
             // travel range stays fixed.
             startDesyncedOscillation(hazard, leftX: data.pos.x, range: data.range,
                                      baseSpeed: data.speed, goingRight: phase < 1)
+        }
+    }
+
+    // Native-iPad hazards. Same desynced oscillation + trajectory mechanism as the
+    // phone path (createSpike / startDesyncedOscillation / hazardDirections feed
+    // showTrajectoryLines), just composed over the paced CLIMB beats at ABSOLUTE
+    // positions. Each spike hovers above its beat's platform top the same way the
+    // phone spikes do, so the peek-freeze read is unchanged in feel. Difficulty
+    // escalates UP the climb; the FINALE beat (top tier) gets a 3-spike crossfire —
+    // the staged signature twist. The wide REST beat is intentionally spike-free.
+    private func createIPadHazards() {
+        struct SpikeCfg { let range: CGFloat; let speed: TimeInterval; let hover: CGFloat }
+
+        var index = 0
+        // Stage one spike per climb beat, escalating from a slow telegraphed teach
+        // spike to faster ones higher up, and a dense crossfire on the finale. Skip
+        // the wide REST so it stays a genuine safe breath. Ranges/speeds mirror the
+        // phone hazards (45–60pt, 0.55–1.0s) so each spike is just as un-eye-timeable.
+        let total = ipadBeats.count
+        for (beatIndex, center) in ipadBeats.enumerated() {
+            if beatIndex == ipadRestBeatIndex { continue }     // safe breath: no spike
+
+            let spikes: [SpikeCfg]
+            if beatIndex == ipadFinaleBeatIndex {
+                // FINALE — three staggered spikes whose trajectory lines stack into a
+                // dense band that is only readable frozen. Signature staged moment.
+                spikes = [
+                    SpikeCfg(range: 55, speed: 0.6,  hover: 80),
+                    SpikeCfg(range: 50, speed: 0.7,  hover: 110),
+                    SpikeCfg(range: 55, speed: 0.65, hover: 140)
+                ]
+            } else if beatIndex == 0 {
+                // TEACH — one slow, telegraphed spike over the wide forgiving start.
+                spikes = [SpikeCfg(range: 60, speed: 1.0, hover: 95)]
+            } else {
+                // CLIMB rungs — speed ramps up the higher (later) the beat, so the
+                // peek-freeze read gets progressively more valuable on the ascent.
+                let t = total > 1 ? CGFloat(beatIndex) / CGFloat(total - 1) : 0
+                let speed = TimeInterval(0.80 - 0.20 * Double(t))   // 0.80 -> 0.60s
+                spikes = [SpikeCfg(range: 50, speed: speed, hover: 95)]
+            }
+
+            for cfg in spikes {
+                // Center the [leftX, leftX+range] sweep over the beat so the platform
+                // always sits under the spike's travel.
+                let leftX = center.x - cfg.range / 2
+                let hoverY = center.y + cfg.hover
+                let hazard = createSpike()
+                let phase = CGFloat.random(in: 0...1)
+                hazard.position = CGPoint(x: leftX + cfg.range * phase, y: hoverY)
+                hazard.name = "hazard_\(index)"
+                addChild(hazard)
+                movingHazards.append(hazard)
+                hazardDirections.append(CGVector(dx: cfg.range, dy: 0))
+                startDesyncedOscillation(hazard, leftX: leftX, range: cfg.range,
+                                         baseSpeed: cfg.speed, goingRight: phase < 1)
+                index += 1
+            }
         }
     }
 
@@ -433,7 +498,7 @@ final class AppSwitcherScene: BaseLevelScene, SKPhysicsContactDelegate {
         // platforms top out ~y=295; the box bottom sits ~y=575 on iPhone 390).
         panel.zPosition = 300
         // Native-iPad: ride the camera (camera-relative center-top) so the panel
-        // stays put while the composed course scrolls. Phone: scene-fixed at the
+        // stays put while the composed climb scrolls. Phone: scene-fixed at the
         // exact original position (byte-identical).
         if isWideCanvas, let cam = gameCamera {
             panel.position = CGPoint(x: 0, y: size.height / 2 - effectiveTopInsetForHUD - 165)
@@ -483,14 +548,14 @@ final class AppSwitcherScene: BaseLevelScene, SKPhysicsContactDelegate {
 
     private func setupBit() {
         if isWideCanvas {
-            // Native-iPad: spawn over the composed start platform (beat 1). Same
-            // +40 height above the ground baseline as the phone (y=200 over
+            // Native-iPad: spawn over the composed start platform (beat 0, tier 0).
+            // Same +40 height above the ground baseline as the phone (y=200 over
             // groundY=160) so the drop-onto-platform feel is identical.
             spawnPoint = CGPoint(x: ipadSpawnX, y: ipadGroundY + 40)
         } else {
-            // Phone: spawn (and respawn target — handleDeath respawns at
-            // spawnPoint) lifted with the band so Bit starts the SAME height above
-            // the ground on iPad-ish (non-native) canvases.
+            // Phone: spawn (and respawn target — handleDeath respawns at spawnPoint)
+            // lifted with the band so Bit starts the SAME height above the ground on
+            // iPad-ish (non-native) canvases.
             spawnPoint = CGPoint(x: courseX(45), y: 200 + gameplayLift)
         }
         bit = BitCharacter.make()
