@@ -62,16 +62,47 @@ class BaseLevelScene: SKScene {
     static let maxJumpableGap: CGFloat = 130        // safe edge-to-edge horizontal
     static let absoluteMaxGap: CGFloat = 145
 
-    /// Ground baseline that fills tall canvases instead of pinning gameplay to the
-    /// very bottom. On iPhone-class canvases returns the level's existing low ground
-    /// (so phone layout is unchanged); on iPad it lifts the floor toward lower-third
-    /// so a redesigned course + its added upper tiers fill the screen. Levels pass
-    /// the iPhone ground value they currently hard-code (e.g. 160) and use the
-    /// returned value as their ground origin; all gameplay Y stays ground-relative.
+    /// Ground baseline. On iPhone returns the level's existing low ground (phone
+    /// layout unchanged). On iPad it sits the floor near the BOTTOM of the usable
+    /// area (just above the home indicator) so the level can build UPWARD through
+    /// the full height via tiers (see verticalTier/playableCeilingY) — rather than
+    /// floating a thin band in the lower third. The old version lifted the floor to
+    /// ~22%, which (with no upper tiers) produced the "gameplay in a low strip, top
+    /// half empty" result; native fill comes from USING the height above this floor.
     func playableGroundY(iphoneGround: CGFloat) -> CGFloat {
         guard size.height > 1000 else { return iphoneGround }   // iPhone-class: unchanged
-        // Lift the floor to ~22% up the screen so the band + an upper tier fill iPad.
-        return max(iphoneGround, bottomSafeY + size.height * 0.22)
+        return bottomSafeY + 90
+    }
+
+    /// Top of the usable gameplay band on iPad (just below the title/HUD). Levels
+    /// compose their highest tier/finale up to here so nothing floats in dead sky.
+    /// On iPhone returns a sensible value above the typical low course; callers
+    /// generally only use this on the iPad path.
+    func playableCeilingY(iphoneCeiling: CGFloat = 0) -> CGFloat {
+        guard size.height > 1000 else { return iphoneCeiling > 0 ? iphoneCeiling : size.height * 0.7 }
+        return topSafeY - 150          // clear of the level title + instruction band
+    }
+
+    /// Full usable vertical band on iPad (groundY..ceilingY). Drives how many tiers
+    /// fit at a safe rise.
+    func playableBandHeight(iphoneGround: CGFloat) -> CGFloat {
+        max(0, playableCeilingY() - playableGroundY(iphoneGround: iphoneGround))
+    }
+
+    /// Y for tier `index` of `count` evenly-spaced platform tiers spanning the full
+    /// usable band on iPad, so a multi-tier route fills top-to-bottom. Tier 0 == the
+    /// floor; tier (count-1) == near the ceiling. The per-tier rise is clamped to
+    /// the safe jump rise, and on iPhone this collapses to the level's own ground
+    /// (callers gate the multi-tier layout behind their isWideCanvas check anyway).
+    /// `count` should be chosen so bandHeight/(count-1) <= maxJumpableRise (~85);
+    /// the helper clamps it defensively.
+    func verticalTier(_ index: Int, of count: Int, iphoneGround: CGFloat) -> CGFloat {
+        let ground = playableGroundY(iphoneGround: iphoneGround)
+        guard size.height > 1000, count > 1 else { return ground }
+        let band = playableBandHeight(iphoneGround: iphoneGround)
+        let rawStep = band / CGFloat(count - 1)
+        let step = min(rawStep, Self.maxJumpableRise)   // never exceed a safe jump
+        return ground + CGFloat(index) * step
     }
 
     /// Logical width available to lay out a single-screen (non-scrolling) course.
