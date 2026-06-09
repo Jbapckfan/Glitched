@@ -105,6 +105,19 @@ class BaseLevelScene: SKScene {
         return ground + CGFloat(index) * step
     }
 
+    /// The tier count a level should pass to `verticalTier` so a full climb actually
+    /// reaches `playableCeilingY` at the safe per-tier rise. Passing too FEW tiers is
+    /// the common mistake: bandHeight/(count-1) gets clamped to maxJumpableRise, so a
+    /// low count strands the top of the band as dead sky. Use this (optionally clamped
+    /// to a level-specific max) as the route's tier budget. iPhone returns the floor
+    /// count (2) since the multi-tier layout is gated behind isWideCanvas anyway.
+    func fillTierCount(iphoneGround: CGFloat, max upper: Int = 16) -> Int {
+        guard size.height > 1000 else { return 2 }
+        let band = playableBandHeight(iphoneGround: iphoneGround)
+        let needed = Int((band / Self.maxJumpableRise).rounded(.up)) + 1
+        return min(max(2, needed), upper)
+    }
+
     /// Logical width available to lay out a single-screen (non-scrolling) course.
     /// On iPad this is the real screen width, so courses author to the edges instead
     /// of clamping to a centered ~430pt iPhone strip. Levels wider than this should
