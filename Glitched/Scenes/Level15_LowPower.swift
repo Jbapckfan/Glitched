@@ -260,14 +260,18 @@ final class LowPowerScene: BaseLevelScene, SKPhysicsContactDelegate {
     // MARK: - iPad layout (hand-composed FULL-HEIGHT climb — Phase-0 vertical-fill API)
 
     private func buildComposedIPadLevel() {
-        // FULL-HEIGHT climb. The old iPad fix only lifted a flat band into the lower
-        // third (top half empty). This route now SPANS THE WHOLE BAND: spawn sits on
-        // the floor near the bottom (playableGroundY = bottomSafeY+90) and the player
-        // ascends a diagonal staircase of evenly-spaced verticalTier tiers — each rise
-        // auto-clamped to the safe 85pt jump — sweeping LEFT->RIGHT across the full
-        // width (camera-follows) up to a high low-gravity FLOAT FINALE just under the
-        // ceiling (playableCeilingY). The signature LOW-POWER FLOAT is staged as the
-        // high finale beat: a float-only shelf reachable ONLY by the lunar-gravity arc.
+        // FULL-HEIGHT, HAND-COMPOSED climb. The old iPad path crammed a 390-pt strip
+        // into the centre with a uniform diagonal staircase (operator-rejected even
+        // "ladder") and left the upper band as dead sky. This route now (a) SIZES the
+        // tier budget with fillTierCount(iphoneGround:) so the climb genuinely reaches
+        // the band ceiling at the safe 85-pt step, (b) replaces the even ladder with a
+        // hand-shaped BEAT PLAN — teach -> tight cluster -> flat REST -> a DOWN-STEP ->
+        // harder traverse -> an isolated PEAK -> a dip to the finale-feed tier — using
+        // VARIED widths, ASYMMETRIC X spacing and cluster/gap grouping, and (c) sweeps
+        // LEFT->RIGHT across a world ~2.2-3x the viewport so the camera actually scrolls
+        // instead of collapsing the course onto one screen. It caps at a high low-power
+        // FLOAT FINALE just under the ceiling (playableCeilingY): a float-only shelf
+        // reachable ONLY by the lunar-gravity arc.
         //
         // The two MECHANIC beats are translated RIGIDLY from the phone version so the
         // apex math is byte-for-byte the same in RELATIVE terms:
@@ -299,55 +303,107 @@ final class LowPowerScene: BaseLevelScene, SKPhysicsContactDelegate {
         let shelfHeight: CGFloat = 12
         let shelfTopY = ceilingY - 60                      // highest surface, under ceiling
         let launchTopY = shelfTopY - 220                   // catch-ledge top (apex anchor)
-        let highLedgeTopY = launchTopY + 80                // trap high ledge top
+        let highLedgeTopY = launchTopY + 80                // trap high ledge top = ceiling-200
 
-        // === TRAVERSAL STAIRCASE (verticalTier tiers, full-height, swept across width) ===
-        // Pick the tier count so the TOP tier lands within one safe jump (<=85) BELOW
-        // the trap high ledge: nTiers = floor((highLedgeTop - groundY) / maxRise) + 1.
-        // verticalTier(i, of: nTiers) then returns evenly-spaced tops whose per-tier
-        // rise is auto-clamped to maxJumpableRise (~85), so every climb hop is safe by
-        // construction and the tiers fill the band from floor to just under the finale.
-        let maxRise = BaseLevelScene.maxJumpableRise
-        let nTiers = max(4, Int(((highLedgeTopY - groundY) / maxRise).rounded(.down)) + 1)
-
-        // Horizontal march: accumulate centers so every consecutive edge-to-edge gap is
-        // a chosen value <= maxJumpableGap (130). Widths VARY for rhythm; index 4 is the
-        // deliberately-WIDE REST platform and a later index is a second, higher rest.
-        // The course extends rightward (camera-follows) — tiers spread across the FULL
-        // width as they climb instead of stacking a ladder in the centre.
-        let tierWidths: [CGFloat] = [120, 86, 100, 80, 160, 84, 104, 140, 88, 100, 88, 96, 92]
-        let tierGaps:   [CGFloat] = [60, 110, 55, 95, 50, 100, 60, 90, 55, 100, 60, 90]
-        func tierWidth(_ i: Int) -> CGFloat { tierWidths[min(i, tierWidths.count - 1)] }
-        func tierGap(_ i: Int) -> CGFloat { tierGaps[min(i, tierGaps.count - 1)] }
-
-        var tierCenterX: [CGFloat] = [90]
-        for i in 1..<nTiers {
-            let dx = tierGap(i - 1) + tierWidth(i - 1) / 2 + tierWidth(i) / 2
-            tierCenterX.append(tierCenterX[i - 1] + dx)
+        // === TIER BUDGET (fillTierCount — sizes the climb so it REACHES the ceiling) ===
+        // Passing too FEW tiers was the dead-sky bug (band/(count-1) clamps to maxRise
+        // and the top of the band is stranded). fillTierCount returns the band-derived
+        // count that fills floor->ceiling at the safe per-tier step; we min() it with a
+        // level cap (12) so very tall canvases don't over-subdivide. verticalTier then
+        // returns each tier's Y with the per-tier rise auto-clamped to maxJumpableRise.
+        let nTiers = min(fillTierCount(iphoneGround: 160), 12)
+        func tierTop(_ index: Int) -> CGFloat {
+            verticalTier(min(max(index, 0), nTiers - 1), of: nTiers, iphoneGround: 160)
         }
 
-        // BEAT 1 — SPAWN floor (tier 0, low, near the bottom).
-        // BEATS 2..N-2 — ascending staircase, including the WIDE REST (idx 4) and a
-        //                second higher rest (idx 7) for breath beats.
-        // BEAT N-1 — the top tier that feeds the trap high ledge.
-        composedSpawn = CGPoint(x: tierCenterX[0], y: groundY)
-        for i in 0..<nTiers {
-            let topY = verticalTier(i, of: nTiers, iphoneGround: 160)
-            let h: CGFloat = (i == 4 || i == 7) ? 30 : 22   // rest beats read as thicker
-            createPlatform(at: CGPoint(x: tierCenterX[i], y: topY - h / 2),
-                           size: CGSize(width: tierWidth(i), height: h))
+        // feedTier = highest tier whose top is <= highLedgeTopY: the climb tops out one
+        // safe jump UNDER the finale trap, so there is no dead sky between the staircase
+        // and the finale and the trap stays reachable on every canvas.
+        var feedTier = 0
+        for t in 0..<nTiers where tierTop(t) <= highLedgeTopY { feedTier = t }
+
+        // === HAND-COMPOSED BEAT PLAN (anchored to the floor — NO even ladder) ===
+        // Beat 0 is ALWAYS the spawn floor (tier 0): the climb starts at the bottom so
+        // the band has no dead space below it either. Each subsequent beat moves the tier
+        // index by only -1 / 0 / +1, so every vertical hop is AT MOST one tier step
+        // (<= maxJumpableRise = 85) — safe by construction. The SHAPE of the index
+        // sequence is what breaks the ladder; the plan adapts its length to feedTier:
+        //   teach climb (0->1->2->3) -> FLAT REST (3, a wide platform, no rise) ->
+        //   DOWN-STEP (3->2) -> recover (2->3) -> [padded +1 climbs to feedTier-1] ->
+        //   step to feedTier -> isolated PEAK (feedTier+1, a NARROW platform standing
+        //   apart) -> dip back DOWN to feedTier (the finale-feed). When the band is too
+        //   short for a peak above feedTier, the tail instead does a micro dip+return so
+        //   the ending still isn't a straight monotonic ladder.
+        // Widths VARY (78-168) and gaps are ASYMMETRIC (46-100) so the route reads as
+        // grouped clusters + breaths, never a strict L/R alternating march.
+        var beatTiers:  [Int]     = [0, 1, 2, 3, 3, 2, 3]            // teach / rest / down-step / recover
+        var beatWidths: [CGFloat] = [150, 80, 96, 84, 168, 78, 104]  // [4]=wide REST
+        var beatGaps:   [CGFloat] = [0, 64, 54, 46, 100, 92, 60]     // gapBefore (cluster gaps tighten)
+
+        // Pad +1 climb beats from the recover tier (3) up to feedTier-1 (med width).
+        while beatTiers[beatTiers.count - 1] < feedTier - 1 {
+            beatTiers.append(beatTiers[beatTiers.count - 1] + 1)
+            beatWidths.append(96)
+            beatGaps.append(70)
+        }
+        if feedTier + 1 <= nTiers - 1 && beatTiers[beatTiers.count - 1] == feedTier - 1 {
+            // Room for a true PEAK above the feed tier: step up, spike, then dip down.
+            beatTiers.append(feedTier);     beatWidths.append(104); beatGaps.append(86)
+            beatTiers.append(feedTier + 1); beatWidths.append(84);  beatGaps.append(70) // PEAK (narrow)
+            beatTiers.append(feedTier);     beatWidths.append(120); beatGaps.append(64) // dip to feed
+        } else {
+            // Short band: land on feedTier, then a micro dip+return so the tail isn't a
+            // straight ladder into the finale.
+            if beatTiers[beatTiers.count - 1] != feedTier {
+                beatTiers.append(feedTier); beatWidths.append(104); beatGaps.append(86)
+            }
+            if feedTier >= 1 {
+                beatTiers.append(feedTier - 1); beatWidths.append(84);  beatGaps.append(70)
+                beatTiers.append(feedTier);     beatWidths.append(120); beatGaps.append(64)
+            }
+        }
+
+        // Defensive: clamp tier indices to the band and never let a pair exceed a single
+        // safe tier step; pin the final beat to feedTier exactly.
+        for i in 0..<beatTiers.count { beatTiers[i] = min(max(beatTiers[i], 0), nTiers - 1) }
+        for i in 1..<beatTiers.count {
+            if beatTiers[i] - beatTiers[i - 1] > 1 { beatTiers[i] = beatTiers[i - 1] + 1 }
+            if beatTiers[i] - beatTiers[i - 1] < -1 { beatTiers[i] = beatTiers[i - 1] - 1 }
+        }
+        beatTiers[beatTiers.count - 1] = feedTier
+
+        func beatWidth(_ i: Int) -> CGFloat { beatWidths[min(i, beatWidths.count - 1)] }
+        func beatGap(_ i: Int) -> CGFloat { beatGaps[min(i, beatGaps.count - 1)] }
+
+        // Accumulate centers left->right; gapBefore is edge-to-edge (<= maxJumpableGap).
+        var beatCenterX: [CGFloat] = [90]
+        for i in 1..<beatTiers.count {
+            let dx = beatWidth(i - 1) / 2 + beatGap(i) + beatWidth(i) / 2
+            beatCenterX.append(beatCenterX[i - 1] + dx)
+        }
+
+        // BEAT 0 — SPAWN floor; subsequent beats trace the hand-composed rhythm above.
+        // A wider/thicker platform marks the flat REST beat (delta 0); the PEAK beat
+        // (the local maximum tier) is left narrow so it reads as standing apart.
+        composedSpawn = CGPoint(x: beatCenterX[0], y: tierTop(beatTiers[0]))
+        for i in 0..<beatTiers.count {
+            let topY = tierTop(beatTiers[i])
+            let isFlatRest = (i > 0 && beatTiers[i] == beatTiers[i - 1])
+            let h: CGFloat = isFlatRest ? 30 : 22       // the rest beat reads thicker
+            createPlatform(at: CGPoint(x: beatCenterX[i], y: topY - h / 2),
+                           size: CGSize(width: beatWidth(i), height: h))
         }
 
         // === BEAT (tension peak): NARROW-DROP TRAP (NEEDS NORMAL GRAVITY) ===
-        // High ledge the player jumps UP onto from the top tier (rise <=85, gap <=130),
+        // High ledge the player jumps UP onto from the feed tier (rise <=85, gap <=130),
         // then threads a body-width drop down to the catch ledge. Low gravity floats
         // the player into the mini ledges, so this gate REQUIRES normal gravity. The
         // geometry is translated rigidly from the phone version (high ledge / mini
         // ledges / catch with the effective-width gap formula).
-        let lastTierRightEdge = tierCenterX[nTiers - 1] + tierWidth(nTiers - 1) / 2
+        let lastBeatRightEdge = beatCenterX[beatTiers.count - 1] + beatWidth(beatTiers.count - 1) / 2
         let trapWidth: CGFloat = 50
-        let trapGap: CGFloat = 70                           // edge-to-edge from top tier
-        let trapHighX = lastTierRightEdge + trapGap + trapWidth / 2
+        let trapGap: CGFloat = 70                           // edge-to-edge from feed tier
+        let trapHighX = lastBeatRightEdge + trapGap + trapWidth / 2
         createPlatform(at: CGPoint(x: trapHighX, y: highLedgeTopY - 20 / 2),
                        size: CGSize(width: trapWidth, height: 20))   // top = highLedgeTopY
 

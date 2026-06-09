@@ -539,172 +539,232 @@ final class VolumeScene: BaseLevelScene, SKPhysicsContactDelegate {
     // consecutive platform is one tier apart (rise <= 85) and laterally <= 130.
 
     /// Authored climb beat: tier index (0 = floor … topTierIndex = near ceiling),
-    /// lateral X as a 0…1 fraction of the usable width, platform width, and role.
+    /// ABSOLUTE lateral X (scene coords across the wide SCROLLING world), platform
+    /// width, and role.
     private struct ClimbBeat {
         let tier: Int
-        let xFrac: CGFloat   // 0 = left margin, 1 = right margin
+        let x: CGFloat       // absolute scene X (the course is wider than the viewport)
         let width: CGFloat
-        let role: String     // "spawn" | "step" | "rest" | "wolf"
+        let role: String     // "spawn" | "step" | "rest" | "peak" | "wolf"
     }
 
-    /// How many tiers the climb spans. Chosen so the per-tier CENTER rise stays
-    /// <= ~70pt even on the tallest iPad. The spawn floor's TOP sits at its tier
-    /// center while every other tier's TOP sits +11pt above its center (half the
-    /// 22pt platform), so the worst-case TOP-to-TOP rise (spawn floor -> tier 1) is
-    /// step+11 <= 81 — still inside maxJumpableRise=85. Every mid-climb step is
-    /// top-to-top == step <= 70. So tier (count-1) genuinely reaches near
-    /// playableCeilingY: a real full-height climb with provably safe jumps.
+    /// Half the (scaled) height of a normal 22pt platform body. A platform's walkable
+    /// TOP sits this far above its tier-center Y, while the spawn floor's TOP sits AT
+    /// its tier-center Y. So the worst-case TOP-to-TOP rise (spawn floor -> tier 1) is
+    /// (one tier center step) + this offset; it must stay <= maxJumpableRise.
+    private var platformTopOffset: CGFloat { 22 * visualScale / 2 }
+
+    /// How many TIERS the climb's verticalTier grid spans. Sized with the base helper
+    /// `fillTierCount` so the TOP tier genuinely reaches `playableCeilingY` at a safe
+    /// per-tier rise — passing too FEW tiers is exactly the dead-sky bug (verticalTier
+    /// clamps the step to maxJumpableRise and the top of the band is stranded). We then
+    /// ADD tiers until the per-tier CENTER step plus a platform's half-height
+    /// (platformTopOffset) is <= maxJumpableRise, so even the spawn-floor->tier-1 hop
+    /// (the worst case, floor top at tier-center + next top one step + half-platform
+    /// above) is provably inside Bit's reach. Adding tiers never strands sky: the top
+    /// index always lands at ground+band == ceiling (verticalTier spaces the SAME band
+    /// evenly), it only shortens each step. Capped so the grid never gets absurd.
     private var ipadTierCount: Int {
         let band = playableBandHeight(iphoneGround: iphoneGroundBaseline)
-        // ceil(band / 70) + 1 tiers => consecutive center rise = band/(count-1) <= 70.
-        return max(6, Int((band / 70).rounded(.up)) + 1)
+        let cap = 20
+        var count = max(6, fillTierCount(iphoneGround: iphoneGroundBaseline, max: 16))
+        // Grow until the spawn-floor -> tier-1 top-to-top rise is safe.
+        let safeStep = BaseLevelScene.maxJumpableRise - platformTopOffset
+        while count < cap && band / CGFloat(count - 1) > safeStep {
+            count += 1
+        }
+        return min(count, cap)
     }
 
-    /// Lateral margin from the screen edges that the climb keeps its centers within.
-    private var climbMargin: CGFloat { 120 * visualScale }
+    /// Lateral margin from the WORLD edges that the climb keeps its centers within.
+    private var climbMargin: CGFloat { 110 * visualScale }
 
-    /// Left / right bounds for tier centers (keeps platforms fully on-screen).
+    /// Left / right bounds for platform centers (keeps platforms fully inside the
+    /// scrolling world, NOT just the viewport — the course is wider than the screen).
     private var climbLeftX: CGFloat { climbMargin }
     private var climbRightX: CGFloat { max(climbMargin + 1, composedWorldWidth - climbMargin) }
 
-    /// Safe per-tier lateral budget — a hair under maxJumpableGap so paired with a
+    /// Safe per-beat lateral budget — a hair under maxJumpableGap so paired with a
     /// one-tier rise the diagonal hop is always inside Bit's reach.
     private var lateralStepBudget: CGFloat { min(BaseLevelScene.maxJumpableGap, 120) }
 
-    /// X (scene coords) where the wolf-den finale must finish — the LEFT region,
-    /// clear of the top-right volume HUD column (the den is 168pt wide and sits at
-    /// HUD height, so it would otherwise collide on narrow iPads).
-    private var wolfFinaleTargetX: CGFloat { climbLeftX + 40 * visualScale }
+    /// The hand-composed iPad course (cached). A single source of truth so the
+    /// build, the wolf/exit/flood anchors and the background decor all read the same
+    /// beats. Computed once in computeComposedAnchors. NOT an even ladder: it has a
+    /// teach beat, a low cluster + gap, a WIDE REST, a harder traverse with a
+    /// deliberate DOWN-STEP, a true PEAK that stands apart, then the WOLF DEN finale.
+    private var composedBeats: [ClimbBeat] = []
 
-    /// Absolute X center for each tier of the climb, precomputed by walking left<->
-    /// right across the FULL width by at most `lateralStepBudget` per tier and
-    /// reflecting at the edges, so the route uses the whole horizontal span (a long
-    /// zig-zag, never a centered ladder) while every consecutive |Δcenter| stays
-    /// within the safe gap. tier 0 starts at the LEFT (spawn floor reads bottom-left).
-    /// The final approach is steered LEFT toward wolfFinaleTargetX so the TOP tier
-    /// (the wolf-den finale, at HUD height) lands on the left, clear of the HUD —
-    /// each approach step is still <= the budget, so reachability is preserved.
-    private func composedTierCentersX(top: Int) -> [CGFloat] {
-        guard top >= 0 else { return [] }
-        let budget = lateralStepBudget
-        // How many trailing tiers we need to march left to reach the target from the
-        // far right within budget — so the finale always arrives on the left.
-        let approachTiers = max(2, Int(((climbRightX - wolfFinaleTargetX) / budget).rounded(.up)))
-        let steerFrom = max(1, top - approachTiers)
-
-        var xs: [CGFloat] = []
-        var x = climbLeftX
-        var dir: CGFloat = 1   // start moving right
-        for tier in 0...top {
-            if tier >= steerFrom { dir = -1 }   // steer the finale leftward
-            xs.append(x)
-            var next = x + dir * budget
-            // Snap the last tier exactly onto the (reachable) left target.
-            if tier == top - 1 {
-                next = max(wolfFinaleTargetX, x - budget)
-            }
-            if next > climbRightX { next = climbRightX; dir = -1 }
-            else if next < climbLeftX { next = climbLeftX; dir = 1 }
-            if x >= climbRightX { dir = -1 } else if x <= climbLeftX { dir = 1 }
-            x = next
-        }
-        return xs
+    /// Platform width vocabulary (pre-scale). Hand-varied 70…180 so the route reads
+    /// as composed rhythm, never a uniform ladder of identical treads.
+    private enum BeatW {
+        static let floor: CGFloat   = 180   // generous teach pedestal
+        static let rest: CGFloat    = 170   // WIDE REST breath beat
+        static let den: CGFloat     = 168   // wolf-den finale platform
+        static let wideStep: CGFloat = 120
+        static let step: CGFloat    = 96
+        static let narrow: CGFloat  = 74
+        static let peak: CGFloat    = 70    // the lone PEAK — small + isolated
     }
 
-    /// The full authored climb, generated from ipadTierCount so it always reaches
-    /// the ceiling: a spawn floor (left), a stepped zig-zag sweep up the FULL width,
-    /// a WIDE REST mid-climb, and the WOLF DEN finale on the top tier. Every
-    /// consecutive rise is one tier (<= maxJumpableRise) and every lateral step
-    /// <= lateralStepBudget (<= maxJumpableGap).
-    private func composedClimbBeats() -> [ClimbBeat] {
-        let n = ipadTierCount
-        let top = n - 1
-        let centersX = composedTierCentersX(top: top)
-        let usableW = max(1, climbRightX - climbLeftX)
-        var beats: [ClimbBeat] = []
-        let stepW: CGFloat = 96 * visualScale
-        let restW: CGFloat = 168 * visualScale   // the wide REST / spawn / den pedestals
-        let restTier = max(2, top / 2)           // a wide breath roughly mid-climb
-
-        for tier in 0...top {
-            let role: String
-            let width: CGFloat
-            if tier == 0 {
-                role = "spawn"; width = restW            // generous starting floor
-            } else if tier == restTier {
-                role = "rest";  width = restW            // WIDE REST breath beat
-            } else if tier == top {
-                role = "wolf";  width = restW            // WOLF DEN finale platform
-            } else {
-                role = "step";  width = stepW
-            }
-            let xFrac = (centersX[tier] - climbLeftX) / usableW
-            beats.append(ClimbBeat(tier: tier, xFrac: xFrac, width: width, role: role))
-        }
-        return beats
-    }
-
-    /// X (scene coords) for a 0…1 lateral fraction across the usable width.
-    private func climbX(_ xFrac: CGFloat) -> CGFloat {
-        let usableW = max(1, climbRightX - climbLeftX)
-        return climbLeftX + xFrac * usableW
-    }
-
-    /// Single source of truth for the composed iPad course anchors (spawn floor,
-    /// wolf-den finale tier, exit, total world width). Called before any decor/build
-    /// so the background den/flood decor can key off the same numbers. No-op on
-    /// iPhone. The course fills the FULL viewport width; composedTierCentersX walks
-    /// the climb edge-to-edge with every per-tier lateral step <= the safe gap.
-    private func computeComposedAnchors() {
-        guard isWideCanvas else { return }
-        // Use the FULL screen width so tiers spread edge-to-edge (no centered ladder).
-        composedWorldWidth = size.width
-        let top = ipadTierCount - 1
-        let centersX = composedTierCentersX(top: top)
-        composedFloorY = playableGroundY(iphoneGround: iphoneGroundBaseline)
-        composedSpawnX = centersX.first ?? climbLeftX                 // tier-0 floor (left)
-        // Wolf-den tier (top). The generator forces the final approach LEFT so the
-        // top tier (which sits at HUD height) finishes on the left half, clear of the
-        // right-side volume HUD column — without a hard clamp that could desync the
-        // platform from the creature or break the (top-1)->top jump budget.
-        composedWolfX = centersX.last ?? climbLeftX
-        composedWolfY = wolfTierY(top: top)
-        // Exit sits ON the same wide (168pt) den platform but offset 56pt to the side
-        // of the wolf toward screen-center, so the door + bobbing arrow stay on-screen
-        // and don't render on top of the creature. Reaching it still means entering
-        // the wolf's detection zone — the finale tension is preserved.
-        let towardCenter: CGFloat = composedWolfX > composedWorldWidth / 2 ? -1 : 1
-        composedExitX = composedWolfX + towardCenter * 56 * visualScale
-    }
-
-    /// Y of the WOLF DEN finale platform. The raw top tier lands at playableCeilingY,
-    /// which already reserves 150pt below the LEVEL title; the den furniture (door +30,
-    /// arrow ~+66 above the platform top) fits inside that margin. A small extra
-    /// headroom guarantees the arrow tip clears the title baseline. Clamping the top
-    /// tier DOWN only SHORTENS the final jump (raw -> raw-24 stays a safe rise above
-    /// tier top-1), so reachability is preserved.
-    private func wolfTierY(top: Int) -> CGFloat {
-        let raw = verticalTier(top, of: ipadTierCount, iphoneGround: iphoneGroundBaseline)
+    /// Y for a tier of the climb grid. The WOLF DEN finale (top tier) is clamped
+    /// down by a small headroom so the door + bobbing arrow clear the title/HUD band;
+    /// clamping DOWN only shortens the final jump, so reachability is preserved.
+    private func beatTierY(_ tier: Int, top: Int) -> CGFloat {
+        let raw = verticalTier(tier, of: ipadTierCount, iphoneGround: iphoneGroundBaseline)
+        guard tier == top else { return raw }
         let finaleHeadroom: CGFloat = 44 * visualScale
         return min(raw, playableCeilingY() - finaleHeadroom)
     }
 
+    /// HAND-COMPOSED route, authored DIRECTLY on the real verticalTier grid so every
+    /// consecutive tier delta is provably safe: +1 (one tier == a safe rise, since the
+    /// per-tier center step is <= ~74 <= maxJumpableRise), 0 (a FLAT same-tier rest),
+    /// or negative (a DOWN-step — always safe). It is NOT an even ladder: it walks the
+    /// grid with deliberate rhythm features injected at proportional positions so the
+    /// shape holds on every iPad height while still reaching the ceiling.
+    ///
+    /// Rhythm (operator brief: teach -> cluster -> rest -> harder traverse -> PEAK ->
+    /// finale):
+    ///   • TEACH      tier 0, far-left WIDE floor — the safe intro
+    ///   • CLUSTER    a couple of close +1 steps then a FLAT same-tier beat (2-3
+    ///                platforms grouped) … then a GAP (wide Δx) before the rest
+    ///   • WIDE REST  a generous pedestal at its tier — the breath beat
+    ///   • TRAVERSE   +1 steps with a deliberate DOWN-step mid-way (then re-climb),
+    ///                narrow treads, asymmetric Δx — the "harder" stretch
+    ///   • PEAK       a small isolated platform reached over a GAP, with another gap
+    ///                after it — it stands apart from the run (a true summit beat)
+    ///   • STEP-DOWN  drop a tier off the peak onto the approach
+    ///   • WOLF DEN   the WIDE finale platform on the TOP tier near the ceiling
+    ///
+    /// X advances left->right by a VARIED, ASYMMETRIC fraction of the safe gap (tight
+    /// clusters ~0.5, open gaps ~1.0) — never a constant Δx, never strict L/R
+    /// alternation — and every consecutive |Δx| <= lateralStepBudget (<= maxGap=130).
+    /// So spawn->exit is reachable: every hop is one safe rise AND one safe gap.
+    private func makeComposedBeats() -> [ClimbBeat] {
+        let top = ipadTierCount - 1
+        let s = visualScale
+        let lo = climbLeftX
+        let budget = lateralStepBudget
+
+        // Each step = (tierDelta, role, width, Δx-fraction-of-budget). The tier column
+        // is a running sum starting at 0; we GUARANTEE the final beat lands on `top`
+        // by padding plain +1 steps before the finale features if the grid is taller,
+        // and by trimming if it is shorter — so the rhythm holds across iPad heights
+        // while the climb always reaches the ceiling.
+        struct Step { let dt: Int; let role: String; let w: CGFloat; let dx: CGFloat }
+
+        // Fixed FINALE rhythm (peak -> down-step -> wolf den). Net tier change across
+        // these three = +1 -1 +1 = +1, with the peak isolated by gaps front and back.
+        let finale: [Step] = [
+            Step(dt: +1, role: "peak", w: BeatW.peak, dx: 1.00),   // GAP up onto the lone PEAK
+            Step(dt: -1, role: "step", w: BeatW.step, dx: 0.95),   // GAP down off the peak
+            Step(dt: +1, role: "wolf", w: BeatW.den,  dx: 0.80),   // up onto the WOLF DEN finale
+        ]
+        // Net tier gain contributed by the finale block (=+1).
+        let finaleNet = finale.reduce(0) { $0 + $1.dt }
+
+        // OPENING rhythm up to (but not including) the finale: teach + cluster + rest
+        // + traverse-with-down-step. Net tier gain here must equal `top - finaleNet`
+        // so the wolf den lands exactly on the top tier. The opening's INTRINSIC net
+        // (excluding the variable "filler" climb) is computed, then we insert plain
+        // +1 filler steps to make up the difference (varied widths, so still not a
+        // ladder).
+        let opening: [Step] = [
+            Step(dt: 0,  role: "spawn", w: BeatW.floor,    dx: 0.00), // teach (tier 0)
+            // cluster: two close steps + a FLAT rest inside the cluster
+            Step(dt: +1, role: "step",  w: BeatW.step,     dx: 0.62),
+            Step(dt: +1, role: "step",  w: BeatW.wideStep, dx: 0.52),
+            Step(dt: 0,  role: "step",  w: BeatW.narrow,   dx: 0.58), // FLAT (same tier)
+            // GAP -> WIDE REST pedestal
+            Step(dt: +1, role: "rest",  w: BeatW.rest,     dx: 0.98),
+            // harder traverse: up, DOWN-step, re-climb
+            Step(dt: +1, role: "step",  w: BeatW.narrow,   dx: 0.90),
+            Step(dt: -1, role: "step",  w: BeatW.wideStep, dx: 0.84), // DOWN-step (breather)
+            Step(dt: +1, role: "step",  w: BeatW.narrow,   dx: 0.88), // re-climb
+        ]
+        let openingNet = opening.reduce(0) { $0 + $1.dt }   // intrinsic net of the opening
+        // Plain +1 "filler" steps to bridge opening -> finale and reach the top.
+        let fillerNeeded = max(0, top - finaleNet - openingNet)
+
+        // Varied widths + Δx for the filler so the long climb still reads as composed
+        // rhythm (alternating narrow/step/wideStep, asymmetric spacing) — NOT a ladder.
+        let fillerW: [CGFloat] = [BeatW.step, BeatW.narrow, BeatW.wideStep, BeatW.step, BeatW.narrow]
+        let fillerDx: [CGFloat] = [0.86, 0.74, 0.92, 0.70, 0.88]
+        var filler: [Step] = []
+        for i in 0..<fillerNeeded {
+            filler.append(Step(dt: +1, role: "step",
+                               w: fillerW[i % fillerW.count],
+                               dx: fillerDx[i % fillerDx.count]))
+        }
+
+        let plan = opening + filler + finale
+
+        // Walk the plan, summing tiers and advancing X by the varied gap fraction.
+        // X is NOT clamped here — the world width is sized to fit the route (see
+        // computeComposedAnchors), which keeps the PEAK genuinely isolated by gaps
+        // instead of collapsing platforms against a too-narrow right edge.
+        var beats: [ClimbBeat] = []
+        var tier = 0
+        var x = lo
+        for (i, step) in plan.enumerated() {
+            tier = max(0, min(top, tier + step.dt))
+            if i > 0 { x += step.dx * budget }
+            beats.append(ClimbBeat(tier: tier, x: x, width: step.w * s, role: step.role))
+        }
+        return beats
+    }
+
+    /// Single source of truth for the composed iPad course anchors (spawn floor,
+    /// wolf-den finale, exit, total world width). Called before any decor/build so
+    /// the background den/flood decor can key off the same numbers. No-op on iPhone.
+    ///
+    /// CAMERA FIX: the world is made genuinely WIDER than the viewport so
+    /// installCameraFollow actually scrolls. (The previous version set
+    /// composedWorldWidth = size.width, which made updateCameraFollow clamp targetX
+    /// to a fixed center — the camera never moved and the whole course crammed into
+    /// one screen.) The width is the GREATER of ~1.7x the viewport (guarantees the
+    /// camera follows) and the hand-composed route's own span + a margin (guarantees
+    /// the PEAK + den keep their isolating gaps instead of piling up at a too-narrow
+    /// right edge). With a wider world the per-frame clamp [half, worldWidth-half]
+    /// spans a real range, so the camera tracks Bit across the course.
+    private func computeComposedAnchors() {
+        guard isWideCanvas else { return }
+        composedFloorY = playableGroundY(iphoneGround: iphoneGroundBaseline)
+
+        // Build the route first (its X is independent of worldWidth), then size the
+        // world to contain it AND to be wide enough that the camera scrolls.
+        composedBeats = makeComposedBeats()
+        let routeEndX = (composedBeats.last?.x ?? climbLeftX)
+        let routeSpanWidth = routeEndX + climbMargin
+        composedWorldWidth = max(size.width * 1.7, routeSpanWidth)
+        let top = ipadTierCount - 1
+
+        let spawn = composedBeats.first { $0.role == "spawn" }
+        let den = composedBeats.first { $0.role == "wolf" }
+        composedSpawnX = spawn?.x ?? climbLeftX                       // tier-0 floor (left)
+        composedWolfX = den?.x ?? climbRightX                         // den near the ceiling
+        composedWolfY = beatTierY(top, top: top)
+        // Exit sits ON the wide den platform but offset 56pt toward screen-center so
+        // the door + bobbing arrow stay on the platform and don't render over the
+        // creature. Reaching it still means entering the wolf's detection zone — the
+        // finale tension is preserved.
+        let towardCenter: CGFloat = composedWolfX > composedWorldWidth / 2 ? -1 : 1
+        composedExitX = composedWolfX + towardCenter * 56 * visualScale
+    }
+
     private func buildComposedIPadLevel() {
         let n = ipadTierCount
-        let beats = composedClimbBeats()
+        let top = n - 1
+        let beats = composedBeats.isEmpty ? makeComposedBeats() : composedBeats
 
-        // Lay each tier platform at its verticalTier Y and lateral X. Tier 0 is the
-        // spawn floor near the BOTTOM; tier (n-1) is the wolf den near the ceiling.
+        // Lay each beat at its verticalTier Y and authored absolute X. Tier 0 is the
+        // spawn floor near the BOTTOM; the wolf den is the top tier near the ceiling.
         var wolfPlatformTop: CGFloat = composedWolfY
         for beat in beats {
-            // Mid tiers sit at their verticalTier center & swept X; the WOLF DEN
-            // finale uses the headroom-clamped composedWolfY and the HUD-clear
-            // composedWolfX so its platform, creature, decor and exit all agree.
             let isWolf = beat.role == "wolf"
-            let y = isWolf
-                ? composedWolfY
-                : verticalTier(beat.tier, of: n, iphoneGround: iphoneGroundBaseline)
-            let x = isWolf ? composedWolfX : climbX(beat.xFrac)
+            let y = isWolf ? composedWolfY : beatTierY(beat.tier, top: top)
+            let x = isWolf ? composedWolfX : beat.x
             let h: CGFloat = beat.role == "spawn" ? 40 * visualScale : 22 * visualScale
             // Spawn floor: anchor so its TOP sits at the tier Y (so spawn/flood math
             // matching activeGroundY == composedFloorY lines up). Other tiers are
@@ -715,7 +775,7 @@ final class VolumeScene: BaseLevelScene, SKPhysicsContactDelegate {
             let plat = createPlatform(width: beat.width, height: h, position: pos)
             plat.name = beat.role == "spawn" ? "ground" : "tier_\(beat.tier)"
             addChild(plat)
-            if beat.role == "wolf" { wolfPlatformTop = y + h / 2 }
+            if isWolf { wolfPlatformTop = y + h / 2 }
         }
 
         // Exit door — staged on the wolf-den finale platform, near the ceiling.

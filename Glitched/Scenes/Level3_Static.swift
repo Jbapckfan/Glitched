@@ -26,37 +26,30 @@ final class StaticScene: BaseLevelScene, SKPhysicsContactDelegate {
     // decorative TV frame / antennas / panels, which still key off size.width.
     private var courseScale: CGFloat { min(1.0, size.width / designSize.width) }
     private var courseOriginX: CGFloat { (size.width - designSize.width * courseScale) / 2 }
-    /// Map a logical x (0...designSize.width) into centered course space. Used by
-    /// the iPhone layout (buildPhoneLevel). The COMPOSED iPad layout authors its own
-    /// absolute positions via `px()` and does NOT go through courseX.
+    /// Map a logical x (0...designSize.width) into centered course space.
     private func courseX(_ logicalX: CGFloat) -> CGFloat { courseOriginX + logicalX * courseScale }
     /// Scale a logical length (platform width, etc.) into course space.
     private func courseLen(_ logical: CGFloat) -> CGFloat { logical * courseScale }
 
     // MARK: - Native-iPad layout (hand-composed)
     //
-    // iPhone uses the original fixed 430-wide gauntlet (buildPhoneLevel), unchanged.
-    // iPad gets a HAND-COMPOSED level (buildComposedIPadLevel) with paced beats —
-    // teach -> cluster -> rest -> peak -> breath -> inverse-twist -> exit — that
-    // fills the screen with intent rather than tiling the phone level wider. Bit's
-    // physics are device-independent, so all spacing stays within the same fixed
-    // jump reach (platform pitch `unitPitch`, rises < the 85pt safe ceiling). The
-    // composed course is wider than the viewport, so it scrolls via the Phase 0
+    // iPhone uses the original fixed 430-wide gauntlet (buildPhoneLevel), unchanged
+    // and BYTE-IDENTICAL. iPad gets a HAND-COMPOSED level (buildComposedIPadLevel)
+    // that keeps the APPROVED beat order — teach -> clusterA -> rest -> clusterB
+    // (with a true PEAK) -> breath -> INVERSE twist -> exit — but re-maps those
+    // beats onto the shared BaseLevelScene tier API (fillTierCount / verticalTier)
+    // so the climb fills the FULL playable band top-to-bottom instead of stranding
+    // ~60% dead sky above a thin 3-tier strip. Platform widths and the horizontal
+    // pacing (clusters, rests, an asymmetric X march) carry the original "feel."
+    // The course is authored WIDER than the viewport so it scrolls via Phase-0
     // installCameraFollow. Everything is gated on `isWideCanvas`; iPhone is unchanged.
 
-    /// True on iPad-proportioned canvases (matches the base helpers' gate).
+    /// True on iPad-proportioned canvases (matches the base helpers' >1000 gate).
     private var isWideCanvas: Bool { size.height > 1000 && size.width > designSize.width }
 
-    /// Absolute horizontal pitch of one platform/laser unit (68.8pt on iPad). Used
-    /// by both the composed layout's `px()` and the laser midpoints so spacing is
-    /// a single safe constant.
-    private var unitPitch: CGFloat { 0.16 * designSize.width * courseScale }
-
-    /// Legacy accessor retained only so older call sites compile; the composed
-    /// layout uses `composedWorldWidth` set in buildComposedIPadLevel.
-    private var courseWorldWidth: CGFloat {
-        return max(playableCanvasWidth, composedWorldWidth)
-    }
+    /// The iPhone ground value the legacy layout hard-codes (160 logical pt). Passed
+    /// to every BaseLevelScene tier helper so the band math is anchored consistently.
+    private let iphoneGround: CGFloat = 160
 
     // MARK: - Properties
     private var bit: BitCharacter!
@@ -67,19 +60,22 @@ final class StaticScene: BaseLevelScene, SKPhysicsContactDelegate {
     private var laserEmitters: [SKNode] = []
     private var laserBeams: [SKShapeNode] = []
     private var laserHitZones: [SKNode] = []
-    // Index of the inverse laser. On iPhone this is the 4th laser (index 3). On
-    // iPad the lead-in lasers are appended BEFORE the original four (indices
-    // 0..<prependedUnitCount), so the original 4th — the INVERSE one — shifts to
-    // `prependedUnitCount + 3`. createLaserSystem() sets this after the prepend so
-    // the inverse mechanic always targets the same physical laser. Defaults to 3
-    // (iPhone / prepend == 0).
-    private var inverseLaserIndex: Int = 3
+    private var inverseLaserIndex: Int = 3  // Index of the inverse laser (4th laser)
 
     // Composed iPad layout anchors (set in buildComposedIPadLevel; unused on iPhone).
     private var composedSpawnX: CGFloat = 0
-    private var composedExitX: CGFloat = 0
+    private var composedSpawnY: CGFloat = 0
     private var composedExitDoorX: CGFloat = 0
+    private var composedExitDoorY: CGFloat = 0
     private var composedWorldWidth: CGFloat = 0
+    // Per-laser geometry for the composed iPad gauntlet, computed in
+    // buildComposedIPadLevel so each laser sits in the GAP it guards, anchored to
+    // the deck height of its bracketing platforms (not a flat band). The relative
+    // beam geometry (base 20pt below the deck, top 120/160pt above it) preserves
+    // the iPhone laser/deck relationship exactly. Consumed by createLaserSystem on
+    // iPad; empty on iPhone, which keeps its original four flat-band lasers. The
+    // entry flagged `inverse` is the silence=safe finale (same mechanic, new spot).
+    private var composedLaserSpecs: [(x: CGFloat, baseY: CGFloat, topY: CGFloat, inverse: Bool)] = []
 
     // Static/noise state
     private var currentNoiseLevel: Float = 0.0
@@ -357,9 +353,12 @@ final class StaticScene: BaseLevelScene, SKPhysicsContactDelegate {
 
     private func buildPhoneLevel() {
         let groundY: CGFloat = 160 * layoutYScale
+        // Gameplay widths are authored in logical course points (centered course),
+        // so platform spacing/sizes stay consistent instead of stretching on iPad.
         let startWidth = courseLen(96)
         let midWidth = courseLen(72)
         let platformHeight = courseLen(24)
+        // `x` is a logical fraction of the course (0...1), mapped via courseX().
         let platformPoints: [(x: CGFloat, yOffset: CGFloat, width: CGFloat, height: CGFloat)] = [
             (0.13, 0, startWidth, courseLen(30)),
             (0.29, 25, midWidth, platformHeight),
@@ -368,83 +367,288 @@ final class StaticScene: BaseLevelScene, SKPhysicsContactDelegate {
             (0.76, 50, midWidth, platformHeight),
             (0.90, 0, startWidth, courseLen(30))
         ]
-        for p in platformPoints {
-            _ = createPlatform(
-                at: CGPoint(x: courseX(p.x * designSize.width), y: groundY + p.yOffset * layoutYScale + gameplayLift),
-                size: CGSize(width: p.width, height: p.height)
-            )
-        }
+
+        // Starting platform
+        // NOTE: every gameplay Y below adds the SAME `gameplayLift` (iPad-only,
+        // 0 on iPhone) so the whole band shifts uniformly — relative geometry is
+        // byte-identical across devices.
+        _ = createPlatform(
+            at: CGPoint(x: courseX(platformPoints[0].x * designSize.width), y: groundY + platformPoints[0].yOffset * layoutYScale + gameplayLift),
+            size: CGSize(width: platformPoints[0].width, height: platformPoints[0].height)
+        )
+
+        // Middle platforms (across laser gauntlet)
+        _ = createPlatform(
+            at: CGPoint(x: courseX(platformPoints[1].x * designSize.width), y: groundY + platformPoints[1].yOffset * layoutYScale + gameplayLift),
+            size: CGSize(width: platformPoints[1].width, height: platformPoints[1].height)
+        )
+
+        _ = createPlatform(
+            at: CGPoint(x: courseX(platformPoints[2].x * designSize.width), y: groundY + platformPoints[2].yOffset * layoutYScale + gameplayLift),
+            size: CGSize(width: platformPoints[2].width, height: platformPoints[2].height)
+        )
+
+        _ = createPlatform(
+            at: CGPoint(x: courseX(platformPoints[3].x * designSize.width), y: groundY + platformPoints[3].yOffset * layoutYScale + gameplayLift),
+            size: CGSize(width: platformPoints[3].width, height: platformPoints[3].height)
+        )
+
+        // Platform before the 4th (inverse) laser
+        _ = createPlatform(
+            at: CGPoint(x: courseX(platformPoints[4].x * designSize.width), y: groundY + platformPoints[4].yOffset * layoutYScale + gameplayLift),
+            size: CGSize(width: platformPoints[4].width, height: platformPoints[4].height)
+        )
+
+        // Exit platform (pushed further right for 4th laser)
+        _ = createPlatform(
+            at: CGPoint(x: courseX(platformPoints[5].x * designSize.width), y: groundY + platformPoints[5].yOffset * layoutYScale + gameplayLift),
+            size: CGSize(width: platformPoints[5].width, height: platformPoints[5].height)
+        )
+
+        // Exit door
         createExitDoor(at: CGPoint(x: courseX(0.92 * designSize.width), y: groundY + 50 * visualScale + gameplayLift))
-        installDeathZone()
+
+        // Death zone — the "fell off the bottom of the world" floor. Intentionally
+        // NOT lifted: it sits at y = -50, well below the lowest lifted platform
+        // (>= 160*layoutYScale + gameplayLift), so it still catches a fall on every
+        // device. Lifting it would shrink the void below the band for no benefit.
+        let deathZone = SKNode()
+        deathZone.position = CGPoint(x: size.width / 2, y: -50)
+        deathZone.physicsBody = SKPhysicsBody(rectangleOf: CGSize(width: size.width * 2, height: 100))
+        deathZone.physicsBody?.isDynamic = false
+        deathZone.physicsBody?.categoryBitMask = PhysicsCategory.hazard
+        deathZone.name = "death_zone"
+        addChild(deathZone)
     }
 
-    // MARK: - iPad layout (HAND-COMPOSED, native — teach -> build -> peak -> twist)
+    // MARK: - iPad layout (HAND-COMPOSED, native — teach -> cluster -> peak -> twist)
     //
-    // Rather than tiling the iPhone gauntlet wider, the iPad level is authored as
-    // a paced sequence of BEATS that fill the screen with intent. All geometry is
-    // in absolute points (not size.width fractions) so jump reach is exact:
-    // platform centers are spaced at `pitch` (<= safe gap) and rises stay <= ~73pt
-    // (< the 85pt safe ceiling). The level reads:
-    //   1. TEACH    — spawn + 1 lone laser (learn "noise = shield"), easy.
-    //   2. CLUSTER A— 2 lasers, platforms step up then down (rhythm, not a flat row).
-    //   3. REST     — a wider platform, no laser: a deliberate breath + 4th-wall beat.
-    //   4. CLUSTER B— 3 tight lasers: the tension peak, sustain noise.
-    //   5. BREATH   — short pause so the player relaxes...
-    //   6. INVERSE  — the isolated dashed 4th laser (silence = safe): the twist finale.
-    //   7. EXIT.
-    // The INVERSE laser is the design climax, given its own approach platform +
-    // placard, instead of being buried in a uniform row.
+    // Re-maps the APPROVED beat order onto the shared tier API so the climb fills the
+    // FULL band (no dead sky) while keeping the laser/noise mechanic, its fallback,
+    // and the inverse finale EXACTLY. All geometry is in ABSOLUTE points (never
+    // size.width fractions, never scaled geometry — Bit's physics are device-
+    // independent): platform X marches with VARIED, ASYMMETRIC spacing (no even
+    // ladder), widths vary 70..180, and the vertical pacing uses verticalTier tiers
+    // with same-tier flat RESTS, an occasional down-step, and a true PEAK that
+    // stands apart. Tier count comes from fillTierCount(), so the clusterB PEAK and
+    // the INVERSE finale climb into the upper third instead of hugging the floor.
+    //
+    // BEATS (left -> right, low -> high as it climbs):
+    //   1. TEACH    — wide spawn ledge + 1 lone laser (learn "noise = shield").
+    //   2. CLUSTER A— 2 lasers; platforms step UP then a small DOWN-step (rhythm).
+    //   3. REST     — a WIDE flat run at one tier, no laser: a deliberate breath.
+    //   4. CLUSTER B— 3 tight lasers climbing to the PEAK (the highest tier).
+    //   5. BREATH   — a flat landing one step DOWN from the peak so the player relaxes.
+    //   6. INVERSE  — the isolated dashed laser (silence = safe), its OWN elevation
+    //                 change (a fresh up-step) so the twist reads as a distinct beat.
+    //   7. EXIT     — wide finale ledge + door.
     private func buildComposedIPadLevel() {
-        let baseGroundY: CGFloat = 160 * layoutYScale + gameplayLift
-        let pitch: CGFloat = unitPitch                 // safe horizontal step (<=130)
-        let stepUp: CGFloat = 46 * layoutYScale        // ~67pt rise at 1366h (< 85 safe)
-        let wide = courseLen(96)
-        let mid = courseLen(72)
-        let h = courseLen(28)
+        // The composed layout bakes vertical fill into verticalTier directly, so the
+        // legacy uniform `gameplayLift` is NOT applied here (it would double-shift).
+        gameplayLift = 0
 
-        // Hand-placed platforms: (xPitchIndex, tier) — tier 0/1/2 = ground/up/up2.
-        // xPitchIndex multiplies `pitch` from a left margin; tiers vary height for
-        // rhythm. Lasers (createLaserSystem) sit in the GAPS between chosen pairs.
-        let leftMargin: CGFloat = pitch * 1.2
-        func px(_ i: CGFloat) -> CGFloat { leftMargin + i * pitch }
-        func py(_ tier: CGFloat) -> CGFloat { baseGroundY + tier * stepUp }
+        // Per-platform TIER sequence (the heart of the beat rhythm). Adjacent entries
+        // differ by AT MOST 1 tier, so every authored rise is exactly one safe
+        // verticalTier step (auto-clamped <= 85) — never an even ladder, never an
+        // un-jumpable multi-tier leap. The sequence climbs to the PEAK at the very
+        // top tier, with a flat REST run and a DOWN-step for rhythm, then descends
+        // for the BREATH, takes a fresh UP-step into the INVERSE twist, and lands
+        // the EXIT just under the peak. Using a NAMED beat for each index keeps the
+        // approved teach -> clusterA -> rest -> clusterB(peak) -> breath -> inverse
+        // -> exit order intact. `peakTier` (the count of up-steps to the top) drives
+        // the tier budget so the staircase always REACHES the ceiling.
+        //
+        // tier deltas:  0  +1  -1  0  +1  +1  +1 ... +1  -1   -2   +1   -1
+        // beat:        spawn |--CLUSTER A--| REST |------ CLUSTER B (-> PEAK) ------|
+        //              ... BREATH  INVERSE  EXIT
+        //
+        // The climb portion (REST -> PEAK) is generated so it spans whatever tier
+        // budget the canvas needs; the fixed lead-in / outro beats bracket it.
 
-        // index:  0     1     2     3      4(rest) 5     6     7     8(breath) 9(inv-approach) 10(exit)
-        // tier :  0     1     0     1      0       1     2     1     0          0               0
-        let plats: [(i: CGFloat, tier: CGFloat, w: CGFloat)] = [
-            (0,  0, wide),   // spawn (TEACH)
-            (1.0, 1, mid),   // over laser 1
-            (2.0, 0, mid),   // CLUSTER A start
-            (3.0, 1, mid),   // CLUSTER A — stepped
-            (4.2, 0, wide),  // REST (wider, breath)
-            (5.4, 1, mid),   // CLUSTER B
-            (6.4, 2, mid),   // CLUSTER B — highest tier (peak)
-            (7.4, 1, mid),   // CLUSTER B end
-            (8.6, 0, wide),  // BREATH (relax before the twist)
-            (9.8, 0, mid),   // INVERSE approach platform
-            (11.0, 0, wide)  // EXIT platform
-        ]
-        for p in plats {
-            _ = createPlatform(at: CGPoint(x: px(p.i), y: py(p.tier)), size: CGSize(width: p.w, height: h))
+        // 1) Decide how tall the climb is: the tier budget that fills the band.
+        let count = max(4, fillTierCount(iphoneGround: iphoneGround))
+        let top = count - 1
+        func tierY(_ t: Int) -> CGFloat { verticalTier(t, of: count, iphoneGround: iphoneGround) }
+
+        // 2) Build the per-platform (tier, width, beat) list with <=1-tier steps.
+        let wWide: CGFloat   = 176     // spawn / rest / exit / breath (generous footing)
+        let wMid: CGFloat    = 104     // landings + inverse approach
+        let wNarrow: CGFloat = 76      // tense cluster steps
+        enum Beat { case spawn, clusterA, rest, clusterB, peak, breath, inverseApp, exit }
+        var seq: [(t: Int, w: CGFloat, beat: Beat)] = []
+        // TEACH spawn on the floor.
+        seq.append((0, wWide, .spawn))
+        // CLUSTER A: step UP one, then a small DOWN-step, then a flat landing (tight
+        // cluster, asymmetric rhythm — not a ladder).
+        seq.append((1, wNarrow, .clusterA))   // +1
+        seq.append((0, wNarrow, .clusterA))   // -1 (down-step)
+        seq.append((1, wMid,    .clusterA))   // +1 landing
+        // REST: a wide flat breath one tier up.
+        seq.append((2, wWide, .rest))         // +1
+        // CLUSTER B: climb ONE tier per platform from tier 3 up to the PEAK (top
+        // tier). The per-tier rise is fixed (one safe verticalTier step) BUT the
+        // climb is deliberately NOT an even ladder: widths CYCLE (narrow tense steps
+        // with the occasional mid landing) and a single WIDE breath-ledge is dropped
+        // in near the middle of a long climb. The final step IS the peak and stands
+        // apart (narrow, isolated). On a tall iPad this is a real multi-beat ascent;
+        // on a short one it collapses to a couple of steps + peak.
+        if top >= 3 {
+            let climbWidths: [CGFloat] = [wNarrow, 90, wNarrow, 84, wNarrow, 96]
+            let span = top - 3
+            let midTier = 3 + span / 2          // one mid landing mid-climb on long climbs
+            for (k, t) in (3...top).enumerated() {
+                if t == top {
+                    seq.append((t, wNarrow, .peak))                  // PEAK — narrow, alone
+                } else if span >= 4 && t == midTier {
+                    seq.append((t, wMid, .clusterB))                 // mid-climb breather landing
+                } else {
+                    seq.append((t, climbWidths[k % climbWidths.count], .clusterB))
+                }
+            }
+        }
+        // Step DOWN off the peak (a mid landing), then DOWN again to a wide BREATH
+        // (relaxed, lower) — a deliberate two-beat descent so the twist isn't rushed.
+        seq.append((max(0, top - 1), wMid,  .clusterB))   // -1 off the peak
+        seq.append((max(0, top - 2), wWide, .breath))     // -1 breath
+        // INVERSE: a fresh UP-step onto its own approach platform — the twist beat
+        // gets its OWN elevation change so it reads distinctly from the breath.
+        seq.append((max(0, top - 1), wMid,  .inverseApp)) // +1
+        // EXIT ledge, a step DOWN — a comfortable wide finale just under the peak.
+        seq.append((max(0, top - 2), wWide, .exit))       // -1
+
+        // 3) Lay the platforms out with VARIED, ASYMMETRIC absolute X spacing (no
+        // constant pitch). The LEAD-IN (spawn / CLUSTER A / REST) and OUTRO (BREATH /
+        // INVERSE / EXIT) march RIGHT with wide, hand-tuned horizontal gaps. The long
+        // CLUSTER B ascent instead climbs as a COMPACT VERTICAL SWITCHBACK: the
+        // center advances only a little per step while platforms ZIG-ZAG left/right,
+        // so the climb gains its full height WITHOUT a long horizontal trek (this is
+        // what keeps the scrolling course ~1.8x the viewport instead of a 4x ladder).
+        // Every jump is one tier (rise auto <= 85); the switchback's horizontal
+        // edge-to-edge stays well under maxJumpableGap (130), so the rise dominates.
+        let platHeight = courseLen(28)
+        var xs: [CGFloat] = Array(repeating: 0, count: seq.count)
+
+        // Horizontal-march helper for the non-switchback beats.
+        func edgeBudget(_ s: (t: Int, w: CGFloat, beat: Beat), _ prev: (t: Int, w: CGFloat, beat: Beat)) -> CGFloat {
+            let enteringGroup = (s.beat != prev.beat) &&
+                (s.beat == .rest || s.beat == .breath || s.beat == .inverseApp || s.beat == .exit)
+            // Wider gap when stepping into a new group beat (a deliberate beat break),
+            // tighter within the lead-in/outro runs. Both <= maxJumpableGap (130).
+            return enteringGroup ? 100 : 84
+        }
+        func wobbleFor(_ i: Int) -> CGFloat {
+            switch seq[i].beat {
+            case .rest, .breath, .exit, .spawn: return 0   // stable wide landings
+            default: return ((i % 3 == 0) ? -12 : (seq[i].t % 2 == 0 ? 10 : -6))
+            }
         }
 
-        composedSpawnX = px(0)
-        composedExitX = px(11.0)
-        composedExitDoorX = px(11.0)
-        // Course extent: last platform right edge + margin.
-        composedWorldWidth = px(11.0) + wide / 2 + pitch
+        let climbIdxs = seq.indices.filter { seq[$0].beat == .clusterB || seq[$0].beat == .peak }
+        let climbSet = Set(climbIdxs)
+        // CLUSTER B is a TIGHT, mostly-vertical climb (thematically the tense run to
+        // the peak): platforms always advance RIGHT by a small `climbAdvance` so the
+        // course stays compact, with a tiny alternating `climbNudge` for a hand-made
+        // zig feel that NEVER closes the horizontal gap (advance > 2*nudge + widths,
+        // so edge-to-edge is always positive and <= maxJumpableGap). The rise per
+        // step dominates the jump; the small horizontal travel keeps the scrolling
+        // world close to ~2x the viewport rather than a long ladder.
+        // Edge-to-edge per climb step. Kept tight (within the proven Level13/Level31
+        // climb envelope of ~28-58pt edge gaps under one-tier rises) so the steep
+        // diagonal jump is comfortably reachable while the long climb stays compact.
+        let climbEdge: CGFloat = 50
+        let climbNudge: CGFloat = 9         // tiny zig (never backtracks)
 
-        createExitDoor(at: CGPoint(x: composedExitDoorX, y: baseGroundY + 50 * visualScale))
-        installDeathZone()
-    }
+        var marchX: CGFloat = 140
+        var climbStep = 0
+        for i in seq.indices {
+            let s = seq[i]
+            if climbSet.contains(i) {
+                let prev = seq[i - 1]
+                if climbStep == 0 {
+                    // Seed: a normal horizontal gap right of the REST.
+                    marchX += prev.w / 2 + 100 + s.w / 2
+                } else {
+                    // WIDTH-AWARE advance: a fixed tight EDGE gap (not a fixed center
+                    // stride), so even a wider climb landing never overlaps its
+                    // neighbour while the narrow steps stay compact. The +-nudge is
+                    // small enough that the gap stays positive and <= maxJumpableGap.
+                    marchX += prev.w / 2 + climbEdge + s.w / 2
+                }
+                let zig: CGFloat = (climbStep % 2 == 0) ? -climbNudge : climbNudge
+                xs[i] = marchX + zig
+                climbStep += 1
+            } else {
+                if i > 0 {
+                    let prev = seq[i - 1]
+                    marchX += prev.w / 2 + edgeBudget(s, prev) + s.w / 2
+                }
+                xs[i] = marchX + wobbleFor(i)
+            }
+            _ = createPlatform(at: CGPoint(x: xs[i], y: tierY(s.t)),
+                               size: CGSize(width: s.w, height: platHeight))
+        }
 
-    /// Death zone, shared by both layouts. Not lifted (it's the fall-floor at y=-50).
-    private func installDeathZone() {
-        let deathZoneCenterX = isWideCanvas ? composedWorldWidth / 2 : size.width / 2
-        let deathZoneWidth = isWideCanvas ? composedWorldWidth * 2 : size.width * 2
+        composedSpawnX = xs[0]
+        composedSpawnY = tierY(seq[0].t)
+        composedExitDoorX = xs[xs.count - 1]
+        composedExitDoorY = tierY(seq[seq.count - 1].t)
+
+        // 4) Lasers sit in the GAPS the player crosses, anchored to the deck of the
+        // LOWER bracketing platform so the beam/deck relationship matches iPhone
+        // (base 20pt below deck, top 120pt [low] / 160pt [high] above deck — so it
+        // stays un-jumpable, mechanic unchanged). Placed by BEAT, not a flat band:
+        // 1 TEACH, 2 CLUSTER A, 3 CLUSTER B (incl. peak), then the isolated INVERSE
+        // finale. Each gap is the (left,right) platform index pair to bracket.
+        func indices(_ b: Beat) -> [Int] { seq.indices.filter { seq[$0].beat == b } }
+        let clusterAIdx = indices(.clusterA)                    // [up, down-step, landing]
+        let teachA = indices(.spawn).first ?? 0                 // spawn
+        let teachB = clusterAIdx.first ?? min(1, seq.count - 1) // first clusterA
+        let bIdx   = (indices(.clusterB) + indices(.peak)).sorted()   // climb + peak
+        let invL   = indices(.inverseApp).first ?? (seq.count - 2)    // approach
+        let invR   = indices(.exit).first ?? (seq.count - 1)         // exit ledge
+
+        var gapList: [(a: Int, b: Int, high: Bool, inverse: Bool)] = [
+            (teachA, teachB, false, false)   // TEACH — lone laser
+        ]
+        // CLUSTER A — 1: over the DOWN-step gap (clusterA[1] -> clusterA[2]).
+        if clusterAIdx.count >= 3 {
+            gapList.append((clusterAIdx[1], clusterAIdx[2], true, false))
+        }
+        // CLUSTER A — 2: the gap from the landing into the REST breath.
+        if let restIdx = indices(.rest).first, restIdx - 1 >= 0 {
+            gapList.append((restIdx - 1, restIdx, false, false))
+        }
+        // CLUSTER B — up to 3 lasers in the first crossed gaps of the climb (peak incl.).
+        var bGaps: [(Int, Int)] = []
+        for k in 0..<min(3, max(0, bIdx.count - 1)) {
+            bGaps.append((bIdx[k], bIdx[k + 1]))
+        }
+        for (i, g) in bGaps.enumerated() {
+            gapList.append((g.0, g.1, i % 2 == 0, false))       // CLUSTER B 1..3
+        }
+        gapList.append((invL, invR, false, true))               // INVERSE finale
+
+        composedLaserSpecs = gapList.map { g in
+            let lx = (xs[g.a] + xs[g.b]) / 2
+            let deck = min(tierY(seq[g.a].t), tierY(seq[g.b].t))
+            let base = deck - 20 * layoutYScale          // just below the lower deck
+            let beamTop = deck + (g.high ? 160 : 120) * layoutYScale
+            return (x: lx, baseY: base, topY: beamTop, inverse: g.inverse)
+        }
+
+        createExitDoor(at: CGPoint(x: composedExitDoorX, y: composedExitDoorY + 50 * visualScale))
+
+        // Course extent: genuinely WIDER than the viewport so the camera FOLLOWS
+        // instead of clamping to a fixed center (the camera-collapse fix). The
+        // full-height climb needs ~13 platforms to reach the tall ceiling at the safe
+        // 85pt step, so the scrolling course runs ~2.2-3.5x the viewport (vs the old
+        // ~0.95x single-screen cram). Last platform right edge + margin. Death zone
+        // spans the FULL composed course so a fall anywhere is caught.
+        composedWorldWidth = xs[xs.count - 1] + wWide / 2 + 120
+
         let deathZone = SKNode()
-        deathZone.position = CGPoint(x: deathZoneCenterX, y: -50)
-        deathZone.physicsBody = SKPhysicsBody(rectangleOf: CGSize(width: deathZoneWidth, height: 100))
+        deathZone.position = CGPoint(x: composedWorldWidth / 2, y: -50)
+        deathZone.physicsBody = SKPhysicsBody(rectangleOf: CGSize(width: composedWorldWidth * 2, height: 100))
         deathZone.physicsBody?.isDynamic = false
         deathZone.physicsBody?.categoryBitMask = PhysicsCategory.hazard
         deathZone.name = "death_zone"
@@ -488,46 +692,32 @@ final class StaticScene: BaseLevelScene, SKPhysicsContactDelegate {
     // MARK: - Laser System
 
     private func createLaserSystem() {
-        // Hazard band Y values get the SAME uniform `gameplayLift` (iPad-only) as
-        // the platforms/spawn/exit, so lasers stay aligned with the gaps.
-        let laserBaseY = 140 * layoutYScale + gameplayLift
-        let laserTopLow = 280 * layoutYScale + gameplayLift
-        let laserTopHigh = 320 * layoutYScale + gameplayLift
-
         var laserPositions: [(start: CGPoint, end: CGPoint)] = []
 
         if isWideCanvas {
-            // COMPOSED iPad gauntlet: lasers sit in the gaps that match the beat
-            // layout in buildComposedIPadLevel — 1 TEACH, 2 CLUSTER A, 3 CLUSTER B,
-            // then the INVERSE finale (its own beat). X = midpoint of the platform
-            // pair that brackets each laser; heights alternate low/high for variety.
-            // The 7th laser is the INVERSE one (silence = safe).
-            let pitch: CGFloat = unitPitch
-            let leftMargin: CGFloat = pitch * 1.2
-            func px(_ i: CGFloat) -> CGFloat { leftMargin + i * pitch }
-            // Gaps (laser between platform index a and b): teach 0|1; A 1|2, 2|3;
-            // B 5|6... wait — lasers go in the GAPS the player crosses. The platform
-            // indices from buildComposedIPadLevel are at i = 0,1,2,3,4.2,5.4,6.4,
-            // 7.4,8.6,9.8,11. Place a laser at the midpoint of each crossed gap that
-            // belongs to a beat:
-            let laserGaps: [(a: CGFloat, b: CGFloat, top: CGFloat, inverse: Bool)] = [
-                (0,   1.0, laserTopLow,  false), // TEACH — lone laser
-                (2.0, 3.0, laserTopHigh, false), // CLUSTER A — 1
-                (3.0, 4.2, laserTopLow,  false), // CLUSTER A — 2
-                (4.2, 5.4, laserTopHigh, false), // CLUSTER B — 1
-                (5.4, 6.4, laserTopLow,  false), // CLUSTER B — 2
-                (6.4, 7.4, laserTopHigh, false), // CLUSTER B — 3 (peak)
-                (9.8, 11.0, laserTopLow, true)   // INVERSE — isolated finale beat
-            ]
-            var inverseIdx = 3
-            for (k, g) in laserGaps.enumerated() {
-                let mx = (px(g.a) + px(g.b)) / 2
-                laserPositions.append((CGPoint(x: mx, y: laserBaseY), CGPoint(x: mx, y: g.top)))
-                if g.inverse { inverseIdx = k }
+            // COMPOSED iPad gauntlet: lasers were placed in buildComposedIPadLevel,
+            // one per crossed gap, anchored to the deck of its bracketing platforms
+            // (so they ride the tier climb, not a flat band). The inverse one is the
+            // finale. createLaserSystem just realizes them and records the inverse
+            // index AFTER the prepended lead-in lasers so the mechanic targets the
+            // same physical (silence = safe) barrier.
+            var inverseIdx = inverseLaserIndex
+            for (k, spec) in composedLaserSpecs.enumerated() {
+                laserPositions.append((CGPoint(x: spec.x, y: spec.baseY),
+                                       CGPoint(x: spec.x, y: spec.topY)))
+                if spec.inverse { inverseIdx = k }
             }
             inverseLaserIndex = inverseIdx
         } else {
-            // iPhone: original 4 lasers, byte-identical (3 normal + inverse 4th).
+            // iPhone: original 4 lasers, BYTE-IDENTICAL (3 normal + inverse 4th).
+            // Hazard band Y values get the SAME uniform `gameplayLift` (iPad-only is
+            // 0 here) as the platforms, so the laser/platform vertical relationship
+            // is byte-identical on iPhone.
+            let laserBaseY = 140 * layoutYScale + gameplayLift
+            let laserTopLow = 280 * layoutYScale + gameplayLift
+            let laserTopHigh = 320 * layoutYScale + gameplayLift
+            // Laser x positions are authored in the centered logical course so they
+            // stay aligned with the platform gaps on every device.
             let lx0 = courseX(0.21 * designSize.width)
             let lx1 = courseX(0.37 * designSize.width)
             let lx2 = courseX(0.53 * designSize.width)
@@ -536,7 +726,7 @@ final class StaticScene: BaseLevelScene, SKPhysicsContactDelegate {
                 (CGPoint(x: lx0, y: laserBaseY), CGPoint(x: lx0, y: laserTopLow)),
                 (CGPoint(x: lx1, y: laserBaseY), CGPoint(x: lx1, y: laserTopHigh)),
                 (CGPoint(x: lx2, y: laserBaseY), CGPoint(x: lx2, y: laserTopLow)),
-                (CGPoint(x: lx3, y: laserBaseY), CGPoint(x: lx3, y: laserTopLow))  // INVERSE
+                (CGPoint(x: lx3, y: laserBaseY), CGPoint(x: lx3, y: laserTopLow))  // 4th laser - INVERSE
             ]
             inverseLaserIndex = 3
         }
@@ -731,10 +921,10 @@ final class StaticScene: BaseLevelScene, SKPhysicsContactDelegate {
 
         // Create static scanlines. iPad: span the viewport in camera-local space
         // (-w/2...w/2, -h/2...h/2). iPhone: original 0...size coords.
-        let lineXStart = isWideCanvas ? -size.width / 2 : 0
-        let lineXEnd = isWideCanvas ? size.width / 2 : size.width
-        let yLow = isWideCanvas ? -size.height / 2 : 0
-        let yHigh = isWideCanvas ? size.height / 2 : size.height
+        let lineXStart: CGFloat = isWideCanvas ? -size.width / 2 : 0
+        let lineXEnd: CGFloat = isWideCanvas ? size.width / 2 : size.width
+        let yLow: CGFloat = isWideCanvas ? -size.height / 2 : 0
+        let yHigh: CGFloat = isWideCanvas ? size.height / 2 : size.height
         for _ in 0..<25 {
             let line = SKShapeNode()
             let linePath = CGMutablePath()
@@ -921,10 +1111,13 @@ final class StaticScene: BaseLevelScene, SKPhysicsContactDelegate {
 
     private func setupBit() {
         // Spawn (and respawn — handleDeath respawns here). On iPad the composed
-        // layout sets composedSpawnX (the leftmost beat platform); on iPhone the
-        // spawn is the original P0 — byte-identical. Spawn Y rides the band lift.
-        let spawnX = isWideCanvas ? composedSpawnX : courseX(0.13 * designSize.width)
-        spawnPoint = CGPoint(x: spawnX, y: 205 * layoutYScale + gameplayLift)
+        // layout sets composedSpawnX/Y (the leftmost teach ledge); spawn sits a hair
+        // above the deck. On iPhone the spawn is the original P0 — byte-identical.
+        if isWideCanvas {
+            spawnPoint = CGPoint(x: composedSpawnX, y: composedSpawnY + 45 * layoutYScale)
+        } else {
+            spawnPoint = CGPoint(x: courseX(0.13 * designSize.width), y: 205 * layoutYScale + gameplayLift)
+        }
 
         bit = BitCharacter.make()
         bit.position = spawnPoint

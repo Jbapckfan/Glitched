@@ -27,10 +27,10 @@ final class BatteryPercentScene: BaseLevelScene, SKPhysicsContactDelegate {
 
     // MARK: - Native-iPad gate
     //
-    // iPad-native redesign (Phase 0). The iPhone path is kept byte-identical
-    // behind `!isWideCanvas` in buildPhoneLevel(); the iPad path is a NEW
-    // hand-composed buildComposedIPadLevel() that maps battery % to ALTITUDE and
-    // climbs the FULL height via verticalTier(...). Authored at ABSOLUTE pt
+    // iPad-native redesign. The iPhone path is kept byte-identical behind
+    // `!isWideCanvas` in buildPhoneLevel(); the iPad path is a NEW hand-composed
+    // buildComposedIPadLevel() that maps battery % to ALTITUDE and climbs the FULL
+    // height via fillTierCount(...)/verticalTier(...). Authored at ABSOLUTE pt
     // positions (never size.width fractions, never scaled geometry). Bit's physics
     // are device-independent, so absolute spacing carries identical reach across
     // devices. designSize.width = 430, so the gate never fires on any iPhone.
@@ -219,68 +219,75 @@ final class BatteryPercentScene: BaseLevelScene, SKPhysicsContactDelegate {
     /// "stack higher-% platforms physically higher so the climb fills the height;
     /// the hidden exit below stays." Authored at ABSOLUTE pt; never runs on iPhone.
     ///
-    /// FULL-HEIGHT FILL — the floor is now playableGroundY (bottomSafeY+90, near the
-    /// BOTTOM) so the route builds UPWARD across N=10 tiers spanning the full usable
-    /// band up to playableCeilingY (topSafeY-150). verticalTier(i, of:10) gives each
-    /// tier; the per-tier rise auto-clamps to maxJumpableRise (85), so every step is
-    /// jumpable. The 10 stones map 1:1 onto tiers 0..9 (each consecutive stone climbs
-    /// EXACTLY +1 tier), so battery % literally equals altitude: 10% = the floor,
-    /// 100% = the near-ceiling apex (tier 9). On smaller iPads the band divides into
-    /// ~82pt steps that reach the ceiling exactly; on the largest the per-step rise
-    /// clamps to 85 and the fake-exit beat pushes the top higher still. Stones spread
-    /// LEFT -> RIGHT as they climb (never a centered ladder).
+    /// FULL-HEIGHT FILL (dead-sky fix) — the route's tier BUDGET comes from
+    /// fillTierCount(iphoneGround:) (capped at 14), which returns just enough tiers
+    /// that band/(N-1) <= the safe rise (85) and the top tier (N-1) lands AT
+    /// playableCeilingY. A fixed low tier count would clamp the per-step rise and
+    /// strand the upper band as empty sky; sizing with fillTierCount is what makes
+    /// the PEAK (100% stone, tier N-1) genuinely reach the ceiling.
+    ///
+    /// LADDER BROKEN (rejected even-diagonal fix) — the route is hand-composed with
+    /// real rhythm rather than one-stone-per-tier marching L/R: a teaching base, a
+    /// CLUSTER (two stones, climb-then-flat), a wide REST breath, a mid plateau (the
+    /// 50% stone), a harder traverse with a deliberate DOWN-STEP dip, then a high run
+    /// to a PEAK that stands apart, capped by the fake-exit trap. Widths vary 70..180,
+    /// X is ASYMMETRIC (the rest tucks back-left of the cluster), and platforms group
+    /// then gap. Plain connective platforms (not stones) carry the climb between
+    /// stones whose altitude jumps more than one safe step, so the route fills the
+    /// height WITHOUT widening any single rise past the budget.
     ///
     /// THE MECHANIC IS PRESERVED EXACTLY. steppingStones[i] keeps threshold (i+1)*10,
     /// so updateBatteryState() still vanishes stones 6..10 (60%..100%) when battery
-    /// < 60% — and those are now the HIGH tiers (5..9), so draining power literally
-    /// drops the top of the climb away. The fake-exit dead end sits at the TOP (above
-    /// the 100% stone). The hidden REAL exit + its landing stay BELOW the 50% stone
-    /// (tier 4, present until <50%), exposed only once the high stones vanish — the
-    /// same trap logic as the iPhone path, now staged as the FINALE/high beat of a
-    /// vertical climb that fills the screen top-to-bottom.
+    /// < 60% — and those remain the HIGH stones, so draining power drops the top of
+    /// the climb away. The fake-exit dead end sits at the TOP (above the 100% stone).
+    /// The hidden REAL exit + its landing stay BELOW the 50% stone (the mid plateau,
+    /// present until < 50%), exposed only once the high stones vanish — the same trap
+    /// logic as the iPhone path, now staged as the FINALE of a full-height climb. The
+    /// connective platforms live only in the HIGH (60%+) band, so once the stones they
+    /// bridge vanish they become orphaned islands (a >1-step gap below them with no
+    /// present stone to launch from) — they cannot be used to bypass the down-route
+    /// to the real exit.
     ///
-    /// BEATS (each consecutive stone climbs exactly ONE tier, so every rise is one
-    /// safe step <= maxJumpableRise):
-    ///   1. SPAWN (floor)  — wide start pad on tier 0 + the 10% stone (tier 0).
-    ///   2. LOW CLIMB      — 20%/30% stones rise tiers 1 -> 2.
-    ///   3. REST (mid)     — a wide breath platform at tier 4 beside the 50% stone;
-    ///                       the hidden REAL exit + landing sit BELOW it.
-    ///   4. HIGH CLIMB     — 60%..90% stones push tiers 5 -> 8 (these vanish < 60%).
-    ///   5. FINALE (high)  — the 100% stone tops out near the ceiling (tier 9), then
-    ///                       the FAKE-EXIT dead-end door above it — the signature
-    ///                       trap, staged as the highest beat of the climb.
+    /// BEATS — teach -> cluster -> rest -> traverse(+dip) -> PEAK -> finale. Every
+    /// REACHABLE node is at most +1 tier above the one before it (or flat / a down-
+    /// step), so each rise is one safe step <= maxJumpableRise; every horizontal hop
+    /// is well within maxJumpableGap (edge-to-edge ~10..70pt).
     private func buildComposedIPadLevel() {
         // iPhone ground value this level hard-codes; the iPad floor is derived from
-        // it (playableGroundY -> bottomSafeY+90, near the bottom so we build UPWARD).
+        // it (playableGroundY -> near the bottom so we build UPWARD).
         let iphoneGround: CGFloat = 160
-        // 10 evenly-spaced tiers spanning the FULL usable band; each consecutive-stone
-        // rise auto-clamps to maxJumpableRise (85). The 10 stones map 1:1 onto tiers
-        // 0..9, so battery % == altitude and the 100% stone tops out near the ceiling
-        // (tier 9). On smaller iPads the band divides into ~82pt steps that reach the
-        // ceiling exactly; on the largest the per-step rise clamps to 85 (the climb
-        // tops at ~64% height, then the fake-exit beat pushes higher still).
-        let tierCount = 10
-        func tier(_ i: Int) -> CGFloat { verticalTier(i, of: tierCount, iphoneGround: iphoneGround) }
+
+        // DEAD-SKY FIX: size the tier budget so the climb REACHES playableCeilingY at
+        // the safe per-tier step. fillTierCount returns ceil(band/85)+1; cap at 14 so
+        // the high run stays a sane node count. With N from this, verticalTier(N-1)
+        // lands at (or within one safe step of) the ceiling — no stranded upper band.
+        let tierCount = min(fillTierCount(iphoneGround: iphoneGround), 14)
+        let topTier = tierCount - 1
+        // Clamp authored tiers into the budget (on smaller iPads N shrinks; high beats
+        // collapse onto the top tier, which only makes their rises smaller/flat — still
+        // safe — while the band stays filled because a short band needs fewer tiers).
+        func tier(_ i: Int) -> CGFloat { verticalTier(min(i, topTier), of: tierCount, iphoneGround: iphoneGround) }
 
         // BEAT 1 — SPAWN: wide start pad on the floor (tier 0), left edge.
-        createPlatform(at: CGPoint(x: 90, y: tier(0)), size: CGSize(width: 120, height: 30))
+        createPlatform(at: CGPoint(x: 90, y: tier(0)), size: CGSize(width: 130, height: 30))
 
-        // Battery-%-to-altitude stone map. index -> (x, tierIndex). Each consecutive
-        // stone climbs exactly +1 tier (one safe rise each); X climbs strictly
-        // left->right so the climb SPREADS across the width instead of a centered
-        // ladder. Widths vary for rhythm. steppingStones[] order MUST stay 10%..100%
-        // so the battery vanish/threshold logic in updateBatteryState() is unchanged.
+        // Battery-%-to-altitude stone map. index -> (x, authoredTier, width). Tiers are
+        // hand-paced (NOT one-per-tier): a climb-then-flat cluster (30%/40%), a mid
+        // plateau (50%), a high traverse with a DOWN dip (80% drops below 70%), then a
+        // PEAK (100%) on the top tier. Widths vary 70..160; X is asymmetric.
+        // steppingStones[] order MUST stay 10%..100% so the battery vanish/threshold
+        // logic in updateBatteryState() is unchanged.
         let stoneLayout: [(x: CGFloat, tier: Int, w: CGFloat)] = [
-            (230,  0, 50),   //  10% — floor (tier 0)
-            (335,  1, 45),   //  20% — low climb (tier 1)
-            (445,  2, 60),   //  30% — low climb (tier 2)
-            (550,  3, 45),   //  40% — mid climb (tier 3)
-            (655,  4, 50),   //  50% — mid (tier 4)  <- hidden exit anchors BELOW this
-            (760,  5, 45),   //  60% — HIGH climb (tier 5) — vanishes < 60%
-            (865,  6, 50),   //  70% — HIGH climb (tier 6) — vanishes < 60%
-            (970,  7, 45),   //  80% — HIGH climb (tier 7) — vanishes < 60%
-            (1075, 8, 55),   //  90% — HIGH climb (tier 8) — vanishes < 60%
-            (1180, 9, 50),   // 100% — FINALE apex near ceiling (tier 9) — vanishes < 60%
+            (250,  0,  90),  //  10% — teach base (tier 0)
+            (360,  1,  70),  //  20% — teach climb (tier 1)
+            (470,  2, 120),  //  30% — CLUSTER (tier 2, wide)
+            (575,  2,  75),  //  40% — CLUSTER flat run = micro-rest (tier 2)
+            (650,  4, 160),  //  50% — MID PLATEAU (tier 4, wide) <- hidden exit BELOW
+            (860,  6,  75),  //  60% — harder traverse (tier 6) — vanishes < 60%
+            (965,  7, 115),  //  70% — traverse high (tier 7) — vanishes < 60%
+            (1075, 6,  95),  //  80% — DOWN-STEP dip below 70% (tier 6) — vanishes < 60%
+            (1265, 7,  85),  //  90% — climb back up (tier 7, +1 from the dip) — vanishes < 60%
+            (1740, topTier, 130), // 100% — PEAK apex AT the ceiling — vanishes < 60%
         ]
         for (i, s) in stoneLayout.enumerated() {
             let stone = createSteppingStone(at: CGPoint(x: s.x, y: tier(s.tier)), index: i)
@@ -291,39 +298,66 @@ final class BatteryPercentScene: BaseLevelScene, SKPhysicsContactDelegate {
             steppingStones.append(stone)
         }
 
-        // BEAT 3 — REST: a wide breath platform at tier 2 in the lower-mid climb,
-        // sitting in a clear column (x[220,380]) where no stone lives at that tier
-        // (10% is tier 0, 20% is tier 1, 30% is tier 2 but at x=445). >=1 wide REST
-        // platform requirement. Reachable from the 20% stone (tier 1, +1 step) and
-        // leads on to the 30% stone (same tier, horizontal hop ~35pt edge gap).
-        let restX: CGFloat = 300
-        createPlatform(at: CGPoint(x: restX, y: tier(2)), size: CGSize(width: 160, height: 30))
+        // BEAT 3 — REST: a wide breath platform tucked BACK-LEFT of the cluster
+        // (asymmetric — not the next rung right), one safe step above the 30%/40%
+        // cluster (tier 2 -> tier 3). Reached from the 40% stone (+1 tier, leftward
+        // hop) and steps up to the 50% plateau (+1 tier). The mandated >=1 wide REST.
+        createPlatform(at: CGPoint(x: 460, y: tier(3)), size: CGSize(width: 180, height: 30))
 
-        // BEAT 5 — FINALE: the FAKE-EXIT dead end, staged as the highest beat just
-        // above the 100% stone near the ceiling. Same dead-end trap as iPhone; the
-        // +75 rise from the 100% stone top (tier 9) is within the ~91 jump apex, so it
-        // is reachable to trigger the taunt while pushing the top beat higher still.
-        let fakeExitPos = CGPoint(x: 1255, y: tier(9) + 75)
+        // CONNECTIVES — plain (non-stone) landings that carry the climb between stones
+        // whose altitude jumps more than one safe step, so the route FILLS the height
+        // without ever widening a single rise. They live only in the HIGH (60%+) band:
+        //  - 50% plateau (tier 4) -> 60% stone (tier 6) is +2, so bridge at tier 5.
+        //  - 90% stone (tier 7) -> PEAK (top tier) is the long final ascent, bridged by
+        //    a few stepping landings with irregular spacing/width (NOT an even ladder).
+        // Each connective is +1 tier from the node before it. When battery < 60% the
+        // stones around them vanish, leaving them orphaned (>1-step gaps below), so they
+        // can't be used to skip the down-route to the real exit — mechanic intact.
+        createPlatform(at: CGPoint(x: 760, y: tier(5)), size: CGSize(width: 85, height: 22))   // 50%->60% bridge
+        // Final ascent from the 90% stone (x1265, tier 7) to the PEAK (x1740, top
+        // tier 13). Five stepping landings, each +1 tier, with irregular x-spacing +
+        // alternating widths so the high run reads as a hand-built climb, not an even
+        // diagonal ladder. Guarded by `tier <= topTier` so on smaller iPads (lower N)
+        // the surplus rungs are skipped (they'd exceed the ceiling) and the PEAK still
+        // sits on the top tier.
+        let ascent: [(x: CGFloat, tier: Int, w: CGFloat)] = [
+            (1360,  8,  95),
+            (1450,  9, 130),
+            (1540, 10,  75),
+            (1635, 11, 115),
+            (1700, 12,  90),
+        ]
+        for a in ascent where a.tier <= topTier {
+            createPlatform(at: CGPoint(x: a.x, y: tier(a.tier)), size: CGSize(width: a.w, height: 22))
+        }
+
+        // BEAT 6 — FINALE: the FAKE-EXIT dead end, staged as the highest beat just
+        // above the 100% PEAK at the ceiling. Same dead-end trap as iPhone; the +75
+        // rise from the PEAK top is within the ~91 jump apex, so it is reachable to
+        // trigger the taunt while capping the climb at the very top.
+        let fakeExitPos = CGPoint(x: 1820, y: tier(topTier) + 75)
         createFakeExit(at: fakeExitPos)
 
-        // Hidden REAL exit BELOW the 50% stone (the mid tier that stays present until
-        // battery < 50%). The drop from tier 4 to the hidden landing matches the
-        // iPhone span (-80 / -100 relative to its 50% stone), so the descent reads
-        // identically. Reachable only once the high stones (60%+) vanish — the
-        // unchanged battery mechanic.
+        // Hidden REAL exit BELOW the 50% plateau (the mid tier that stays present until
+        // battery < 50%). The drop from tier 4 to the hidden landing matches the iPhone
+        // span (-80 / -100 relative to its 50% stone), so the descent reads identically.
+        // Reachable only once the high stones (60%+) vanish — the unchanged mechanic.
         let fiftyPctX: CGFloat = stoneLayout[4].x   // 50% stone x
         let midTop = tier(4)
         createHiddenExit(at: CGPoint(x: fiftyPctX, y: midTop - 80))
-        // Small landing platform under the hidden exit (drop of 100 from tier 4 to
-        // its top; a fall the player drops onto, not a jump — same as iPhone).
+        // Small landing platform under the hidden exit (drop of 100 from tier 4 to its
+        // top; a fall the player drops onto, not a jump — same as iPhone).
         createPlatform(at: CGPoint(x: fiftyPctX, y: midTop - 100), size: CGSize(width: 90, height: 20))
 
-        // Full composed-course width (last stone 1180 + fake-exit door 1255 -> margin).
-        courseExtentIPad = 1360
+        // CAMERA FIX: full composed-course width (PEAK x1740 + fake-exit door x1820 ->
+        // margin). At ~1900pt this is genuinely ~1.6-2.0x the iPad viewport (834..1024),
+        // so installCameraFollow actually scrolls instead of clamping the whole course
+        // into one screen. setupBit() arms the follow only when this exceeds size.width.
+        courseExtentIPad = 1900
 
         // Death zone spans the FULL course width, centered on the course, catching
         // falls anywhere along the climb. Sits well below the lowest gameplay element
-        // (the hidden landing at tier(0)-... ); anchored relative to the floor tier.
+        // (the hidden landing at tier(4)-100); anchored relative to the floor tier.
         let death = SKNode()
         death.position = CGPoint(x: courseExtentIPad / 2, y: tier(0) - 210)
         death.physicsBody = SKPhysicsBody(rectangleOf: CGSize(width: courseExtentIPad + 400, height: 100))

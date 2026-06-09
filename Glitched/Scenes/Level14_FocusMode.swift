@@ -34,44 +34,50 @@ final class FocusModeScene: BaseLevelScene, SKPhysicsContactDelegate {
     // MARK: - Native-iPad composed path
     //
     // The iPhone path is UNCHANGED: when NOT isWideCanvas the scene runs the
-    // original centered-course layout (buildPhoneLevel / createHazardsPhone) so
-    // phone output is byte-identical. On a true iPad canvas we author a
-    // HAND-COMPOSED course that ASCENDS the FULL vertical band one safe tier at a
-    // time — floor near the bottom (playableGroundY) up to the finale near the top
-    // (playableCeilingY) — so gameplay spans top-to-bottom instead of floating a
-    // thin low strip with an empty upper screen. Each platform top sits on a
-    // verticalTier Y (per-tier rise auto-clamped to maxJumpableRise=85) and the
-    // route also marches left-to-right (no center ladder). The level signature
-    // twist — Focus FREEZES the moving chaos AND the latch unlocks the gate — is
-    // staged as the HIGH finale beat near the ceiling. The course is wider than the
-    // screen, so configureScene installs horizontal camera-follow.
+    // original centered-course layout (buildLevel / createHazards) so phone output
+    // is byte-identical. On a true iPad canvas we author a HAND-COMPOSED course that
+    // ASCENDS the FULL vertical band one safe tier at a time — floor near the bottom
+    // (playableGroundY) up to the finale near a local ceiling (composedCeilingY) — so
+    // gameplay spans top-to-bottom instead of floating a thin low strip with an
+    // empty upper screen. The route is hand-paced (cluster / rest / down-step /
+    // peak), NOT an even diagonal ladder, and the course is wider than the screen so
+    // configureScene installs horizontal camera-follow. The Focus FREEZE + gate
+    // latch is staged as the HIGH finale beat near the ceiling.
 
     /// True only on a genuine iPad-class canvas. Gated on BOTH dimensions so no
     /// large-but-short or rotated phone trips it; iPhone keeps the original path.
-    /// height > 1000 excludes every phone (even Pro Max landscape is ~430 tall);
-    /// width > 700 matches the base helpers' large-canvas notion so all iPads in
-    /// portrait (mini 744 and up) get the composed course. Both must hold, so
+    /// height > 1000 excludes every phone (even Pro Max landscape is ~430 tall) and
+    /// width > 700 matches the base helpers' large-canvas notion. Both must hold, so
     /// iPhone output stays byte-identical.
     private var isWideCanvas: Bool { size.height > 1000 && size.width > 700 }
 
-    /// The iPhone ground value this level hard-codes (buildPhoneLevel). The iPad
-    /// vertical-fill helpers (playableGroundY / verticalTier / playableBandHeight)
-    /// take this so iPhone-class canvases collapse to the unchanged 160 baseline.
+    /// The iPhone ground value this level hard-codes (buildLevel). The base
+    /// playableGroundY helper (and the local composed tier math built on it) take
+    /// this so iPhone-class canvases collapse to the unchanged 160 baseline.
     private let iphoneGround: CGFloat = 160
 
-    /// Full horizontal extent (scene-space) of the composed iPad course, set once
-    /// in buildComposedIPadLevel() and reused for the death floor + camera follow.
+    /// Full horizontal extent (scene-space) of the composed iPad course, set once in
+    /// buildComposedIPadLevel() and reused for the death floor + camera follow.
     private var composedCourseExtent: CGFloat = 0
 
     /// Ground baseline (platform-center Y of tier 0) for the composed iPad course,
-    /// derived from playableGroundY (now NEAR THE BOTTOM) so the climb builds UPWARD
-    /// through the full band rather than floating a thin strip in the lower third.
+    /// derived from playableGroundY (NEAR THE BOTTOM) so the climb builds UPWARD.
     private var composedGroundY: CGFloat = 0
 
-    /// iPhone path only — legacy uniform band shift. On the iPad path this is unused
-    /// (the floor is lifted DIRECTLY via the tier helpers, not by a flat band
-    /// shift). Returns 0 on iPhone-class canvases (height <= 1000), so phone layout
-    /// is byte-identical.
+    /// iPad vertical-void fix: uniform upward shift applied to EVERY gameplay
+    /// Y (platforms, spawn, exit, hazards, death floor) so the flat,
+    /// ground-anchored band sits center-ish on a tall iPad canvas instead of
+    /// hugging the bottom. Returns 0 on iPhone-class canvases (height <= 1000),
+    /// so phone layout is byte-identical. Band spans the lowest platform top
+    /// (groundY = 160) to the highest reachable hazard zone (orbital top ≈ 330).
+    /// Computed (not stored) so it is always consistent with `size`; it is added
+    /// identically at every gameplay node so all gaps/rises/jump distances and
+    /// completability are preserved. HUD/title/panel/background/camera key off
+    /// size/topSafeY/bottomSafeY and are intentionally NOT lifted.
+    ///
+    /// NOTE: on the iPad path the floor is lifted DIRECTLY via playableGroundY +
+    /// the local composed tier math, not by this flat band shift; the composed path
+    /// does NOT use gameplayLift. iPhone path uses it exactly as before.
     private var gameplayLift: CGFloat { gameplayVerticalLift(bandBottom: 160, bandTop: 330) }
 
     override func configureScene() {
@@ -90,15 +96,16 @@ final class FocusModeScene: BaseLevelScene, SKPhysicsContactDelegate {
             buildComposedIPadLevel()
             createHazardsComposedIPad()
         } else {
-            buildPhoneLevel()
-            createHazardsPhone()
+            buildLevel()
+            createHazards()
         }
         createFocusIndicator()
         showInstructionPanel()
         setupBit()
         // Promote to horizontal camera-follow only on the wider composed course.
-        // worldWidth == composedCourseExtent so the player clamp matches the course
-        // and the exit (rightmost/highest beat) stays reachable; no-op on iPhone.
+        // worldWidth == composedCourseExtent (genuinely > viewport) so the camera
+        // scrolls and the exit (rightmost/highest beat) stays reachable; no-op on
+        // iPhone (the centered course fits one screen, so no camera-follow).
         if isWideCanvas {
             installCameraFollow(worldWidth: composedCourseExtent, playerController: playerController)
         }
@@ -139,10 +146,7 @@ final class FocusModeScene: BaseLevelScene, SKPhysicsContactDelegate {
         addChild(title)
     }
 
-    /// iPhone path — original layout, kept BYTE-IDENTICAL. Only ever called when
-    /// NOT isWideCanvas, so phone output is unchanged. (On iPhone-class canvases
-    /// gameplayLift == 0 too, so groundY stays exactly 160 as before.)
-    private func buildPhoneLevel() {
+    private func buildLevel() {
         // iPad vertical-void fix: lift the single ground anchor by the uniform
         // gameplayLift. Because all platforms and the exit derive from groundY,
         // and the death floor adds the same lift below, every relative rise/gap
@@ -171,94 +175,182 @@ final class FocusModeScene: BaseLevelScene, SKPhysicsContactDelegate {
         addChild(death)
     }
 
-    // MARK: - Composed iPad course (full-height vertical climb)
+    // MARK: - Composed iPad course (full-height, HAND-COMPOSED rhythm)
     //
     // Hand-authored at ABSOLUTE scene-space positions (no size.width fractions, no
-    // courseScale — Bit's physics are device-independent). The route is a true
-    // TOP-TO-BOTTOM CLIMB: tier 0 sits near the BOTTOM (playableGroundY) and one
-    // rung per tier marches UP and to the RIGHT until the finale rung lands near
-    // the CEILING (playableCeilingY), so the whole canvas height is in play. Every
-    // platform top == a verticalTier(_:of:tierCount, iphoneGround:160) Y, so each
-    // single-tier rise is auto-clamped to <= maxJumpableRise (85). Horizontal step
-    // (xStep) keeps every edge-to-edge gap <= maxJumpableGap (130). Widths vary for
-    // rhythm and there is >=1 wide REST platform.
+    // courseScale — Bit's physics are device-independent). Tier Ys are derived from
+    // the base primitives this branch exposes (playableGroundY near the bottom + a
+    // local ceiling at topSafeY-150, clear of the title/HUD) and a tier budget SIZED
+    // so the finale rung reaches that ceiling at a safe per-tier rise — the whole
+    // canvas height is in play, no dead sky. Every per-tier rise is <= the base
+    // maxJumpableRise (85); the step is clamped so it can never exceed it.
+    //
+    // The route is NOT an even diagonal ladder. It is a hand-paced rhythm:
+    //   TEACH -> 2-PAD CLUSTER (flat run) -> wide REST -> climbing TRAVERSE
+    //   (asymmetric X) -> a deliberate DOWN-STEP dip -> a harder TRAVERSE -> an
+    //   ISOLATED PEAK that stands apart -> the FINALE landing rung (door).
+    // X is asymmetric (no strict L/R alternation), the vertical pacing varies (two
+    // beats share a tier as a flat rest, one beat steps DOWN, one stands apart as a
+    // peak). Every edge-to-edge horizontal gap stays <= maxJumpableGap (130).
+    //
+    // Both buildComposedIPadLevel() and createHazardsComposedIPad() read the SAME
+    // beats from composedRoute() and the SAME composedTierY(), so the platforms and
+    // the hazards can never drift (both are deterministic from `size`).
     //
     // The level SIGNATURE twist is staged as the HIGH FINALE beat: a moving spike
     // PATROL sweeps the finale landing rung (the walk to the door); with Focus OFF
     // it runs Bit down, and the gate is locked. Enabling Focus FREEZES the patrol
-    // (parking it at one spot, leaving a clear lane) AND latches the gate open — so
-    // the player crosses the now-still chaos and walks out, exactly the phone
-    // mechanic, just relocated to the ceiling so the climb reads as a reveal.
+    // (parking it, leaving a clear lane) AND latches the gate open — so the player
+    // crosses the now-still chaos and walks out, exactly the phone mechanic, just
+    // relocated to the ceiling so the climb reads as a reveal.
+
+    /// One hand-placed platform in the composed iPad route. `role` drives whether
+    /// and what hazard hovers over it (createHazardsComposedIPad).
+    private struct RouteBeat {
+        let tier: Int        // tier index (Y via composedTierY); 0 == floor, top == near ceiling
+        let x: CGFloat       // absolute scene-space center X (asymmetric, hand-paced)
+        let width: CGFloat   // varied 70..210 for rhythm
+        let role: BeatRole
+    }
+    private enum BeatRole {
+        case teach           // spawn pad, no pressure
+        case cluster         // tight group / flat run, a single light threat
+        case rest            // wide breather, kept calm
+        case climb           // standard climbing rung, varied hazard
+        case dip             // deliberate down-step, light threat
+        case peak            // isolated high rung that stands apart
+        case finale          // landing rung at the door (patrol staged here)
+    }
+
+    /// Top of the usable gameplay band on iPad — just below the level title + the
+    /// instruction panel band — so the finale rung can sit near the ceiling without
+    /// colliding with the HUD. (This branch's BaseLevelScene has no playableCeilingY
+    /// helper, so the ceiling is derived here from the shared topSafeY primitive.)
+    private var composedCeilingY: CGFloat { topSafeY - 150 }
+
+    /// Tier budget for the composed route. SIZED so the climb actually REACHES
+    /// composedCeilingY at a safe per-tier rise: count = ceil(band / maxJumpableRise)
+    /// + 1. Passing too few tiers is the dead-sky bug (the step would clamp to 85 and
+    /// the top of the band would be stranded). Floored at 6, capped at 12 so the
+    /// rhythm (cluster/rest/dip/peak) still reads on giant canvases. Deterministic.
+    private var composedTierCount: Int {
+        let band = max(0, composedCeilingY - playableGroundY(iphoneGround: iphoneGround))
+        let needed = Int((band / BaseLevelScene.maxJumpableRise).rounded(.up)) + 1
+        return min(max(6, needed), 12)
+    }
+
+    /// Y for tier `index` of the composed climb. Tier 0 == playableGroundY (floor
+    /// near the bottom); the per-tier step is band/(count-1) CLAMPED to the safe
+    /// maxJumpableRise so a single hop is always reachable; tier (count-1) lands at
+    /// (or just below) composedCeilingY — the full vertical band is filled.
+    private func composedTierY(_ index: Int) -> CGFloat {
+        let count = composedTierCount
+        let top = count - 1
+        let i = min(max(index, 0), top)
+        let ground = playableGroundY(iphoneGround: iphoneGround)
+        guard count > 1 else { return ground }
+        let band = max(0, composedCeilingY - ground)
+        let step = min(band / CGFloat(count - 1), BaseLevelScene.maxJumpableRise)
+        return ground + CGFloat(i) * step
+    }
+
+    /// THE hand-composed route. Deterministic from `size` (tier count + all X
+    /// absolute), so build + hazards always agree. Authored so the LAST beat sits at
+    /// the top tier (near composedCeilingY) and consecutive beats never exceed a safe
+    /// rise (one tier) or a safe gap (<= 130 edge-to-edge).
+    private func composedRoute() -> [RouteBeat] {
+        let top = composedTierCount - 1
+        var beats: [RouteBeat] = []
+
+        // BEAT 1 — TEACH: wide low pad on the floor. No pressure: read controls,
+        // the locked door, the Focus prompt.
+        beats.append(RouteBeat(tier: 0, x: 150, width: 200, role: .teach))
+
+        // BEATS 2-3 — CLUSTER: a 1-tier hop then a near-flat hop on the SAME tier,
+        // grouped close (a flat run that reads as a rest, not a march), then a gap
+        // before the wide rest. Both lean right but the second sits only slightly
+        // past the first — cluster, not ladder.
+        beats.append(RouteBeat(tier: 1, x: 320, width: 90, role: .cluster))
+        beats.append(RouteBeat(tier: 1, x: 450, width: 80, role: .cluster))
+
+        // BEAT 4 — REST: a wide breather one tier up; the player gathers before the
+        // real traverse. (Asymmetric: it is far wider than its neighbours.)
+        beats.append(RouteBeat(tier: 2, x: 600, width: 210, role: .rest))
+
+        // BEATS 5-6 — CLIMBING TRAVERSE: two rungs up, varied widths, X advancing in
+        // UNEVEN steps (not a constant xStep ladder).
+        beats.append(RouteBeat(tier: 3, x: 780, width: 120, role: .climb))
+        beats.append(RouteBeat(tier: 4, x: 910, width: 100, role: .climb))
+
+        // BEAT 7 — DOWN-STEP DIP: drop ONE tier and push right. Breaks the monotonic
+        // up-and-right read; a deliberate descent before the hard part.
+        beats.append(RouteBeat(tier: 3, x: 1040, width: 110, role: .dip))
+
+        // BEATS 8-9 — HARDER TRAVERSE: regain altitude over two tighter rungs.
+        beats.append(RouteBeat(tier: 4, x: 1170, width: 90, role: .climb))
+        beats.append(RouteBeat(tier: 5, x: 1290, width: 90, role: .climb))
+
+        // Fill any remaining tiers between here and the peak with climbing rungs so
+        // tall iPads still reach the ceiling (the route MUST end at `top`). Jittered
+        // X (not a fixed step) so it never reads as a ladder. Reserve the last TWO
+        // tiers for the PEAK (top-1) and FINALE (top).
+        var nextX: CGFloat = 1420
+        var tier = 6
+        while tier <= top - 2 {
+            let w: CGFloat = (tier % 2 == 0) ? 120 : 95
+            let jitter: CGFloat = (tier % 2 == 0) ? -20 : 15
+            beats.append(RouteBeat(tier: tier, x: nextX + jitter, width: w, role: .climb))
+            nextX += (tier % 2 == 0) ? 135 : 115   // uneven horizontal pacing
+            tier += 1
+        }
+
+        // Guard for short canvases: if composedTierCount is small the loop above may
+        // not run and tiers top-1 / top could equal earlier tiers — re-anchor X so the
+        // peak/finale still advance rightward from the last placed beat.
+        let lastX = beats.last?.x ?? nextX
+        let peakBaseX = max(nextX, lastX + 130)
+
+        // BEAT (top-1) — ISOLATED PEAK: a narrow rung pushed RIGHT and UP that stands
+        // apart from its neighbours (small landing, clear sky around it) — the visual
+        // apex of the climb before the finale.
+        beats.append(RouteBeat(tier: top - 1, x: peakBaseX + 40, width: 80, role: .peak))
+
+        // BEAT (top) — FINALE near the CEILING: a wide landing rung set BACK-LEFT of
+        // the peak (asymmetric) so the last move is a short descent-traverse onto the
+        // door rung, not another up-right step. Reads as the destination.
+        beats.append(RouteBeat(tier: top, x: peakBaseX, width: 200, role: .finale))
+
+        return beats
+    }
+
     private func buildComposedIPadLevel() {
         // Floor near the bottom; build UPWARD. (Helper returns iphoneGround=160 on
         // phones, but this path only runs on iPad.)
-        let g = playableGroundY(iphoneGround: iphoneGround)
-        composedGroundY = g
+        composedGroundY = playableGroundY(iphoneGround: iphoneGround)
 
-        // Enough tiers that the TOP rung reaches near playableCeilingY with each
-        // per-tier rise ~maxJumpableRise (verticalTier clamps the step to 85; too
-        // few tiers would top out mid-screen and leave dead sky). +1 keeps a small
-        // margin so tier 0 == floor and tier (count-1) == near ceiling.
-        let band = playableBandHeight(iphoneGround: iphoneGround)
-        let tierCount = max(6, Int(ceil(band / BaseLevelScene.maxJumpableRise)) + 1)
-        let topTier = tierCount - 1
-        func tierY(_ i: Int) -> CGFloat {
-            verticalTier(min(max(i, 0), topTier), of: tierCount, iphoneGround: iphoneGround)
-        }
-
-        // Horizontal march. Standard rungs are ~120 wide; xStep 150 keeps the
-        // edge-to-edge gap at ~30 (<= 130) even between two 120-wide pads, and the
-        // wider rest/teach/finale pads only SHRINK the gap. The climb therefore
-        // spreads across the full width instead of stacking a center ladder.
-        let xStart: CGFloat = 130
-        let xStep: CGFloat = 150
-        func rungX(_ tier: Int) -> CGFloat { xStart + CGFloat(tier) * xStep }
-
+        let beats = composedRoute()
         let slab: CGFloat = 28
-        func plat(_ x: CGFloat, _ top: CGFloat, _ w: CGFloat) {
-            createPlatform(at: CGPoint(x: x, y: top), size: CGSize(width: w, height: slab))
+        for beat in beats {
+            createPlatform(at: CGPoint(x: beat.x, y: composedTierY(beat.tier)),
+                           size: CGSize(width: beat.width, height: slab))
         }
 
-        // Which mid tier is the wide REST breather (a deliberate pause mid-climb).
-        let restTier = max(2, topTier / 2)
+        // Exit door on the FINALE rung (last beat), reachable along the top tier.
+        // Door center sits +50 above the rung (same +50 the phone path uses).
+        let finale = beats.last!
+        createExitDoor(at: CGPoint(x: finale.x + 60, y: composedTierY(finale.tier) + 50))
 
-        // BEAT 1 — SPAWN / TEACH: a wide, safe low REST platform on the floor tier.
-        // No hazard pressure here so the player reads the controls, the locked door,
-        // and the Focus prompt before the chaos starts.
-        plat(rungX(0), tierY(0), 200)
+        // Course extent = a margin past the rightmost beat / exit so the player clamp
+        // lets Bit reach and stand at the door. The route is hand-spaced to ~1.6-2.0x
+        // the viewport so installCameraFollow genuinely scrolls (no camera collapse).
+        let rightmost = beats.map { $0.x }.max() ?? finale.x
+        composedCourseExtent = max(rightmost, finale.x + 60) + 200
 
-        // BEATS 2..(top-1) — THE CLIMB: one rung per tier, ascending up + right.
-        // The restTier rung is an extra-wide breather; all others alternate widths
-        // for rhythm. Hazards (createHazardsComposedIPad) hover ABOVE these rungs.
-        for tier in 1..<topTier {
-            let x = rungX(tier)
-            let y = tierY(tier)
-            if tier == restTier {
-                plat(x, y, 210)                       // wide REST / breath
-            } else {
-                let w: CGFloat = (tier % 2 == 0) ? 130 : 110
-                plat(x, y, w)                          // standard rung, varied width
-            }
-        }
-
-        // BEAT (top) — ISOLATED FINALE near the CEILING: a wide landing rung that
-        // reads as the destination. The signature "freeze the patrol, then walk
-        // out" beat plays out HERE (patrol staged in createHazardsComposedIPad).
-        plat(rungX(topTier), tierY(topTier), 180)
-
-        // Exit door on the finale rung, reachable along the same top tier. Door
-        // center sits ground+50-style above the rung (same +50 the phone path uses).
-        createExitDoor(at: CGPoint(x: rungX(topTier) + 60, y: tierY(topTier) + 50))
-
-        // Course extent = a margin past the exit so the player clamp lets Bit reach
-        // and stand at the door. Used for camera-follow worldWidth + death floor.
-        composedCourseExtent = rungX(topTier) + 200
-
-        // Death floor spans the FULL composed course (centered on the course, not
-        // the screen) so a fall anywhere along the scrolling level is caught, a
-        // fixed distance below the floor tier.
+        // Death floor spans the FULL composed course (centered on the course, not the
+        // screen) so a fall anywhere along the scrolling level is caught, a fixed
+        // distance below the floor tier.
         let death = SKNode()
-        death.position = CGPoint(x: composedCourseExtent / 2, y: tierY(0) - 210)
+        death.position = CGPoint(x: composedCourseExtent / 2, y: composedTierY(0) - 210)
         death.physicsBody = SKPhysicsBody(rectangleOf: CGSize(width: composedCourseExtent * 2, height: 120))
         death.physicsBody?.isDynamic = false
         death.physicsBody?.categoryBitMask = PhysicsCategory.hazard
@@ -282,9 +374,7 @@ final class FocusModeScene: BaseLevelScene, SKPhysicsContactDelegate {
         addChild(platform)
     }
 
-    /// iPhone path — original hazard layout, kept BYTE-IDENTICAL. Only ever called
-    /// when NOT isWideCanvas.
-    private func createHazardsPhone() {
+    private func createHazards() {
         // iPad vertical-void fix: every hazard Y (and orbital center Y) gets the
         // SAME gameplayLift as the platforms/spawn/exit, so each hazard keeps its
         // exact height above the band it threatens. On iPhone gameplayLift == 0.
@@ -358,59 +448,56 @@ final class FocusModeScene: BaseLevelScene, SKPhysicsContactDelegate {
     /// Composed iPad hazards. SAME mechanic as the phone path — every hazard is
     /// either movement-animated (frozen by updateFocusState's isPaused) or orbital
     /// (ticked in updatePlaying, which early-returns while Focus is on). Hazards
-    /// hover ABOVE the climb rungs (slab top = center + 14) so a frozen spike never
+    /// hover ABOVE the climb rungs (slab top = tierY + 14) so a frozen spike never
     /// blocks a landing spot — it threatens the JUMP ARC, exactly like the phone
-    /// layout. They are distributed across the FULL vertical climb (low rungs to
-    /// high rungs) so "freeze the chaos" reveals the whole top-to-bottom route.
+    /// layout. They are distributed across the FULL vertical climb so "freeze the
+    /// chaos" reveals the whole top-to-bottom route.
     ///
     /// CRITICAL completability rule: freezing only sets `isPaused` — it does NOT
-    /// relocate a hazard. So every MANDATORY single-tier climb jump must stay clear
-    /// of each hazard's travel range; otherwise a spike could freeze mid-arc and
-    /// soft-lock the climb. Each oscillator therefore bobs in the airspace OVER a
-    /// rung (centred on the rung X, never spanning the seam between two rungs at the
-    /// jump corridor) and the finale threat is a PATROL on the finale rung surface
-    /// with a clear landing lane.
+    /// relocate a hazard. So every MANDATORY climb jump must stay clear of each
+    /// hazard's travel range; otherwise a spike could freeze mid-arc and soft-lock
+    /// the climb. Each oscillator therefore bobs in the airspace OVER its own rung
+    /// (centred on the rung X, never spanning the inter-rung jump corridor), and the
+    /// finale threat is a PATROL on the finale rung with a clear LEFT landing lane.
     private func createHazardsComposedIPad() {
-        // Recompute the SAME tier/x geometry buildComposedIPadLevel used (both are
-        // deterministic from `size`, so they always agree).
-        let band = playableBandHeight(iphoneGround: iphoneGround)
-        let tierCount = max(6, Int(ceil(band / BaseLevelScene.maxJumpableRise)) + 1)
-        let topTier = tierCount - 1
-        func tierY(_ i: Int) -> CGFloat {
-            verticalTier(min(max(i, 0), topTier), of: tierCount, iphoneGround: iphoneGround)
-        }
-        let xStart: CGFloat = 130
-        let xStep: CGFloat = 150
-        func rungX(_ tier: Int) -> CGFloat { xStart + CGFloat(tier) * xStep }
-        let restTier = max(2, topTier / 2)
+        let beats = composedRoute()
 
         // --- CLIMB hazards: hover over interior rungs, spread up the full band. ---
-        // Skip tier 0 (TEACH, no pressure), the restTier (REST breather, kept calm),
-        // and the topTier (its own finale patrol below). Alternate sweeper / vertical
-        // oscillator / orbital by tier so the chaos varies as you climb.
+        // teach/rest/finale beats are left CALM (teach = no pressure, rest =
+        // breather, finale = its own patrol below). cluster/climb/dip/peak each get
+        // a hazard whose KIND varies (sweeper / vertical oscillator / orbital) so the
+        // chaos reads differently as you climb.
         var orbitalSeed = 0
-        for tier in 1..<topTier where tier != restTier {
-            let cx = rungX(tier)
-            let surfaceTop = tierY(tier) + 14
-            let kind = tier % 3
+        var kindRotor = 0
+        for beat in beats {
+            switch beat.role {
+            case .teach, .rest, .finale:
+                continue
+            case .cluster, .climb, .dip, .peak:
+                break
+            }
+            let cx = beat.x
+            let surfaceTop = composedTierY(beat.tier) + 14
+            let kind = kindRotor % 3
+            kindRotor += 1
             if kind == 0 {
-                // Horizontal sweeper, centred over the rung. Span 50 each way keeps
-                // it within the rung's airspace, off the inter-rung jump corridor.
+                // Horizontal sweeper, centred over the rung. Span 45 each way keeps it
+                // within the rung's airspace, off the inter-rung jump corridor.
                 let h = createSpike()
                 h.position = CGPoint(x: cx, y: surfaceTop + 60)
-                h.name = "hazard_climb_\(tier)"
+                h.name = "hazard_climb_\(beat.tier)_\(orbitalSeed)"
                 addChild(h); hazards.append(h)
-                let speed = (tier % 2 == 0) ? 1.0 : 2.0
+                let speed = (beat.tier % 2 == 0) ? 1.0 : 2.0
                 h.run(.repeatForever(.sequence([
-                    .moveBy(x: 50, y: 0, duration: speed),
-                    .moveBy(x: -50, y: 0, duration: speed)
+                    .moveBy(x: 45, y: 0, duration: speed),
+                    .moveBy(x: -45, y: 0, duration: speed)
                 ])), withKey: "movement")
             } else if kind == 1 {
-                // Vertical oscillator over the rung; lowest point stays >= 20pt above
+                // Vertical oscillator over the rung; lowest point stays >= 30pt above
                 // the surface so a frozen spike can never sit on the landing.
                 let h = createSpike()
                 h.position = CGPoint(x: cx, y: surfaceTop + 90)
-                h.name = "hazard_climb_\(tier)"
+                h.name = "hazard_climb_\(beat.tier)_v"
                 addChild(h); hazards.append(h)
                 h.run(.repeatForever(.sequence([
                     .moveBy(x: 0, y: 60, duration: 1.4),
@@ -422,7 +509,7 @@ final class FocusModeScene: BaseLevelScene, SKPhysicsContactDelegate {
                 let h = createSpike()
                 let oc = CGPoint(x: cx, y: surfaceTop + 80)
                 h.position = oc
-                h.name = "hazard_climb_\(tier)"
+                h.name = "hazard_climb_\(beat.tier)_o"
                 addChild(h); hazards.append(h)
                 let idx = hazards.count - 1
                 orbitalCenters[idx] = oc
@@ -434,17 +521,18 @@ final class FocusModeScene: BaseLevelScene, SKPhysicsContactDelegate {
         // --- ISOLATED FINALE near the ceiling: the signature "freeze the patrol,
         // then walk out" beat. ----------------------------------------------------
         // Two staggered surface patrols ride just above the finale rung surface
-        // (top tierY(topTier), surface +14). Spikes sweep the rung's RIGHT interior
-        // only; the LEFT ~45pt (the landing zone from the last climb jump) is kept
-        // OUT of both patrol ranges so Bit always lands on clear footing even if both
-        // freeze at their nearest extent. While they MOVE they run Bit down as he
-        // crosses to the door; once Focus FREEZES them they park (never stacked at
-        // the same X), leaving a walk-or-hop lane past them to the now-unlocked exit.
-        let finaleLeft = rungX(topTier) - 90          // rung spans ~ left-90 .. left+90 (180 wide)
-        let patrolY = tierY(topTier) + 14 + 16
+        // (tierY(top) + 14). Spikes sweep the rung's RIGHT interior only; the LEFT
+        // ~50pt (the landing zone from the last descent-traverse) is kept OUT of both
+        // patrol ranges so Bit always lands on clear footing even if both freeze at
+        // their nearest extent. While they MOVE they run Bit down as he crosses to the
+        // door; once Focus FREEZES them they park (never stacked at the same X),
+        // leaving a walk-or-hop lane past them to the now-unlocked exit.
+        guard let finale = beats.last else { return }
+        let finaleLeft = finale.x - finale.width / 2     // rung's left edge
+        let patrolY = composedTierY(finale.tier) + 14 + 16
         let patrolSpecs: [(start: CGFloat, span: CGFloat, dur: Double)] = [
-            (finaleLeft + 50, 70, 1.1),     // left patrol: stays right of the landing zone
-            (finaleLeft + 130, -60, 0.85)   // right patrol: overlaps so a moving run is denied
+            (finaleLeft + 70, 60, 1.1),      // left patrol: stays right of the landing zone
+            (finaleLeft + 150, -55, 0.85)    // right patrol: overlaps so a moving run is denied
         ]
         for (i, spec) in patrolSpecs.enumerated() {
             let patrol = createSpike()
@@ -498,8 +586,8 @@ final class FocusModeScene: BaseLevelScene, SKPhysicsContactDelegate {
             addChild(moonIcon)
         }
 
-        // Pre-create calming overlay (hidden). Anchor to the camera on the
-        // scrolling iPad course so the full-screen wash stays centered on view.
+        // Pre-create calming overlay (hidden). Anchor to the camera on the scrolling
+        // iPad course so the full-screen wash stays centered on view.
         calmOverlay = SKShapeNode(rectOf: CGSize(width: size.width * 2, height: size.height * 2))
         calmOverlay?.fillColor = SKColor.white
         calmOverlay?.strokeColor = .clear
@@ -555,9 +643,9 @@ final class FocusModeScene: BaseLevelScene, SKPhysicsContactDelegate {
 
         if isWideCanvas {
             // Camera-anchored bottom-trailing on the scrolling iPad course so the
-            // fallback affordance never scrolls off-screen. nodes(at:) still hits
-            // it: the touch handler converts to scene coords and the button's world
-            // frame (camera position + this local offset) sits under the tap.
+            // fallback affordance never scrolls off-screen. nodes(at:) still hits it:
+            // the touch handler converts to scene coords and the button's world frame
+            // (camera position + this local offset) sits under the tap.
             button.position = CGPoint(x: size.width / 2 - 16 - buttonW / 2,
                                       y: -size.height / 2 + bottomSafeY + 40)
             gameCamera.addChild(button)
@@ -659,10 +747,11 @@ final class FocusModeScene: BaseLevelScene, SKPhysicsContactDelegate {
         // gameplayLift as the band, so Bit still drops onto the first platform.
         // On iPhone gameplayLift == 0 -> spawn y stays 200.
         if isWideCanvas {
-            // Composed iPad: drop onto the tier-0 TEACH platform (x=rungX(0)=130,
-            // top=composedGroundY). Spawn ~40 pt above the slab so Bit settles on
-            // it, same 40-pt drop the phone path uses (phone groundY=160, spawn 200).
-            spawnPoint = CGPoint(x: 130, y: composedGroundY + 40)
+            // Composed iPad: drop onto the tier-0 TEACH platform (first beat,
+            // x=150, top=composedGroundY). Spawn ~40 pt above the slab so Bit
+            // settles on it, the same 40-pt drop the phone path uses (phone
+            // groundY=160, spawn 200).
+            spawnPoint = CGPoint(x: 150, y: composedGroundY + 40)
         } else {
             spawnPoint = CGPoint(x: courseX(50), y: 200 + gameplayLift)
         }
@@ -765,8 +854,8 @@ final class FocusModeScene: BaseLevelScene, SKPhysicsContactDelegate {
 
         // Update orbital hazards. Keys are the actual `hazards` array indices, so
         // this works for BOTH layouts (phone: 4,5 / composed iPad: whatever indices
-        // the climb orbitals landed on) without assuming positions. courseLen(40)
-        // == 40 on iPad (courseScale clamps to 1.0), so the orbit radius is the same
+        // the climb orbitals landed on) without assuming positions. courseLen(40) ==
+        // 40 on iPad (courseScale clamps to 1.0), so the orbit radius is the same
         // absolute 40 pt on every device.
         guard !isFocusEnabled else { return }
         let orbitalRadius: CGFloat = courseLen(40)
