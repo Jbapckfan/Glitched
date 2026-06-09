@@ -58,7 +58,18 @@ final class MultiTouchScene: BaseLevelScene, SKPhysicsContactDelegate {
     private var instructionLabel: SKLabelNode?
 
     // MARK: - Ground Y
-    private let groundY: CGFloat = 120
+    // iPhone byte-identical baseline. On iPad it is lifted by playableGroundY so the
+    // gameplay band + screen-space plate HUD fill the tall canvas (see buildLevel).
+    private var groundY: CGFloat = 120
+
+    // MARK: - iPad Composition
+    // The multi-touch mechanic is fundamentally SCREEN-SPACE: every plate in a group
+    // must be simultaneously reachable AND the gameplay band must stay visible while
+    // the player walks through the freshly-opened gate. A scrolling camera would pull
+    // held plates and gates apart, so the iPad path is a HAND-COMPOSED SINGLE-SCREEN
+    // course (no installCameraFollow): wider absolute layout + raised floor + tiered,
+    // varied-height platforms + paced beats. Plates stay camera-children (HUD).
+    private var isWideCanvas: Bool { size.height > 1000 && size.width > 700 }
 
     // MARK: - Configuration
 
@@ -184,6 +195,19 @@ final class MultiTouchScene: BaseLevelScene, SKPhysicsContactDelegate {
     // MARK: - Level Building
 
     private func buildLevel() {
+        if isWideCanvas {
+            // iPad: raise the floor so the band + plate HUD fill the tall canvas.
+            // groundY is the only authored Y baseline everything below is relative to.
+            groundY = playableGroundY(iphoneGround: 120)
+            buildComposedIPadLevel()
+        } else {
+            buildPhoneLevel()
+        }
+    }
+
+    // MARK: - iPhone Level (BYTE-IDENTICAL to the original buildLevel body)
+
+    private func buildPhoneLevel() {
         buildGround()
         buildSection1()
         buildSection2()
@@ -296,6 +320,208 @@ final class MultiTouchScene: BaseLevelScene, SKPhysicsContactDelegate {
         // Exit door — hidden behind gate 3, revealed after opening
         let door = ExitDoor(size: CGSize(width: 40, height: 60))
         door.position = CGPoint(x: size.width - 45, y: groundY + 30)
+        door.zPosition = 10
+        door.alpha = 0
+        addChild(door)
+        exitDoor = door
+    }
+
+    // MARK: - iPad Composed Level (hand-composed, paced beats)
+    //
+    // The mechanic is screen-space (hold all plates in a group AT ONCE while the
+    // gameplay band stays visible), so this is a SINGLE-SCREEN course — NOT a
+    // scrolling one. We do NOT installCameraFollow: the camera stays centered and
+    // static, exactly like the phone build, which is what keeps every plate in a
+    // group simultaneously reachable. We fill the iPad instead by:
+    //   - raising the floor (groundY = playableGroundY) for vertical fill,
+    //   - keeping a CONTINUOUS safety ground (no fall-trap; the phone level has no
+    //     death zone and no pits, so introducing a fallable gap would be a new death
+    //     vector that nothing handles — we preserve that invariant exactly),
+    //   - adding tiered rhythm platforms ABOVE the ground so the band varies height
+    //     instead of being one flat strip,
+    //   - fanning the screen-space plate HUD across the full canvas (plates are
+    //     camera-children, so fractional screen positions are the CORRECT space for
+    //     them — that is how the phone build already places them).
+    //
+    // BEATS (left -> right): spawn/teach (group 1) -> stepped cluster (group 2,
+    // tiered rhythm blocks) -> a wide REST breath platform -> the 4-plate TENSION
+    // PEAK staged on an isolated raised finale pedestal (group 3, the signature
+    // twist) -> exit.
+    //
+    // WIDTH-ADAPTIVE: the REQUIRED traversal path is the flat continuous ground
+    // (no jumps needed between gates), so the gate/exit/beat ANCHORS are placed as
+    // fractions of the real canvas width — this fits every iPad (mini portrait 744
+    // .. 13" 1366 / landscape) AND fills wider screens edge to edge. Only the
+    // OVERHEAD rhythm-block clusters (the optional hop-on platforms) carry the jump
+    // budget, and those keep ABSOLUTE inter-block spacing (gaps/rises fixed) — only
+    // their cluster CENTER is anchored proportionally. Scaling never widens a gap.
+    private var ipadGate1X: CGFloat { size.width * 0.24 }
+    private var ipadGate2X: CGFloat { size.width * 0.58 }
+    private var ipadGate3X: CGFloat { size.width * 0.86 }
+    private var ipadClusterCenterX: CGFloat { size.width * 0.44 }   // group-2 rhythm cluster
+    private var ipadRestCenterX: CGFloat { size.width * 0.70 }      // breath platform
+    private var ipadPedestalX: CGFloat { size.width * 0.82 }        // finale pedestal
+
+    // Plate HUD vertical tiers, anchored ABOVE the (lifted) gameplay band so plates
+    // never overlap platforms/gates on any iPad height. groundY is already lifted by
+    // playableGroundY (~22% up), so these tiers fill the upper screen for vertical
+    // fill while staying clear of the band top (<= groundY + 84) and the title HUD.
+    private var ipadPlateLowY: CGFloat { groundY + 150 }
+    private var ipadPlateMidY: CGFloat { groundY + 270 }
+    private var ipadPlateHighY: CGFloat { groundY + 390 }
+
+    private func buildComposedIPadLevel() {
+        buildComposedGround()
+        buildComposedRhythmTiers()
+        buildComposedSection1()   // teach beat
+        buildComposedSection2()   // stepped cluster beat
+        buildComposedSection3()   // rest beat + isolated finale beat + exit
+    }
+
+    /// Continuous full-width safety ground (same role as the phone ground): the
+    /// single walking surface gates stand on. No pits => no fall death, preserved.
+    private func buildComposedGround() {
+        let ground = createPlatform(
+            width: size.width,
+            height: 30,
+            position: CGPoint(x: size.width / 2, y: groundY - 15)
+        )
+        ground.name = "ground"
+        addChild(ground)
+    }
+
+    /// Tiered overhead standing blocks ABOVE the continuous ground. Purely for
+    /// height rhythm + visual fill. They are HOP-ONTO platforms (top within jump
+    /// reach) whose UNDERSIDE clears the player's standing/walking lane, so they
+    /// never block forward progress on the ground and the player can never be
+    /// trapped (the safety ground is always beneath). Bit's body is ~54pt tall, so
+    /// every block base is kept >= groundY + 66 (Bit's body is ~54pt; that leaves
+    /// >=12pt walk clearance). Tops vary across tiers for rhythm and every top stays
+    /// within BaseLevelScene.maxJumpableRise (85) of the ground; block-to-block gaps
+    /// stay within maxJumpableGap (130).
+    private func buildComposedRhythmTiers() {
+        // top, centerX, width  (top = centerY + height/2, height = 12 => base = top-12)
+        struct Tier { let centerX: CGFloat; let width: CGFloat; let top: CGFloat }
+        let h: CGFloat = 12
+        // Group-2 stepped cluster: 3 blocks at ABSOLUTE 110pt centerspacing around
+        // the proportional cluster center (edge-to-edge gap = 110-90 = 20pt <= 130).
+        // Tops step low -> high -> low for rhythm; all rises from ground <= 85.
+        let cc = ipadClusterCenterX
+        let tiers: [Tier] = [
+            Tier(centerX: cc - 110, width: 90, top: groundY + 78),   // rise 78; base 66
+            Tier(centerX: cc,        width: 90, top: groundY + 84),  // rise 84; base 72
+            Tier(centerX: cc + 110, width: 90, top: groundY + 78),   // rise 78; base 66
+            // finale-pedestal approach (group-3 region): a raised block that visually
+            // lifts the climax beat above the rest platform.
+            Tier(centerX: ipadPedestalX, width: 120, top: groundY + 84),  // rise 84; base 72
+        ]
+        for t in tiers {
+            let block = createPlatform(
+                width: t.width,
+                height: h,
+                position: CGPoint(x: t.centerX, y: t.top - h / 2)
+            )
+            block.zPosition = 2
+            addChild(block)
+        }
+    }
+
+    // BEAT 1 — spawn / teach: the 2-plate group, gate 1 as the first wall.
+    private func buildComposedSection1() {
+        let plateY = ipadPlateMidY
+        let plateX1 = size.width * 0.14
+        let plateX2 = size.width * 0.26
+
+        pressurePlates.append(createPressurePlate(at: CGPoint(x: plateX1, y: plateY), group: 1))
+        pressurePlates.append(createPressurePlate(at: CGPoint(x: plateX2, y: plateY), group: 1))
+
+        // Gate 1 wall stands ON the ground (base at ground top).
+        let gateX = ipadGate1X
+        let gate1 = createGate(at: CGPoint(x: gateX, y: groundY + 50), group: 1)
+        gates.append(gate1)
+
+        circuitLines[1] = createCircuitConnections(
+            from: [CGPoint(x: plateX1, y: plateY), CGPoint(x: plateX2, y: plateY)],
+            to: CGPoint(x: gateX, y: groundY + 50),
+            group: 1
+        )
+    }
+
+    // BEAT 2 — stepped cluster: 3 plates fanned over the tiered rhythm blocks,
+    // gate 2 as the second wall.
+    private func buildComposedSection2() {
+        let plateX1 = size.width * 0.40
+        let plateX2 = size.width * 0.52
+        let plateX3 = size.width * 0.46
+        let plateY1 = ipadPlateLowY
+        let plateY2 = ipadPlateLowY
+        let plateY3 = ipadPlateHighY
+
+        pressurePlates.append(createPressurePlate(at: CGPoint(x: plateX1, y: plateY1), group: 2))
+        pressurePlates.append(createPressurePlate(at: CGPoint(x: plateX2, y: plateY2), group: 2))
+        pressurePlates.append(createPressurePlate(at: CGPoint(x: plateX3, y: plateY3), group: 2))
+
+        let gateX = ipadGate2X
+        let gate2 = createGate(at: CGPoint(x: gateX, y: groundY + 50), group: 2)
+        gates.append(gate2)
+
+        circuitLines[2] = createCircuitConnections(
+            from: [
+                CGPoint(x: plateX1, y: plateY1),
+                CGPoint(x: plateX2, y: plateY2),
+                CGPoint(x: plateX3, y: plateY3)
+            ],
+            to: CGPoint(x: gateX, y: groundY + 50),
+            group: 2
+        )
+    }
+
+    // BEAT 3+4+5 — REST breath platform -> ISOLATED FINALE (4-plate signature twist)
+    // staged on the raised pedestal -> exit.
+    private func buildComposedSection3() {
+        // BEAT 3 — REST: a wide, flat breath platform (a deliberate safe pause)
+        // bridging the cluster and the climax. An overhead landing one tier up
+        // (top within jump reach, base clearing the walking lane like the rhythm
+        // blocks) so it reads as a distinct breath; the safety ground stays beneath.
+        let restTop = groundY + 84          // rise 84 from ground (<= 85)
+        let restH: CGFloat = 14             // base = groundY + 70, clears the walk lane
+        let rest = createPlatform(
+            width: 200,
+            height: restH,
+            position: CGPoint(x: ipadRestCenterX, y: restTop - restH / 2)
+        )
+        rest.zPosition = 2
+        rest.name = "rest_platform"
+        addChild(rest)
+
+        // BEAT 4 — TENSION PEAK / FINALE: the 4 plates (the level's signature
+        // twist) fanned to the screen corners/edges, deliberately spread the
+        // WIDEST of any group so the finger-stretch reads as the climax.
+        let positions: [CGPoint] = [
+            CGPoint(x: size.width * 0.68, y: ipadPlateLowY),
+            CGPoint(x: size.width * 0.88, y: ipadPlateMidY),
+            CGPoint(x: size.width * 0.68, y: ipadPlateHighY),
+            CGPoint(x: size.width * 0.88, y: ipadPlateHighY + 80),
+        ]
+        for pos in positions {
+            pressurePlates.append(createPressurePlate(at: pos, group: 3))
+        }
+
+        // Gate 3 (final wall) staged at the raised finale pedestal anchor.
+        let gateX = ipadGate3X
+        let gateY = groundY + 50
+        let gate3 = createGate(at: CGPoint(x: gateX, y: gateY), group: 3)
+        gates.append(gate3)
+
+        circuitLines[3] = createCircuitConnections(
+            from: positions,
+            to: CGPoint(x: gateX, y: gateY),
+            group: 3
+        )
+
+        // BEAT 5 — EXIT: door beyond gate 3, revealed after the finale group opens.
+        let door = ExitDoor(size: CGSize(width: 40, height: 60))
+        door.position = CGPoint(x: size.width - 70, y: groundY + 30)
         door.zPosition = 10
         door.alpha = 0
         addChild(door)

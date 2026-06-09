@@ -21,22 +21,41 @@ final class AirplaneModeScene: BaseLevelScene, SKPhysicsContactDelegate {
     private var airplaneIcon: SKNode!
     private var hasShownFourthWall = false
     private var turbulenceTime: TimeInterval = 0
+    // platformDelayOffsets indexes the flying platforms by their order in
+    // `flyingPlatforms`. The iPad composed course has MORE flying platforms than
+    // the 3-entry phone course, so updateAirplaneState() guards the index and
+    // falls back to delay 0 for platforms past this table — animation timing only,
+    // no gameplay effect.
     private let platformDelayOffsets: [TimeInterval] = [0.0, 0.3, 0.6]
     private let designWidth: CGFloat = 390
 
-    // iPad vertical-void fix: uniform upward lift applied to every gameplay Y.
-    // 0 on iPhone (byte-identical layout); positive on tall iPad canvases.
-    // Set in buildLevel() and reused by setupBit() for spawn/respawn so Bit
-    // spawns the same distance above the lifted start platform on every device.
+    // iPad vertical-void fix (iPhone path only): uniform upward lift applied to
+    // every gameplay Y on the PHONE layout. 0 on iPhone-class canvases (so phone
+    // output is byte-identical); only consulted by buildPhoneLevel()/setupBit().
+    // The composed iPad path does NOT use this — it raises the floor via
+    // playableGroundY() and scrolls via installCameraFollow() instead.
     private var gameplayLift: CGFloat = 0
 
-    // Keep the traversal course phone-sized and centered. The old layout kept
-    // the lift platforms at fixed phone X values but pushed the exit to
-    // size.width, making the final gap impossible on iPad.
+    // Keep the PHONE traversal course phone-sized and centered. The old layout
+    // kept the lift platforms at fixed phone X values but pushed the exit to
+    // size.width, making the final gap impossible on iPad. Only buildPhoneLevel()
+    // / setupBit() (phone branch) reference these.
     private var courseScale: CGFloat { min(1.0, size.width / designWidth) }
     private var courseOriginX: CGFloat { (size.width - designWidth * courseScale) / 2 }
     private func courseX(_ logicalX: CGFloat) -> CGFloat { courseOriginX + logicalX * courseScale }
     private func courseLen(_ logical: CGFloat) -> CGFloat { logical * courseScale }
+
+    // Native-iPad composition gate. Tall AND wide canvases (iPad) get the
+    // hand-composed, camera-followed course; everything else (iPhone, incl. the
+    // tallest/widest phones, which are < designWidth*2 wide) keeps the original
+    // phone layout byte-for-byte. designWidth*2 = 780 sits well above any iPhone
+    // logical width and below the narrowest iPad (768pt portrait), so the branch
+    // is iPad-exclusive.
+    private var isWideCanvas: Bool { size.height > 1000 && size.width > designWidth * 2 }
+
+    // Full horizontal extent of the composed iPad course (exit-inclusive). Used to
+    // size the death zone and drive installCameraFollow(). 0 on the phone path.
+    private var composedCourseWidth: CGFloat = 0
 
     override func configureScene() {
         levelID = LevelID(world: .world2, index: 17)
@@ -57,10 +76,22 @@ final class AirplaneModeScene: BaseLevelScene, SKPhysicsContactDelegate {
     }
 
     private func setupBackground() {
-        // Cloud shapes
-        for i in 0..<4 {
+        // Cloud shapes. iPhone: 4 clouds across the single screen (byte-identical).
+        // iPad: the course scrolls ~1700pt wide, so scatter clouds across the
+        // whole course span at the same density and Y band so the scrolling level
+        // keeps atmosphere throughout instead of running out of sky past screen 1.
+        let cloudCount: Int
+        let span: CGFloat
+        if isWideCanvas {
+            span = 1700        // matches composed course extent authored in buildComposedIPadLevel()
+            cloudCount = max(4, Int(span / (size.width / 5)))
+        } else {
+            span = size.width
+            cloudCount = 4
+        }
+        for i in 0..<cloudCount {
             let cloud = createCloud()
-            cloud.position = CGPoint(x: CGFloat(i + 1) * size.width / 5,
+            cloud.position = CGPoint(x: CGFloat(i + 1) * span / CGFloat(cloudCount + 1),
                                      y: topSafeY - 70 - CGFloat(i % 2) * 50)
             cloud.alpha = 0.15
             cloud.zPosition = -10
@@ -99,13 +130,39 @@ final class AirplaneModeScene: BaseLevelScene, SKPhysicsContactDelegate {
         title.fontName = VisualConstants.Fonts.display
         title.fontSize = 28
         title.fontColor = strokeColor
-        title.position = CGPoint(x: 80, y: topSafeY - 30)
         title.horizontalAlignmentMode = .left
         title.zPosition = 100
-        addChild(title)
+        if isWideCanvas {
+            // iPad scrolls: anchor the title to the camera so it stays top-left.
+            // Camera-local coords (origin = viewport center).
+            let topInset = max(0, size.height - topSafeY)
+            title.position = CGPoint(x: -size.width / 2 + 80, y: size.height / 2 - topInset - 30)
+            gameCamera.addChild(title)
+        } else {
+            // iPhone: scene-anchored, byte-identical.
+            title.position = CGPoint(x: 80, y: topSafeY - 30)
+            addChild(title)
+        }
     }
 
     private func buildLevel() {
+        // Native-iPad redesign: tall+wide canvases get a hand-composed, paced,
+        // camera-followed course (buildComposedIPadLevel). Every other canvas —
+        // all iPhones — keeps the original phone layout byte-for-byte
+        // (buildPhoneLevel). The Airplane Mode mechanic, its death-plane OFF-trap,
+        // and the climb-to-exit signature are preserved on BOTH paths.
+        if isWideCanvas {
+            buildComposedIPadLevel()
+        } else {
+            buildPhoneLevel()
+        }
+    }
+
+    /// iPhone path — byte-identical to the pre-redesign buildLevel(). On
+    /// iPhone-class canvases gameplayVerticalLift() returns 0, so this produces
+    /// exactly the original geometry; the courseScale/courseX wrappers also clamp
+    /// to 1.0 / origin 0 on phones.
+    private func buildPhoneLevel() {
         let groundY: CGFloat = 160
 
         // iPad vertical-void fix: lift the ENTIRE gameplay band uniformly so the
@@ -161,6 +218,97 @@ final class AirplaneModeScene: BaseLevelScene, SKPhysicsContactDelegate {
         let death = SKNode()
         death.position = CGPoint(x: size.width / 2, y: -50 + lift)
         death.physicsBody = SKPhysicsBody(rectangleOf: CGSize(width: size.width * 2, height: 100))
+        death.physicsBody?.isDynamic = false
+        death.physicsBody?.categoryBitMask = PhysicsCategory.hazard
+        addChild(death)
+    }
+
+    /// iPad path — a hand-composed, paced course authored at ABSOLUTE positions
+    /// (NOT size.width fractions). It scrolls via installCameraFollow() because it
+    /// is wider than the screen, and its floor is raised via playableGroundY() to
+    /// fill the tall canvas. Spacing is FIXED jump reach: every consecutive
+    /// platform-center step is <= BaseLevelScene.maxJumpableGap (130) horizontal
+    /// and every top-to-top rise is <= BaseLevelScene.maxJumpableRise (85).
+    ///
+    /// BEATS (left -> right):
+    ///   1. SPAWN / TEACH      — wide solid start + one staged flying platform so
+    ///                           the player learns the toggle in safety.
+    ///   2. STEPPED CLUSTER    — solid + two flying platforms at varied tiers for
+    ///                           rhythm (build beat).
+    ///   3. REST / BREATH      — a wide, low solid platform: a deliberate pause.
+    ///   4. TENSION PEAK       — three flying platforms zig-zagging to the level's
+    ///                           highest mid-course tier (the hardest cluster).
+    ///   5. SHORT BREATH       — one solid platform to reset before the finale.
+    ///   6. FINALE (SIGNATURE) — an ISOLATED ascending stair of flying platforms
+    ///                           that stages the signature twist: the climb to the
+    ///                           exit exists ONLY when Airplane Mode is ON. Ground
+    ///                           it on a solid top, then the exit door.
+    ///
+    /// MECHANIC PRESERVED: every flying platform's `landed` Y sits the SAME
+    /// distance (220 pt) below the (raised) ground as on iPhone, which is INSIDE
+    /// the iPad death band (centered 210 pt below ground, height 100). So with
+    /// Airplane Mode OFF the flying platforms are unreachable death traps exactly
+    /// as on phone; toggling ON is the only way forward.
+    private func buildComposedIPadLevel() {
+        // Raise the floor toward the lower third so the band + the climb's upper
+        // tiers fill the iPad screen. On iPad this returns > 160; the rest of the
+        // course is authored ground-relative so all gaps/rises are unchanged.
+        let groundY = playableGroundY(iphoneGround: 160)
+
+        // Solid (non-flying) platforms: (x, yOffsetFromGround, width).
+        let solids: [(x: CGFloat, y: CGFloat, w: CGFloat)] = [
+            (90,    0,  95),   // Beat 1 — wide spawn/teach ground
+            (340,  20,  64),   // Beat 2 — stepped cluster anchor
+            (700,  10, 110),   // Beat 3 — REST / breath (wide, low, safe pause)
+            (1175, 45,  80),   // Beat 5 — short breath before finale
+            (1625, 225, 80)    // Beat 6 — finale landing (top of the climb)
+        ]
+        for s in solids {
+            createPlatform(at: CGPoint(x: s.x, y: groundY + s.y),
+                           size: CGSize(width: s.w, height: 30), isFlying: false)
+        }
+
+        // Flying platforms: (x, flyingYOffsetFromGround, width). Heights vary
+        // across tiers for rhythm. `landed` is forced 220 pt below the raised
+        // ground for every one — the SAME ground-relative offset as the phone
+        // course — so the OFF-state death-plane trap translates rigidly.
+        let landedDrop: CGFloat = 220
+        let flyingSpec: [(x: CGFloat, flyY: CGFloat, w: CGFloat)] = [
+            (215,  55, 60),    // Beat 1 — teach: first flyer, gentle +55 rise
+            (460,  75, 55),    // Beat 2 — stepped cluster, high tier
+            (575,  40, 55),    // Beat 2 — stepped cluster, low tier (rhythm dip)
+            (825,  90, 50),    // Beat 4 — tension peak, highest
+            (940,  50, 50),    // Beat 4 — tension peak, dip
+            (1055, 95, 50),    // Beat 4 — tension peak, highest again
+            (1290, 50, 55),    // Beat 6 — finale climb step 1
+            (1400, 110, 55),   // Beat 6 — finale climb step 2
+            (1510, 170, 55)    // Beat 6 — finale climb step 3
+        ]
+        for f in flyingSpec {
+            let landed = CGPoint(x: f.x, y: groundY - landedDrop)
+            let flying = CGPoint(x: f.x, y: groundY + f.flyY)
+            let size = CGSize(width: f.w, height: 25)
+            landedPositions.append(landed)
+            flyingPositions.append(flying)
+            flyingSizes.append(size)
+            let platform = createPlatform(at: landed, size: size, isFlying: true)
+            flyingPlatforms.append(platform)
+        }
+
+        // Exit door atop the finale landing — the climb's payoff.
+        createExitDoor(at: CGPoint(x: 1640, y: groundY + 275))
+
+        // Full course extent (door + margin). Drives the death zone width and the
+        // camera-follow world bound.
+        composedCourseWidth = 1640 + 60
+
+        // Death zone — placed the SAME distance below the raised ground as on
+        // iPhone (death center 210 pt below ground; landed platforms 220 pt below,
+        // i.e. inside the 100-tall band). Spans the full scrolling course so a
+        // fall is caught anywhere.
+        let death = SKNode()
+        death.position = CGPoint(x: composedCourseWidth / 2, y: groundY - 210)
+        death.physicsBody = SKPhysicsBody(rectangleOf: CGSize(width: composedCourseWidth * 1.2, height: 100))
         death.physicsBody?.isDynamic = false
         death.physicsBody?.categoryBitMask = PhysicsCategory.hazard
         addChild(death)
@@ -234,9 +382,21 @@ final class AirplaneModeScene: BaseLevelScene, SKPhysicsContactDelegate {
         // width-98]) clear of the pause button on both iPhone 390 and iPad 1024.
         // Previously origin (width-60) put the body at x[width-80, width-40],
         // fully inside the reserved pause zone — a collision on every device.
-        airplaneIcon.position = CGPoint(x: size.width - 118, y: topSafeY - 20)
         airplaneIcon.zPosition = 200
-        addChild(airplaneIcon)
+        if isWideCanvas {
+            // iPad scrolls (camera-follow), so the mechanic's live ON/OFF status
+            // HUD must ride the CAMERA to stay on-screen. Camera-local coords:
+            // origin at viewport center, so the same top-right placement is
+            // (width/2 - 118, height/2 - topInset - 20).
+            let topInset = max(0, size.height - topSafeY)
+            airplaneIcon.position = CGPoint(x: size.width / 2 - 118,
+                                            y: size.height / 2 - topInset - 20)
+            gameCamera.addChild(airplaneIcon)
+        } else {
+            // iPhone (single-screen, no camera-follow): scene-anchored, byte-identical.
+            airplaneIcon.position = CGPoint(x: size.width - 118, y: topSafeY - 20)
+            addChild(airplaneIcon)
+        }
 
         // Airplane shape
         let body = SKShapeNode(ellipseOf: CGSize(width: 40, height: 12))
@@ -299,9 +459,18 @@ final class AirplaneModeScene: BaseLevelScene, SKPhysicsContactDelegate {
         // panel bottom (topSafeY-215 ≈ 585) clears Bit/platforms with wide
         // margin on both iPhone 390/402 and iPad 1024.
         let panel = SKNode()
-        panel.position = CGPoint(x: size.width / 2, y: topSafeY - 175)
         panel.zPosition = 300
-        addChild(panel)
+        if isWideCanvas {
+            // iPad scrolls: anchor the teaching panel to the camera so the player
+            // can read it regardless of scroll position during its 5s lifetime.
+            let topInset = max(0, size.height - topSafeY)
+            panel.position = CGPoint(x: 0, y: size.height / 2 - topInset - 175)
+            gameCamera.addChild(panel)
+        } else {
+            // iPhone: scene-anchored, byte-identical.
+            panel.position = CGPoint(x: size.width / 2, y: topSafeY - 175)
+            addChild(panel)
+        }
 
         let bg = SKShapeNode(rectOf: CGSize(width: 280, height: 80), cornerRadius: 8)
         bg.fillColor = fillColor
@@ -336,16 +505,34 @@ final class AirplaneModeScene: BaseLevelScene, SKPhysicsContactDelegate {
 
     private func setupBit() {
         // spawnPoint doubles as the respawn point (handleDeath →
-        // playBufferDeath(respawnAt:)). Lift it with the band (gameplayLift, set
-        // in buildLevel which runs first) so Bit spawns/respawns the same 40 pt
-        // above the lifted start platform top on every device. lift==0 on iPhone
-        // keeps spawnPoint at the original y=200.
-        spawnPoint = CGPoint(x: courseX(45), y: 200 + gameplayLift)
+        // playBufferDeath(respawnAt:)).
+        if isWideCanvas {
+            // iPad: spawn 25 pt above the composed start platform top — the SAME
+            // clearance as the phone course (start platform x=90, y=groundY, h=30,
+            // top = groundY + 15; spawn = groundY + 40). The course is wider than
+            // the screen, so we promote to camera-follow below.
+            let groundY = playableGroundY(iphoneGround: 160)
+            spawnPoint = CGPoint(x: 90, y: groundY + 40)
+        } else {
+            // iPhone: lift with the band (gameplayLift, set in buildLevel which
+            // runs first) so Bit spawns/respawns the same 40 pt above the lifted
+            // start platform top on every device. lift==0 on iPhone keeps
+            // spawnPoint at the original y=200.
+            spawnPoint = CGPoint(x: courseX(45), y: 200 + gameplayLift)
+        }
         bit = BitCharacter.make()
         bit.position = spawnPoint
         addChild(bit)
         registerPlayer(bit)
         playerController = PlayerController(character: bit, scene: self)
+
+        // iPad: the composed course outgrows the viewport, so scroll it. Camera Y
+        // stays at scene center; vertical fill is handled by the raised floor
+        // (playableGroundY), not the camera. Called once, after the player +
+        // course exist. No-op on iPhone (single-screen, no camera-follow).
+        if isWideCanvas, composedCourseWidth > size.width {
+            installCameraFollow(worldWidth: composedCourseWidth, playerController: playerController)
+        }
     }
 
     /// Returns the index of the flying platform Bit is currently standing on, or

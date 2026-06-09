@@ -30,6 +30,43 @@ final class FaceIDScene: BaseLevelScene, SKPhysicsContactDelegate {
     private var playerController: PlayerController!
     private var spawnPoint: CGPoint = .zero
 
+    // MARK: - iPad native composition (hand-composed paced course)
+    //
+    // The iPhone path is UNCHANGED: buildLevel() routes to buildPhoneLevel(), which
+    // is the original centered-course body verbatim, so phone output is byte-identical.
+    // On a wide canvas (isWideCanvas) buildComposedIPadLevel() authors platforms /
+    // vault doors / exit at ABSOLUTE world-space positions (never size.width
+    // fractions, never scaled geometry) with paced beats per the L3 design bar:
+    //   teach -> stepped cluster -> rest breath -> tension peak -> short breath ->
+    //   ISOLATED Face-ID finale beat (the two sequential vault gates staged together
+    //   so the signature twist gets its own moment) -> exit.
+    // Spacing stays inside the fixed jump budget (gap <= 130, rise <= 85) and the
+    // course scrolls via installCameraFollow when it outgrows the screen.
+    //
+    // The vault doors and exit are shared mechanic geometry built AFTER buildLevel()
+    // (createVaultDoor / createSecondDoor are invoked from configureScene). To let the
+    // composed path place them at absolute coordinates without duplicating the door
+    // construction (which carries the scan animation, blockers, status HUD, and the
+    // un-jumpable door2-blocks-exit trap), buildLevel() records anchor points that the
+    // door/exit/spawn builders read. On iPhone these anchors hold the original
+    // courseX()/gameplayLift values, so nothing changes.
+    private var isWideCanvas: Bool { size.height > 1000 && size.width > 700 }
+
+    /// Anchor positions resolved by buildPhoneLevel() / buildComposedIPadLevel() and
+    /// consumed by createVaultDoor(), createSecondDoor(), createExitDoor(), setupBit().
+    /// Defaults are the original iPhone logical positions (overwritten per device).
+    private var vaultDoorAnchor: CGPoint = .zero       // door1 visual/scan center (y=door top)
+    private var vaultBlockerAnchor: CGPoint = .zero    // door1 physics blocker center
+    private var vaultFrameWidth: CGFloat = 80          // door1 frame + blocker width
+    private var secondDoorAnchor: CGPoint = .zero      // door2 visual + blocker center
+    private var secondDoorWidth: CGFloat = 60          // door2 frame + blocker width
+    private var exitDoorAnchor: CGPoint = .zero        // exit door center
+    private var exitDoorWidth: CGFloat = 40            // exit body width
+    private var spawnAnchor: CGPoint = .zero           // Bit spawn / respawn
+    private var courseExtent: CGFloat = 0              // full course width (0 = no camera)
+    private var deathZoneCenterX: CGFloat = 0          // death-zone center (full course on iPad)
+    private var deathZoneWidth: CGFloat = 0            // death-zone span
+
     // iPad vertical-void fix: a single uniform upward lift applied to EVERY
     // gameplay node Y (platforms, spawn, vault doors + their blockers, exit, the
     // exit-door visual). Computed once from the gameplay band in buildLevel() via
@@ -125,6 +162,16 @@ final class FaceIDScene: BaseLevelScene, SKPhysicsContactDelegate {
     }
 
     private func buildLevel() {
+        if isWideCanvas {
+            buildComposedIPadLevel()
+        } else {
+            buildPhoneLevel()
+        }
+    }
+
+    /// iPhone path — ORIGINAL layout, verbatim. Output is byte-identical to before
+    /// the iPad redesign (isWideCanvas is false on every iPhone-class canvas).
+    private func buildPhoneLevel() {
         let groundY: CGFloat = 160
 
         // Uniform iPad lift for the whole gameplay band. bandBottom = groundY
@@ -132,7 +179,8 @@ final class FaceIDScene: BaseLevelScene, SKPhysicsContactDelegate {
         // highest gameplay surfaces). Returns 0 on iPhone-class canvases so phone
         // layout is byte-identical; on iPad every gameplay Y below gets the SAME
         // `lift` added, so all gaps/rises and the door-blocks-exit relationship
-        // are unchanged.
+        // are unchanged. (On a wide canvas we take buildComposedIPadLevel() instead,
+        // so this lift only ever applies to the rare tall-but-narrow non-phone case.)
         let lift = gameplayVerticalLift(bandBottom: groundY, bandTop: 230)
         gameplayLift = lift
 
@@ -145,8 +193,16 @@ final class FaceIDScene: BaseLevelScene, SKPhysicsContactDelegate {
         // Platform between doors
         createPlatform(at: CGPoint(x: courseX(335), y: groundY + lift), size: CGSize(width: courseLen(100), height: 30))
 
+        // Mechanic anchors (door1 is created later in createVaultDoor(); record its
+        // original positions here so that builder stays device-agnostic).
+        vaultDoorAnchor = CGPoint(x: courseX(275), y: 230 + lift)
+        vaultBlockerAnchor = CGPoint(x: courseX(275), y: 210 + lift)
+        vaultFrameWidth = courseLen(80)
+
         // Second door blocker (between middle and exit)
-        createSecondDoor(at: CGPoint(x: courseX(385), y: 230 + lift))
+        secondDoorAnchor = CGPoint(x: courseX(385), y: 230 + lift)
+        secondDoorWidth = courseLen(60)
+        createSecondDoor(at: secondDoorAnchor)
 
         // Exit platform (after second door) - extends under and past door2's blocker
         // so the exit can only be reached once door2 opens at step 2.
@@ -157,16 +213,142 @@ final class FaceIDScene: BaseLevelScene, SKPhysicsContactDelegate {
         // ~11 logical at courseScale 1.0) is stopped at the blocker's LEFT edge (355),
         // so its right edge reaches only logical 355 — still 30pt left of the exit's
         // left edge (385). Unreachable until secondDoorBlocker is cleared at step 2.
-        createExitDoor(at: CGPoint(x: courseX(405), y: groundY + 50 + lift))
+        exitDoorAnchor = CGPoint(x: courseX(405), y: groundY + 50 + lift)
+        exitDoorWidth = courseLen(40)
+        createExitDoor(at: exitDoorAnchor)
 
-        // Death zone (stays full-width so it always catches falls). Kept at the
-        // fixed scene-bottom y=-50: even with the maximum lift the lowest lifted
-        // platform top sits at groundY + lift (>= 160), far above this band, so a
-        // fall still always reaches the death zone. (Not lifted on purpose — it
-        // only needs to stay below the lowest gameplay surface, which it does.)
+        spawnAnchor = CGPoint(x: courseX(80), y: 200 + lift)
+
+        // No camera follow on iPhone.
+        courseExtent = 0
+        deathZoneCenterX = size.width / 2
+        deathZoneWidth = size.width * 2
+
+        buildDeathZone()
+    }
+
+    /// iPad path — HAND-COMPOSED paced course at ABSOLUTE world coordinates (never
+    /// size.width fractions, never scaled geometry — Bit's physics are fixed). Beats:
+    ///   1. TEACH      spawn platform + an early "WALK TO THE VAULT" approach plate.
+    ///   2. CLUSTER    a stepped 3-platform climb (heights tier across 3 levels) that
+    ///                 leads up to and stages door1 — the first Face-ID gate.
+    ///   3. REST       a wide breath platform just past door1 (a deliberate safe pause).
+    ///   4. PEAK       a short stepped tension cluster that rises then drops.
+    ///   5. BREATH     a small landing before the finale.
+    ///   6. FINALE     the signature twist staged in isolation: door2 (the second
+    ///                 sequential biometric gate) guards the exit. The exit body sits
+    ///                 BEHIND door2's blocker so it is un-reachable until step 2 opens
+    ///                 it — the load-bearing trap, translated rigidly from the phone.
+    ///
+    /// All horizontal centers step <= 130 apart and all top-to-top rises are <= 85.
+    /// Platform-top Y values use three tiers (floor / mid / high) for rhythm; door and
+    /// exit Y are placed so their reach from the adjacent platform tops stays in budget.
+    private func buildComposedIPadLevel() {
+        // No per-band lift on the composed path: we author absolute Y from a raised
+        // floor instead (playableGroundY fills the tall canvas). Keep gameplayLift at
+        // 0 so the door/exit/spawn builders add nothing extra.
+        gameplayLift = 0
+
+        // Raised floor so the band + its upper tiers fill the iPad screen vertically.
+        let floorY = playableGroundY(iphoneGround: 160)   // tier 0 (platform tops)
+        let midY = floorY + 60                              // tier 1
+        let highY = floorY + 110                            // tier 2 (apex of clusters)
+
+        let platH: CGFloat = 30
+
+        // ---- BEAT 1: TEACH (spawn + approach) ----
+        // Spawn platform (wide, safe).
+        let p1x: CGFloat = 150
+        createPlatform(at: CGPoint(x: p1x, y: floorY), size: CGSize(width: 150, height: platH))
+        spawnAnchor = CGPoint(x: p1x, y: floorY + 40)
+
+        // Approach plate — first hop, flat tier, teaches the jump.
+        let p2x: CGFloat = 360   // gap edge-to-edge: see geometry table
+        createPlatform(at: CGPoint(x: p2x, y: floorY), size: CGSize(width: 120, height: platH))
+
+        // ---- BEAT 2: STEPPED CLUSTER up to door1 (Face-ID gate) ----
+        // Three platforms tiering floor -> mid -> high, then back to mid, leading
+        // the player up to the first vault.
+        let p3x: CGFloat = 490
+        createPlatform(at: CGPoint(x: p3x, y: midY), size: CGSize(width: 110, height: platH))
+        let p4x: CGFloat = 615
+        createPlatform(at: CGPoint(x: p4x, y: highY), size: CGSize(width: 110, height: platH))
+        let p5x: CGFloat = 740
+        createPlatform(at: CGPoint(x: p5x, y: midY), size: CGSize(width: 120, height: platH))
+
+        // DOOR 1 — first Face-ID gate, staged on the approach to the rest platform.
+        // Its blocker stands across the path between p5 (mid) and the rest platform,
+        // so the player must scan to pass (step 1 clears doorBlocker).
+        let door1x: CGFloat = 860
+        vaultBlockerAnchor = CGPoint(x: door1x, y: midY + 50)   // blocker center
+        vaultFrameWidth = 80
+        // Visual/scan frame center sits 20pt above the blocker (matches phone: door
+        // visual y=230, blocker y=210 -> +20).
+        vaultDoorAnchor = CGPoint(x: door1x, y: midY + 70)
+
+        // ---- BEAT 3: REST / breath (wide safe pause just past door1) ----
+        let restx: CGFloat = 980
+        createPlatform(at: CGPoint(x: restx, y: floorY), size: CGSize(width: 200, height: platH))
+
+        // ---- BEAT 4: TENSION PEAK (short stepped cluster: up then down) ----
+        let p7x: CGFloat = 1180
+        createPlatform(at: CGPoint(x: p7x, y: midY), size: CGSize(width: 110, height: platH))
+        let p8x: CGFloat = 1300
+        createPlatform(at: CGPoint(x: p8x, y: highY), size: CGSize(width: 100, height: platH))
+        let p9x: CGFloat = 1420
+        createPlatform(at: CGPoint(x: p9x, y: midY), size: CGSize(width: 110, height: platH))
+
+        // ---- BEAT 5: short BREATH before finale ----
+        let p10x: CGFloat = 1545
+        createPlatform(at: CGPoint(x: p10x, y: floorY), size: CGSize(width: 130, height: platH))
+
+        // ---- BEAT 6: ISOLATED FINALE — door2 guards the exit (signature twist) ----
+        // The second sequential biometric gate sits on the run-up to the exit
+        // platform. The exit body is placed BEHIND door2's blocker so it cannot be
+        // reached until the second scan (step 2) clears secondDoorBlocker — the
+        // load-bearing trap, translated rigidly from the phone layout.
+        //
+        // Trap math (absolute pt, Bit half-width ~11):
+        //   door2 blocker: center 1700, width 60 -> spans [1670, 1730].
+        //   exit body:     center 1755, width 40 -> spans [1735, 1775].
+        //   While door2 closed, Bit is stopped at the blocker's LEFT edge (1670); its
+        //   right edge reaches only ~1681 — still 54pt left of the exit's left edge
+        //   (1735). Unreachable until secondDoorBlocker is cleared at step 2. The
+        //   55pt blocker-center-to-exit-center offset is WIDER than the phone's (20pt)
+        //   so the trap is strictly stronger, never weaker — the gap is never widened
+        //   past a jumpable threshold because door2 is an un-jumpable WALL, not a gap.
+        let finalePlatY = floorY
+        // Finale landing platform — carries door2's blocker, extends under and past it
+        // to the exit (single platform so there is solid ground beneath the exit once
+        // door2 opens, mirroring the phone's exit platform spanning under the blocker).
+        let finalePlatCenter: CGFloat = 1722
+        createPlatform(at: CGPoint(x: finalePlatCenter, y: finalePlatY), size: CGSize(width: 180, height: platH))
+
+        let door2x: CGFloat = 1700
+        secondDoorAnchor = CGPoint(x: door2x, y: finalePlatY + 70)   // door2 visual + blocker center
+        secondDoorWidth = 60
+        createSecondDoor(at: secondDoorAnchor)
+
+        exitDoorAnchor = CGPoint(x: 1755, y: finalePlatY + 50)
+        exitDoorWidth = 40
+        createExitDoor(at: exitDoorAnchor)
+
+        // Course outgrows the screen -> scroll. Extent covers the full authored width
+        // with a margin past the exit.
+        courseExtent = 1850
+        deathZoneCenterX = courseExtent / 2
+        deathZoneWidth = courseExtent * 2
+
+        buildDeathZone()
+    }
+
+    /// Shared death-zone builder. Center/width come from the active path
+    /// (full-screen on iPhone, full-course on iPad). Kept at fixed y=-50 below the
+    /// lowest gameplay surface so it always catches a fall.
+    private func buildDeathZone() {
         let death = SKNode()
-        death.position = CGPoint(x: size.width / 2, y: -50)
-        death.physicsBody = SKPhysicsBody(rectangleOf: CGSize(width: size.width * 2, height: 100))
+        death.position = CGPoint(x: deathZoneCenterX, y: -50)
+        death.physicsBody = SKPhysicsBody(rectangleOf: CGSize(width: deathZoneWidth, height: 100))
         death.physicsBody?.isDynamic = false
         death.physicsBody?.categoryBitMask = PhysicsCategory.hazard
         addChild(death)
@@ -178,8 +360,10 @@ final class FaceIDScene: BaseLevelScene, SKPhysicsContactDelegate {
         secondDoor!.zPosition = 50
         addChild(secondDoor!)
 
-        // Smaller vault frame
-        let frame = SKShapeNode(rectOf: CGSize(width: courseLen(60), height: 100), cornerRadius: 4)
+        // Smaller vault frame. Width comes from secondDoorWidth (courseLen(60) on
+        // iPhone, an absolute 60 on iPad) so the door1-style scaling stays correct
+        // per device while the door2-blocks-exit trap geometry is preserved.
+        let frame = SKShapeNode(rectOf: CGSize(width: secondDoorWidth, height: 100), cornerRadius: 4)
         frame.fillColor = fillColor
         frame.strokeColor = strokeColor
         frame.lineWidth = lineWidth * 1.2
@@ -199,10 +383,11 @@ final class FaceIDScene: BaseLevelScene, SKPhysicsContactDelegate {
         lockLabel2.position = CGPoint(x: 0, y: 3)
         secondDoor!.addChild(lockLabel2)
 
-        // Physics blocker for second door (logical width 60 -> course space)
+        // Physics blocker for second door — the un-jumpable WALL that hides the exit
+        // until the second scan. Width matches the frame (secondDoorWidth).
         secondDoorBlocker = SKNode()
         secondDoorBlocker!.position = position
-        secondDoorBlocker!.physicsBody = SKPhysicsBody(rectangleOf: CGSize(width: courseLen(60), height: 100))
+        secondDoorBlocker!.physicsBody = SKPhysicsBody(rectangleOf: CGSize(width: secondDoorWidth, height: 100))
         secondDoorBlocker!.physicsBody?.isDynamic = false
         secondDoorBlocker!.physicsBody?.categoryBitMask = PhysicsCategory.ground
         addChild(secondDoorBlocker!)
@@ -226,13 +411,15 @@ final class FaceIDScene: BaseLevelScene, SKPhysicsContactDelegate {
     }
 
     private func createVaultDoor() {
+        // Position from the anchor recorded by buildPhoneLevel()/buildComposedIPadLevel()
+        // so this builder is device-agnostic and the scan/HUD/blocker stay coupled.
         vaultDoor = SKNode()
-        vaultDoor.position = CGPoint(x: courseX(275), y: 230 + gameplayLift)
+        vaultDoor.position = vaultDoorAnchor
         vaultDoor.zPosition = 50
         addChild(vaultDoor)
 
         // Vault frame
-        let frame = SKShapeNode(rectOf: CGSize(width: courseLen(80), height: 120), cornerRadius: 5)
+        let frame = SKShapeNode(rectOf: CGSize(width: vaultFrameWidth, height: 120), cornerRadius: 5)
         frame.fillColor = fillColor
         frame.strokeColor = strokeColor
         frame.lineWidth = lineWidth * 1.5
@@ -286,10 +473,11 @@ final class FaceIDScene: BaseLevelScene, SKPhysicsContactDelegate {
         statusLabel.position = CGPoint(x: 0, y: -50)
         vaultDoor.addChild(statusLabel)
 
-        // Door blocker physics (logical x 275, logical width 80 -> course space)
+        // Door blocker physics — un-jumpable wall cleared at step 1. Position/width
+        // from the anchors (courseX(275)/courseLen(80) on iPhone; absolute on iPad).
         doorBlocker = SKNode()
-        doorBlocker?.position = CGPoint(x: courseX(275), y: 210 + gameplayLift)
-        doorBlocker?.physicsBody = SKPhysicsBody(rectangleOf: CGSize(width: courseLen(80), height: 100))
+        doorBlocker?.position = vaultBlockerAnchor
+        doorBlocker?.physicsBody = SKPhysicsBody(rectangleOf: CGSize(width: vaultFrameWidth, height: 100))
         doorBlocker?.physicsBody?.isDynamic = false
         doorBlocker?.physicsBody?.categoryBitMask = PhysicsCategory.ground
         addChild(doorBlocker!)
@@ -314,14 +502,14 @@ final class FaceIDScene: BaseLevelScene, SKPhysicsContactDelegate {
     }
 
     private func createExitDoor(at position: CGPoint) {
-        let frame = SKShapeNode(rectOf: CGSize(width: courseLen(40), height: 60))
+        let frame = SKShapeNode(rectOf: CGSize(width: exitDoorWidth, height: 60))
         frame.fillColor = fillColor
         frame.strokeColor = strokeColor
         frame.lineWidth = lineWidth
         frame.position = position
         addChild(frame)
 
-        let exit = SKSpriteNode(color: .clear, size: CGSize(width: courseLen(40), height: 60))
+        let exit = SKSpriteNode(color: .clear, size: CGSize(width: exitDoorWidth, height: 60))
         exit.position = position
         exit.physicsBody = SKPhysicsBody(rectangleOf: exit.size)
         exit.physicsBody?.isDynamic = false
@@ -367,14 +555,21 @@ final class FaceIDScene: BaseLevelScene, SKPhysicsContactDelegate {
     }
 
     private func setupBit() {
-        // Spawn (and the death-respawn point, which reuses spawnPoint) lifts with
-        // the band by the same amount as every platform/door/exit.
-        spawnPoint = CGPoint(x: courseX(80), y: 200 + gameplayLift)
+        // Spawn (and the death-respawn point, which reuses spawnPoint) comes from the
+        // anchor recorded by the active build path. On iPhone this is
+        // courseX(80)/200 + lift (unchanged); on iPad it is the composed spawn plate.
+        spawnPoint = spawnAnchor
         bit = BitCharacter.make()
         bit.position = spawnPoint
         addChild(bit)
         registerPlayer(bit)
         playerController = PlayerController(character: bit, scene: self)
+
+        // When the composed iPad course is wider than the viewport, scroll it via the
+        // canonical camera-follow (vertical fill is already handled by playableGroundY).
+        if courseExtent > size.width {
+            installCameraFollow(worldWidth: courseExtent, playerController: playerController)
+        }
     }
 
     private func triggerFaceIDPrompt() {
@@ -442,14 +637,24 @@ final class FaceIDScene: BaseLevelScene, SKPhysicsContactDelegate {
         statusLabel.text = "IMPOSTER DETECTED"
         faceFrame.strokeColor = strokeColor
 
+        // Full-screen alert host. When the iPad course scrolls (camera-follow on),
+        // anchor the flash + label to the camera so they stay centered on the
+        // VIEWPORT no matter where the player is along the course (the door2 finale
+        // beat is ~840pt right of door1). On iPhone there is no camera-follow, so we
+        // attach to the scene at the original scene-center coords -> byte-identical.
+        let alertHost: SKNode = (cameraFollowWorldWidth != nil) ? gameCamera : self
+        let alertCenter: CGPoint = (cameraFollowWorldWidth != nil)
+            ? .zero                                         // camera-relative origin = viewport center
+            : CGPoint(x: size.width / 2, y: size.height / 2)
+
         // Red flash alarm animation
         let redFlash = SKShapeNode(rectOf: CGSize(width: size.width * 2, height: size.height * 2))
         redFlash.fillColor = .red
         redFlash.strokeColor = .clear
         redFlash.alpha = 0
         redFlash.zPosition = 450
-        redFlash.position = CGPoint(x: size.width / 2, y: size.height / 2)
-        addChild(redFlash)
+        redFlash.position = alertCenter
+        alertHost.addChild(redFlash)
 
         if systemReduceMotion {
             // Photosensitivity: skip the rapid full-screen red strobe and the
@@ -481,15 +686,15 @@ final class FaceIDScene: BaseLevelScene, SKPhysicsContactDelegate {
             ]))
         }
 
-        // Show IMPOSTER text big
+        // Show IMPOSTER text big (same alert host as the flash so it tracks the viewport).
         let imposterLabel = SKLabelNode(text: "IMPOSTER DETECTED")
         imposterLabel.fontName = "Menlo-Bold"
         imposterLabel.fontSize = 18
         imposterLabel.fontColor = strokeColor
-        imposterLabel.position = CGPoint(x: size.width / 2, y: size.height / 2 + 80)
+        imposterLabel.position = CGPoint(x: alertCenter.x, y: alertCenter.y + 80)
         imposterLabel.zPosition = 500
         imposterLabel.alpha = 0
-        addChild(imposterLabel)
+        alertHost.addChild(imposterLabel)
 
         imposterLabel.run(.sequence([
             .fadeIn(withDuration: 0.1),

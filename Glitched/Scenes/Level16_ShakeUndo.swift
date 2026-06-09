@@ -22,6 +22,13 @@ final class ShakeUndoScene: BaseLevelScene, SKPhysicsContactDelegate {
     // full-bleed at scale 0.907 (same shape as the previous fixed layout).
     private var courseScale: CGFloat { min(1.0, size.width / designSize.width) }
     private var courseOriginX: CGFloat { (size.width - designSize.width * courseScale) / 2 }
+
+    // Native-iPad gate (Phase 0 redesign). True only on a TALL, WIDE iPad canvas;
+    // false on every iPhone (and on iPhone-proportioned previews), so the phone
+    // build path below is selected and stays byte-identical. designWidth 760 sits
+    // above the widest iPhone (430pt) and below iPad portrait (768pt+), so the
+    // composed course is chosen exactly on iPad-class hardware.
+    private var isWideCanvas: Bool { size.height > 1000 && size.width > 760 }
     /// Map a logical x (0...designSize.width) into centered course space.
     private func courseX(_ logicalX: CGFloat) -> CGFloat { courseOriginX + logicalX * courseScale }
     /// Scale a logical length (platform width, etc.) into course space.
@@ -44,6 +51,18 @@ final class ShakeUndoScene: BaseLevelScene, SKPhysicsContactDelegate {
     // Moving platform
     private var movingPlatform: SKNode!
     private var platformPhase: CGFloat = 0
+
+    // Device-independent geometry anchors shared by BOTH the phone and the iPad
+    // build paths and reused by the trap/oscillator lifecycle (updatePlaying,
+    // resetTrap). buildPhoneLevel sets these to the original courseX/lift values
+    // (so phone is byte-identical); buildComposedIPadLevel sets them to the
+    // hand-composed absolute course values. Centralizing them here lets the
+    // mechanic code (moving-platform oscillation + rotten-platform reset) stay
+    // path-agnostic instead of re-deriving courseX in two places.
+    private var movingPlatformBaseX: CGFloat = 0
+    private var movingPlatformBaseY: CGFloat = 0
+    private let movingPlatformAmplitude: CGFloat = 40
+    private var finalPlatformPosition: CGPoint = .zero
 
     // iPad vertical-void fix: a single uniform upward lift applied to EVERY
     // gameplay Y (platforms, spawn, exit, hazards, moving-platform base,
@@ -162,13 +181,46 @@ final class ShakeUndoScene: BaseLevelScene, SKPhysicsContactDelegate {
         title.fontName = VisualConstants.Fonts.display
         title.fontSize = 28
         title.fontColor = strokeColor
-        title.position = CGPoint(x: 80, y: topSafeY - 30)
         title.horizontalAlignmentMode = .left
         title.zPosition = 100
-        addChild(title)
+        attachFixedHUD(title, sceneSpace: CGPoint(x: 80, y: topSafeY - 30))
+    }
+
+    /// Attach a persistent HUD node so it stays fixed on-screen. On iPhone the
+    /// camera never moves, so the node is added directly to the scene at its
+    /// scene-space point (byte-identical to before). On iPad camera-follow the node
+    /// is parented to gameCamera, with its point converted to camera-local space, so
+    /// it doesn't scroll off as the composed course pans. Mirrors the L31 pattern
+    /// (gameCamera.addChild for fixed HUD).
+    private func attachFixedHUD(_ node: SKNode, sceneSpace: CGPoint) {
+        if isWideCanvas, let camera = gameCamera {
+            node.position = CGPoint(x: sceneSpace.x - size.width / 2,
+                                    y: sceneSpace.y - size.height / 2)
+            camera.addChild(node)
+        } else {
+            node.position = sceneSpace
+            addChild(node)
+        }
     }
 
     private func buildLevel() {
+        // PHASE 0 NATIVE-IPAD SPLIT. iPhone path is the original layout, unchanged
+        // and byte-identical (selected when !isWideCanvas — every iPhone, every
+        // iPhone-proportioned preview). iPad path is a NEW hand-composed course with
+        // paced beats that fills the screen via camera-follow + a raised floor. The
+        // trap/oscillator lifecycle (updatePlaying, resetTrap) is path-agnostic: it
+        // reads movingPlatformBaseX/Y, finalPlatformPosition and verticalLift, which
+        // BOTH builders populate.
+        if isWideCanvas {
+            buildComposedIPadLevel()
+        } else {
+            buildPhoneLevel()
+        }
+    }
+
+    // MARK: - iPhone build (UNCHANGED — byte-identical to the original buildLevel)
+
+    private func buildPhoneLevel() {
         let groundY: CGFloat = 160
 
         // iPad vertical-void fix: compute ONE uniform lift from the flat band and
@@ -192,7 +244,9 @@ final class ShakeUndoScene: BaseLevelScene, SKPhysicsContactDelegate {
         // the jumpable budget (see trace below).
         _ = createPlatform(at: CGPoint(x: courseX(45), y: groundY + lift), size: CGSize(width: courseLen(80), height: 30))
 
-        movingPlatform = createPlatform(at: CGPoint(x: courseX(160), y: groundY + 80 + lift), size: CGSize(width: courseLen(55), height: 20))
+        movingPlatformBaseX = courseX(160)
+        movingPlatformBaseY = groundY + 80 + lift
+        movingPlatform = createPlatform(at: CGPoint(x: movingPlatformBaseX, y: movingPlatformBaseY), size: CGSize(width: courseLen(55), height: 20))
         movingPlatform.name = "moving"
 
         _ = createPlatform(at: CGPoint(x: courseX(260), y: groundY + 40 + lift), size: CGSize(width: courseLen(60), height: 25))
@@ -207,7 +261,8 @@ final class ShakeUndoScene: BaseLevelScene, SKPhysicsContactDelegate {
         // landing pad for the exit, so the player is FORCED onto it — which is what
         // makes shake-to-undo required rather than cosmetic.
         finalPlatformSize = CGSize(width: courseLen(70), height: 30)
-        finalPlatform = createPlatform(at: CGPoint(x: courseX(designSize.width - 45), y: groundY + lift), size: finalPlatformSize)
+        finalPlatformPosition = CGPoint(x: courseX(designSize.width - 45), y: groundY + lift)
+        finalPlatform = createPlatform(at: finalPlatformPosition, size: finalPlatformSize)
         finalPlatform.name = "final"
         finalPlatformSurface = finalPlatform.children.first as? SKShapeNode
         createExitDoor(at: CGPoint(x: courseX(designSize.width - 35), y: groundY + 50 + lift))
@@ -236,6 +291,112 @@ final class ShakeUndoScene: BaseLevelScene, SKPhysicsContactDelegate {
         addChild(death)
     }
 
+    // MARK: - iPad build (NEW — hand-composed paced beats, L3 template)
+
+    /// Native-iPad course. Author platforms at ABSOLUTE positions (no size.width
+    /// fractions, no courseX scaling) so Bit's fixed-physics jump reach holds at the
+    /// SAME absolute spacing iPhone uses — the screen is filled with MORE composed
+    /// content, never widened gaps. The floor is raised via playableGroundY for
+    /// vertical fill; the course (~1080pt wide) outgrows the viewport, so
+    /// installCameraFollow scrolls it. Beats (left→right):
+    ///   1. TEACH    — wide spawn platform, a settled first step.
+    ///   2-3. CLUSTER— two stepped platforms (varied height) build rhythm.
+    ///   4. MECHANIC — the moving platform staged as a timed boarding beat.
+    ///   5. REST     — a wide breath platform at floor level (a deliberate pause).
+    ///   6-7. TENSION— a stepped tension-peak pair.
+    ///   8. BREATH   — the pre-trap anchor: a short safe shelf before the finale.
+    ///   9. FINALE   — the ISOLATED rotten-platform trap that stages the signature
+    ///                 shake-to-undo twist on its own, with catch ledge + exit.
+    /// Every gap is center-to-center ≤ 130; every rise is top-to-top ≤ 85
+    /// (see the geometry trace in the redesign notes).
+    private func buildComposedIPadLevel() {
+        // No band lift on the composed path — vertical fill is handled by the raised
+        // floor (playableGroundY), not by the gameplayVerticalLift shim. Keep
+        // verticalLift = 0 so the lifecycle code that adds it (oscillator/reset) is a
+        // no-op here; the absolute Ys below already sit at the filled position.
+        verticalLift = 0
+        let g = playableGroundY(iphoneGround: 160)   // raised floor on iPad
+
+        // BEAT 1 — TEACH: a wide, settled spawn platform (top g+15).
+        _ = createPlatform(at: CGPoint(x: 70, y: g), size: CGSize(width: 96, height: 30))
+
+        // BEAT 2 — step-up (top g+69). Varied height for rhythm.
+        _ = createPlatform(at: CGPoint(x: 188, y: g + 56), size: CGSize(width: 70, height: 26))
+
+        // BEAT 3 — step-down within the cluster (top g+40).
+        _ = createPlatform(at: CGPoint(x: 300, y: g + 28), size: CGSize(width: 64, height: 24))
+
+        // BEAT 4 — MECHANIC: the moving platform, staged as a timed boarding beat.
+        // Same ±40 oscillation as phone; base raised to g+80. Boarded from P3 at the
+        // low/mid of its arc (entry rise +10..+50, well under the budget); its high
+        // point (g+130) is the timing challenge, mirroring the phone oscillation.
+        movingPlatformBaseX = 418
+        movingPlatformBaseY = g + 80
+        movingPlatform = createPlatform(at: CGPoint(x: movingPlatformBaseX, y: movingPlatformBaseY), size: CGSize(width: 56, height: 20))
+        movingPlatform.name = "moving"
+
+        // BEAT 5 — REST: a wide breath platform at floor level (top g+15). A
+        // deliberate visual + mechanical pause after the moving-platform tension.
+        _ = createPlatform(at: CGPoint(x: 540, y: g), size: CGSize(width: 110, height: 30))
+
+        // BEAT 6 — tension-up (top g+65).
+        _ = createPlatform(at: CGPoint(x: 655, y: g + 52), size: CGSize(width: 66, height: 26))
+
+        // BEAT 7 — tension peak resolve (top g+36).
+        _ = createPlatform(at: CGPoint(x: 770, y: g + 24), size: CGSize(width: 60, height: 24))
+
+        // BEAT 8 — BREATH + PRE-TRAP ANCHOR: a short safe shelf (top g+52.5) that is
+        // ALSO the guaranteed-safe rewind target a trap-repair undo lands on. From its
+        // top the final platform is one normal hop away (gap 124cc, rise -37.5).
+        let anchorTop = g + 40 + 12.5
+        _ = createPlatform(at: CGPoint(x: 888, y: g + 40), size: CGSize(width: 84, height: 25))
+        preTrapAnchor = CGPoint(x: 888, y: anchorTop + 16)
+
+        // BEAT 9 — FINALE (the signature mechanic, staged in isolation): the ROTTEN
+        // final platform. The sole landing pad for the exit, so the player is FORCED
+        // onto it — landing arms the trap, it collapses, and the only escape is
+        // shake-to-undo (or the release-build fallback). Geometry mirrors the phone
+        // trap exactly in RELATIVE terms (final top g+15, catch ledge below, exit
+        // body bottom ~128pt above the catch-ledge top → UNREACHABLE), so the trap is
+        // identical and load-bearing here too.
+        finalPlatformSize = CGSize(width: 70, height: 30)
+        finalPlatformPosition = CGPoint(x: 1012, y: g)
+        finalPlatform = createPlatform(at: finalPlatformPosition, size: finalPlatformSize)
+        finalPlatform.name = "final"
+        finalPlatformSurface = finalPlatform.children.first as? SKShapeNode
+        createExitDoor(at: CGPoint(x: 1022, y: g + 50))
+
+        // CATCH LEDGE — non-lethal shelf directly under the final platform, same
+        // relative offset as phone: top at g-108, so the exit body bottom (g+20) sits
+        // ~128pt above it — far past Bit's ~91pt apex. The stranded player CANNOT jump
+        // to the exit from here; they must undo. Wider (90) than the final (70) so a
+        // collapsing player always lands on it. This un-jumpable gap is load-bearing
+        // and is NOT widened relative to phone.
+        _ = createPlatform(at: CGPoint(x: 1012, y: g - 120), size: CGSize(width: 90, height: 24))
+
+        // Death zone — spans the full composed course width so a fall anywhere along
+        // the scrolled level is caught, centered on the course. Sits a fixed 90pt
+        // below the catch ledge (g-210), well below the lowest platform.
+        let courseWidth: CGFloat = 1100
+        let death = SKNode()
+        death.position = CGPoint(x: courseWidth / 2, y: g - 210)
+        death.physicsBody = SKPhysicsBody(rectangleOf: CGSize(width: courseWidth * 2, height: 100))
+        death.physicsBody?.isDynamic = false
+        death.physicsBody?.categoryBitMask = PhysicsCategory.hazard
+        addChild(death)
+
+        // The course (~1080pt to the exit) is wider than the iPad viewport, so scroll
+        // it horizontally. Camera Y stays at scene center; vertical fill is the raised
+        // floor above. Installed once, after the course + player exist (player is
+        // created in setupBit, which runs after buildLevel in configureScene).
+        // installCameraFollow is invoked from setupBit so playerController is non-nil.
+        pendingCameraWorldWidth = courseWidth
+    }
+
+    /// Set by buildComposedIPadLevel; consumed by setupBit once playerController
+    /// exists. nil on the phone path (no camera-follow).
+    private var pendingCameraWorldWidth: CGFloat?
+
     private func createPlatform(at position: CGPoint, size: CGSize) -> SKNode {
         let platform = SKNode()
         platform.position = position
@@ -261,9 +422,10 @@ final class ShakeUndoScene: BaseLevelScene, SKPhysicsContactDelegate {
         // button's reserved ~88x88 top-trailing zone and overlapped it on every
         // device (iPhone 390/402 + iPad). Keep the undo HUD clear of the pause
         // column, the title (x>=80) and the centered instruction panel.
-        undoIcon.position = CGPoint(x: 42, y: topSafeY - 66)
         undoIcon.zPosition = 200
-        addChild(undoIcon)
+        // Persistent undo counter — stays fixed on-screen (scene child on iPhone;
+        // camera child on iPad camera-follow so it doesn't scroll off with the course).
+        attachFixedHUD(undoIcon, sceneSpace: CGPoint(x: 42, y: topSafeY - 66))
 
         // Curved arrow (undo symbol)
         let arrow = SKShapeNode()
@@ -335,9 +497,10 @@ final class ShakeUndoScene: BaseLevelScene, SKPhysicsContactDelegate {
         // the box 260 -> 200 so on iPhone 390 it spans x[95,295] (right edge 295 <
         // the pause column start 300, left edge 95 > the title lead 80). On iPad
         // 1024 the centered box is x[412,612], nowhere near the title/pause/clocks.
-        panel.position = CGPoint(x: size.width / 2, y: topSafeY - 165)
         panel.zPosition = 300
-        addChild(panel)
+        // Fixed HUD: scene child on iPhone (byte-identical), camera child on iPad so
+        // the intro instruction stays centered on-screen during the opening pan.
+        attachFixedHUD(panel, sceneSpace: CGPoint(x: size.width / 2, y: topSafeY - 165))
 
         // Box grown 80 -> 96 tall to fit the actionable "SHAKE TO REWIND TIME"
         // instruction above the two atmospheric lines (one extra row; width and
@@ -383,13 +546,29 @@ final class ShakeUndoScene: BaseLevelScene, SKPhysicsContactDelegate {
     }
 
     private func setupBit() {
-        // Spawn lifted by the same band lift so Bit drops onto the (also-lifted) P1.
-        spawnPoint = CGPoint(x: courseX(45), y: 200 + verticalLift)
+        if isWideCanvas {
+            // iPad: spawn above the composed teach platform (x=70). Floor is raised
+            // via playableGroundY, so anchor the spawn to the same raised floor the
+            // course uses (g+40, ~Bit-height above P1's top g+15). No band lift here.
+            let g = playableGroundY(iphoneGround: 160)
+            spawnPoint = CGPoint(x: 70, y: g + 40)
+        } else {
+            // iPhone: spawn lifted by the same band lift so Bit drops onto the
+            // (also-lifted) P1. Unchanged from the original layout.
+            spawnPoint = CGPoint(x: courseX(45), y: 200 + verticalLift)
+        }
         bit = BitCharacter.make()
         bit.position = spawnPoint
         addChild(bit)
         registerPlayer(bit)
         playerController = PlayerController(character: bit, scene: self)
+
+        // iPad: the composed course is wider than the viewport — promote to the
+        // shared horizontal camera-follow now that the player controller exists.
+        // No-op on iPhone (pendingCameraWorldWidth stays nil).
+        if let worldWidth = pendingCameraWorldWidth {
+            installCameraFollow(worldWidth: worldWidth, playerController: playerController)
+        }
     }
 
     // MARK: - Rotten-platform trap lifecycle
@@ -431,7 +610,10 @@ final class ShakeUndoScene: BaseLevelScene, SKPhysicsContactDelegate {
             .group([.moveBy(x: 0, y: -120, duration: 0.45), .fadeAlpha(to: 0.0, duration: 0.45)])
         ]))
         AudioManager.shared.playDanger()
-        JuiceManager.shared.popText("PLATFORM CORRUPTED", at: CGPoint(x: size.width / 2, y: size.height / 2), color: strokeColor, fontSize: 16)
+        // Anchor the pop to the visible viewport center (screenSpaceCenter), so it
+        // stays on-screen even when the iPad camera has panned to the finale beat.
+        // On iPhone the camera never moves, so this equals size/2 (unchanged).
+        JuiceManager.shared.popText("PLATFORM CORRUPTED", at: screenSpaceCenter, color: strokeColor, fontSize: 16)
 
         // Just-in-time prompt: a beat after the collapse (so it follows, not
         // collides with, the "PLATFORM CORRUPTED" pop), surface "SHAKE TO UNDO"
@@ -458,7 +640,10 @@ final class ShakeUndoScene: BaseLevelScene, SKPhysicsContactDelegate {
         cancelShakePrompt()
 
         let prompt = SKNode()
-        prompt.position = CGPoint(x: size.width / 2, y: size.height / 2 - 60)
+        // Anchor to the visible viewport center so the call-to-action stays on-screen
+        // when the iPad camera has panned to the finale. Equals size/2 on iPhone.
+        let center = screenSpaceCenter
+        prompt.position = CGPoint(x: center.x, y: center.y - 60)
         prompt.zPosition = 350
         prompt.alpha = 0
 
@@ -602,9 +787,10 @@ final class ShakeUndoScene: BaseLevelScene, SKPhysicsContactDelegate {
         // gameTime - historyDuration. (For a trap-repair, undoCount was just floored
         // to >= 1, so this guard only blocks ordinary undos once charges are spent.)
         guard undoCount > 0, let target = rewindTarget() else {
-            // Feedback when undo fails
+            // Feedback when undo fails. Anchor to the visible viewport center so it
+            // is on-screen under camera-follow on iPad (equals size/2 on iPhone).
             JuiceManager.shared.shake(intensity: .light, duration: 0.2)
-            JuiceManager.shared.popText("NO UNDOS LEFT", at: CGPoint(x: size.width / 2, y: size.height / 2), color: strokeColor, fontSize: 18)
+            JuiceManager.shared.popText("NO UNDOS LEFT", at: screenSpaceCenter, color: strokeColor, fontSize: 18)
             AudioManager.shared.playDanger()
             return
         }
@@ -662,7 +848,9 @@ final class ShakeUndoScene: BaseLevelScene, SKPhysicsContactDelegate {
             flash.fillColor = fillColor
             flash.alpha = 0.8
             flash.zPosition = 500
-            flash.position = CGPoint(x: size.width / 2, y: size.height / 2)
+            // Anchor to the visible viewport center so the rewind flash covers the
+            // screen under camera-follow on iPad (equals size/2 on iPhone).
+            flash.position = screenSpaceCenter
             addChild(flash)
             flash.run(.sequence([.fadeOut(withDuration: 0.3), .removeFromParent()]))
         }
@@ -724,13 +912,13 @@ final class ShakeUndoScene: BaseLevelScene, SKPhysicsContactDelegate {
         gameTime += deltaTime
         recordPosition()
 
-        // Move platform — baseY lifted by the band lift so the oscillation centers on
-        // the SAME lifted Y where buildLevel placed it (groundY+80=240). The ±40
-        // amplitude is unchanged, so the moving-platform rise relative to the band is
-        // identical on every device.
+        // Move platform — oscillate around movingPlatformBaseY, which BOTH builders
+        // set to the SAME Y where they placed the platform (phone: groundY+80+lift;
+        // iPad: g+80). The ±movingPlatformAmplitude (40) and 2× speed are unchanged,
+        // so the moving-platform rise relative to its band is identical on every
+        // device. movingPlatform.position.x is left untouched (oscillation is Y-only).
         platformPhase += CGFloat(deltaTime)
-        let baseY: CGFloat = 240 + verticalLift
-        movingPlatform.position.y = baseY + sin(platformPhase * 2) * 40
+        movingPlatform.position.y = movingPlatformBaseY + sin(platformPhase * 2) * movingPlatformAmplitude
     }
 
     func didBegin(_ contact: SKPhysicsContact) {
@@ -797,10 +985,11 @@ final class ShakeUndoScene: BaseLevelScene, SKPhysicsContactDelegate {
         removeAction(forKey: "trapFuse")
         finalPlatform.removeAllActions()
         finalPlatformSurface?.removeAction(forKey: "rot")
-        // Restore to the SAME lifted Y buildLevel used (groundY=160 + band lift), so a
+        // Restore to the SAME position the active builder placed the platform
+        // (phone: courseX(designSize.width-45), groundY+lift; iPad: x=1012, g), so a
         // death-respawn mid-fuse re-pristines the platform exactly where it belongs on
         // every device.
-        finalPlatform.position = CGPoint(x: courseX(designSize.width - 45), y: 160 + verticalLift)
+        finalPlatform.position = finalPlatformPosition
         finalPlatform.alpha = 1.0
         finalPlatformSurface?.alpha = 1.0
         finalPlatformSurface?.xScale = 1.0

@@ -31,6 +31,33 @@ final class FocusModeScene: BaseLevelScene, SKPhysicsContactDelegate {
     private func courseX(_ logicalX: CGFloat) -> CGFloat { courseOriginX + logicalX * courseScale }
     private func courseLen(_ logical: CGFloat) -> CGFloat { logical * courseScale }
 
+    // MARK: - Native-iPad composed path
+    //
+    // iPhone path is UNCHANGED: when NOT isWideCanvas the scene runs the original
+    // centered-course layout (buildPhoneLevel / createHazardsPhone) so phone output
+    // is byte-identical. On a true iPad canvas we author a HAND-COMPOSED course at
+    // ABSOLUTE positions (never size.width fractions, never scaled geometry — Bit's
+    // physics are device-independent), pacing it into deliberate beats the way L3
+    // was redesigned: teach -> stepped cluster -> wide REST -> tension peak ->
+    // short breath -> an ISOLATED finale that stages this level's signature twist
+    // (Focus FREEZES a moving hazard wall so you can cross, AND the latch opens the
+    // gate). The course is wider than the screen, so we camera-follow.
+
+    /// True only on a genuine iPad-class canvas. Gated on BOTH dimensions so no
+    /// large-but-short or rotated phone trips it; iPhone keeps the original path.
+    /// height > 1000 excludes every phone (even Pro Max landscape is ~430 tall);
+    /// width > 700 matches the base helpers' large-canvas notion so all iPads in
+    /// portrait (mini 744 and up) get the composed course rather than a centered
+    /// phone strip. Both must hold, so iPhone output stays byte-identical.
+    private var isWideCanvas: Bool { size.height > 1000 && size.width > 700 }
+
+    /// Full horizontal extent (scene-space) of the composed iPad course, set once
+    /// in buildComposedIPadLevel() and reused for the death floor + camera follow.
+    private var composedCourseExtent: CGFloat = 0
+    /// Ground baseline (platform-center Y of the lowest tier) for the composed
+    /// iPad course, derived from playableGroundY so the band fills the tall canvas.
+    private var composedGroundY: CGFloat = 0
+
     /// iPad vertical-void fix: uniform upward shift applied to EVERY gameplay
     /// Y (platforms, spawn, exit, hazards, death floor) so the flat,
     /// ground-anchored band sits center-ish on a tall iPad canvas instead of
@@ -55,11 +82,22 @@ final class FocusModeScene: BaseLevelScene, SKPhysicsContactDelegate {
 
         setupBackground()
         setupLevelTitle()
-        buildLevel()
-        createHazards()
+        if isWideCanvas {
+            buildComposedIPadLevel()
+            createHazardsComposedIPad()
+        } else {
+            buildPhoneLevel()
+            createHazardsPhone()
+        }
         createFocusIndicator()
         showInstructionPanel()
         setupBit()
+        // Promote to horizontal camera-follow only on the wider composed course.
+        // worldWidth == composedCourseExtent so the player clamp matches the course
+        // and the exit (rightmost beat) stays reachable; no-op on iPhone.
+        if isWideCanvas {
+            installCameraFollow(worldWidth: composedCourseExtent, playerController: playerController)
+        }
     }
 
     private func setupBackground() {
@@ -97,7 +135,10 @@ final class FocusModeScene: BaseLevelScene, SKPhysicsContactDelegate {
         addChild(title)
     }
 
-    private func buildLevel() {
+    /// iPhone path — original layout, kept BYTE-IDENTICAL. Only ever called when
+    /// NOT isWideCanvas, so phone output is unchanged. (On iPhone-class canvases
+    /// gameplayLift == 0 too, so groundY stays exactly 160 as before.)
+    private func buildPhoneLevel() {
         // iPad vertical-void fix: lift the single ground anchor by the uniform
         // gameplayLift. Because all platforms and the exit derive from groundY,
         // and the death floor adds the same lift below, every relative rise/gap
@@ -126,6 +167,80 @@ final class FocusModeScene: BaseLevelScene, SKPhysicsContactDelegate {
         addChild(death)
     }
 
+    // MARK: - Composed iPad course
+    //
+    // Hand-authored at ABSOLUTE scene-space positions (no size.width fractions, no
+    // courseScale). Every platform-to-platform jump stays within Bit's verified
+    // reach: edge-to-edge gap <= maxJumpableGap (130) and top-to-top rise <=
+    // maxJumpableRise (85); drops are free. Heights step across three tiers
+    // (g / g+~25 / g+~55..70) for rhythm — never a flat identical row. The course
+    // is paced into beats and the level's signature twist (Focus FREEZES a moving
+    // hazard wall to cross, AND the latch unlocks the exit) gets its own isolated
+    // finale beat instead of being buried mid-row. The course is wider than the
+    // screen; configureScene installs camera-follow with worldWidth == this extent.
+    private func buildComposedIPadLevel() {
+        // Lift the floor toward the lower third so the band + upper hazard tier
+        // fill the tall canvas (helper returns iphoneGround unchanged on phones,
+        // but this path only runs on iPad).
+        let g = playableGroundY(iphoneGround: 160)
+        composedGroundY = g
+
+        // Beat geometry. `top` is the platform-surface center Y (== top-to-top for
+        // rise checks since all platforms are the same 26-pt slab height except the
+        // wide rests). x is absolute scene-space.
+        let slab: CGFloat = 26
+
+        func plat(_ x: CGFloat, _ top: CGFloat, _ w: CGFloat) {
+            createPlatform(at: CGPoint(x: x, y: top), size: CGSize(width: w, height: slab))
+        }
+
+        // BEAT 1 — TEACH: a wide, safe spawn platform. No hazard pressure here so
+        // the player reads the controls and the locked door / Focus prompt.
+        plat(120, g, 150)
+
+        // BEAT 2 — STEPPED CLUSTER: three stones, heights alternating up/down for
+        // rhythm. Slow + fast horizontal spikes hover above (frozen by Focus).
+        plat(320, g + 55, 90)   // up
+        plat(500, g + 10, 90)   // down
+        plat(680, g + 65, 90)   // up
+
+        // BEAT 3 — REST: a deliberately wider breath platform, lower tier, no
+        // hazard directly over it. A visible safe pause between clusters.
+        plat(900, g + 20, 200)
+
+        // BEAT 4 — TENSION PEAK: tighter three-stone cluster with the densest
+        // hazard coverage (vertical oscillators + an orbital), heights stepping.
+        plat(1110, g + 70, 90)  // peak high
+        plat(1290, g + 25, 90)  // dip
+        plat(1470, g + 60, 90)  // high again
+
+        // BEAT 5 — SHORT BREATH: a small landing to reset before the finale.
+        plat(1670, g + 15, 150)
+
+        // BEAT 6 — ISOLATED FINALE (signature twist staged): a single platform on
+        // the far side of a hazard WALL — a column of spikes sweeping the jump arc
+        // between the breath and the finale stone. With Focus OFF the wall is a
+        // lethal moving curtain; enabling Focus FREEZES it (and latches the gate
+        // open) so the player crosses and walks out the now-unlocked door.
+        plat(1900, g + 45, 130)
+
+        // Exit door beyond the finale platform, reachable from it (same tier).
+        createExitDoor(at: CGPoint(x: 2060, y: g + 45 + 25))
+
+        // Course extent = a margin past the exit so the player clamp lets Bit reach
+        // and stand at the door. Used for camera-follow worldWidth + death floor.
+        composedCourseExtent = 2160
+
+        // Death floor spans the FULL composed course (centered on the course, not
+        // the screen) so a fall anywhere along the scrolling level is caught.
+        let death = SKNode()
+        death.position = CGPoint(x: composedCourseExtent / 2, y: g - 240)
+        death.physicsBody = SKPhysicsBody(rectangleOf: CGSize(width: composedCourseExtent + 400, height: 120))
+        death.physicsBody?.isDynamic = false
+        death.physicsBody?.categoryBitMask = PhysicsCategory.hazard
+        addChild(death)
+    }
+
     private func createPlatform(at position: CGPoint, size: CGSize) {
         let platform = SKNode()
         platform.position = position
@@ -143,7 +258,9 @@ final class FocusModeScene: BaseLevelScene, SKPhysicsContactDelegate {
         addChild(platform)
     }
 
-    private func createHazards() {
+    /// iPhone path — original hazard layout, kept BYTE-IDENTICAL. Only called when
+    /// NOT isWideCanvas.
+    private func createHazardsPhone() {
         // iPad vertical-void fix: every hazard Y (and orbital center Y) gets the
         // SAME gameplayLift as the platforms/spawn/exit, so each hazard keeps its
         // exact height above the band it threatens. On iPhone gameplayLift == 0.
@@ -214,6 +331,120 @@ final class FocusModeScene: BaseLevelScene, SKPhysicsContactDelegate {
         orbitalAngles[5] = .pi
     }
 
+    /// Composed iPad hazards. SAME mechanic as the phone path — every hazard is
+    /// movement-animated (frozen by updateFocusState's isPaused) or orbital
+    /// (ticked in updatePlaying, which early-returns while Focus is on). Hazards
+    /// hover ABOVE platform surfaces (slab top = center + 13) so a frozen spike
+    /// never blocks the landing spot — it threatens the jump arc, exactly like the
+    /// phone layout. The finale (BEAT 6) places a vertical column of sweeping
+    /// spikes across the pre-finale gap: the level's signature "freeze the wall to
+    /// cross" moment, staged in isolation.
+    private func createHazardsComposedIPad() {
+        let g = composedGroundY
+
+        // --- BEAT 2 stepped cluster: slow + fast horizontal sweepers ----------
+        // Above the up-stones at x=320 (top g+55) and x=680 (top g+65); sit well
+        // clear of their surfaces and sweep the gaps between stones.
+        let h0 = createSpike()
+        h0.position = CGPoint(x: 410, y: g + 130)
+        h0.name = "hazard_0"
+        addChild(h0); hazards.append(h0)
+        h0.run(.repeatForever(.sequence([
+            .moveBy(x: 60, y: 0, duration: 2.0),
+            .moveBy(x: -60, y: 0, duration: 2.0)
+        ])), withKey: "movement")
+
+        let h1 = createSpike()
+        h1.position = CGPoint(x: 600, y: g + 120)
+        h1.name = "hazard_1"
+        addChild(h1); hazards.append(h1)
+        h1.run(.repeatForever(.sequence([
+            .moveBy(x: 90, y: 0, duration: 1.0),
+            .moveBy(x: -90, y: 0, duration: 1.0)
+        ])), withKey: "movement")
+
+        // --- BEAT 4 tension peak: two vertical oscillators ---------------------
+        // Over the peak stones at x=1110 and x=1470; bob up/down across the high
+        // jump arc. Lowest point stays above the stone surfaces.
+        let h2 = createSpike()
+        h2.position = CGPoint(x: 1110, y: g + 150)
+        h2.name = "hazard_2"
+        addChild(h2); hazards.append(h2)
+        h2.run(.repeatForever(.sequence([
+            .moveBy(x: 0, y: 70, duration: 1.4),
+            .moveBy(x: 0, y: -70, duration: 1.4)
+        ])), withKey: "movement")
+
+        let h3 = createSpike()
+        h3.position = CGPoint(x: 1470, y: g + 190)
+        h3.name = "hazard_3"
+        addChild(h3); hazards.append(h3)
+        h3.run(.repeatForever(.sequence([
+            .moveBy(x: 0, y: -70, duration: 1.8),
+            .moveBy(x: 0, y: 70, duration: 1.8)
+        ])), withKey: "movement")
+
+        // Orbital over the dip stone (x=1290) — ticked in updatePlaying (index 4).
+        let h4 = createSpike()
+        let oc4 = CGPoint(x: 1290, y: g + 150)
+        h4.position = oc4
+        h4.name = "hazard_4"
+        addChild(h4); hazards.append(h4)
+        orbitalCenters[4] = oc4
+        orbitalAngles[4] = 0
+
+        // --- BEAT 6 ISOLATED FINALE: the signature "freeze the patrol, then walk
+        // out" moment ----------------------------------------------------------
+        // CRITICAL completability note: freezing only sets `isPaused` — it does NOT
+        // relocate a hazard. So the mandatory CROSSING JUMP (breath top g+15 ->
+        // finale top g+45, gap 90) must be kept entirely CLEAR of every hazard's
+        // travel range; otherwise a spike could freeze mid-arc and soft-lock the
+        // jump. The finale threat is therefore a PATROL that sweeps along the
+        // FINALE PLATFORM SURFACE (the walk to the door), exactly like the phone
+        // layout's mechanic: while it MOVES it runs you down as you cross the
+        // platform; once Focus FREEZES it, it parks at one spot and the 130-wide
+        // platform leaves a clear lane to walk past it to the now-unlocked door.
+        //
+        // Two staggered surface patrols on the finale stone (top g+45, surface
+        // g+58). Spikes ride just above the surface (center g+78) and sweep within
+        // the platform's RIGHT interior (x 1875..1955, inside the 1835..1965
+        // platform span). The left ~40pt of the platform (1835..1875) — the
+        // landing zone from the crossing jump — is kept OUT of both patrols' ranges
+        // so Bit always lands on clear footing even if both spikes freeze at their
+        // nearest extent. Frozen, the two never stack vertically (same Y), so the
+        // 130-wide platform always leaves a walk-or-hop lane past them to the door.
+        let patrolY = g + 78
+        let patrolSpecs: [(start: CGFloat, span: CGFloat, dur: Double)] = [
+            (1875, 80, 1.1),   // left patrol: 1875 -> 1955
+            (1955, -70, 0.85)  // right patrol: 1955 -> 1885 (overlaps so a moving run is denied)
+        ]
+        for (i, spec) in patrolSpecs.enumerated() {
+            let patrol = createSpike()
+            patrol.position = CGPoint(x: spec.start, y: patrolY)
+            patrol.name = "hazard_patrol_\(i)"
+            addChild(patrol); hazards.append(patrol)
+            patrol.run(.repeatForever(.sequence([
+                .moveBy(x: spec.span, y: 0, duration: spec.dur),
+                .moveBy(x: -spec.span, y: 0, duration: spec.dur)
+            ])), withKey: "movement")
+        }
+
+        // Second orbital — placed AFTER the 2 patrol spikes, so its actual
+        // `hazards` array index is the current count-1 (h0..h4 = 0..4, patrol_0..1
+        // = 5..6, this = 7). Keyed by that real index so updatePlaying moves THIS
+        // node. Orbits ABOVE the breath platform (top g+15) as the approach guard,
+        // with its full radius-40 orbit (lowest point g+90) clear of both the
+        // breath surface (g+28) and the crossing-jump apex corridor.
+        let h5 = createSpike()
+        let oc5 = CGPoint(x: 1670, y: g + 150)
+        h5.position = oc5
+        h5.name = "hazard_5"
+        addChild(h5); hazards.append(h5)
+        let h5Index = hazards.count - 1
+        orbitalCenters[h5Index] = oc5
+        orbitalAngles[h5Index] = .pi
+    }
+
     private func createSpike() -> SKNode {
         let spike = SKNode()
 
@@ -243,18 +474,31 @@ final class FocusModeScene: BaseLevelScene, SKPhysicsContactDelegate {
         // y[T-88,T]). Moved to the top-LEFT corner, left of the title (title
         // x[80,203]) and above the relocated instruction panel (panel top now
         // T-70), so it overlaps neither TITLE, PAUSE, nor the panel.
-        moonIcon.position = CGPoint(x: 35, y: topSafeY - 20)
         moonIcon.zPosition = 200
-        addChild(moonIcon)
+        if isWideCanvas {
+            // Composed iPad scrolls (camera-follow); anchor the status indicator to
+            // the camera (origin = camera center) so it stays in the top-left.
+            moonIcon.position = CGPoint(x: -size.width / 2 + 35, y: size.height / 2 - 20)
+            gameCamera.addChild(moonIcon)
+        } else {
+            moonIcon.position = CGPoint(x: 35, y: topSafeY - 20)
+            addChild(moonIcon)
+        }
 
-        // Pre-create calming overlay (hidden)
+        // Pre-create calming overlay (hidden). Anchor to the camera on the
+        // scrolling iPad course so the full-screen wash stays centered on view.
         calmOverlay = SKShapeNode(rectOf: CGSize(width: size.width * 2, height: size.height * 2))
         calmOverlay?.fillColor = SKColor.white
         calmOverlay?.strokeColor = .clear
         calmOverlay?.alpha = 0
         calmOverlay?.zPosition = 50
-        calmOverlay?.position = CGPoint(x: size.width / 2, y: size.height / 2)
-        addChild(calmOverlay!)
+        if isWideCanvas {
+            calmOverlay?.position = .zero
+            gameCamera.addChild(calmOverlay!)
+        } else {
+            calmOverlay?.position = CGPoint(x: size.width / 2, y: size.height / 2)
+            addChild(calmOverlay!)
+        }
 
         // Manual DND toggle button — fallback when real Focus detection is unreliable
         createDNDToggleButton()
@@ -271,7 +515,6 @@ final class FocusModeScene: BaseLevelScene, SKPhysicsContactDelegate {
         // the moon HUD indicator (top-left), and the exit area (mid-level).
         let buttonW: CGFloat = 130
         let buttonH: CGFloat = 36
-        button.position = CGPoint(x: size.width - 16 - buttonW / 2, y: bottomSafeY + 40)
         button.zPosition = 200
         button.name = "dndToggle"
 
@@ -297,7 +540,18 @@ final class FocusModeScene: BaseLevelScene, SKPhysicsContactDelegate {
         label.name = "dndToggle"
         button.addChild(label)
 
-        addChild(button)
+        if isWideCanvas {
+            // Camera-anchored bottom-trailing on the scrolling iPad course so the
+            // fallback affordance never scrolls off-screen. nodes(at:) still hits
+            // it: the touch handler converts to scene coords and the button's world
+            // frame (camera position + this local offset) sits under the tap.
+            button.position = CGPoint(x: size.width / 2 - 16 - buttonW / 2,
+                                      y: -size.height / 2 + bottomSafeY + 40)
+            gameCamera.addChild(button)
+        } else {
+            button.position = CGPoint(x: size.width - 16 - buttonW / 2, y: bottomSafeY + 40)
+            addChild(button)
+        }
         dndToggleButton = button
     }
 
@@ -391,7 +645,14 @@ final class FocusModeScene: BaseLevelScene, SKPhysicsContactDelegate {
         // same spawnPoint, used by handleDeath -> playBufferDeath) gets the SAME
         // gameplayLift as the band, so Bit still drops onto the first platform.
         // On iPhone gameplayLift == 0 -> spawn y stays 200.
-        spawnPoint = CGPoint(x: courseX(50), y: 200 + gameplayLift)
+        if isWideCanvas {
+            // Composed iPad: drop onto the teach platform (x=120, top=composedGroundY).
+            // Spawn ~40 pt above the slab so Bit settles on it, same as the phone
+            // path's 40-pt drop (phone groundY=160, spawn y=200).
+            spawnPoint = CGPoint(x: 120, y: composedGroundY + 40)
+        } else {
+            spawnPoint = CGPoint(x: courseX(50), y: 200 + gameplayLift)
+        }
         bit = BitCharacter.make()
         bit.position = spawnPoint
         addChild(bit)
@@ -489,12 +750,15 @@ final class FocusModeScene: BaseLevelScene, SKPhysicsContactDelegate {
     override func updatePlaying(deltaTime: TimeInterval) {
         playerController.update()
 
-        // Update orbital hazards (indices 4 and 5)
+        // Update orbital hazards. Keys are the actual `hazards` array indices, so
+        // this works for BOTH layouts (phone: 4,5 / composed iPad: 4,8) without
+        // assuming positions. courseLen(40) == 40 on iPad (courseScale clamps to
+        // 1.0), so the orbit radius is the same absolute 40 pt on every device.
         guard !isFocusEnabled else { return }
         let orbitalRadius: CGFloat = courseLen(40)
         let orbitalSpeed: CGFloat = 2.0
 
-        for index in [4, 5] {
+        for index in orbitalCenters.keys {
             guard index < hazards.count,
                   let center = orbitalCenters[index],
                   var angle = orbitalAngles[index] else { continue }

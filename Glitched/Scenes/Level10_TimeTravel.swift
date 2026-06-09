@@ -27,6 +27,25 @@ final class TimeTravelScene: BaseLevelScene, SKPhysicsContactDelegate {
     /// Map a logical x (0...designWidth) into centered course space.
     private func courseX(_ logicalX: CGFloat) -> CGFloat { courseOriginX + logicalX * courseScale }
 
+    // MARK: - Native-iPad composition gate
+    //
+    // iPhone keeps its original centered single-floor layout (buildPhoneLevel),
+    // byte-identical. iPad gets a HAND-COMPOSED approach (buildComposedIPadLevel):
+    // a teach pad -> a stepped build cluster (varied tiers for rhythm) -> a
+    // wide REST/LAUNCH breath platform, then the level's signature mechanic — the
+    // grown TREE as a vertical climb — staged as the finale beat rising off the
+    // launch platform to the cliff-top exit. Geometry is authored in ABSOLUTE
+    // points (never size.width fractions, never scaled) so jump reach is exact:
+    // platform centres step at <= maxJumpableGap (130) horizontally and rises
+    // stay <= maxJumpableRise (85). The entire tree/sign/clock/cliff/exit cluster
+    // derives from `cliffX`, so the composed path only RELOCATES that one anchor
+    // (and the floor + spawn) — the verified branch-ladder climb geometry is
+    // untouched and rides along rigidly. Gated on isWideCanvas; iPhone unchanged.
+    private var isWideCanvas: Bool { size.height > 1000 && size.width > designWidth }
+
+    // Composed iPad anchors (set in buildComposedIPadLevel; unused on iPhone).
+    private var composedWorldWidth: CGFloat = 0
+
     // MARK: - Tree Growth States
     enum TreeState: Int {
         case sapling = 0
@@ -245,14 +264,44 @@ final class TimeTravelScene: BaseLevelScene, SKPhysicsContactDelegate {
         repositionTopHUD()
     }
 
+    // True once the composed iPad course is promoted to camera-follow: the HUD
+    // then rides the CAMERA (viewport-fixed) instead of world space, so the title
+    // / age readout / discovery panel stay on-screen as the camera scrolls.
+    private var hudIsCameraFixed = false
+
+    // Re-parents the top HUD onto the camera when the level scrolls, so it tracks
+    // the viewport instead of drifting off as Bit climbs/moves. No-op on iPhone
+    // and on iPads where the course fits (no camera-follow). Called once after
+    // installCameraFollow; positions are then authored in camera-LOCAL space by
+    // repositionTopHUD (origin = viewport centre).
+    private func attachHUDToCameraIfScrolling() {
+        guard cameraFollowWorldWidth != nil, let camera = gameCamera else { return }
+        hudIsCameraFixed = true
+        for node in [titleNode, titleUnderline, yearsReadout, instructionPanel].compactMap({ $0 }) {
+            node.removeFromParent()
+            camera.addChild(node)
+        }
+        repositionTopHUD()
+    }
+
+    // Map a scene-space HUD point to the active HUD parent's coordinate space.
+    // When the HUD rides the camera, viewport-centre is the origin, so subtract
+    // the scene centre; otherwise positions are scene-space as before.
+    private func hudPoint(x: CGFloat, y: CGFloat) -> CGPoint {
+        if hudIsCameraFixed {
+            return CGPoint(x: x - size.width / 2, y: y - size.height / 2)
+        }
+        return CGPoint(x: x, y: y)
+    }
+
     private func repositionTopHUD() {
         guard size.width > 1, size.height > 1 else { return }
         // Anchor the title 32pt below the safe-area top so the Dynamic Island
         // / status bar can never clip it on iPhone, and so the iPad's larger
         // canvas doesn't push it absurdly far down.
         let titleY = topSafeY - 32
-        titleNode?.position = CGPoint(x: 80, y: titleY)
-        titleUnderline?.position = CGPoint(x: 80, y: titleY)
+        titleNode?.position = hudPoint(x: 80, y: titleY)
+        titleUnderline?.position = hudPoint(x: 80, y: titleY)
 
         // OVERLAP FIX: the discovery panel is a CENTERED 280-wide / 60-tall card.
         // At the old L13/L12 anchor (topSafeY - 70) its rect spans
@@ -265,7 +314,7 @@ final class TimeTravelScene: BaseLevelScene, SKPhysicsContactDelegate {
         // pause button's bottom). Zero rect overlap with TITLE or PAUSE on
         // iPhone 390/402 and iPad 1024, while staying horizontally centred and
         // clear of the left-anchored title column.
-        instructionPanel?.position = CGPoint(x: size.width / 2, y: topSafeY - 155)
+        instructionPanel?.position = hudPoint(x: size.width / 2, y: topSafeY - 155)
 
         // OVERLAP FIX: pin the "N / 10 YRS" age counter to a fixed top-center
         // HUD slot, 90pt below the safe-area top. This sits in the clear band
@@ -277,7 +326,7 @@ final class TimeTravelScene: BaseLevelScene, SKPhysicsContactDelegate {
         // it, and on iPad 1024 it stays dead-center with even more margin. No
         // game sprite — Bit, tree, sign, clock dial — lives in this band, so the
         // dynamic age digits are always fully readable.
-        yearsReadout?.position = CGPoint(x: size.width / 2, y: topSafeY - 90)
+        yearsReadout?.position = hudPoint(x: size.width / 2, y: topSafeY - 90)
     }
 
     override func didUpdateSafeArea() {
@@ -299,6 +348,7 @@ final class TimeTravelScene: BaseLevelScene, SKPhysicsContactDelegate {
     private var exitDoorY: CGFloat = 470
 
     private func buildLevel() {
+        // --- Shared vertical-fill preamble (identical on both devices) ---------
         // Lift the ground off the bottom safe area but keep the iPhone value
         // close to the original 160 via the max() floor; on iPad this pushes
         // the whole puzzle up out of the very-bottom strip.
@@ -331,6 +381,17 @@ final class TimeTravelScene: BaseLevelScene, SKPhysicsContactDelegate {
         // value (not a band-relative gap) and is intentionally left unchanged.
         exitDoorY = groundY + cliffHeight + 30
 
+        // --- Device-specific floor + cliff anchor ------------------------------
+        if isWideCanvas {
+            buildComposedIPadLevel()
+        } else {
+            buildPhoneLevel()
+        }
+    }
+
+    // MARK: - iPhone layout (unchanged, byte-identical to the shipped phone level)
+
+    private func buildPhoneLevel() {
         // Anchor the cliff (and therefore the whole climbable cluster) in the
         // centered logical course so the tree always reads as a bridge toward the
         // exit and the spawn→tree→cliff spacing stays a rigid unit at any width
@@ -346,6 +407,100 @@ final class TimeTravelScene: BaseLevelScene, SKPhysicsContactDelegate {
         )
         floor.name = "ground"
 
+        buildClusterStructures()
+
+        // Death zone
+        let deathZone = SKNode()
+        deathZone.position = CGPoint(x: size.width / 2, y: -50)
+        deathZone.physicsBody = SKPhysicsBody(rectangleOf: CGSize(width: size.width * 2, height: 100))
+        deathZone.physicsBody?.isDynamic = false
+        deathZone.physicsBody?.categoryBitMask = PhysicsCategory.hazard
+        deathZone.name = "death_zone"
+        addChild(deathZone)
+    }
+
+    // MARK: - iPad layout (HAND-COMPOSED, native — teach -> build -> rest -> climb finale)
+    //
+    // Level 10's signature mechanic is the grown TREE as a vertical climb. On the
+    // wide iPad canvas the old single `size.width-100` floor was a long blank
+    // strip with the tree clinging to one side. Instead we author a paced
+    // horizontal APPROACH at ABSOLUTE positions that fills the canvas and leads
+    // the player to the tree base, then stage the tree-climb as the finale:
+    //   1. TEACH        — a calm intro pad (spawn region context), tier 0.
+    //   2. BUILD-1      — stepped up (tier 1): rhythm begins.
+    //   3. BUILD-2      — approach PEAK (tier 2): the highest stepping stone.
+    //   4. BUILD-3      — stepped back down (tier 1): release.
+    //   5. REST/LAUNCH  — a WIDE breath platform (tier 0): the deliberate pause
+    //                     AND the climb-launch floor the tree roots into. Bit
+    //                     spawns here, climb-ready, exactly as on iPhone.
+    //   6. CLIMB FINALE — the grown tree's branch ladder rises vertically off the
+    //                     launch platform to the cliff-top EXIT (the device twist,
+    //                     untouched: it rides on the relocated cliffX cluster).
+    // Platform centres step at <= maxJumpableGap (130) horizontally; tier rises
+    // (0/+44/+76) stay <= maxJumpableRise (85). The whole tree/sign/clock/cliff/
+    // exit cluster derives from cliffX, so we only relocate that anchor + the
+    // floor + the spawn. If the course is wider than the screen, camera-follow
+    // scrolls it; the death zone spans the full course.
+    private func buildComposedIPadLevel() {
+        let h: CGFloat = 35                              // platform thickness (= phone floor)
+        let pitch: CGFloat = 124                         // centre-to-centre step (<= 130 safe)
+        let tier0: CGFloat = 0
+        let tier1: CGFloat = 44                          // rise to tier 1 (<= 85)
+        let tier2: CGFloat = 76                          // rise to tier 2 (<= 85)
+        let leftMargin: CGFloat = 150                    // breathing room at the left edge
+
+        // Approach beats (left -> right), authored at absolute X.
+        // (centre index, tier offset, width)
+        let teachX  = leftMargin                         // TEACH pad
+        let build1X = teachX  + pitch                    // BUILD-1 (step up)
+        let build2X = build1X + pitch                    // BUILD-2 (approach peak)
+        let build3X = build2X + pitch                    // BUILD-3 (step down)
+
+        _ = createPlatform(at: CGPoint(x: teachX,  y: groundY + tier0), size: CGSize(width: 130, height: h))
+        _ = createPlatform(at: CGPoint(x: build1X, y: groundY + tier1), size: CGSize(width: 110, height: h))
+        _ = createPlatform(at: CGPoint(x: build2X, y: groundY + tier2), size: CGSize(width: 100, height: h))
+        _ = createPlatform(at: CGPoint(x: build3X, y: groundY + tier1), size: CGSize(width: 110, height: h))
+
+        // REST / LAUNCH: a wide tier-0 breath platform. Bit spawns on it and the
+        // tree roots into it; its surface-top (groundY + 17.5) matches the iPhone
+        // floor exactly, so the verified floor->first-foothold climb rise is
+        // unchanged. Centre it one pitch past BUILD-3 so the step down lands here.
+        let launchWidth: CGFloat = 280
+        let launchX = build3X + pitch
+        let launch = createPlatform(at: CGPoint(x: launchX, y: groundY + tier0),
+                                    size: CGSize(width: launchWidth, height: h))
+        launch.name = "ground"
+
+        // Anchor the cliff so the tree base (cliffX - 200) sits on the launch
+        // platform and the spawn (cliffX - 250, set in setupBit) sits 50pt to its
+        // left — i.e. the SAME rigid spawn->tree->cliff unit as iPhone, just
+        // translated. Place the tree base 30pt right of the launch centre so the
+        // cliff clears the launch right edge.
+        let treeBaseX = launchX + 30
+        cliffX = treeBaseX + 200
+
+        // The cliff/tree/exit/treeContainer structures derive from cliffX.
+        buildClusterStructures()
+
+        // Course extent: from the TEACH left edge to the cliff right edge (+margin).
+        let courseLeft = teachX - 65 - leftMargin       // include the left margin as scenery
+        let courseRight = cliffX + 40 + 80              // cliff half-width 40 + tail margin
+        composedWorldWidth = max(size.width, courseRight - max(0, courseLeft))
+
+        // Death zone spans the full composed course (still the fall-floor at y=-50).
+        let deathZone = SKNode()
+        deathZone.position = CGPoint(x: composedWorldWidth / 2, y: -50)
+        deathZone.physicsBody = SKPhysicsBody(rectangleOf: CGSize(width: composedWorldWidth * 2, height: 100))
+        deathZone.physicsBody?.isDynamic = false
+        deathZone.physicsBody?.categoryBitMask = PhysicsCategory.hazard
+        deathZone.name = "death_zone"
+        addChild(deathZone)
+    }
+
+    /// Builds the cliff, cliff-depth shading, exit door and tree container from
+    /// the already-set `cliffX` / `groundY`. Shared by both layouts so the climb
+    /// geometry is authored exactly once and only its X anchor differs.
+    private func buildClusterStructures() {
         // Cliff on right (where exit is)
         let cliff = SKShapeNode(rectOf: CGSize(width: 80, height: cliffHeight))
         cliff.fillColor = fillColor
@@ -378,15 +533,6 @@ final class TimeTravelScene: BaseLevelScene, SKPhysicsContactDelegate {
         treeContainer = SKNode()
         treeContainer.position = CGPoint(x: cliffX - 200, y: groundY + 17)
         addChild(treeContainer)
-
-        // Death zone
-        let deathZone = SKNode()
-        deathZone.position = CGPoint(x: size.width / 2, y: -50)
-        deathZone.physicsBody = SKPhysicsBody(rectangleOf: CGSize(width: size.width * 2, height: 100))
-        deathZone.physicsBody?.isDynamic = false
-        deathZone.physicsBody?.categoryBitMask = PhysicsCategory.hazard
-        deathZone.name = "death_zone"
-        addChild(deathZone)
     }
 
     private func createPlatform(at position: CGPoint, size platformSize: CGSize) -> SKNode {
@@ -820,12 +966,14 @@ final class TimeTravelScene: BaseLevelScene, SKPhysicsContactDelegate {
 
     private func setupBit() {
         // Spawn relative to the derived ground so Bit lands on the floor on
-        // any canvas (was a hardcoded y=200 tuned for groundY=160). The x is
-        // mapped through the centered course (logical 100) so it shifts with the
-        // tree cluster — preserving the spawn→first-foothold gap (and therefore
-        // the verified first-branch clearance over Bit) on every device while
-        // killing the iPad dead-walk. On iPhone-390 courseX(100) == 100.
-        spawnPoint = CGPoint(x: courseX(100), y: groundY + 40)
+        // any canvas (was a hardcoded y=200 tuned for groundY=160). The x keeps
+        // Bit exactly 50pt LEFT of the tree base (treeContainer.x == cliffX-200,
+        // so spawn == cliffX-250) on BOTH devices — preserving the verified
+        // spawn→first-foothold clearance / head-squeeze geometry that the branch
+        // ladder depends on. On iPhone-390 cliffX==350, so cliffX-250 == 100,
+        // byte-identical to the old courseX(100). On iPad the launch platform is
+        // sized to host both this spawn and the tree base.
+        spawnPoint = CGPoint(x: cliffX - 250, y: groundY + 40)
 
         bit = BitCharacter.make()
         bit.position = spawnPoint
@@ -833,6 +981,16 @@ final class TimeTravelScene: BaseLevelScene, SKPhysicsContactDelegate {
         registerPlayer(bit)
 
         playerController = PlayerController(character: bit, scene: self)
+
+        // iPad-only: once the composed course is wider than the viewport, promote
+        // the level to horizontal camera-follow so the approach beats and the
+        // tree-climb finale both fill the screen as Bit moves. No-op on iPhone
+        // (isWideCanvas is false) and on iPads where the course already fits.
+        if isWideCanvas && composedWorldWidth > size.width {
+            installCameraFollow(worldWidth: composedWorldWidth, playerController: playerController)
+            // The HUD must ride the viewport once the world scrolls.
+            attachHUDToCameraIfScrolling()
+        }
     }
 
     // MARK: - Time Passage
@@ -883,14 +1041,22 @@ final class TimeTravelScene: BaseLevelScene, SKPhysicsContactDelegate {
         GlitchedNarrator.present(text, in: self, style: .whisper)
     }
 
+    // Parent + centre for full-screen overlays (SYNCING label, flash). When the
+    // course scrolls (camera-follow) these must ride the camera so they stay
+    // centred on the viewport; otherwise they're scene-space as before.
+    private var overlayParent: SKNode { hudIsCameraFixed ? gameCamera : self }
+    private var overlayCenter: CGPoint {
+        hudIsCameraFixed ? .zero : CGPoint(x: size.width / 2, y: size.height / 2)
+    }
+
     private func showSyncingAnimation(completion: @escaping () -> Void) {
         syncingLabel = SKLabelNode(text: "SYNCING TIME...")
         syncingLabel?.fontName = "Menlo-Bold"
         syncingLabel?.fontSize = 24
         syncingLabel?.fontColor = strokeColor
-        syncingLabel?.position = CGPoint(x: size.width / 2, y: size.height / 2)
+        syncingLabel?.position = overlayCenter
         syncingLabel?.zPosition = 500
-        addChild(syncingLabel!)
+        overlayParent.addChild(syncingLabel!)
 
         // Glitch effect
         syncingLabel?.run(.repeat(.sequence([
@@ -918,10 +1084,10 @@ final class TimeTravelScene: BaseLevelScene, SKPhysicsContactDelegate {
         let flash = SKShapeNode(rectOf: size)
         flash.fillColor = fillColor
         flash.strokeColor = .clear
-        flash.position = CGPoint(x: size.width / 2, y: size.height / 2)
+        flash.position = overlayCenter
         flash.zPosition = 400
         flash.alpha = 0
-        addChild(flash)
+        overlayParent.addChild(flash)
 
         let flashSequence = SKAction.sequence([
             .fadeAlpha(to: 0.8, duration: 0.1),

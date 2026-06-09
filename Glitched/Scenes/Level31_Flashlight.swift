@@ -80,6 +80,27 @@ final class FlashlightScene: BaseLevelScene, SKPhysicsContactDelegate {
     // Death zone y position
     private let deathZoneY: CGFloat = -100
 
+    // MARK: - Native-iPad vertical fill (Phase 0)
+    //
+    // L31 is ALREADY a worldWidth (3200) camera-follow course, so it fills the iPad
+    // horizontally via the bespoke updateCamera below — no installCameraFollow needed
+    // (that would double-register a camera tick). The only iPad gap was VERTICAL:
+    // gameplay was pinned to the bottom (groundY 160) while the tall canvas sat dark
+    // and empty above. We close that by lifting the whole course's floor on iPad via
+    // the shared playableGroundY helper. Everything in the level is authored
+    // ground-RELATIVE (every section takes floorY: groundY; spawn/exit/hazards are
+    // groundY + N), so raising one baseline rigidly translates the entire composition
+    // — platforms, stalactite tips, pits, exit, creatures move up together and all
+    // trap geometry (the Section 4 stalactite apex-clearance, the pit spacing) is
+    // preserved in RELATIVE terms exactly. On iPhone (height <= 1000) playableGroundY
+    // returns the iphoneGround value verbatim, so phone output is byte-identical.
+    private var groundY: CGFloat { playableGroundY(iphoneGround: 160) }
+
+    /// Spawn / respawn footing, kept ground-relative (160 + 60 = 220 on iPhone, so
+    /// byte-identical). Hardcoding 220 against a lifted iPad floor would drop Bit
+    /// below the platform surface into the death zone on every respawn.
+    private var spawnY: CGFloat { groundY + 60 }
+
     // MARK: - Configuration
 
     override func configureScene() {
@@ -150,12 +171,16 @@ final class FlashlightScene: BaseLevelScene, SKPhysicsContactDelegate {
         ceiling.fillColor = .clear
         bgContainer.addChild(ceiling)
 
-        // Cave floor line
+        // Cave floor line. Drawn 40pt below the gameplay floor (groundY) so on iPad
+        // the faint cave-floor silhouette tracks the lifted ground instead of sitting
+        // far below it. On iPhone groundY is 160 -> base 120, byte-identical to the
+        // prior literal.
+        let caveFloorBaseY = groundY - 40
         let floorPath = CGMutablePath()
-        floorPath.move(to: CGPoint(x: -50, y: 120))
+        floorPath.move(to: CGPoint(x: -50, y: caveFloorBaseY))
         x = 0
         while x <= levelWidth + 50 {
-            let y: CGFloat = 120 + CGFloat.random(in: -10...10)
+            let y: CGFloat = caveFloorBaseY + CGFloat.random(in: -10...10)
             floorPath.addLine(to: CGPoint(x: x, y: y))
             x += CGFloat.random(in: 30...80)
         }
@@ -223,7 +248,10 @@ final class FlashlightScene: BaseLevelScene, SKPhysicsContactDelegate {
     // MARK: - Level Building
 
     private func buildLevel() {
-        let groundY: CGFloat = 160
+        // groundY is device-derived: 160 on iPhone (byte-identical), lifted toward
+        // ~22% up the screen on iPad for vertical fill. All sections take it as
+        // floorY so the whole course translates rigidly.
+        let groundY = self.groundY
 
         // === SECTION 1: Start alcove (x: 0 - 400) ===
         buildStartSection(groundY: groundY)
@@ -1075,7 +1103,7 @@ final class FlashlightScene: BaseLevelScene, SKPhysicsContactDelegate {
     // MARK: - Bit Setup
 
     private func setupBit() {
-        spawnPoint = CGPoint(x: 100, y: 220)
+        spawnPoint = CGPoint(x: 100, y: spawnY)
 
         bit = BitCharacter.make()
         bit.position = spawnPoint
@@ -1202,7 +1230,7 @@ final class FlashlightScene: BaseLevelScene, SKPhysicsContactDelegate {
             if bit.position.x > checkpoint && index > lastCheckpointReached {
                 lastCheckpointReached = index
                 resetProgressTimer()
-                spawnPoint = CGPoint(x: checkpoint, y: 220)
+                spawnPoint = CGPoint(x: checkpoint, y: spawnY)
             }
         }
     }

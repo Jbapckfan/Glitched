@@ -27,6 +27,22 @@ final class DarkModeScene: BaseLevelScene, SKPhysicsContactDelegate {
     private var light1Point: CGPoint = .zero            // center of the light-mode platform (shadow enemy patrols here)
     private var courseOffsetX: CGFloat = 0               // centers the route on wide canvases
 
+    /// Full horizontal extent of the composed iPad course (rightmost edge incl. door).
+    /// Drives the death-zone width/center and installCameraFollow worldWidth so the
+    /// scrolling course and its catch-all floor span the whole level, not just the
+    /// viewport. Zero on iPhone (single-screen, no camera-follow).
+    private var courseExtent: CGFloat = 0
+
+    /// iPad-native gate: a TALL *and* WIDE canvas (real iPad, portrait or landscape),
+    /// not an iPhone strip. Mirrors the Phase 0 helpers' height>1000 threshold and
+    /// adds a width floor so a tall-but-narrow phone in some future split never trips
+    /// it. When false the level renders the byte-identical iPhone path.
+    private var isWideCanvas: Bool { size.height > 1000 && size.width > 760 }
+
+    /// Exact center of the composed iPad start platform, so Bit spawns on it.
+    /// Unused on iPhone (spawn there stays the original width-fractional formula).
+    private var ipadStartPoint: CGPoint = .zero
+
     // Visual elements
     private var backgroundNode: SKShapeNode!
     private var doorNode: SKNode?
@@ -122,6 +138,14 @@ final class DarkModeScene: BaseLevelScene, SKPhysicsContactDelegate {
         createFallbackToggle()
         setupBit()
         createShadowEnemy()
+
+        // iPad: the composed course is wider than the viewport, so promote to
+        // horizontal camera-follow (ticked in BaseLevelScene.update()). worldWidth is
+        // the full course extent computed in buildComposedIPadLevel; the exit sits at
+        // doorX + 20 < courseExtent, inside the camera's right clamp. No-op on iPhone.
+        if isWideCanvas, courseExtent > size.width {
+            installCameraFollow(worldWidth: courseExtent, playerController: playerController)
+        }
 
         updateDoorState()
         updateHiddenDarkText()
@@ -310,6 +334,22 @@ final class DarkModeScene: BaseLevelScene, SKPhysicsContactDelegate {
         }
     }
 
+    /// Attach a HUD node so it stays fixed on screen. On iPhone (no camera-follow)
+    /// HUD lives in scene space exactly as before — byte-identical. On the composed
+    /// iPad course the camera pans horizontally, so HUD is re-parented to the camera
+    /// and its position converted to camera-local coords (camera-local origin = view
+    /// center), keeping it pinned to the same screen spot while the world scrolls.
+    /// `node.position` must already be the intended SCENE-space position.
+    private func addHUDChild(_ node: SKNode) {
+        if isWideCanvas, let cam = gameCamera {
+            node.position = CGPoint(x: node.position.x - size.width / 2,
+                                    y: node.position.y - size.height / 2)
+            cam.addChild(node)
+        } else {
+            addChild(node)
+        }
+    }
+
     private func setupLevelTitle() {
         let title = SKLabelNode(text: "LEVEL 8")
         title.fontName = VisualConstants.Fonts.display
@@ -321,7 +361,6 @@ final class DarkModeScene: BaseLevelScene, SKPhysicsContactDelegate {
         title.horizontalAlignmentMode = .left
         title.zPosition = 100
         title.name = "level_title"
-        addChild(title)
         lineElements.append(title)
 
         let underline = SKShapeNode()
@@ -334,13 +373,28 @@ final class DarkModeScene: BaseLevelScene, SKPhysicsContactDelegate {
         underline.position = title.position
         underline.zPosition = 100
         underline.name = "title_underline"
-        addChild(underline)
         lineElements.append(underline)
+
+        // Pin to camera on iPad (course scrolls); plain scene child on iPhone.
+        addHUDChild(title)
+        addHUDChild(underline)
     }
 
     // MARK: - Level Building
 
+    /// Dispatcher: iPhone keeps the original single-screen climb byte-identical;
+    /// iPad gets a NEW hand-composed, camera-followed course. The iPad branch is the
+    /// ONLY geometry change and it is fully gated on isWideCanvas, so iPhone output is
+    /// untouched.
     private func buildLevel() {
+        if isWideCanvas {
+            buildComposedIPadLevel()
+        } else {
+            buildPhoneLevel()
+        }
+    }
+
+    private func buildPhoneLevel() {
         let w = size.width
 
         // groundY is set in configureScene (bottomSafeY + 120) so floor decor and
@@ -470,6 +524,171 @@ final class DarkModeScene: BaseLevelScene, SKPhysicsContactDelegate {
         let deathZone = SKNode()
         deathZone.position = CGPoint(x: size.width / 2, y: -50)
         deathZone.physicsBody = SKPhysicsBody(rectangleOf: CGSize(width: size.width * 2, height: 100))
+        deathZone.physicsBody?.isDynamic = false
+        deathZone.physicsBody?.categoryBitMask = PhysicsCategory.hazard
+        deathZone.name = "death_zone"
+        addChild(deathZone)
+
+        // Initialize platform visibility
+        updateDualPlatforms()
+    }
+
+    // MARK: - Composed iPad Level (hand-authored, camera-followed)
+    //
+    // L3-template philosophy applied to the dark-mode mechanic. Paced beats:
+    //   1 spawn/teach (wide low ledge) -> 2 teach DARK flip (moon dual) ->
+    //   3 stepped cluster teaching the LIGHT flip (always ledge + sun dual; the
+    //     shadow enemy patrols this sun ledge, harmless in light but a hazard if you
+    //     flip to dark while lingering) -> 4 wider REST breath -> 5 tension peak
+    //     (high moon dual, dark-mode pressure) -> 6 short breath -> 7 ISOLATED
+    //     FINALE beat that stages the signature twist (a lone sun-only ledge you MUST
+    //     cross in light, with no always-solid bypass) -> 7.5 safe always-solid
+    //     anchor to flip back to dark -> 8 exit door (opens only in dark).
+    // Every platform varies height across 3 tiers for rhythm (never a flat row);
+    // spacing is FIXED jump-reach in ABSOLUTE points (never width fractions, never
+    // scaled), so jump physics is byte-identical to iPhone — just MORE composed
+    // content. The course is wider than the viewport, so it scrolls via
+    // installCameraFollow (called from configureScene after the player exists).
+    //
+    // Flip is still REQUIRED and un-skippable: consecutive always-solid platforms are
+    // spaced > absoluteMaxGap apart (edge-to-edge), so a single mode cannot flat-run
+    // the course — you must land the intervening moon (dark) / sun (light) duals,
+    // which alternate the required appearance. The door only spawns its exit trigger
+    // in dark mode (updateDoorState), so the finale forces a flip back to dark.
+    private func buildComposedIPadLevel() {
+        // Vertical fill: lift the floor toward the lower third on a tall canvas. All
+        // gameplay Y derives from baseY, so the band fills the iPad screen and the
+        // door/sensor/exit derived geometry (doorPlatformTopY/Point, light1Point)
+        // keeps working unchanged.
+        let baseY = playableGroundY(iphoneGround: bottomSafeY + 120)
+        groundY = baseY
+
+        // Three height tiers above baseY (top-surface offsets). The largest single
+        // jump in the route is low(0) -> high(75) at the rest -> tension-peak beat;
+        // 75 <= BaseLevelScene.maxJumpableRise (85) and leaves ~16pt under Bit's ~91pt
+        // apex. Every other consecutive rise is <= 50. Heights vary across all three
+        // tiers for rhythm (never a flat row).
+        let tierLow: CGFloat  = 0      // baseY tops
+        let tierMid: CGFloat  = 50
+        let tierHigh: CGFloat = 75
+
+        // Horizontal: FIXED center-to-center pitch in absolute points (NOT a width
+        // fraction). With ~130-wide always-solid platforms (halfW 65) and ~100-wide
+        // dual platforms (halfW 50), a 200pt pitch yields ~85pt edge-to-edge on every
+        // intended jump (<= maxJumpableGap 130), while any two ALWAYS-solid platforms
+        // are 400pt apart center-to-center => ~270pt edge-to-edge (>> absoluteMaxGap
+        // 145), so the flip can never be flat-run-skipped.
+        let pitch: CGFloat = 200
+        let startCX: CGFloat = 200     // absolute, leaves a left margin on iPad
+
+        let alwaysW: CGFloat = 130
+        let alwaysH: CGFloat = 36
+        let restW: CGFloat   = 170     // the wider REST/breath platforms read as a pause
+        let restH: CGFloat   = 32
+        let dualW: CGFloat   = 100
+        let dualH: CGFloat   = 25
+
+        // Helper: build an always-solid platform whose TOP sits at baseY + topOffset.
+        func solid(_ cx: CGFloat, _ topOffset: CGFloat, w: CGFloat, h: CGFloat, name: String) -> SKNode {
+            let center = CGPoint(x: cx, y: baseY + topOffset - h / 2)
+            let p = createPlatform(at: center, size: CGSize(width: w, height: h))
+            p.name = name
+            return p
+        }
+        // Helper: build a dual (mode-gated) platform whose TOP sits at baseY + topOffset.
+        func dual(_ cx: CGFloat, _ topOffset: CGFloat, darkOnly: Bool) -> (node: SKNode, center: CGPoint) {
+            let center = CGPoint(x: cx, y: baseY + topOffset - dualH / 2)
+            let p = createDualPlatform(at: center, size: CGSize(width: dualW, height: dualH), isDarkModeOnly: darkOnly)
+            if darkOnly { darkModePlatforms.append(p) } else { lightModePlatforms.append(p) }
+            return (p, center)
+        }
+
+        // BEAT 1 - spawn / teach. Wide, low, always-solid.
+        let x0 = startCX
+        _ = solid(x0, tierLow, w: 160, h: 40, name: "start_platform")
+        // Spawn sits 40pt above the start platform top center (matches iPhone offset).
+        ipadStartPoint = CGPoint(x: x0, y: baseY + 40)
+
+        // BEAT 2 - teach DARK flip: first moon platform (solid only in dark), stepped up.
+        let x1 = x0 + pitch
+        _ = dual(x1, tierMid, darkOnly: true)
+
+        // BEAT 3 - stepped cluster teaching the LIGHT flip. An always-solid mid ledge
+        // (a momentary safe footing during the flip) then a sun platform (solid only
+        // in light), heights varied for rhythm (mid -> high -> mid). The shadow enemy
+        // patrols THIS sun platform: it is solid (occupied) only in LIGHT, where the
+        // shadow is invisible/harmless; it only bites if the player flips to dark while
+        // lingering here -- exactly the original light-platform semantics, never a
+        // guaranteed-death required platform.
+        let x2 = x0 + pitch * 2
+        _ = solid(x2, tierHigh, w: alwaysW, h: alwaysH, name: "cluster_ledge")
+        let x3 = x0 + pitch * 3
+        let lightTeach = dual(x3, tierMid, darkOnly: false)
+        light1Point = lightTeach.center
+
+        // BEAT 4 - REST breath: a deliberately WIDER always-solid platform, lower
+        // tier, a visual pause before the tension peak.
+        let x4 = x0 + pitch * 4
+        _ = solid(x4, tierLow, w: restW, h: restH, name: "rest_platform")
+
+        // BEAT 5 - tension peak: a moon platform (dark-only) at the high tier. This is
+        // the dark-mode pressure beat -- you must be in dark to land it, and the shadow
+        // enemy back on the BEAT-3 sun platform is live in dark, so backtracking is
+        // discouraged. No hazard ON this platform itself (that would be a
+        // guaranteed-death required platform), keeping the tension fair.
+        let x5 = x0 + pitch * 5
+        _ = dual(x5, tierHigh, darkOnly: true)
+
+        // BEAT 6 - short breath: a small always-solid ledge to recover, mid tier.
+        let x6 = x0 + pitch * 6
+        _ = solid(x6, tierMid, w: alwaysW, h: alwaysH, name: "breath_platform")
+
+        // BEAT 7 - ISOLATED FINALE: the signature twist staged alone. A sun platform
+        // (solid only in LIGHT) at the high tier, isolated between two always-solid
+        // ledges. The whole final stretch (breath -> sun finale -> anchor -> door) is
+        // all always-solid EXCEPT this one sun ledge, and the always-solid neighbors
+        // are 400pt apart, so you CANNOT bypass it: the only way across the finale is
+        // to be in LIGHT to land the sun ledge. That is the staged signature beat --
+        // the level's last word is "you must be in light here", immediately before a
+        // door that only opens in dark.
+        let x7 = x0 + pitch * 7
+        _ = dual(x7, tierHigh, darkOnly: false)
+
+        // BEAT 7.5 - SAFE ANCHOR: an always-solid landing past the sun finale where the
+        // player safely flips BACK to dark (no vanishing-footing timing trap). It is
+        // always-solid, so flipping to dark here never drops the player; the door then
+        // unlocks and is one short jump away. This makes the finale FAIR while keeping
+        // the required final flip (light to cross the sun ledge -> dark to open door).
+        let xAnchor = x0 + pitch * 8
+        _ = solid(xAnchor, tierMid, w: alwaysW, h: alwaysH, name: "finale_anchor")
+
+        // BEAT 8 - EXIT: always-solid door platform at mid tier (level with the anchor,
+        // a flat short hop) so the dark-mode jump-to-door is comfortably within reach.
+        let doorX = x0 + pitch * 9
+        let doorTopOffset = tierMid
+        let doorH: CGFloat = 35
+        let doorPlatformY = baseY + doorTopOffset - doorH / 2
+        let doorPlatform = createPlatform(
+            at: CGPoint(x: doorX, y: doorPlatformY),
+            size: CGSize(width: 140, height: doorH)
+        )
+        doorPlatform.name = "door_platform"
+
+        doorPlatformPoint = CGPoint(x: doorX, y: doorPlatformY)
+        doorPlatformTopY = doorPlatformY + doorH / 2
+
+        // Course extent: rightmost edge = door platform right edge + door visual + sensor
+        // margin. Drives the death zone span and installCameraFollow worldWidth.
+        let courseLeftEdge = x0 - 160 / 2 - 80          // left margin before start
+        let courseRightEdge = doorX + 140 / 2 + 80      // right margin past door
+        courseExtent = courseRightEdge - min(0, courseLeftEdge)
+
+        // Death zone spans the FULL course (not just the viewport) so a fall anywhere
+        // along the scrolling course is caught. Centered on the course, well below the
+        // lowest platform (baseY tops), fixed at y: -50 like the iPhone path.
+        let deathZone = SKNode()
+        deathZone.position = CGPoint(x: courseExtent / 2, y: -50)
+        deathZone.physicsBody = SKPhysicsBody(rectangleOf: CGSize(width: courseExtent + 400, height: 100))
         deathZone.physicsBody?.isDynamic = false
         deathZone.physicsBody?.categoryBitMask = PhysicsCategory.hazard
         deathZone.name = "death_zone"
@@ -830,7 +1049,9 @@ final class DarkModeScene: BaseLevelScene, SKPhysicsContactDelegate {
         instructionPanel = SKNode()
         instructionPanel?.position = CGPoint(x: 160, y: topSafeY - 120)
         instructionPanel?.zPosition = 200
-        addChild(instructionPanel!)
+        // Pin to camera on iPad so the rule legend stays visible as the course
+        // scrolls; plain scene child on iPhone (byte-identical).
+        addHUDChild(instructionPanel!)
 
         // Panel background
         let panelBG = SKShapeNode(rectOf: CGSize(width: 180, height: 110), cornerRadius: 8)
@@ -1034,11 +1255,15 @@ final class DarkModeScene: BaseLevelScene, SKPhysicsContactDelegate {
     // MARK: - Setup
 
     private func setupBit() {
-        // Spawn on the start platform (derived in buildLevel): start is at
-        // x = size.width*0.12 + courseOffsetX,
-        // groundY anchored to the bottom safe area. Keep ~40pt above ground center so Bit
-        // lands cleanly on the start platform on every canvas.
-        spawnPoint = CGPoint(x: size.width * 0.12 + courseOffsetX, y: groundY + 40)
+        // Spawn on the start platform (derived in buildLevel). iPhone keeps the
+        // original width-fractional spawn byte-identical; iPad spawns on the exact
+        // absolute center of the composed start platform. Both keep ~40pt above the
+        // ground center so Bit lands cleanly.
+        if isWideCanvas {
+            spawnPoint = ipadStartPoint
+        } else {
+            spawnPoint = CGPoint(x: size.width * 0.12 + courseOffsetX, y: groundY + 40)
+        }
 
         bit = BitCharacter.make()
         bit.position = spawnPoint
@@ -1300,7 +1525,10 @@ final class DarkModeScene: BaseLevelScene, SKPhysicsContactDelegate {
         lineElements.append(label)
 
         fallbackToggle = button
-        addChild(button)
+        // Pin to camera on iPad (course scrolls); plain scene child on iPhone. The
+        // touch hit-test below converts into the toggle's parent space, so this works
+        // whether the parent is the scene (iPhone) or the camera (iPad).
+        addHUDChild(button)
     }
 
     private func toggleAppearanceFallback() {
@@ -1316,9 +1544,15 @@ final class DarkModeScene: BaseLevelScene, SKPhysicsContactDelegate {
         let location = touch.location(in: self)
 
         // In-scene accessibility fallback toggle takes priority over movement taps.
-        if let toggle = fallbackToggle, toggle.contains(location) {
-            toggleAppearanceFallback()
-            return
+        // `contains` tests against the node's PARENT coordinate space; on iPad the
+        // toggle is a camera child, so convert the scene-space touch into the toggle's
+        // parent space first. On iPhone the parent is the scene (identity convert).
+        if let toggle = fallbackToggle {
+            let parentSpace = toggle.parent.map { convert(location, to: $0) } ?? location
+            if toggle.contains(parentSpace) {
+                toggleAppearanceFallback()
+                return
+            }
         }
 
         playerController.touchBegan(at: location)

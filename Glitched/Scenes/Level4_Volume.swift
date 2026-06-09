@@ -42,6 +42,38 @@ final class VolumeScene: BaseLevelScene, SKPhysicsContactDelegate {
     private var visualScale: CGFloat {
         min(1.25, max(1.0, min(size.width / designSize.width, size.height / designSize.height)))
     }
+
+    // MARK: - Native-iPad layout (hand-composed, horizontal camera-follow)
+    //
+    // iPhone keeps the original FLAT single-screen "walk-past-the-sleeping-wolf"
+    // band (buildPhoneLevel), unchanged. iPad gets a HAND-COMPOSED level
+    // (buildComposedIPadLevel) with paced beats — teach -> stepped cluster ->
+    // wider REST -> tension peak (the flood beat) -> short breath -> the SLEEPING
+    // WOLF staged as an isolated finale beat (the signature twist) -> exit. The
+    // wolf's mechanic is unchanged in absolute terms: same detection radius, same
+    // volume thresholds, same flood/drown rule; it is simply relocated to its own
+    // clearing near the end of a wider, scrolling course instead of sitting at the
+    // dead-center of a one-screen strip.
+    //
+    // The continuous floor underneath every beat guarantees spawn->exit
+    // reachability with NO required jumps (this is a quiet-traversal level, not a
+    // platformer): the stepped rhythm platforms are optional hops that always sit
+    // on top of a walkable floor, so no gap is ever load-bearing or un-jumpable.
+    // Vertical fill is already handled by `activeGroundY`'s lift; this layer adds
+    // the missing HORIZONTAL fill + paced beats. Everything below is gated on
+    // `isWideCanvas`; iPhone output stays byte-identical.
+
+    /// True on iPad-proportioned canvases (matches the base helpers' gate).
+    private var isWideCanvas: Bool { size.height > 1000 && size.width > designSize.width }
+
+    /// Absolute horizontal center pitch of one rhythm platform (<= 130 safe gap).
+    private let ipadPitch: CGFloat = 120
+
+    // Composed iPad anchors (set in buildComposedIPadLevel; unused on iPhone).
+    private var composedSpawnX: CGFloat = 0
+    private var composedExitX: CGFloat = 0
+    private var composedWolfX: CGFloat = 0
+    private var composedWorldWidth: CGFloat = 0
     private var activeGroundY: CGFloat {
         // iPad vertical-void fix: this is a flat, single-screen, ground-anchored
         // band (no follow-camera, no world scroll). EVERY gameplay node derives
@@ -104,6 +136,10 @@ final class VolumeScene: BaseLevelScene, SKPhysicsContactDelegate {
     private var scaledWaterHeight: CGFloat { maxWaterHeight * visualScale }
     private var bubbles: [SKShapeNode] = []
     private var waterHazardActive = false
+    /// Full width spanned by the volume-driven flood: one screen on iPhone, the
+    /// whole scrolling course on iPad. Falls back to size.width before the course
+    /// is composed.
+    private var floodWidth: CGFloat { isWideCanvas && composedWorldWidth > 0 ? composedWorldWidth : size.width }
 
     // MARK: - Configuration
 
@@ -120,6 +156,11 @@ final class VolumeScene: BaseLevelScene, SKPhysicsContactDelegate {
         AccessibilityManager.shared.registerMechanics([.volume])
         DeviceManagerCoordinator.shared.configure(for: [.volume])
 
+        // Compute the composed iPad anchors FIRST so the background den/flood decor
+        // (drawn before buildLevel) can key off the wolf's relocated position and
+        // the full course width. No-op on iPhone (all anchors stay 0/unused).
+        computeComposedAnchors()
+
         setupBackground()
         setupLevelTitle()
         buildLevel()
@@ -134,20 +175,27 @@ final class VolumeScene: BaseLevelScene, SKPhysicsContactDelegate {
     // MARK: - Water System
 
     private func createWaterSystem() {
+        // The volume-driven flood spans the FULL course so a loud submersion is
+        // fatal anywhere the player stands. On iPhone that's the one screen
+        // (size.width, centered); on iPad it spans the whole scrolling course
+        // (composedWorldWidth) so the flood hazard is preserved across every beat.
+        let waterWidth = isWideCanvas ? composedWorldWidth : size.width
+        let waterCenterX = isWideCanvas ? composedWorldWidth / 2 : size.width / 2
+
         // Water container (visual)
-        waterNode = SKShapeNode(rectOf: CGSize(width: size.width, height: scaledWaterHeight))
+        waterNode = SKShapeNode(rectOf: CGSize(width: waterWidth, height: scaledWaterHeight))
         waterNode.fillColor = strokeColor.withAlphaComponent(0.15)
         waterNode.strokeColor = strokeColor
         waterNode.lineWidth = lineWidth * 0.5
-        waterNode.position = CGPoint(x: size.width / 2, y: -scaledWaterHeight / 2) // Start below screen
+        waterNode.position = CGPoint(x: waterCenterX, y: -scaledWaterHeight / 2) // Start below screen
         waterNode.zPosition = 40
         addChild(waterNode)
 
         // Wave pattern on top of water
         let wavePattern = SKShapeNode()
         let wavePath = CGMutablePath()
-        for x in stride(from: -size.width / 2, to: size.width / 2, by: 20) {
-            if x == -size.width / 2 {
+        for x in stride(from: -waterWidth / 2, to: waterWidth / 2, by: 20) {
+            if x == -waterWidth / 2 {
                 wavePath.move(to: CGPoint(x: x, y: scaledWaterHeight / 2))
             } else {
                 wavePath.addLine(to: CGPoint(x: x, y: scaledWaterHeight / 2 + sin(x / 20) * 5))
@@ -165,15 +213,18 @@ final class VolumeScene: BaseLevelScene, SKPhysicsContactDelegate {
             .moveBy(x: -10, y: 0, duration: 0.5)
         ])))
 
-        // Create some bubbles
-        for _ in 0..<8 {
+        // Create some bubbles. iPhone: 8 across the one screen (unchanged). iPad:
+        // proportionally more spread across the wider flood so the effect reads
+        // along the whole course.
+        let bubbleCount = isWideCanvas ? Int((waterWidth / max(1, size.width)) * 8) + 8 : 8
+        for _ in 0..<bubbleCount {
             let bubble = SKShapeNode(circleOfRadius: CGFloat.random(in: 3...6))
             bubble.fillColor = .clear
             bubble.strokeColor = strokeColor
             bubble.lineWidth = lineWidth * 0.3
             bubble.alpha = 0
             bubble.position = CGPoint(
-                x: CGFloat.random(in: -size.width / 2 + 50...size.width / 2 - 50),
+                x: CGFloat.random(in: -waterWidth / 2 + 50...waterWidth / 2 - 50),
                 y: CGFloat.random(in: -scaledWaterHeight / 2...scaledWaterHeight / 2 - 20)
             )
             waterNode.addChild(bubble)
@@ -183,11 +234,14 @@ final class VolumeScene: BaseLevelScene, SKPhysicsContactDelegate {
         // Warning label — names the flood hazard explicitly so the player
         // understands the water/volume link. Persists (no auto-fade) while the
         // wolf/flood area matters, instead of the old 3s fade that hid the clue.
+        // iPhone: mid-screen. iPad: over the flood-peak beat (pitch ~6.8) so the
+        // clue reads as the player enters the water-tension stretch of the course.
+        let floodLabelX = isWideCanvas ? (90 * visualScale + ipadPitch * 6.8) : size.width / 2
         let warningLabel = SKLabelNode(text: "TOO LOUD = FLOOD")
         warningLabel.fontName = "Menlo-Bold"
         warningLabel.fontSize = 10
         warningLabel.fontColor = strokeColor
-        warningLabel.position = CGPoint(x: size.width / 2, y: activeGroundY + 110 * visualScale)
+        warningLabel.position = CGPoint(x: floodLabelX, y: activeGroundY + 110 * visualScale)
         warningLabel.zPosition = 200
         warningLabel.alpha = 0.7
         warningLabel.name = "flood_warning"
@@ -230,7 +284,7 @@ final class VolumeScene: BaseLevelScene, SKPhysicsContactDelegate {
                         .run { [weak self, weak bubble] in
                             guard let self = self else { return }
                             bubble?.position.y = CGFloat.random(in: -self.scaledWaterHeight / 2...0)
-                            bubble?.position.x = CGFloat.random(in: -self.size.width / 2 + 50...self.size.width / 2 - 50)
+                            bubble?.position.x = CGFloat.random(in: -self.floodWidth / 2 + 50...self.floodWidth / 2 - 50)
                         },
                         .fadeIn(withDuration: 0.2)
                     ])))
@@ -362,11 +416,13 @@ final class VolumeScene: BaseLevelScene, SKPhysicsContactDelegate {
     }
 
     private func drawDenElements() {
-        // Rock/cave texture behind creature area
+        // Rock/cave texture behind the creature's den. Centered on the wolf's
+        // actual position (iPad: the finale clearing; iPhone: mid-screen).
+        let denCenterX = isWideCanvas ? composedWolfX : size.width / 2
         for i in 0..<5 {
             let rock = SKShapeNode()
             let rockPath = CGMutablePath()
-            let baseX = size.width / 2 - 100 + CGFloat(i) * 50
+            let baseX = denCenterX - 100 + CGFloat(i) * 50
             let baseY = activeGroundY
 
             rockPath.move(to: CGPoint(x: baseX, y: baseY))
@@ -407,6 +463,16 @@ final class VolumeScene: BaseLevelScene, SKPhysicsContactDelegate {
     // MARK: - Level Building
 
     private func buildLevel() {
+        if isWideCanvas {
+            buildComposedIPadLevel()
+            return
+        }
+        buildPhoneLevel()
+    }
+
+    // MARK: - iPhone layout (unchanged, byte-identical to the shipped phone level)
+
+    private func buildPhoneLevel() {
         let groundY = activeGroundY
         let groundHeight = 40 * visualScale
 
@@ -421,6 +487,104 @@ final class VolumeScene: BaseLevelScene, SKPhysicsContactDelegate {
 
         // Exit door
         createExitDoor(at: CGPoint(x: size.width - 70 * visualScale, y: groundY + 30 * visualScale))
+    }
+
+    // MARK: - iPad layout (HAND-COMPOSED, native — teach -> cluster -> rest ->
+    //          flood peak -> breath -> WOLF finale -> exit)
+    //
+    // A paced traversal authored at ABSOLUTE points. The course is a continuous
+    // walkable floor (so the no-jump quiet-traversal mechanic is preserved exactly
+    // and every beat is reachable), with stepped rhythm platforms varying height
+    // for cadence. The sleeping wolf gets its own isolated clearing as the finale
+    // beat — the level's signature twist staged deliberately instead of buried at
+    // mid-screen. All rhythm-platform rises stay <= BaseLevelScene.maxJumpableRise
+    // and all center pitches <= BaseLevelScene.maxJumpableGap; because the floor is
+    // continuous, no gap is ever load-bearing.
+
+    /// Single source of truth for the composed iPad course anchors (spawn, wolf
+    /// finale clearing, exit, total world width). Called before any decor/build so
+    /// background den/flood elements can key off the same numbers. No-op on iPhone.
+    private func computeComposedAnchors() {
+        guard isWideCanvas else { return }
+        let pitch = ipadPitch
+        let leftMargin: CGFloat = 90 * visualScale
+        composedSpawnX = leftMargin
+        // Beats span ~11 pitches; the wolf finale clearing is a deliberate stretch
+        // of flat floor (no rhythm platforms) so the wolf reads as its own moment.
+        composedWolfX = leftMargin + pitch * 10.0
+        composedExitX = leftMargin + pitch * 12.0
+        composedWorldWidth = composedExitX + 90 * visualScale + pitch
+    }
+
+    private func buildComposedIPadLevel() {
+        let groundY = activeGroundY
+        let groundHeight = 40 * visualScale
+        let pitch = ipadPitch
+        let leftMargin: CGFloat = 90 * visualScale
+
+        // Continuous walkable floor across the whole scrolling course. Reachability
+        // and the quiet-traversal mechanic both depend on this being unbroken.
+        let ground = createPlatform(
+            width: composedWorldWidth,
+            height: groundHeight,
+            position: CGPoint(x: composedWorldWidth / 2, y: groundY - groundHeight / 2)
+        )
+        ground.name = "ground"
+        addChild(ground)
+
+        // Stepped rhythm platforms (optional hops on top of the floor). Tier
+        // heights are ABSOLUTE points (NOT scaled) so the rise stays within Bit's
+        // device-independent jump reach on every iPad. Heights are chosen so that
+        // even a hypothetical DIRECT floor-to-platform-TOP jump clears safely:
+        // platform half-height is 22*1.25/2 ≈ 13.75pt, so floor->tier2 TOP =
+        // 68 + 13.75 ≈ 82pt and floor->tier1 TOP ≈ 58pt — both <=
+        // BaseLevelScene.maxJumpableRise (85). Every tier-to-tier step is <= 24.
+        // Centers are spaced one `pitch` (120pt, <= maxJumpableGap 130) apart along
+        // the course. Because the floor below is continuous, these hops are purely
+        // for rhythm — no gap is ever load-bearing or un-jumpable.
+        // Beats: TEACH (flat spawn) -> CLUSTER A (stepped 3) -> REST (wide, low) ->
+        // FLOOD PEAK (stepped 3, the water-tension beat) -> BREATH ->
+        // WOLF finale clearing (flat floor, indices 9..11) -> EXIT.
+        let tier1: CGFloat = 44
+        let tier2: CGFloat = 68
+        let tierRest: CGFloat = 24   // low, wide breath pedestal (well under 85)
+        let restW: CGFloat = 150 * visualScale
+        let stepW: CGFloat = 92 * visualScale
+        let floorTopY = groundY  // floor surface (ground center + groundHeight/2)
+
+        // (integerPitchIndex, riseAboveFloorSurface, width). Skipped indices
+        // (4 = REST sits a touch lower as a wide breath; 8 = BREATH; 9..11 = the
+        // wolf clearing) keep the cadence reading as deliberate beats, not a row.
+        let beats: [(i: CGFloat, rise: CGFloat, w: CGFloat)] = [
+            (1, tier1, stepW),   // CLUSTER A — step up
+            (2, tier2, stepW),   // CLUSTER A — peak (rhythm high)
+            (3, tier1, stepW),   // CLUSTER A — step down
+            (4, tierRest, restW),// REST — a wide, low breath pedestal (deliberate pause)
+            (5, tier1, stepW),   // FLOOD PEAK — step into the water-tension beat
+            (6, tier2, stepW),   // FLOOD PEAK — high point over the flood clue
+            (7, tier1, stepW)    // FLOOD PEAK — step down toward the breath
+            // index 8 = BREATH; 9..11 = WOLF finale clearing (flat floor).
+        ]
+        for b in beats where b.rise > 0 {
+            let center = CGPoint(x: leftMargin + b.i * pitch, y: floorTopY + b.rise)
+            let plat = createPlatform(width: b.w, height: 22 * visualScale, position: center)
+            addChild(plat)
+        }
+
+        // Exit door — past the wolf clearing, on the continuous floor.
+        createExitDoor(at: CGPoint(x: composedExitX, y: groundY + 30 * visualScale))
+
+        // Full-course fall floor. The continuous ground above means a fall is
+        // never actually possible, but a death zone spanning the whole scrolling
+        // course matches the native-iPad template and guards any edge case as the
+        // camera pans. iPad-only — iPhone never had one, so its behavior is intact.
+        let deathZone = SKNode()
+        deathZone.position = CGPoint(x: composedWorldWidth / 2, y: groundY - 220 * visualScale)
+        deathZone.physicsBody = SKPhysicsBody(rectangleOf: CGSize(width: composedWorldWidth * 2, height: 100))
+        deathZone.physicsBody?.isDynamic = false
+        deathZone.physicsBody?.categoryBitMask = PhysicsCategory.hazard
+        deathZone.name = "death_zone"
+        addChild(deathZone)
     }
 
     private func createPlatform(width: CGFloat, height: CGFloat, position: CGPoint) -> SKNode {
@@ -528,7 +692,10 @@ final class VolumeScene: BaseLevelScene, SKPhysicsContactDelegate {
     }
 
     private func setupBit() {
-        spawnPoint = CGPoint(x: 80 * visualScale, y: activeGroundY + 40 * visualScale)
+        // Spawn (and respawn target — handleDeath respawns here). iPhone: original
+        // left edge (80*scale). iPad: the composed left margin, byte-identical Y.
+        let spawnX = isWideCanvas ? composedSpawnX : 80 * visualScale
+        spawnPoint = CGPoint(x: spawnX, y: activeGroundY + 40 * visualScale)
 
         bit = BitCharacter.make()
         bit.position = spawnPoint
@@ -536,6 +703,13 @@ final class VolumeScene: BaseLevelScene, SKPhysicsContactDelegate {
         registerPlayer(bit)
 
         playerController = PlayerController(character: bit, scene: self)
+
+        // NATIVE-iPad: the composed quiet-traversal course is wider than the
+        // viewport, so promote the level to horizontal camera-follow. No-op on
+        // iPhone (isWideCanvas false), so the phone stays a static one-screen band.
+        if isWideCanvas {
+            installCameraFollow(worldWidth: composedWorldWidth, playerController: playerController)
+        }
     }
 
     // MARK: - Creature
@@ -543,8 +717,13 @@ final class VolumeScene: BaseLevelScene, SKPhysicsContactDelegate {
     private func createCreature() {
         let groundY = activeGroundY
 
+        // iPhone: wolf at dead-center of the one-screen strip (unchanged). iPad:
+        // wolf relocated to its own isolated finale clearing near the course end
+        // (composedWolfX) — the signature twist staged as a deliberate moment.
+        let wolfX = isWideCanvas ? composedWolfX : size.width / 2
+
         creature = SKNode()
-        creature.position = CGPoint(x: size.width / 2, y: groundY + 20 * visualScale)
+        creature.position = CGPoint(x: wolfX, y: groundY + 20 * visualScale)
         creature.setScale(visualScale)
         creature.zPosition = 50
         addChild(creature)
@@ -697,13 +876,25 @@ final class VolumeScene: BaseLevelScene, SKPhysicsContactDelegate {
         //       iPad 1024 : center x = 1024 - 225 = 799, panel x-span [736.5,861.5] (< pause-left 920)
         //   - offset 178 (phone) / 168 (iPad) puts the panel TOP edge below the
         //     pause-zone bottom with margin (and below the top-left LEVEL title band).
-        volumeIndicator.position = CGPoint(
-            x: size.width - (70 + 110) * visualScale,
-            y: topSafeAreaY(offset: min(size.width, size.height) < 700 ? 178 : 168)
-        )
+        let hudSceneX = size.width - (70 + 110) * visualScale
+        let hudSceneY = topSafeAreaY(offset: min(size.width, size.height) < 700 ? 178 : 168)
         volumeIndicator.setScale(visualScale)
         volumeIndicator.zPosition = 200
-        addChild(volumeIndicator)
+        // iPad scrolls via camera-follow, so the persistent volume HUD must ride
+        // the VIEWPORT, not the world — attach it to the camera in camera-local
+        // coordinates (offset from viewport center) so it stays fixed on screen as
+        // the course scrolls. iPhone has no camera-follow, so it stays a scene child
+        // at its original scene position (byte-identical).
+        if isWideCanvas, let camera = gameCamera {
+            volumeIndicator.position = CGPoint(
+                x: hudSceneX - size.width / 2,
+                y: hudSceneY - size.height / 2
+            )
+            camera.addChild(volumeIndicator)
+        } else {
+            volumeIndicator.position = CGPoint(x: hudSceneX, y: hudSceneY)
+            addChild(volumeIndicator)
+        }
 
         // Background panel
         let bg = SKShapeNode(rectOf: CGSize(width: 100, height: 60), cornerRadius: 8)
@@ -1034,13 +1225,17 @@ final class VolumeScene: BaseLevelScene, SKPhysicsContactDelegate {
         // LEVEL title, and (with the higher Y offset) the "???" flood warning —
         // on iPhone 390/402 and iPad 1024 alike. Wording and cycling order are
         // preserved.
+        // Anchor above the wolf's actual head. iPhone: mid-screen (the wolf sits
+        // there). iPad: over the relocated finale clearing, so the aside still
+        // emanates from the creature as the player approaches it.
+        let talkX = isWideCanvas ? composedWolfX : size.width / 2
         let label = SKLabelNode(fontNamed: VisualConstants.Fonts.secondary)
         label.text = sleepTalkLines[sleepTalkIndex % sleepTalkLines.count]
         label.fontSize = 11 * visualScale
         label.fontColor = strokeColor
         label.horizontalAlignmentMode = .center
         label.verticalAlignmentMode = .center
-        label.position = CGPoint(x: size.width / 2, y: activeGroundY + 160 * visualScale)
+        label.position = CGPoint(x: talkX, y: activeGroundY + 160 * visualScale)
         label.zPosition = 200
         label.alpha = 0
         addChild(label)

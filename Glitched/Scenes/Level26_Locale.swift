@@ -52,6 +52,30 @@ final class LocaleScene: BaseLevelScene, SKPhysicsContactDelegate {
     private func courseX(_ logicalX: CGFloat) -> CGFloat { courseOriginX + logicalX * courseScale }
     private func courseLen(_ logical: CGFloat) -> CGFloat { logical * courseScale }
 
+    // MARK: - Native-iPad layout (hand-composed)
+    //
+    // iPhone uses the original fixed 390-wide vertical-puzzle column
+    // (buildPhoneLevel), unchanged & byte-identical. iPad gets a HAND-COMPOSED
+    // level (buildComposedIPadLevel) with paced beats — teach -> dual-route
+    // cluster -> rest -> tension peak (the visible WRONG route's dead-end) ->
+    // the unscramble REVEAL staged as a deliberate finale beat -> exit. Bit's
+    // physics are device-independent, so spacing stays within the fixed jump
+    // reach (gaps <= BaseLevelScene.maxJumpableGap, rises <= maxJumpableRise).
+    // The composed course is wider than the viewport, so it scrolls via the
+    // Phase 0 installCameraFollow. Everything is gated on `isWideCanvas`;
+    // iPhone is untouched. The locale mechanic is preserved verbatim: both
+    // layouts populate the SAME wrongPlatforms / hiddenPlatforms / signLabels
+    // arrays, so unscrambleWorld()/rescrambleWorld() work unchanged.
+
+    /// True on iPad-proportioned canvases (matches the base helpers' gate).
+    private var isWideCanvas: Bool { size.height > 1000 && size.width > designWidth }
+
+    // Composed iPad anchors (set in buildComposedIPadLevel; unused on iPhone).
+    private var composedSpawnX: CGFloat = 0
+    private var composedExitDoorX: CGFloat = 0
+    private var composedWorldWidth: CGFloat = 0
+    private var composedGroundY: CGFloat = 0
+
     // Hint texts when unscrambled
     private let hintTexts = [
         "JUMP RIGHT",
@@ -111,6 +135,21 @@ final class LocaleScene: BaseLevelScene, SKPhysicsContactDelegate {
     }
 
     private func buildLevel() {
+        if isWideCanvas {
+            buildComposedIPadLevel()
+        } else {
+            buildPhoneLevel()
+        }
+
+        #if DEBUG
+        // Test button for simulator (both layouts)
+        createTestButton()
+        #endif
+    }
+
+    // MARK: - iPhone layout (unchanged, byte-identical to the shipped phone level)
+
+    private func buildPhoneLevel() {
         // iPad vertical-void fix: lift the whole band by adding gameplayLift to
         // the single groundY anchor. Because EVERY platform, signpost, hidden/
         // wrong-route origin, the exit plateau and the exit door are positioned
@@ -180,11 +219,112 @@ final class LocaleScene: BaseLevelScene, SKPhysicsContactDelegate {
         death.physicsBody?.isDynamic = false
         death.physicsBody?.categoryBitMask = PhysicsCategory.hazard
         addChild(death)
+    }
 
-        #if DEBUG
-        // Test button for simulator
-        createTestButton()
-        #endif
+    // MARK: - iPad layout (HAND-COMPOSED, native — teach -> dual-route -> rest -> peak -> REVEAL)
+    //
+    // Rather than scaling the narrow iPhone column to a centered strip, the iPad
+    // level is authored as a paced, LEFT-TO-RIGHT sequence of BEATS in absolute
+    // points so jump reach is exact (gaps <= maxJumpableGap, rises <=
+    // maxJumpableRise across 3 height tiers for rhythm). The level reads:
+    //   1. TEACH       — spawn + the first scrambled signpost (learn "read the signs").
+    //   2. DUAL-ROUTE  — the corridor forks: a VISIBLE scrambled "wrong" route
+    //                    (w1->w2) climbs alongside a HIDDEN "correct" route (h1->h2,
+    //                    lower tier). Heights step across tiers, never a flat row.
+    //   3. REST        — a wider low platform: a deliberate breath + revert clue.
+    //   4. TENSION PEAK— the wrong route climbs one more to its DEAD-END (wend),
+    //                    high up, with a wide UN-JUMPABLE void to the far-right exit.
+    //                    The player can SEE the exit but cannot reach it scrambled.
+    //   5. REVEAL      — the signature twist staged as its own beat: changing the
+    //                    device language reveals the hidden bridge (h3->h4) that
+    //                    spans the void from the rest platform to the exit.
+    //   6. EXIT.
+    // The REVEAL bridge (h3/h4) is the design climax — its own beat, not buried in
+    // a uniform line. The wrong route's dead-end + void IS the trap: while
+    // scrambled, no platform within jump reach connects rest/wend to the exit.
+    private func buildComposedIPadLevel() {
+        // Vertical fill: raise the floor toward the lower-third on tall canvases.
+        let groundY = playableGroundY(iphoneGround: 160)
+        composedGroundY = groundY
+
+        // 3 height tiers for rhythm. Adjacent-tier rise = 50pt (< 85 safe).
+        // Never require a tier-0 -> tier-2 jump directly (that would be 100pt).
+        func tierY(_ tier: CGFloat) -> CGFloat { groundY + tier * 50 }
+
+        let wide: CGFloat = 110
+        let mid: CGFloat = 70
+        let start: CGFloat = 100
+        let h: CGFloat = 28
+        let lm: CGFloat = 90   // left margin
+
+        // ---- Always-solid spine: spawn + REST breath + exit plateau ----
+        createPlatform(at: CGPoint(x: lm + 0,   y: tierY(0)), size: CGSize(width: start, height: h))  // TEACH spawn
+        createPlatform(at: CGPoint(x: lm + 400, y: tierY(0)), size: CGSize(width: wide,  height: h))  // REST breath
+        createPlatform(at: CGPoint(x: lm + 800, y: tierY(0)), size: CGSize(width: wide,  height: h))  // EXIT plateau
+
+        // ---- WRONG route (VISIBLE, scrambled): climbs and dead-ends ----
+        // From the dead-end (wend) and from the rest platform there is a wide,
+        // un-jumpable void to the exit (320pt / 290pt edge — far past the 145
+        // absolute max). This is the trap: scrambled, the level is uncompletable.
+        let wrongPositions: [CGPoint] = [
+            CGPoint(x: lm + 140, y: tierY(1)),   // w1 — fork up
+            CGPoint(x: lm + 265, y: tierY(2)),   // w2 — climb
+            CGPoint(x: lm + 390, y: tierY(2))    // wend — DEAD-END peak (tension)
+        ]
+        for pos in wrongPositions {
+            let p = createPlatformNode(at: pos, size: CGSize(width: mid, height: h))
+            wrongPlatforms.append(p)
+            wrongPlatformOrigins.append(pos)
+            addChild(p)
+        }
+
+        // ---- CORRECT route (HIDDEN until unscrambled): the real path ----
+        // h1->h2 shadow the early fork at a lower tier; h3->h4 are the REVEAL
+        // bridge that spans the void from rest to exit. All gaps <=130 / rises
+        // <=85 along start->h1->h2->rest->h3->h4->exit.
+        let correctPositions: [CGPoint] = [
+            CGPoint(x: lm + 140, y: tierY(0)),   // h1 — low alt of the fork
+            CGPoint(x: lm + 275, y: tierY(1)),   // h2 — steps toward rest
+            CGPoint(x: lm + 540, y: tierY(1)),   // h3 — REVEAL bridge 1 (over the void)
+            CGPoint(x: lm + 670, y: tierY(1))    // h4 — REVEAL bridge 2 (finale, into exit)
+        ]
+        for pos in correctPositions {
+            let p = createPlatformNode(at: pos, size: CGSize(width: mid, height: h))
+            p.alpha = 0
+            p.physicsBody?.categoryBitMask = PhysicsCategory.none
+            hiddenPlatforms.append(p)
+            hiddenPlatformOrigins.append(pos)
+            addChild(p)
+        }
+
+        // ---- Scrambled signposts: one per beat, staging the read-the-signs teach ----
+        let signPositions: [CGPoint] = [
+            CGPoint(x: lm + 70,  y: tierY(0) + 60),   // TEACH — above spawn
+            CGPoint(x: lm + 200, y: tierY(1) + 60),   // DUAL-ROUTE fork
+            CGPoint(x: lm + 400, y: tierY(0) + 60),   // REST breath
+            CGPoint(x: lm + 600, y: tierY(1) + 60)    // REVEAL — over the bridge
+        ]
+        for (i, pos) in signPositions.enumerated() {
+            createSignPost(at: pos, hintIndex: i)
+        }
+
+        composedSpawnX = lm + 0
+        composedExitDoorX = lm + 800
+
+        // Exit door above the exit plateau (same +55 relation as the phone door).
+        createExitDoor(at: CGPoint(x: composedExitDoorX, y: tierY(0) + 55))
+
+        // Course extent: exit plateau right edge + margin.
+        composedWorldWidth = composedExitDoorX + wide / 2 + 90
+
+        // Death zone spans the FULL course width on iPad (not just the viewport)
+        // so a fall anywhere along the scrolled course still resolves to death.
+        let death = SKNode()
+        death.position = CGPoint(x: composedWorldWidth / 2, y: -50)
+        death.physicsBody = SKPhysicsBody(rectangleOf: CGSize(width: composedWorldWidth * 2, height: 100))
+        death.physicsBody?.isDynamic = false
+        death.physicsBody?.categoryBitMask = PhysicsCategory.hazard
+        addChild(death)
     }
 
     private func createPlatform(at position: CGPoint, size: CGSize) {
@@ -379,14 +519,27 @@ final class LocaleScene: BaseLevelScene, SKPhysicsContactDelegate {
 
     private func setupBit() {
         // Player spawn AND respawn point (handleDeath respawns at spawnPoint).
-        // Lift by the same gameplayLift as the band so Bit still lands 40pt above
-        // the start platform (groundY=160 → spawn 200). iPhone: gameplayLift == 0.
-        spawnPoint = CGPoint(x: courseX(45), y: 200 + gameplayLift)
+        // iPhone: lift by the same gameplayLift as the band so Bit still lands
+        // 40pt above the start platform (groundY=160 → spawn 200; gameplayLift
+        // == 0 on phones). iPad: spawn over the composed start platform, 40pt
+        // above the raised floor.
+        if isWideCanvas {
+            spawnPoint = CGPoint(x: composedSpawnX, y: composedGroundY + 40)
+        } else {
+            spawnPoint = CGPoint(x: courseX(45), y: 200 + gameplayLift)
+        }
         bit = BitCharacter.make()
         bit.position = spawnPoint
         addChild(bit)
         registerPlayer(bit)
         playerController = PlayerController(character: bit, scene: self)
+
+        // NATIVE-iPad: the composed course is wider than the viewport, so promote
+        // the level to horizontal camera-follow. No-op on iPhone (isWideCanvas
+        // false), so the phone stays a static single-screen vertical-puzzle column.
+        if isWideCanvas {
+            installCameraFollow(worldWidth: composedWorldWidth, playerController: playerController)
+        }
     }
 
     // MARK: - Locale Change Logic

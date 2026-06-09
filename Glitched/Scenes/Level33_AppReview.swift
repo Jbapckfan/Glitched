@@ -20,7 +20,41 @@ final class AppReviewScene: BaseLevelScene, SKPhysicsContactDelegate {
     // Computed in buildLevel() before any gameplay node is positioned, then added
     // to the groundY anchor AND to the standalone spawn point and death zone so the
     // whole band moves together and all relative geometry is preserved.
+    //
+    // NOTE: only the iPhone path (buildPhoneLevel) uses gameplayLift. The composed
+    // iPad path (buildComposedIPadLevel) instead raises its whole floor via the
+    // Phase 0 playableGroundY() and scrolls via installCameraFollow, so it leaves
+    // gameplayLift == 0 and never double-lifts.
     private var gameplayLift: CGFloat = 0
+
+    // MARK: - Native-iPad layout (hand-composed) — mirrors the L3 template.
+    //
+    // iPhone keeps the original flat, full-width walk-through corridor unchanged
+    // (buildPhoneLevel). iPad gets a HAND-COMPOSED course of paced BEATS that fills
+    // the screen with intent rather than stretching the phone corridor wider:
+    //   1. TEACH    — spawn + "LOOKS EASY, RIGHT?" sign (learn: just walk right).
+    //   2. CLUSTER A— stepped platforms (vary tier for rhythm) up to GATE 1 ("coin").
+    //   3. REST     — a wide breath platform after the first joke gate.
+    //   4. PEAK     — stepped tension cluster up to GATE 2 ("premium content").
+    //   5. BREATH   — a short pause platform before the finale.
+    //   6. FINALE   — an ISOLATED approach platform that stages the signature twist:
+    //                 the padlocked EXIT door + the optional "validate me" review beat.
+    // Bit's physics are device-independent so every gap stays <= maxJumpableGap (130)
+    // and every tier rise <= maxJumpableRise (85). The course is wider than the
+    // viewport, so it scrolls via the Phase 0 installCameraFollow (ticked in base
+    // update()). Everything is gated on isWideCanvas; iPhone is byte-identical.
+
+    /// Logical design width below which the canvas is treated as iPhone-class. iPad
+    /// portrait (>1000h) above this width gets the composed course.
+    private let designWidth: CGFloat = 820
+
+    /// True on iPad-proportioned canvases (matches the base helpers' gate).
+    private var isWideCanvas: Bool { size.height > 1000 && size.width > designWidth }
+
+    // Composed iPad anchors (set in buildComposedIPadLevel; unused on iPhone).
+    private var composedSpawnX: CGFloat = 0
+    private var composedExitDoorX: CGFloat = 0
+    private var composedWorldWidth: CGFloat = 0
 
     // Gate system
     private var gate1: SKNode!
@@ -109,14 +143,28 @@ final class AppReviewScene: BaseLevelScene, SKPhysicsContactDelegate {
     // MARK: - Level Construction
 
     private func buildLevel() {
-        // iPad vertical-void fix: on tall iPad canvases this flat, ground-anchored
-        // band renders bottom-stuck with a large empty band above. Lift the ENTIRE
-        // gameplay band uniformly by anchoring everything off `groundY` and adding
-        // the shared helper's lift to that single anchor. Because every platform,
-        // gate, trigger, sign and the exit door derives its Y from `groundY`, and
-        // the standalone spawn/respawn point and death zone are lifted by the SAME
-        // `gameplayVerticalLift`, all gaps/rises/jump distances stay byte-identical.
-        // On iPhone the helper returns 0, so groundY == 120 and the scene is unchanged.
+        if isWideCanvas {
+            buildComposedIPadLevel()
+        } else {
+            buildPhoneLevel()
+        }
+
+        // Decorative "THIS IS THE LAST LEVEL" sign at center top (both layouts).
+        showIntroPanel()
+    }
+
+    // MARK: - iPhone layout (unchanged, byte-identical to the shipped phone level)
+
+    private func buildPhoneLevel() {
+        // iPad vertical-void fix: on tall iPhone-class canvases this flat, ground-
+        // anchored band renders bottom-stuck with a large empty band above. Lift the
+        // ENTIRE gameplay band uniformly by anchoring everything off `groundY` and
+        // adding the shared helper's lift to that single anchor. Because every
+        // platform, gate, trigger, sign and the exit door derives its Y from
+        // `groundY`, and the standalone spawn/respawn point and death zone are lifted
+        // by the SAME `gameplayVerticalLift`, all gaps/rises/jump distances stay
+        // byte-identical. On iPhone the helper returns 0, so groundY == 120 and the
+        // scene is unchanged. (iPad takes buildComposedIPadLevel instead.)
         //
         //   bandBottom = groundY (120, the lowest gameplay surface = ground top)
         //   bandTop    = groundY + 95 (215, the highest in-world gameplay marker:
@@ -159,9 +207,116 @@ final class AppReviewScene: BaseLevelScene, SKPhysicsContactDelegate {
         death.physicsBody?.isDynamic = false
         death.physicsBody?.categoryBitMask = PhysicsCategory.hazard
         addChild(death)
+    }
 
-        // Decorative "THIS IS THE LAST LEVEL" sign at center top
-        showIntroPanel()
+    // MARK: - iPad layout (HAND-COMPOSED, native — teach -> gate -> rest -> gate -> finale)
+    //
+    // The mechanic is "walk through joke gates to a padlocked exit", so the critical
+    // route must be a CONTINUOUS walking surface that the gate walls genuinely block
+    // (no gap to jump the gate, no void to crawl under it). The phone level solves
+    // this with one long flat ground; the iPad version keeps a continuous corridor
+    // but builds it as a STAIRCASE of abutting segments so the surface varies height
+    // for rhythm without ever leaving a jumpable gap or an under-crawl. Each gate
+    // sits at a STEP RISER — the wall rises from the lower segment and the next
+    // segment rises 56pt right behind it, so the 80pt wall cannot be cleared in the
+    // run-up (mechanic preserved). Rest/breath shelves and the finale exit are the
+    // other beats. All geometry is ABSOLUTE points, no size.width fractions.
+    //
+    // Spacing budget (all <= the Phase 0 ceilings, surface is continuous so there is
+    // no jump gap at all on the critical path; rises between abutting tops <= 56):
+    //   tier rise (top-to-top):     <= BaseLevelScene.maxJumpableRise (85)
+    //   (continuous floor => effective horizontal gap is 0 <= maxJumpableGap 130)
+    private func buildComposedIPadLevel() {
+        // Raise the whole floor toward the lower third so the corridor + its raised
+        // shelves fill the tall iPad canvas. Everything is anchored off this baseline;
+        // gameplayLift stays 0 here (we lift via the floor, not the band shift).
+        let baseGroundY: CGFloat = playableGroundY(iphoneGround: 120)
+
+        let platH: CGFloat = 25
+        let step: CGFloat = 56  // staircase riser, top-to-top (< 85 safe rise)
+
+        // The continuous corridor: a chain of ABUTTING segments (each segment's right
+        // edge meets the next segment's left edge, so there is never a horizontal gap
+        // to skip a gate). Segment heights step up/down across 3 tiers (0, +step,
+        // +2*step) for rhythm — adjacent segments differ by at most one `step` (56pt),
+        // within the safe rise.
+        //
+        // TRAP RULE (load-bearing): each gate's wall must stay un-jumpable, exactly as
+        // on the phone. The phone has Bit launch at the gate from the gate's OWN flat
+        // ground, so the 80pt wall is a near-impossible clear. We preserve that by
+        // making every gate AND the segment immediately BEFORE it sit at the SAME
+        // tier0 — Bit never gains a height advantage to arc over a gate. Peak/up steps
+        // are placed away from the gate approaches.
+        //   seg0 TEACH      tier0  wide  — spawn
+        //   seg1 CLUSTER A  tier1  mid   — step up (rhythm)
+        //   seg2 step down  tier0  mid   — descend to gate level
+        //   seg3 GATE1 base tier0  mid   — gate 1 (same tier as seg2 before it)
+        //   seg4 REST       tier0  wide  — breath after gate 1
+        //   seg5 PEAK       tier1  mid   — tension high shelf
+        //   seg6 step down  tier0  mid   — descend to gate level
+        //   seg7 GATE2 base tier0  mid   — gate 2 (same tier as seg6 before it)
+        //   seg8 BREATH     tier0  wide  — short pause
+        //   seg9 FINALE     tier0  wide  — isolated EXIT / review beat
+        let segs: [(tier: CGFloat, w: CGFloat)] = [
+            (0, 240),  // 0 TEACH / spawn
+            (1, 150),  // 1 CLUSTER A — up (rhythm)
+            (0, 160),  // 2 step down to gate level
+            (0, 170),  // 3 GATE 1 base
+            (0, 230),  // 4 REST
+            (1, 160),  // 5 PEAK (high shelf)
+            (0, 160),  // 6 step down to gate level
+            (0, 170),  // 7 GATE 2 base
+            (0, 230),  // 8 BREATH
+            (0, 240)   // 9 FINALE / EXIT
+        ]
+
+        // Lay the segments left-to-right with their edges abutting. `segCenterX`
+        // captures each segment center for placing gates/exit/signs on the right one.
+        var segCenterX: [CGFloat] = []
+        var cursorLeft: CGFloat = 140  // left margin
+        for s in segs {
+            let centerX = cursorLeft + s.w / 2
+            segCenterX.append(centerX)
+            createPlatform(at: CGPoint(x: centerX, y: baseGroundY + s.tier * step),
+                           size: CGSize(width: s.w, height: platH))
+            cursorLeft += s.w  // abut: next segment starts where this one ends
+        }
+        let courseRight = cursorLeft
+
+        // BEAT 1 — TEACH sign over the spawn segment.
+        createSign(at: CGPoint(x: segCenterX[0], y: baseGroundY + 95), text: "LOOKS EASY, RIGHT?")
+
+        // BEAT 2 — GATE 1 ("Insert Coin") on seg3 (tier0). The wall rises 80pt from
+        // the seg3 surface; the seg2 approach before it is the SAME tier0, so Bit hits
+        // the wall from flat ground — identical un-jumpable walk-through as the phone.
+        // Trigger sits 40pt before the wall (same relative offset as the phone level).
+        let gate1X = segCenterX[3]
+        createGate1(at: CGPoint(x: gate1X, y: baseGroundY + 12))
+        createGateTrigger(name: "gate1Trigger", at: CGPoint(x: gate1X - 40, y: baseGroundY + 50))
+        createSign(at: CGPoint(x: gate1X - 80, y: baseGroundY + 50), text: "->")
+
+        // BEAT 4 — GATE 2 ("Premium Content") on seg7 (tier0). Same relative wall +
+        // trigger geometry as gate 1; the seg6 approach before it is also tier0, so
+        // the wall stays un-jumpable. The peak shelf (seg5) sits BEFORE seg6's descent
+        // so it never grants a height advantage at the gate.
+        let gate2X = segCenterX[7]
+        createGate2(at: CGPoint(x: gate2X, y: baseGroundY + 12))
+        createGateTrigger(name: "gate2Trigger", at: CGPoint(x: gate2X - 40, y: baseGroundY + 50))
+
+        // BEAT 6 — FINALE: the padlocked EXIT door on its isolated last segment.
+        composedSpawnX = segCenterX[0]
+        composedExitDoorX = segCenterX[9]
+        createExitDoor(at: CGPoint(x: composedExitDoorX, y: baseGroundY + 50))
+
+        // Death zone spans the full course (not just size.width) so a fall anywhere
+        // along the scrolled corridor still respawns. Sits at the fall-floor (-50).
+        composedWorldWidth = courseRight + 140  // + right margin
+        let death = SKNode()
+        death.position = CGPoint(x: composedWorldWidth / 2, y: -50)
+        death.physicsBody = SKPhysicsBody(rectangleOf: CGSize(width: composedWorldWidth * 2, height: 100))
+        death.physicsBody?.isDynamic = false
+        death.physicsBody?.categoryBitMask = PhysicsCategory.hazard
+        addChild(death)
     }
 
     private func createPlatform(at position: CGPoint, size: CGSize) {
@@ -420,16 +575,29 @@ final class AppReviewScene: BaseLevelScene, SKPhysicsContactDelegate {
     // MARK: - Player Setup
 
     private func setupBit() {
-        // Spawn AND respawn point (handleDeath uses spawnPoint). 180 == groundY(120)+60.
-        // Lift by the same band lift so the player still spawns the same 60pt above the
-        // (lifted) ground; setupBit() runs after buildLevel(), so gameplayLift is set.
-        // On iPhone gameplayLift == 0 → spawn y == 180 (byte-identical).
-        spawnPoint = CGPoint(x: 50, y: 180 + gameplayLift)
+        // Spawn AND respawn point (handleDeath uses spawnPoint).
+        // iPhone: 180 == groundY(120)+60, lifted by the same band lift so the player
+        //   still spawns 60pt above the (lifted) ground. gameplayLift == 0 on iPhone
+        //   → spawn y == 180 (byte-identical).
+        // iPad (composed): spawn over the i0 platform (composedSpawnX) at 60pt above
+        //   the raised floor (playableGroundY); gameplayLift is 0 in that path.
+        if isWideCanvas {
+            spawnPoint = CGPoint(x: composedSpawnX, y: playableGroundY(iphoneGround: 120) + 60)
+        } else {
+            spawnPoint = CGPoint(x: 50, y: 180 + gameplayLift)
+        }
         bit = BitCharacter.make()
         bit.position = spawnPoint
         addChild(bit)
         registerPlayer(bit)
         playerController = PlayerController(character: bit, scene: self)
+
+        // iPad: the composed course is wider than the viewport, so scroll it via the
+        // Phase 0 camera-follow (no-op on iPhone where isWideCanvas == false). The
+        // base update() ticks updateCameraFollow each frame.
+        if isWideCanvas {
+            installCameraFollow(worldWidth: composedWorldWidth, playerController: playerController)
+        }
     }
 
     // MARK: - Gate 1 Sequence: "Insert Coin"
@@ -742,10 +910,15 @@ final class AppReviewScene: BaseLevelScene, SKPhysicsContactDelegate {
         largeTerminalTextLeft = -panelWidth / 2 + 15
 
         // Center the panel within the safe area so it can't run off either edge
-        // (SE 320) or end up marooned at the far right (iPad).
+        // (SE 320) or end up marooned at the far right (iPhone SE).
+        // On the composed iPad path the course scrolls under a camera, so "on-screen"
+        // means within the CAMERA's current viewport (centered near the exit), NOT
+        // within scene-space size.width. Clamp around the camera X there so the panel
+        // can't be yanked off to the left edge of the world.
         let halfWidth = panelWidth / 2
-        let minCenterX = halfWidth + 16
-        let maxCenterX = size.width - halfWidth - 16
+        let viewportCenterX = (isWideCanvas ? gameCamera?.position.x : nil) ?? (size.width / 2)
+        let minCenterX = viewportCenterX - size.width / 2 + halfWidth + 16
+        let maxCenterX = viewportCenterX + size.width / 2 - halfWidth - 16
         let clampedX = min(max(position.x, minCenterX), maxCenterX)
 
         let panel = SKNode()

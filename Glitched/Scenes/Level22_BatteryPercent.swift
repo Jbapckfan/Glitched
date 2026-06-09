@@ -19,6 +19,32 @@ final class BatteryPercentScene: BaseLevelScene, SKPhysicsContactDelegate {
     // computed once in buildLevel() and reused for the spawn point. 0 on iPhone.
     private var gameplayLift: CGFloat = 0
 
+    // Native-iPad layout (hand-composed). iPhone keeps the original fixed gauntlet
+    // (buildPhoneLevel), byte-identical. iPad gets a HAND-COMPOSED course
+    // (buildComposedIPadLevel) with paced beats — teach -> stepped cluster -> REST
+    // breath -> tension peak -> short breath -> the hidden-exit twist staged as an
+    // isolated finale -> dead-end fake exit. Bit's physics are device-independent so
+    // all spacing stays within the same fixed jump reach (center pitch <= 130, tier
+    // rises <= 85). The composed course is wider than the viewport, so it scrolls via
+    // the Phase 0 installCameraFollow. Everything is gated on `isWideCanvas`.
+    //
+    // DESIGN NOTE (per level brief): this level AMPLIFIES the VERTICAL staircase —
+    // the iPhone stones step a flat 0/15/30 sawtooth; the iPad stones climb across
+    // amplified 0/40/80 tiers (still < the 85pt safe rise) so the chasm reads as a
+    // real ascent/descent, and the signature twist (the real EXIT hidden BELOW
+    // stone 5, revealed only when battery < 60%) lands as a deliberate downward
+    // finale rather than a footnote. No courseScale wrapper is added — width is
+    // already correct; only vertical rhythm + screen-fill are composed.
+
+    /// True on iPad-proportioned canvases (matches the base helpers' gate).
+    private let composedDesignWidth: CGFloat = 760
+    private var isWideCanvas: Bool { size.height > 1000 && size.width > composedDesignWidth }
+
+    // Composed iPad anchors (set in buildComposedIPadLevel; unused on iPhone).
+    private var composedWorldWidth: CGFloat = 0
+    private var composedSpawnX: CGFloat = 60
+    private var composedSpawnY: CGFloat = 200
+
     // Battery state
     private var currentBattery: Float = 100
     private var steppingStones: [SKNode] = []
@@ -105,6 +131,16 @@ final class BatteryPercentScene: BaseLevelScene, SKPhysicsContactDelegate {
     }
 
     private func buildLevel() {
+        if isWideCanvas {
+            buildComposedIPadLevel()
+        } else {
+            buildPhoneLevel()
+        }
+    }
+
+    // MARK: - iPhone layout (unchanged, byte-identical to the shipped phone level)
+
+    private func buildPhoneLevel() {
         // iPad vertical-void fix: lift the ENTIRE gameplay band uniformly so it
         // sits center-ish on tall canvases. Helper returns 0 on iPhone (height
         // <= 1000pt) -> byte-identical phone layout. Band runs from the lowest
@@ -115,6 +151,12 @@ final class BatteryPercentScene: BaseLevelScene, SKPhysicsContactDelegate {
         // landing platform by the SAME amount, so all gaps/rises are unchanged.
         // The two nodes NOT derived from groundY (death zone, spawn point) get
         // the same `+ gameplayLift` added explicitly below / in setupBit().
+        //
+        // NOTE: gameplayVerticalLift returns 0 here whenever this path runs — the
+        // only canvases that fall into buildPhoneLevel are iPhone-class (height
+        // <= 1000pt, or width <= composedDesignWidth) and the helper guards
+        // height <= 1000. The +gameplayLift terms are kept verbatim so this body
+        // stays a byte-for-byte copy of the original shipped phone level.
         gameplayLift = gameplayVerticalLift(bandBottom: 60, bandTop: 210)
         let groundY: CGFloat = 160 + gameplayLift
 
@@ -159,6 +201,94 @@ final class BatteryPercentScene: BaseLevelScene, SKPhysicsContactDelegate {
         let death = SKNode()
         death.position = CGPoint(x: size.width / 2, y: -50 + gameplayLift)
         death.physicsBody = SKPhysicsBody(rectangleOf: CGSize(width: size.width * 2, height: 100))
+        death.physicsBody?.isDynamic = false
+        death.physicsBody?.categoryBitMask = PhysicsCategory.hazard
+        addChild(death)
+    }
+
+    // MARK: - iPad layout (HAND-COMPOSED, native)
+    //
+    // Paced BEATS that fill the iPad with intent instead of stretching the phone
+    // gauntlet. All geometry is ABSOLUTE points (not size.width fractions) so jump
+    // reach is exact: stone centers step at `pitch` (108pt center, ~63pt edge — both
+    // < the 130 safe gap) and tier rises stay <= 50pt (< the 85pt safe ceiling).
+    //
+    //   1. TEACH    — start platform + the first two low-threshold stones (10%/20%,
+    //                 always present): learn "stones are battery %".
+    //   2. CLUSTER  — stones climb the amplified vertical staircase (tiers 0->40->70).
+    //   3. REST     — stone 5 (index 4) sits WIDE on the ground tier: a breath, and —
+    //                 by design — the exact spot the hidden exit drops below.
+    //   4. PEAK     — the highest stones (index 5/6, tiers 50/80): these carry the
+    //                 highest thresholds (60%/70%), so they vanish FIRST as the
+    //                 battery drains — the tension peak literally falls away.
+    //   5. BREATH   — stones step back down (tiers 55->25->0) toward the dead end.
+    //   6. FINALE   — the SIGNATURE twist staged alone: the REAL exit hidden BELOW
+    //                 the REST stone, revealed only when battery < 60%. A dead-end
+    //                 fake exit sits far right to bait the "more power" instinct.
+    //
+    // The course is wider than the viewport, so setupBit installs camera-follow.
+    private func buildComposedIPadLevel() {
+        // Raise the floor so the band + the hidden-exit basement fill the iPad.
+        // playableGroundY returns the iPhone ground (160) on phone-class canvases,
+        // but this builder only runs on iPad, where it lifts the floor toward the
+        // lower third. gameplayLift stays 0 here (we author absolute tiers directly,
+        // not a uniform band lift) so iPhone-only code paths are untouched.
+        gameplayLift = 0
+        let groundY: CGFloat = playableGroundY(iphoneGround: 160)
+
+        // Absolute jump-reach budget (single source of truth).
+        let pitch: CGFloat = 108                         // center-to-center (<=130 safe)
+        let startX: CGFloat = 120
+        let startPlatW: CGFloat = 120
+
+        // Start platform (TEACH) — wider, a clear launch pad.
+        createPlatform(at: CGPoint(x: startX, y: groundY), size: CGSize(width: startPlatW, height: 30))
+
+        // 10 stepping stones across the amplified vertical staircase. Index i keeps
+        // its original meaning (visible when battery >= (i+1)*10), so the battery
+        // mechanic is byte-identical in behavior — only the LAYOUT is composed.
+        // Tier table (relative rise from groundY) climbs to a peak then descends:
+        //   teach(0,40) -> cluster(70,40) -> REST(0) -> PEAK(50,80) -> breath(55,25,0)
+        let stone0X: CGFloat = startX + 90               // 90pt c2c from start pad
+        let tiers: [CGFloat] = [0, 40, 70, 40, 0, 50, 80, 55, 25, 0]
+        for i in 0..<10 {
+            let x = stone0X + CGFloat(i) * pitch
+            let stone = createSteppingStone(
+                at: CGPoint(x: x, y: groundY + tiers[i]),
+                index: i
+            )
+            steppingStones.append(stone)
+        }
+
+        // REST stone anchor (index 4) — the breath platform and the spot the hidden
+        // exit drops below. Author its X once and reuse for the finale beat.
+        let restStoneX = stone0X + 4 * pitch             // index 4 (platform "5")
+
+        // FINALE beat 1/2: the SIGNATURE hidden REAL exit, staged BELOW the REST
+        // stone. Geometry preserved from the phone level RIGIDLY (groundY-80 exit,
+        // groundY-100 landing): a free-fall drop to the landing, then a 20pt step up
+        // to the door. Reachable only when battery < 60% (mechanic untouched).
+        let hiddenExitPos = CGPoint(x: restStoneX, y: groundY - 80)
+        createHiddenExit(at: hiddenExitPos)
+        createPlatform(at: CGPoint(x: restStoneX, y: groundY - 100), size: CGSize(width: 80, height: 20))
+
+        // FINALE beat 2/2: the dead-end FAKE exit, isolated far right beyond the last
+        // stone (the "more power = the obvious path" bait). Raised +50 like the phone
+        // level. Stones 8/9 lead here; it is a trap, not a path. c2c from stone 9 is
+        // 118pt (<130) so the bait is reachable-looking but goes nowhere.
+        let lastStoneX = stone0X + 9 * pitch
+        let fakeExitPos = CGPoint(x: lastStoneX + 118, y: groundY + 50)
+        createFakeExit(at: fakeExitPos)
+
+        // Course extent: fake exit + margin. Spawn sits above the start platform.
+        composedWorldWidth = fakeExitPos.x + 60
+        composedSpawnX = startX
+        composedSpawnY = groundY + 40
+
+        // Death zone spans the FULL composed course on iPad (not just size.width).
+        let death = SKNode()
+        death.position = CGPoint(x: composedWorldWidth / 2, y: -50)
+        death.physicsBody = SKPhysicsBody(rectangleOf: CGSize(width: composedWorldWidth * 2, height: 100))
         death.physicsBody?.isDynamic = false
         death.physicsBody?.categoryBitMask = PhysicsCategory.hazard
         addChild(death)
@@ -275,6 +405,22 @@ final class BatteryPercentScene: BaseLevelScene, SKPhysicsContactDelegate {
         addChild(exit)
     }
 
+    /// Convert a screen-fixed HUD position (authored in scene coordinates as if the
+    /// camera were centered) into the right parent + coordinate space. On iPhone the
+    /// camera never pans, so HUD stays a scene child at the authored point (identical
+    /// to the original). On the camera-following iPad course, HUD must ride the camera
+    /// or it scrolls off — re-anchor it as a camera child, translating the authored
+    /// scene point by the camera's resting center so it lands in the same visible spot.
+    private func attachHUD(_ node: SKNode, sceneFixedAt point: CGPoint) {
+        if isWideCanvas, let cam = gameCamera {
+            node.position = CGPoint(x: point.x - size.width / 2, y: point.y - size.height / 2)
+            cam.addChild(node)
+        } else {
+            node.position = point
+            addChild(node)
+        }
+    }
+
     private func createBatteryDisplay() {
         batteryLabel = SKLabelNode(text: "BATTERY: 100%")
         batteryLabel.fontName = "Menlo-Bold"
@@ -286,14 +432,12 @@ final class BatteryPercentScene: BaseLevelScene, SKPhysicsContactDelegate {
         // (title glyphs end ~topSafeY-2 down to ~topSafeY-36; this baseline sits clear) and
         // keep it horizontally centered between the reserved top-left title and top-right
         // pause zones.
-        batteryLabel.position = CGPoint(x: size.width / 2, y: topSafeY - 56)
         batteryLabel.zPosition = 200
-        addChild(batteryLabel)
+        attachHUD(batteryLabel, sceneFixedAt: CGPoint(x: size.width / 2, y: topSafeY - 56))
     }
 
     private func createDrainButton() {
         let button = SKNode()
-        button.position = CGPoint(x: size.width - 60, y: 50)
         button.zPosition = 200
         button.name = "drain_button"
 
@@ -316,7 +460,11 @@ final class BatteryPercentScene: BaseLevelScene, SKPhysicsContactDelegate {
         button.accessibilityTraits = .button
 
         drainButton = button
-        addChild(button)
+        // The DRAIN POWER control is the simulator/accessibility fallback for the
+        // battery mechanic — it MUST stay on-screen. On the scrolling iPad course it
+        // rides the camera (attachHUD); on iPhone it stays a scene child at the
+        // original bottom-right point so phone behavior is byte-identical.
+        attachHUD(button, sceneFixedAt: CGPoint(x: size.width - 60, y: 50))
     }
 
     private func showInstructionPanel() {
@@ -325,9 +473,10 @@ final class BatteryPercentScene: BaseLevelScene, SKPhysicsContactDelegate {
         // so at topSafeY-110 it ran UNDER the top-right pause button. Drop it well below the
         // pause band (pause bottom ~topSafeY-111) so neither the box nor the overflowing text
         // collides with the pause/title; battery label above sits at topSafeY-56.
-        panel.position = CGPoint(x: size.width / 2, y: topSafeY - 175)
         panel.zPosition = 300
-        addChild(panel)
+        // Screen-fixed: rides the camera on the scrolling iPad course, plain scene
+        // child on iPhone (byte-identical authored point).
+        attachHUD(panel, sceneFixedAt: CGPoint(x: size.width / 2, y: topSafeY - 175))
 
         let bg = SKShapeNode(rectOf: CGSize(width: 340, height: 80), cornerRadius: 8)
         bg.fillColor = fillColor
@@ -352,14 +501,27 @@ final class BatteryPercentScene: BaseLevelScene, SKPhysicsContactDelegate {
     }
 
     private func setupBit() {
-        // Spawn point sits above the start platform; lift it with the band by the
-        // same gameplayLift so the spawn-to-platform drop is unchanged. iPhone: 0.
-        spawnPoint = CGPoint(x: 60, y: 200 + gameplayLift)
+        if isWideCanvas {
+            // Composed iPad: spawn above the start platform authored in
+            // buildComposedIPadLevel (absolute, not band-lifted).
+            spawnPoint = CGPoint(x: composedSpawnX, y: composedSpawnY)
+        } else {
+            // iPhone (byte-identical): spawn above the start platform; lift it with
+            // the band by the same gameplayLift so the spawn-to-platform drop is
+            // unchanged. iPhone: gameplayLift == 0.
+            spawnPoint = CGPoint(x: 60, y: 200 + gameplayLift)
+        }
         bit = BitCharacter.make()
         bit.position = spawnPoint
         addChild(bit)
         registerPlayer(bit)
         playerController = PlayerController(character: bit, scene: self)
+
+        // The composed iPad course is wider than the viewport; promote it to
+        // horizontal camera-follow (Phase 0 helper). No-op gate on iPhone.
+        if isWideCanvas {
+            installCameraFollow(worldWidth: composedWorldWidth, playerController: playerController)
+        }
     }
 
     // MARK: - Battery Logic
@@ -511,10 +673,16 @@ final class BatteryPercentScene: BaseLevelScene, SKPhysicsContactDelegate {
         guard let touch = touches.first else { return }
         let location = touch.location(in: self)
 
-        // Check drain button
-        if let button = drainButton, button.contains(location) {
-            simulateBatteryDrain()
-            return
+        // Check drain button. `contains` tests the point in the node's PARENT space:
+        // on iPhone the button is a scene child (parent == self, scene coords); on the
+        // camera-following iPad course it rides the camera, so hit-test in the button's
+        // actual parent space. Falls back to scene coords if parent is somehow nil.
+        if let button = drainButton {
+            let hitPoint = button.parent.map { touch.location(in: $0) } ?? location
+            if button.contains(hitPoint) {
+                simulateBatteryDrain()
+                return
+            }
         }
 
         playerController.touchBegan(at: location)

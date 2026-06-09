@@ -74,6 +74,24 @@ final class ScreenshotScene: BaseLevelScene, SKPhysicsContactDelegate {
     private var screenshotCount: Int = 0
     private var hasShownFirstScreenshotCommentary = false
 
+    // MARK: - Native-iPad Composition
+    // The iPhone layout (a single chasm flanked by two thin cliffs) is preserved
+    // byte-identical behind `!isWideCanvas`. On a true iPad canvas we author a
+    // HAND-COMPOSED course with paced beats — teach -> stepped cluster -> a wide
+    // REST breath -> a tension peak -> a short breath -> the signature
+    // screenshot-bridge chasm staged as an ISOLATED finale — at fixed absolute
+    // jump-reach spacing (never scaled). Gate: tall AND wide enough to be a tablet.
+    private let designWidth: CGFloat = 820
+    private var isWideCanvas: Bool { size.height > 1000 && size.width > designWidth }
+
+    // iPad-only: spawn override (the composed course spawns on its wide left
+    // teach platform, NOT on the finale chasm's left cliff). Set in
+    // buildComposedIPadLevel(); read in setupBit().
+    private var iPadSpawnPoint: CGPoint?
+    // iPad-only: full composed course extent, used for camera-follow + the
+    // wide death-zone. Set in buildComposedIPadLevel().
+    private var courseExtent: CGFloat = 0
+
     // MARK: - Configuration
 
     override func configureScene() {
@@ -326,6 +344,19 @@ final class ScreenshotScene: BaseLevelScene, SKPhysicsContactDelegate {
     // MARK: - Level Building
 
     private func buildLevel() {
+        // iPhone path stays byte-identical (buildPhoneLevel). iPad gets a
+        // hand-composed course whose FINALE re-uses the exact same ghost-bridge
+        // chasm geometry variables (gapStart/gapEnd/left+rightPlatformCenterX/
+        // bridgeY), so createGhostBridge() and the entire freeze/unfreeze
+        // mechanic run unchanged on both devices.
+        if isWideCanvas {
+            buildComposedIPadLevel()
+        } else {
+            buildPhoneLevel()
+        }
+    }
+
+    private func buildPhoneLevel() {
         // Anchor the vertical play zone to the canvas: on a tall iPad this lifts
         // the platforms/bridge/exit toward center instead of pinning them to the
         // floor; on a phone (height ~844) max(...) keeps the original layout.
@@ -392,6 +423,109 @@ final class ScreenshotScene: BaseLevelScene, SKPhysicsContactDelegate {
         let deathZone = SKNode()
         deathZone.position = CGPoint(x: size.width / 2, y: -50)
         deathZone.physicsBody = SKPhysicsBody(rectangleOf: CGSize(width: size.width * 2, height: 100))
+        deathZone.physicsBody?.isDynamic = false
+        deathZone.physicsBody?.categoryBitMask = PhysicsCategory.hazard
+        deathZone.name = "death_zone"
+        addChild(deathZone)
+    }
+
+    // MARK: - Composed iPad Level
+    //
+    // A hand-authored course with PACED BEATS, every platform at a FIXED absolute
+    // jump-reach offset (never scaled) and varied heights across three tiers for
+    // rhythm. The level's signature twist — the flickering ghost bridge over an
+    // un-jumpable chasm that only a SCREENSHOT can freeze — is staged as the
+    // isolated FINALE beat, exactly as on iPhone, by writing the same chasm
+    // variables (gapStart/gapEnd/left+rightPlatformCenterX/bridgeY) that
+    // createGhostBridge() and the freeze/unfreeze mechanic read. The course is
+    // wider than the screen, so it scrolls via installCameraFollow (set in
+    // setupBit, after the player controller exists).
+    //
+    // Spacing budget (BaseLevelScene): horizontal gap <= 130 (maxJumpableGap),
+    // vertical rise <= 85 (maxJumpableRise). Every APPROACH gap/rise below is
+    // within budget (max gap 115, max rise 45); the FINALE chasm is a deliberate
+    // 220pt — wider than Bit's ~184pt reach — so the bridge stays REQUIRED and the
+    // chasm cannot be single-jumped (the level's core trap, preserved verbatim).
+    private func buildComposedIPadLevel() {
+        let platformHeight: CGFloat = 40
+
+        // Vertical fill: raise the floor on tall iPad canvases so the band + its
+        // upper tiers sit center-ish instead of hugging the bottom. On iPhone the
+        // helper returns the passed ground unchanged — but this path is iPad-only.
+        groundY = playableGroundY(iphoneGround: 180)
+        bridgeY = groundY + 10
+
+        // Beat platforms, authored at ABSOLUTE x (not size.width fractions).
+        // Tuple: (centerX, width, yOffset above groundY). Heights vary across
+        // three tiers (0 / +40..45 / +80..85) so the course reads as a rhythm,
+        // never a flat identical row. The last two entries (leftCliff, rightCliff)
+        // form the finale chasm and are NOT created here — they are created via the
+        // shared chasm variables below so they match the iPhone cliff styling and
+        // the bridge derives its span from them.
+        struct Beat { let cx: CGFloat; let w: CGFloat; let yOff: CGFloat; let name: String }
+        let beats: [Beat] = [
+            Beat(cx: 150,  w: 200, yOff: 0,  name: "spawn / teach"),     // wide breath to learn controls
+            Beat(cx: 380,  w: 110, yOff: 45, name: "step up"),           // cluster begins, tier 2
+            Beat(cx: 600,  w: 110, yOff: 85, name: "step up higher"),    // cluster peak, tier 3
+            Beat(cx: 860,  w: 220, yOff: 40, name: "REST breath"),       // wide deliberate pause
+            Beat(cx: 1110, w: 100, yOff: 80, name: "tension rise"),      // climb back up
+            Beat(cx: 1320, w: 90,  yOff: 40, name: "tension peak"),      // narrow, exposed
+        ]
+        for beat in beats {
+            let p = createPlatform(
+                at: CGPoint(x: beat.cx, y: groundY + beat.yOff),
+                size: CGSize(width: beat.w, height: platformHeight)
+            )
+            p.name = "ground"
+        }
+
+        // Short breath before the finale: the LEFT cliff of the chasm. This is the
+        // staging platform from which the player must read the flickering bridge.
+        let leftCliffCenterX: CGFloat = 1520
+        let leftCliffWidth: CGFloat = 120
+        // Finale RIGHT cliff, across a fixed 220pt un-jumpable chasm.
+        let rightCliffWidth: CGFloat = 200
+        let rightCliffCenterX = leftCliffCenterX + leftCliffWidth / 2 + chasmWidth + rightCliffWidth / 2
+
+        // Drive the shared ghost-bridge geometry from the finale cliffs. These are
+        // the SAME fields buildPhoneLevel sets, so createGhostBridge() spans
+        // exactly this chasm and the entire freeze mechanic is unchanged.
+        gapStart = leftCliffCenterX + leftCliffWidth / 2          // right edge of left cliff
+        gapEnd = rightCliffCenterX - rightCliffWidth / 2          // left edge of right cliff
+        leftPlatformCenterX = leftCliffCenterX
+        rightPlatformCenterX = rightCliffCenterX
+
+        let leftCliff = createPlatform(
+            at: CGPoint(x: leftCliffCenterX, y: groundY),
+            size: CGSize(width: leftCliffWidth, height: platformHeight)
+        )
+        leftCliff.name = "ground"
+
+        let rightCliff = createPlatform(
+            at: CGPoint(x: rightCliffCenterX, y: groundY),
+            size: CGSize(width: rightCliffWidth, height: platformHeight)
+        )
+        rightCliff.name = "ground"
+
+        // Chasm hatching across the finale gap (matches iPhone styling).
+        drawChasmHatching(from: gapStart, to: gapEnd, y: groundY - 60)
+
+        // Exit door, seated on the finale right cliff.
+        createExitDoor(at: CGPoint(x: rightCliffCenterX, y: groundY + 70))
+
+        // Spawn on the wide teach platform (NOT the finale left cliff). setupBit
+        // reads this override when isWideCanvas.
+        iPadSpawnPoint = CGPoint(x: beats[0].cx, y: groundY + 40)
+
+        // Full course extent (right edge of the finale cliff), used for the wide
+        // death zone and camera-follow clamp so the exit is reachable on-screen.
+        courseExtent = rightCliffCenterX + rightCliffWidth / 2 + 40
+
+        // Death zone spanning the WHOLE composed course (not just the screen),
+        // so a fall anywhere along the scrolling course is caught.
+        let deathZone = SKNode()
+        deathZone.position = CGPoint(x: courseExtent / 2, y: -50)
+        deathZone.physicsBody = SKPhysicsBody(rectangleOf: CGSize(width: courseExtent + 200, height: 100))
         deathZone.physicsBody?.isDynamic = false
         deathZone.physicsBody?.categoryBitMask = PhysicsCategory.hazard
         deathZone.name = "death_zone"
@@ -744,9 +878,21 @@ final class ScreenshotScene: BaseLevelScene, SKPhysicsContactDelegate {
         // topSafeY-215], a ~37pt gap below the discovery panel's bottom
         // (topSafeY-178) and well clear of the title band and the top-right pause
         // zone (both at y >= topSafeY-44 / down to ~topSafeY-115).
-        timerDisplay?.position = CGPoint(x: size.width / 2, y: topSafeY - 245)
-        timerDisplay?.zPosition = 200
-        addChild(timerDisplay!)
+        // On the composed iPad course the camera scrolls (camera-follow), so a
+        // scene-static timer at size.width/2 would scroll off-screen by the time
+        // the player reaches the finale chasm — exactly where the freeze
+        // countdown matters most. Camera-anchor it there (same on-screen slot,
+        // converted to camera-local coords). iPhone keeps the byte-identical
+        // scene-anchored placement.
+        if isWideCanvas, let camera = gameCamera {
+            timerDisplay?.position = CGPoint(x: 0, y: (topSafeY - 245) - size.height / 2)
+            timerDisplay?.zPosition = 200
+            camera.addChild(timerDisplay!)
+        } else {
+            timerDisplay?.position = CGPoint(x: size.width / 2, y: topSafeY - 245)
+            timerDisplay?.zPosition = 200
+            addChild(timerDisplay!)
+        }
 
         // Timer background
         let timerBG = SKShapeNode(circleOfRadius: 30)
@@ -791,7 +937,9 @@ final class ScreenshotScene: BaseLevelScene, SKPhysicsContactDelegate {
     private func setupBit() {
         // Spawn on the left platform, derived from its center and the responsive
         // groundY so the player drops onto the platform on every canvas size.
-        spawnPoint = CGPoint(x: leftPlatformCenterX, y: groundY + 40)
+        // On the composed iPad course the spawn is the wide TEACH platform at the
+        // course start (iPadSpawnPoint), not the finale left cliff.
+        spawnPoint = iPadSpawnPoint ?? CGPoint(x: leftPlatformCenterX, y: groundY + 40)
 
         bit = BitCharacter.make()
         bit.position = spawnPoint
@@ -799,6 +947,14 @@ final class ScreenshotScene: BaseLevelScene, SKPhysicsContactDelegate {
         registerPlayer(bit)
 
         playerController = PlayerController(character: bit, scene: self)
+
+        // Composed iPad course is wider than the viewport: promote to horizontal
+        // camera-follow so it scrolls and the finale chasm/exit are reachable
+        // on-screen. worldWidth == the full course extent; the base update()
+        // ticks the clamp. No-op on iPhone (single-screen layout).
+        if isWideCanvas {
+            installCameraFollow(worldWidth: courseExtent, playerController: playerController)
+        }
     }
 
     // MARK: - Screenshot Freeze

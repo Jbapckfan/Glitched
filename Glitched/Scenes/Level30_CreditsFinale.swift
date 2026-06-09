@@ -122,7 +122,23 @@ final class CreditsFinaleScene: BaseLevelScene, SKPhysicsContactDelegate {
         gameCamera?.addChild(title)
     }
 
+    /// `true` on a native-iPad canvas (tall AND wide). iPhone-class canvases —
+    /// every phone, in any orientation we ship — fall through to the byte-identical
+    /// phone path. Mirrors the height>1000 guard used by the BaseLevelScene layout
+    /// helpers; the extra width>700 gate keeps any landscape phone on the phone path.
+    private var isWideCanvas: Bool { size.height > 1000 && size.width > 700 }
+
     private func buildLevel() {
+        // iPhone path stays byte-identical; the iPad path is a separate hand-composed
+        // climb authored at ABSOLUTE jump-reach spacing (never scaled geometry).
+        if isWideCanvas {
+            buildComposedIPadLevel()
+        } else {
+            buildPhoneLevel()
+        }
+    }
+
+    private func buildPhoneLevel() {
         // Vertical level - credits as platforms
         // Build from bottom up, player climbs
 
@@ -221,6 +237,151 @@ final class CreditsFinaleScene: BaseLevelScene, SKPhysicsContactDelegate {
         death.physicsBody?.categoryBitMask = PhysicsCategory.hazard
         death.name = "deathZone"
         addChild(death)
+    }
+
+    // MARK: - Composed iPad Climb
+    //
+    // Hand-composed native-iPad version of the credits climb. Same mechanic
+    // (climb a ladder of bright credit "platforms" upward to a top exit, bugs are
+    // hazards, vertical camera follow), but authored as PACED BEATS that use the
+    // iPad's width for a richer lateral path and its height (via the existing
+    // vertical camera) to fill the screen — instead of the phone's narrow centred
+    // ±30 zigzag. Geometry is NEVER scaled: every absolute value below is a fixed
+    // jump-reach offset, identical in points to the phone budget.
+    //
+    // BEATS (bottom -> top):
+    //   1. TEACH      — wide centred start platform (the breath before the climb).
+    //   2. BUILD      — three stepped rungs, alternating left/centre/right, widths
+    //                   tapering, to establish the climbing rhythm.
+    //   3. REST       — one WIDE centred platform: a deliberate safe pause.
+    //   4. TENSION    — four tighter rungs zig-zagging the full lateral budget with
+    //                   the bugs concentrated here: the difficulty peak.
+    //   5. BREATH     — one WIDE platform: a short recovery before the finale.
+    //   6. APPROACH   — a single rung leading to the staged finale.
+    //   7. FINALE     — the "THANK YOU / FOR PLAYING" platform staged ALONE, centred,
+    //                   above a clean gap, with the exit door on top: the level's
+    //                   signature meta beat gets its own isolated moment.
+    //
+    // Reach budget (all platforms 25pt thick, so center-to-center == top-to-top):
+    //   - every vertical RISE below is <= BaseLevelScene.maxJumpableRise (85).
+    //   - every horizontal STEP (center-to-center) is <= BaseLevelScene.maxJumpableGap
+    //     (130); the wide overlapping boxes make edge-to-edge far smaller still.
+    private func buildComposedIPadLevel() {
+        let cx = size.width / 2
+        // Vertical fill: raise the floor on iPad so the climb begins in the lower
+        // third and the camera reveals a full composition as Bit ascends. iPhone is
+        // unaffected (this branch never runs there). 100 is the phone's startY.
+        let groundY = playableGroundY(iphoneGround: 100)
+
+        // Authored beats. dy = top-to-top rise from the platform below (<=85).
+        // dx = lateral center offset from cx (consecutive |Δcenter| <=130).
+        // width varies across tiers for rhythm; bug flags the difficulty beats.
+        struct Beat {
+            let dy: CGFloat        // rise above the previous platform
+            let dx: CGFloat        // lateral center offset from cx
+            let width: CGFloat
+            let role: String
+            let name: String
+            let bug: Bool          // place a scurrying bug hazard on this platform
+        }
+
+        // credits[] order: 10 entries, consumed top-down into the build/tension/breath
+        // beats. The teach + finale platforms use bespoke copy (as on phone).
+        let c = credits
+        let beats: [Beat] = [
+            // TEACH (start)
+            Beat(dy: 0,  dx:    0, width: 170, role: "GLITCHED",   name: "THE FINAL LEVEL", bug: false),
+            // BUILD cluster — stepped, alternating, tapering width
+            Beat(dy: 74, dx: -100, width: 130, role: c[0].role, name: c[0].name, bug: false),
+            Beat(dy: 76, dx:    0, width: 120, role: c[1].role, name: c[1].name, bug: true),
+            Beat(dy: 74, dx: +100, width: 120, role: c[2].role, name: c[2].name, bug: false),
+            // REST — wide centred breath
+            Beat(dy: 74, dx:    0, width: 210, role: c[3].role, name: c[3].name, bug: false),
+            // TENSION peak — four tight zig-zag rungs, bugs concentrated
+            Beat(dy: 82, dx: -110, width: 110, role: c[4].role, name: c[4].name, bug: true),
+            Beat(dy: 82, dx:    0, width: 110, role: c[5].role, name: c[5].name, bug: true),
+            Beat(dy: 82, dx: +110, width: 110, role: c[6].role, name: c[6].name, bug: true),
+            Beat(dy: 82, dx:    0, width: 110, role: c[7].role, name: c[7].name, bug: true),
+            // BREATH — wide recovery
+            Beat(dy: 74, dx:  -90, width: 200, role: c[8].role, name: c[8].name, bug: false),
+            // APPROACH to finale
+            Beat(dy: 74, dx:    0, width: 130, role: c[9].role, name: c[9].name, bug: true),
+            // FINALE — staged alone, centred, above a clean gap
+            Beat(dy: 80, dx:    0, width: 200, role: "THANK YOU", name: "FOR PLAYING", bug: false),
+        ]
+
+        // Lay the beats out, accumulating Y. Record centres for the bugs/signs/exit.
+        var y = groundY
+        var centers: [CGPoint] = []
+        for beat in beats {
+            y += beat.dy
+            let pos = CGPoint(x: cx + beat.dx, y: y)
+            centers.append(pos)
+            createCreditPlatform(at: pos, role: beat.role, name: beat.name, width: beat.width)
+            if beat.bug {
+                placeBug(on: pos)
+            }
+        }
+
+        // Exit door on the staged finale platform.
+        let finale = centers.last!
+        createExitDoor(at: CGPoint(x: finale.x, y: finale.y + 50))
+
+        // Fourth-wall signs: placed in the clean centre-column band inside the BUILD
+        // cluster, between rung c[1] (index 2, centred) and rung c[2] (index 3, off to
+        // the right) — neither platform's box reaches this x/y, so the lines never
+        // crowd a credit caption (the same legibility 10pt / alpha 0.75 as phone).
+        let buildLowCenter = centers[2]   // c[1], centred
+        let signY = buildLowCenter.y + 55
+        let sign = SKLabelNode(text: "YOU'RE STANDING ON THE PEOPLE WHO MADE ME.")
+        sign.fontName = "Menlo"
+        sign.fontSize = 10
+        sign.fontColor = fillColor
+        sign.alpha = 0.75
+        sign.position = CGPoint(x: cx, y: signY)
+        sign.zPosition = 50
+        worldContainer.addChild(sign)
+
+        let sign2 = SKLabelNode(text: "SAY THANK YOU.")
+        sign2.fontName = "Menlo-Bold"
+        sign2.fontSize = 10
+        sign2.fontColor = fillColor
+        sign2.alpha = 0.75
+        sign2.position = CGPoint(x: cx, y: signY - 10)
+        sign2.zPosition = 50
+        worldContainer.addChild(sign2)
+
+        // Death zone (follows the camera; width spans the full lateral course).
+        let death = SKNode()
+        death.position = CGPoint(x: cx, y: -50)
+        death.physicsBody = SKPhysicsBody(rectangleOf: CGSize(width: size.width * 2, height: 100))
+        death.physicsBody?.isDynamic = false
+        death.physicsBody?.categoryBitMask = PhysicsCategory.hazard
+        death.name = "deathZone"
+        addChild(death)
+    }
+
+    /// Place a single scurrying bug hazard standing on a composed platform. Reuses
+    /// the phone bug art/physics/motion; only the anchor position differs.
+    private func placeBug(on platformCenter: CGPoint) {
+        let bug = createBug()
+        bug.position = CGPoint(x: platformCenter.x, y: platformCenter.y + 18)
+        bug.name = "bug_\(bugs.count)"
+        worldContainer.addChild(bug)
+        bugs.append(bug)
+
+        let scurryRange: CGFloat = 40
+        let duration = 1.0 + Double(bugs.count) * 0.2
+        bug.run(.repeatForever(.sequence([
+            .group([
+                .moveBy(x: scurryRange, y: 0, duration: duration),
+                .scaleX(to: 1.0, duration: 0.01)
+            ]),
+            .group([
+                .moveBy(x: -scurryRange, y: 0, duration: duration),
+                .scaleX(to: -1.0, duration: 0.01)
+            ])
+        ])), withKey: "scurry")
     }
 
     private func createCreditPlatform(at position: CGPoint, role: String, name: String, width: CGFloat) {
@@ -427,7 +588,11 @@ final class CreditsFinaleScene: BaseLevelScene, SKPhysicsContactDelegate {
     }
 
     private func setupBit() {
-        spawnPoint = CGPoint(x: size.width / 2, y: 140)
+        // Spawn 40pt above the start platform. On iPad the start platform is raised
+        // to playableGroundY (vertical fill), so the spawn rises with it; on iPhone
+        // the start platform stays at y=100 so this is the byte-identical y=140.
+        let startPlatformY: CGFloat = isWideCanvas ? playableGroundY(iphoneGround: 100) : 100
+        spawnPoint = CGPoint(x: size.width / 2, y: startPlatformY + 40)
         bit = BitCharacter.make()
         bit.position = spawnPoint
         // Bit is in worldContainer so it moves with the platforms

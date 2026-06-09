@@ -24,6 +24,26 @@ final class ChargingScene: BaseLevelScene, SKPhysicsContactDelegate {
 
     private let shaftWidth: CGFloat = 300
 
+    // MARK: - Native-iPad layout (minimal composition)
+    //
+    // Level 5 is a VERTICAL plug-elevator: Bit boards the central shaft, the giant
+    // plug bursts up to his feet and carries him the full height to the exit. That
+    // mechanic already fills the iPad screen VERTICALLY (the shaft walls + plug span
+    // the whole height) and centers responsively on width (everything is
+    // `centerX = size.width/2`-relative). So per the Phase-0 step-2 rule this is a
+    // MINIMAL-COMPOSITION level, NOT a phone/iPad rewrite: we keep the entire shaft,
+    // burst gate, coplanar dismount, and every trap constant byte-identical and only
+    // fill the otherwise-empty HORIZONTAL flank on iPad with a short, paced APPROACH
+    // run that leads INTO the central shaft (teach -> stepped cluster -> tension peak
+    // -> the wide start platform as a REST/breath -> the plug-elevator as the staged
+    // FINALE beat -> exit). The approach is gated on `isWideCanvas`; iPhone authors
+    // nothing new and is unchanged.
+    //
+    // `designWidth` matches the world-1 logical author width (430) used by the other
+    // composed levels, so the gate threshold is consistent across the campaign.
+    private let designWidth: CGFloat = 430
+    private var isWideCanvas: Bool { size.height > 1000 && size.width > designWidth }
+
     // Sinking platform state
     private var plugPlatformBaseY: CGFloat = 0
     private var plugPlatformCurrentY: CGFloat = 0
@@ -317,7 +337,10 @@ final class ChargingScene: BaseLevelScene, SKPhysicsContactDelegate {
         // [centerX-60, centerX+60], so the coplanar plug-ride dismount is intact.
         createExitDoor(at: CGPoint(x: centerX + 30, y: topSafeY - 70))
 
-        // Death zone
+        // Death zone. Spans the full canvas width so a fall off ANY platform —
+        // including the iPad approach beats below, which all sit at y >= 180 well
+        // above the death-zone top (y=0) — is lethal exactly as the original floor
+        // void was. On iPhone this is byte-identical to the original.
         let deathZone = SKNode()
         deathZone.position = CGPoint(x: size.width / 2, y: -50)
         deathZone.physicsBody = SKPhysicsBody(rectangleOf: CGSize(width: size.width, height: 100))
@@ -325,6 +348,51 @@ final class ChargingScene: BaseLevelScene, SKPhysicsContactDelegate {
         deathZone.physicsBody?.categoryBitMask = PhysicsCategory.hazard
         deathZone.name = "death_zone"
         addChild(deathZone)
+
+        // iPad-only: a paced APPROACH run that fills the empty horizontal flank to
+        // the LEFT of the central shaft and leads Bit into the elevator. No-op on
+        // iPhone (isWideCanvas == false), so phone layout is unchanged. The central
+        // shaft / start platform / plug / exit are all untouched — this only adds
+        // lead-in platforms and (in setupBit) relocates the iPad spawn onto beat 1.
+        if isWideCanvas {
+            buildIPadApproach(startPlatformTopY: groundY + 10, startPlatformLeftX: centerX - (shaftWidth - 40) / 2)
+        }
+    }
+
+    /// iPad-only paced approach into the central plug-elevator shaft.
+    ///
+    /// Beats (left -> right, increasing then dropping into the rest platform):
+    ///   1 TEACH (spawn)      low tier   top y = 190  (coplanar with start platform)
+    ///   2 STEP cluster       mid tier   top y = 255  (rise +65 from beat 1)
+    ///   3 TENSION PEAK       high tier  top y = 310  (rise +55 from beat 2)
+    ///   4 REST = existing start platform (the deliberate breath, top y = 190)
+    ///   FINALE = the existing plug-elevator (staged, untouched)
+    ///
+    /// All horizontal gaps are <= 35pt and all up-rises <= 65pt — comfortably inside
+    /// the Phase-0 budget (maxJumpableGap 130 / maxJumpableRise 85). The drop from
+    /// the peak (310) down onto the rest platform (190) is a -120 STEP DOWN, which is
+    /// always safe. The approach never crosses into the start platform's span
+    /// [startPlatformLeftX, ...] so it cannot interfere with the boarding geometry.
+    private func buildIPadApproach(startPlatformTopY: CGFloat, startPlatformLeftX: CGFloat) {
+        // Author at ABSOLUTE positions (not size.width fractions). On iPad portrait
+        // (width 1024) centerX = 512 and startPlatformLeftX = 382, leaving the band
+        // [~45, 382] free to the left. These three beats fit inside it with margin
+        // and stay clear of the start platform's left edge.
+        struct Beat { let center: CGPoint; let width: CGFloat }
+        let beats: [Beat] = [
+            // 1 TEACH (spawn lands here) — low, coplanar with the rest/start tier.
+            Beat(center: CGPoint(x: 110, y: startPlatformTopY - 10), width: 120),  // top 190, spans [50,170]
+            // 2 STEP cluster — mid tier, a step UP for rhythm.
+            Beat(center: CGPoint(x: 245, y: startPlatformTopY + 55), width: 80),   // top 255, spans [205,285]
+            // 3 TENSION PEAK — high tier, the last hop before the breath.
+            Beat(center: CGPoint(x: 340, y: startPlatformTopY + 110), width: 70),  // top 310, spans [305,375]
+        ]
+        for beat in beats {
+            let platform = createPlatform(width: beat.width, height: 20, position: beat.center)
+            platform.name = "ground"
+            addChild(platform)
+        }
+        _ = startPlatformLeftX  // peak right edge (375) clears start left edge (382)
     }
 
     private func createPlatform(width: CGFloat, height: CGFloat, position: CGPoint) -> SKNode {
@@ -485,7 +553,19 @@ final class ChargingScene: BaseLevelScene, SKPhysicsContactDelegate {
     }
 
     private func setupBit() {
-        spawnPoint = CGPoint(x: size.width / 2, y: 220)
+        // iPhone: spawn on the central start platform (byte-identical to original).
+        // iPad: spawn on approach beat 1 (the teach platform, center x=110, top
+        // y=190) so the paced lead-in is actually traversed before boarding the
+        // elevator. Beat 1's top is y=190, identical to the start platform's top, so
+        // the same +30pt spawn margin the original used (220 over a top of 190) is
+        // reused — the drop-onto-platform behavior is identical. The central boarding
+        // geometry (start platform, burst gate, coplanar dismount) is untouched; the
+        // post-arrival respawn still relocates onto the exit platform exactly as before.
+        if isWideCanvas {
+            spawnPoint = CGPoint(x: 110, y: 220)   // beat-1 top (190) + 30 feet margin
+        } else {
+            spawnPoint = CGPoint(x: size.width / 2, y: 220)
+        }
 
         bit = BitCharacter.make()
         bit.position = spawnPoint

@@ -49,6 +49,16 @@ final class TimeOfDayScene: BaseLevelScene, SKPhysicsContactDelegate {
     private func courseX(_ logicalX: CGFloat) -> CGFloat { courseOriginX + logicalX * courseScale }
     private func courseLen(_ logical: CGFloat) -> CGFloat { logical * courseScale }
 
+    /// Native-iPad gate (matches the L3 template): a tall AND wide canvas takes the
+    /// hand-composed, camera-scrolled course; everything else keeps the byte-identical
+    /// iPhone strip. `designWidth` is the iPhone logical width, so any true iPad
+    /// portrait/landscape canvas trips this while every phone stays on the phone path.
+    private var isWideCanvas: Bool { size.height > 1000 && size.width > designWidth + 200 }
+
+    // Composed-iPad course extent (right edge of the exit pad + margin). Only read on
+    // the iPad path; used for camera-follow worldWidth and the death-zone span.
+    private var composedCourseExtent: CGFloat = 0
+
     // iPad vertical-void fix: a single uniform upward lift applied to EVERY
     // gameplay node Y (platforms, spawn, exit, enemy hazards, zzz markers).
     // Returns 0 on iPhone-class canvases so phone layout is byte-identical; on
@@ -135,6 +145,21 @@ final class TimeOfDayScene: BaseLevelScene, SKPhysicsContactDelegate {
     }
 
     private func buildLevel() {
+        // iPhone keeps its byte-identical strip; iPad gets a hand-composed,
+        // camera-scrolled course (L3 template). The gate is checked once here so
+        // every downstream builder (platforms, enemies, spawn, camera) follows the
+        // same path; createEnemies()/setupBit() branch on the same flag.
+        if isWideCanvas {
+            buildComposedIPadLevel()
+        } else {
+            buildPhoneLevel()
+        }
+    }
+
+    /// iPhone-class layout — UNCHANGED from the shipped phone course. The
+    /// `gameplayLift` is 0 on phone canvases, so this is byte-identical to the
+    /// original `buildLevel()` body. Do not edit for iPad concerns.
+    private func buildPhoneLevel() {
         let groundY: CGFloat = 160
 
         // Fits a 390-pt logical course and is centered on wider devices. The
@@ -167,6 +192,79 @@ final class TimeOfDayScene: BaseLevelScene, SKPhysicsContactDelegate {
         addChild(death)
     }
 
+    // MARK: - Composed iPad Course (L3 template)
+    //
+    // A hand-authored, paced course at ABSOLUTE positions (NEVER size.width
+    // fractions, NEVER scaled). Spacing is fixed jump reach: every edge-to-edge
+    // gap <= BaseLevelScene.maxJumpableGap (130), every top-to-top rise <=
+    // BaseLevelScene.maxJumpableRise (85). Platform tops vary across three tiers
+    // for rhythm — never a flat row.
+    //
+    // BEATS (left -> right):
+    //   P1  teach / spawn (wide, calm)
+    //   P2-P4 build cluster (stepped up/down for rhythm)
+    //   P5  REST breath (widest pad — a deliberate safe pause)
+    //   P6-P7 tension peak (higher tier, tighter gaps)
+    //   P8  short breath (lower, wide-ish)
+    //   P9  ISOLATED FINALE — the time-of-day twist staged alone: a guard spike
+    //       sweeps the only landing of this beat. The player MUST CYCLE TIME to
+    //       NIGHT (sleep the guard) to cross. This is the level's signature
+    //       mechanic given its own moment instead of being buried in the line.
+    //   P10 exit pad + door
+    //
+    // Tops are authored as offsets above `groundY` (the device floor from
+    // playableGroundY, which fills the tall iPad screen). Centers/widths are
+    // absolute. The course is ~1980pt wide — wider than any iPad viewport — so
+    // installCameraFollow scrolls it (camera ticks in BaseLevelScene.update()).
+
+    // Authored platform table for the composed course. (centerX, width, topOffset,
+    // height). topOffset = the platform TOP's height above the baseline ground top.
+    private let composedPlatforms: [(cx: CGFloat, w: CGFloat, topOff: CGFloat, h: CGFloat)] = [
+        (120,  150,  0,  30),   // P1  teach / spawn
+        (330,  120, 55,  26),   // P2  build (up)
+        (520,  110, 25,  26),   // P3  build (down)
+        (700,  110, 70,  24),   // P4  build (up, peak of cluster)
+        (930,  200, 30,  30),   // P5  REST breath (widest)
+        (1130, 100, 80,  24),   // P6  tension (high tier)
+        (1300, 100, 40,  26),   // P7  tension
+        (1470, 150, 15,  28),   // P8  short breath
+        (1690, 150, 50,  28),   // P9  FINALE guard pad (isolated)
+        (1870, 140, 10,  30),   // P10 exit pad
+    ]
+
+    private func buildComposedIPadLevel() {
+        // Floor raised to fill the tall canvas (returns iphoneGround on phones,
+        // but this builder only runs on iPad). All tops are authored relative to
+        // this so vertical fill is automatic; relative gaps/rises are unchanged.
+        let groundY = playableGroundY(iphoneGround: 160)
+
+        for p in composedPlatforms {
+            // center_y so that the platform TOP sits at groundY + topOff.
+            let centerY = groundY + p.topOff - p.h / 2 + 15
+            createPlatform(at: CGPoint(x: p.cx, y: centerY), size: CGSize(width: p.w, height: p.h))
+        }
+
+        // Exit door on the exit pad (P10). Sits 35pt above the pad top — the same
+        // pad-top-relative offset as the phone door — so the approach reads the same.
+        let exitPad = composedPlatforms[9]
+        let exitTopY = groundY + exitPad.topOff + 15
+        createExitDoor(at: CGPoint(x: exitPad.cx, y: exitTopY + 35))
+
+        // Course extent = right edge of the exit pad + margin. Drives both the
+        // camera-follow world bound and the death-zone span.
+        composedCourseExtent = exitPad.cx + exitPad.w / 2 + 40
+
+        // Death zone spans the FULL course (not just the screen) so a fall
+        // anywhere along the scrolled course kills + respawns. Centered on the
+        // course, well below the lowest platform.
+        let death = SKNode()
+        death.position = CGPoint(x: composedCourseExtent / 2, y: groundY - 210)
+        death.physicsBody = SKPhysicsBody(rectangleOf: CGSize(width: composedCourseExtent + 400, height: 100))
+        death.physicsBody?.isDynamic = false
+        death.physicsBody?.categoryBitMask = PhysicsCategory.hazard
+        addChild(death)
+    }
+
     private func createPlatform(at position: CGPoint, size: CGSize) {
         let platform = SKNode()
         platform.position = position
@@ -185,6 +283,15 @@ final class TimeOfDayScene: BaseLevelScene, SKPhysicsContactDelegate {
     }
 
     private func createEnemies() {
+        if isWideCanvas {
+            createComposedIPadEnemies()
+        } else {
+            createPhoneEnemies()
+        }
+    }
+
+    /// iPhone-class enemies — UNCHANGED from the shipped phone course.
+    private func createPhoneEnemies() {
         let groundY: CGFloat = 160
 
         // Enemy patrol data is authored in LOGICAL course space (x and range)
@@ -214,44 +321,95 @@ final class TimeOfDayScene: BaseLevelScene, SKPhysicsContactDelegate {
             // (the zzz marker derives from pos.y, so it follows automatically).
             let pos = CGPoint(x: courseX(data.logicalX), y: data.y + gameplayLift)
             let range = courseLen(data.range)
-
-            let enemy = createSpikeEnemy()
-            enemy.position = pos
-            enemy.name = "enemy_\(index)"
-            addChild(enemy)
-            enemies.append(enemy)
-
-            let startPt = CGPoint(x: pos.x - range, y: pos.y)
-            let endPt = CGPoint(x: pos.x + range, y: pos.y)
-            enemyPaths[enemy] = (start: startPt, end: endPt)
-
-            // Patrol movement. Store the canonical parameters (origin, range,
-            // duration) so every (re)start can reproduce this exact patrol.
-            let duration: TimeInterval = 1.5 + Double(index) * 0.3
-            enemyPatrols[enemy] = (origin: pos, range: range, duration: duration)
-            enemy.run(.repeatForever(.sequence([
-                .moveBy(x: range, y: 0, duration: duration),
-                .moveBy(x: -range, y: 0, duration: duration)
-            ])), withKey: "patrol")
-
-            // Create zzz label as a scene child (not enemy child) so it
-            // keeps animating when the enemy node is paused
-            let zzz = SKLabelNode(text: "zzz")
-            zzz.fontName = "Menlo"
-            zzz.fontSize = 10
-            zzz.fontColor = strokeColor
-            zzz.position = CGPoint(x: pos.x, y: pos.y + 20)
-            zzz.alpha = 0
-            zzz.zPosition = 95
-            addChild(zzz)
-            zzzLabels[enemy] = zzz
-
-            // Zzz floating animation (runs on scene, unaffected by enemy pause)
-            zzz.run(.repeatForever(.sequence([
-                .moveBy(x: 0, y: 5, duration: 1.0),
-                .moveBy(x: 0, y: -5, duration: 1.0)
-            ])))
+            spawnPatrolEnemy(at: pos, range: range, index: index)
         }
+    }
+
+    /// Composed-iPad enemies. Same patrol/sleep mechanic, authored at ABSOLUTE
+    /// positions pinned to the composed platforms. The GUARD (enemy 0) patrols
+    /// across the ISOLATED FINALE pad (P9, center 1690), so in DAY it sweeps the
+    /// only landing of the finale beat and the player MUST CYCLE TIME to NIGHT to
+    /// sleep it and cross — the signature twist staged as its own moment. The
+    /// other two are flavor patrols on earlier beats so the day/night read is
+    /// taught before the finale demands it.
+    private func createComposedIPadEnemies() {
+        let groundY = playableGroundY(iphoneGround: 160)
+
+        // The platform TOP in scene space for a given composed-platform index.
+        func topY(_ platIndex: Int) -> CGFloat {
+            groundY + composedPlatforms[platIndex].topOff + 15
+        }
+
+        // Spike center sits ~10.5pt above the platform top — IDENTICAL to the
+        // phone guard's clearance (phone: spike center groundY+38 over a P2 top of
+        // groundY+27.5). The triangle (apex +15, base -10) then overlaps the lower
+        // body of a Bit standing on the pad, so the awake DAY guard is lethal-
+        // but-fair exactly like the phone level. Asleep (NIGHT/secret) the hazard
+        // mask is cleared, so the landing becomes safe.
+        let spikeClearance: CGFloat = 10.5
+
+        // (centerX, range, platIndex)
+        // GUARD on P9 (finale): range 70 sweeps the pad span [1620,1760] (pad is
+        // [1615,1765]) — the ONLY safe landing of the isolated finale beat, so it
+        // CANNOT be timing-dodged and must be slept to cross. Flavor 1 is a small
+        // patrol on the P3 build platform (an early "moving spike" teach that
+        // hints at CYCLE TIME without forcing it); flavor 2 decorates the P7
+        // tension beat. The P5 REST pad is deliberately left CLEAN so the breath
+        // beat stays a genuine safe pause.
+        let enemyData: [(cx: CGFloat, range: CGFloat, plat: Int)] = [
+            (1690, 70, 8),   // GUARD: finale pad P9 landing (required)
+            (520,  25, 2),   // flavor / teach: P3 build platform
+            (1300, 30, 6),   // flavor: P7 tension beat
+        ]
+
+        for (index, data) in enemyData.enumerated() {
+            let pos = CGPoint(x: data.cx, y: topY(data.plat) + spikeClearance)
+            spawnPatrolEnemy(at: pos, range: data.range, index: index)
+        }
+    }
+
+    /// Shared per-enemy builder used by BOTH device paths. Creates the spike,
+    /// registers it in the patrol/sleep dictionaries, starts the patrol action,
+    /// and attaches the floating "zzz" marker. Keeping this single source means
+    /// the day/night/secret toggle logic in apply*Mode() is identical on every
+    /// device — only the authored (pos, range) differ.
+    private func spawnPatrolEnemy(at pos: CGPoint, range: CGFloat, index: Int) {
+        let enemy = createSpikeEnemy()
+        enemy.position = pos
+        enemy.name = "enemy_\(index)"
+        addChild(enemy)
+        enemies.append(enemy)
+
+        let startPt = CGPoint(x: pos.x - range, y: pos.y)
+        let endPt = CGPoint(x: pos.x + range, y: pos.y)
+        enemyPaths[enemy] = (start: startPt, end: endPt)
+
+        // Patrol movement. Store the canonical parameters (origin, range,
+        // duration) so every (re)start can reproduce this exact patrol.
+        let duration: TimeInterval = 1.5 + Double(index) * 0.3
+        enemyPatrols[enemy] = (origin: pos, range: range, duration: duration)
+        enemy.run(.repeatForever(.sequence([
+            .moveBy(x: range, y: 0, duration: duration),
+            .moveBy(x: -range, y: 0, duration: duration)
+        ])), withKey: "patrol")
+
+        // Create zzz label as a scene child (not enemy child) so it
+        // keeps animating when the enemy node is paused
+        let zzz = SKLabelNode(text: "zzz")
+        zzz.fontName = "Menlo"
+        zzz.fontSize = 10
+        zzz.fontColor = strokeColor
+        zzz.position = CGPoint(x: pos.x, y: pos.y + 20)
+        zzz.alpha = 0
+        zzz.zPosition = 95
+        addChild(zzz)
+        zzzLabels[enemy] = zzz
+
+        // Zzz floating animation (runs on scene, unaffected by enemy pause)
+        zzz.run(.repeatForever(.sequence([
+            .moveBy(x: 0, y: 5, duration: 1.0),
+            .moveBy(x: 0, y: -5, duration: 1.0)
+        ])))
     }
 
     private func createSpikeEnemy() -> SKNode {
@@ -325,22 +483,33 @@ final class TimeOfDayScene: BaseLevelScene, SKPhysicsContactDelegate {
         timeLabel.fontName = "Menlo-Bold"
         timeLabel.fontSize = 16
         timeLabel.fontColor = strokeColor
-        timeLabel.position = CGPoint(x: displayX, y: topSafeY - 14)
         timeLabel.zPosition = 200
-        addChild(timeLabel)
 
         modeLabel = SKLabelNode(text: "DAY")
         modeLabel.fontName = "Menlo"
         modeLabel.fontSize = 10
         modeLabel.fontColor = strokeColor
-        modeLabel.position = CGPoint(x: displayX, y: topSafeY - 29)
         modeLabel.zPosition = 200
-        addChild(modeLabel)
+
+        if isWideCanvas {
+            // Camera-scrolled course: the time/mode readout (the live signal of
+            // the day/night/secret state) must stay fixed on-screen, so parent it
+            // to the camera in camera-local coords near the top center.
+            let camTopY = size.height / 2 - (size.height - topSafeY) - 14
+            timeLabel.position = CGPoint(x: 0, y: camTopY)
+            modeLabel.position = CGPoint(x: 0, y: camTopY - 15)
+            gameCamera.addChild(timeLabel)
+            gameCamera.addChild(modeLabel)
+        } else {
+            timeLabel.position = CGPoint(x: displayX, y: topSafeY - 14)
+            modeLabel.position = CGPoint(x: displayX, y: topSafeY - 29)
+            addChild(timeLabel)
+            addChild(modeLabel)
+        }
     }
 
     private func createToggleButton() {
         let button = SKNode()
-        button.position = CGPoint(x: size.width - 70, y: 50)
         button.zPosition = 200
         button.name = "toggle_button"
 
@@ -358,7 +527,18 @@ final class TimeOfDayScene: BaseLevelScene, SKPhysicsContactDelegate {
         button.addChild(label)
 
         toggleButton = button
-        addChild(button)
+
+        // On the camera-scrolled iPad course the button MUST live on the camera
+        // (camera-local coords) so the only control for the mechanic stays
+        // on-screen as the world scrolls. On phone it stays a scene child at the
+        // original screen position so phone layout is byte-identical.
+        if isWideCanvas {
+            button.position = CGPoint(x: size.width / 2 - 70, y: -size.height / 2 + 50)
+            gameCamera.addChild(button)
+        } else {
+            button.position = CGPoint(x: size.width - 70, y: 50)
+            addChild(button)
+        }
     }
 
     private func showInstructionPanel() {
@@ -397,14 +577,30 @@ final class TimeOfDayScene: BaseLevelScene, SKPhysicsContactDelegate {
     }
 
     private func setupBit() {
-        // Spawn (also the respawn point used by handleDeath) sits 40pt above
-        // P1's top; lift it with the band so the drop-onto-P1 is unchanged.
-        spawnPoint = CGPoint(x: courseX(50), y: 200 + gameplayLift)
+        if isWideCanvas {
+            // Composed course: spawn ~40pt above P1's top (center 120).
+            let groundY = playableGroundY(iphoneGround: 160)
+            let p1 = composedPlatforms[0]
+            let p1Top = groundY + p1.topOff + 15
+            spawnPoint = CGPoint(x: p1.cx, y: p1Top + 40)
+        } else {
+            // Spawn (also the respawn point used by handleDeath) sits 40pt above
+            // P1's top; lift it with the band so the drop-onto-P1 is unchanged.
+            spawnPoint = CGPoint(x: courseX(50), y: 200 + gameplayLift)
+        }
         bit = BitCharacter.make()
         bit.position = spawnPoint
         addChild(bit)
         registerPlayer(bit)
         playerController = PlayerController(character: bit, scene: self)
+
+        // Composed course is wider than the viewport -> scroll it. Install once,
+        // after the player controller exists; the camera ticks in base update().
+        // worldWidth == the full course extent so the clamp shows the exit pad
+        // (right edge 1940, extent 1980) within bounds.
+        if isWideCanvas {
+            installCameraFollow(worldWidth: composedCourseExtent, playerController: playerController)
+        }
     }
 
     // MARK: - Time Mode Logic
@@ -514,14 +710,26 @@ final class TimeOfDayScene: BaseLevelScene, SKPhysicsContactDelegate {
 
         for i in 0..<4 {
             let ghost = createGhost()
-            ghost.position = CGPoint(
-                x: CGFloat.random(in: 100...size.width - 100),
-                y: CGFloat.random(in: 200...size.height - 100)
-            )
             ghost.alpha = 0.3
             ghost.zPosition = 80
             ghost.name = "ghost_\(i)"
-            addChild(ghost)
+            // On the camera-scrolled iPad course, parent decorative ghosts to the
+            // camera in camera-local coords so they drift within the visible
+            // viewport instead of clustering at world origin off-screen; on phone
+            // they stay scene children at the original screen-space positions.
+            if isWideCanvas {
+                ghost.position = CGPoint(
+                    x: CGFloat.random(in: -size.width / 2 + 80 ... size.width / 2 - 80),
+                    y: CGFloat.random(in: -size.height / 2 + 120 ... size.height / 2 - 120)
+                )
+                gameCamera.addChild(ghost)
+            } else {
+                ghost.position = CGPoint(
+                    x: CGFloat.random(in: 100...size.width - 100),
+                    y: CGFloat.random(in: 200...size.height - 100)
+                )
+                addChild(ghost)
+            }
             ghostNodes.append(ghost)
 
             // Floating drift animation
@@ -585,10 +793,18 @@ final class TimeOfDayScene: BaseLevelScene, SKPhysicsContactDelegate {
         let overlay = SKShapeNode(rectOf: CGSize(width: size.width * 2, height: size.height * 2))
         overlay.fillColor = SKColor(red: 0.5, green: 0, blue: 0, alpha: 0.05)
         overlay.strokeColor = .clear
-        overlay.position = CGPoint(x: size.width / 2, y: size.height / 2)
         overlay.zPosition = 8000
         overlay.name = "glitch_overlay"
-        addChild(overlay)
+        // On the camera-scrolled iPad course, anchor the eerie wash to the camera
+        // (camera-local origin) so it always covers the viewport as the world
+        // scrolls; on phone it stays a scene child centered on the screen.
+        if isWideCanvas {
+            overlay.position = .zero
+            gameCamera.addChild(overlay)
+        } else {
+            overlay.position = CGPoint(x: size.width / 2, y: size.height / 2)
+            addChild(overlay)
+        }
         glitchOverlay = overlay
 
         // Subtle flicker
@@ -655,10 +871,16 @@ final class TimeOfDayScene: BaseLevelScene, SKPhysicsContactDelegate {
         guard let touch = touches.first else { return }
         let location = touch.location(in: self)
 
-        // Check toggle button
-        if let button = toggleButton, button.contains(location) {
-            cycleTimeOverride()
-            return
+        // Check toggle button. `contains` tests a point in the node's PARENT
+        // space: on phone the button's parent is the scene (use the raw scene
+        // location); on the camera-scrolled iPad course its parent is the camera,
+        // so convert the touch into camera-local space first.
+        if let button = toggleButton, let parent = button.parent {
+            let pointInParent = convert(location, to: parent)
+            if button.contains(pointInParent) {
+                cycleTimeOverride()
+                return
+            }
         }
 
         playerController.touchBegan(at: location)

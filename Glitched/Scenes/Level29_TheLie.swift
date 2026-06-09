@@ -31,18 +31,35 @@ final class TheLieScene: BaseLevelScene, SKPhysicsContactDelegate {
     private var hazardNodes: [SKNode] = []
     private var realExitPlatform: SKNode?
 
+    // NATIVE-iPAD GATE (L3 pattern): a wide canvas gets a hand-composed course
+    // (buildComposedIPadLevel); everything else keeps the byte-identical iPhone
+    // layout (buildPhoneLevel). Thresholded on a tall AND wide canvas so it only
+    // ever fires on iPad-class screens, never on any iPhone.
+    private var isWideCanvas: Bool { size.height > 1000 && size.width > 800 }
+
     // Extended level width for scrolling.
-    // BUG FIX (P1): scale to device so the fake exit at the far right starts
-    // OFF-SCREEN on every device (incl. wide iPads). Factor 2.2 guarantees the
-    // far-right fake exit is >1 screen-width from spawn even on a 1366-wide iPad,
-    // so the camera always scrolls (levelWidth > size.width) and the twist isn't spoiled.
-    private lazy var levelWidth: CGFloat = max(1200, size.width * 2.2)
+    // BUG FIX (P1): on iPhone, scale to device so the fake exit at the far right
+    // starts OFF-SCREEN on every device. Factor 2.2 guarantees the far-right fake
+    // exit is >1 screen-width from spawn, so the camera always scrolls
+    // (levelWidth > size.width) and the twist isn't spoiled.
+    // iPad: a FIXED 1700pt course extent — the hand-composed beats are authored at
+    // absolute positions out to the isolated fake-exit finale, NOT scaled to the
+    // screen, so jump spacing is device-independent. 1700 keeps the lone fake exit
+    // (fakeExitX=1650) well past one iPad screen-width from spawn, so the camera
+    // still scrolls and the real-exit-behind-you twist stays hidden until reached.
+    private lazy var levelWidth: CGFloat = isWideCanvas ? 1700 : max(1200, size.width * 2.2)
 
     // Far-right anchors derived from levelWidth so the fake exit, its trigger,
     // and the reveal trigger all scale consistently.
     private var fakeExitX: CGFloat { levelWidth - 50 }
     private var lastPlatformX: CGFloat { levelWidth - 150 }
     private var revealTriggerX: CGFloat { levelWidth - 100 }
+
+    // Ground baseline. iPhone keeps the historic hard-coded 160; iPad lifts the
+    // floor via the shared helper so the composed course + its upper tiers fill the
+    // tall canvas instead of hugging the bottom. All gameplay Y is authored
+    // ground-relative, so gaps/rises stay device-independent.
+    private lazy var groundY: CGFloat = playableGroundY(iphoneGround: 160)
 
     override func configureScene() {
         levelID = LevelID(world: .world4, index: 29)
@@ -95,9 +112,23 @@ final class TheLieScene: BaseLevelScene, SKPhysicsContactDelegate {
         addChild(subtitle)
     }
 
+    // L3 pattern dispatcher: iPhone keeps its exact historic layout; iPad gets a
+    // NEW hand-composed course. The shared mechanic scaffolding (fake exit, real
+    // exit back at spawn, death zone) is identical on both paths.
     private func buildLevel() {
-        let groundY: CGFloat = 160
+        if isWideCanvas {
+            buildComposedIPadLevel()
+        } else {
+            buildPhoneLevel()
+        }
+        buildExitsAndDeathZone()
+    }
 
+    // MARK: - iPhone path (byte-identical to the original layout)
+    //
+    // `groundY` here is the member that returns 160 on iPhone-class canvases, so
+    // every platform Y below is unchanged from the original hard-coded layout.
+    private func buildPhoneLevel() {
         // Start platform
         let startPlat = createPlatformNode(at: CGPoint(x: 80, y: groundY), size: CGSize(width: 120, height: 30))
         addChild(startPlat)
@@ -169,8 +200,86 @@ final class TheLieScene: BaseLevelScene, SKPhysicsContactDelegate {
                 .moveBy(x: 0, y: -40, duration: duration)
             ])), withKey: "movement")
         }
+    }
 
-        // Fake exit door (at far right)
+    // MARK: - iPad path (NEW hand-composed course, L3 template)
+    //
+    // Same lie, MORE composed content at the SAME absolute jump spacing — geometry
+    // is NEVER scaled to the screen. Beats (left -> right), all authored at absolute
+    // X and ground-relative Y so spacing is device-independent:
+    //   teach (wide spawn) -> stepped cluster A (rhythm) -> wide REST breath
+    //   -> tension-peak cluster B (oscillating spikes) -> short breath
+    //   -> approach -> [deliberate gap] -> the ISOLATED fake-exit finale (added by
+    //      buildExitsAndDeathZone at fakeExitX, alone, staging the twist).
+    // Heights vary across three tiers (g, g+~20, g+~55) so it's never a flat row.
+    // Every edge-to-edge gap <= 130 and every top-to-top rise <= 85 (verified below).
+    private func buildComposedIPadLevel() {
+        let g = groundY
+
+        // (centerX, dy, width, height)
+        let beats: [(CGFloat, CGFloat, CGFloat, CGFloat)] = [
+            // --- TEACH: a generous start platform. "Just walk." ---
+            (80,   0,  140, 30),
+
+            // --- BUILD: stepped cluster A — up, over, down for rhythm ---
+            (250,  10, 100, 25),
+            (390,  55,  90, 25),   // rise to the high beat
+            (515,  15,  90, 25),   // drop back toward the floor
+
+            // --- REST: a wide, floor-level breath. A deliberate safe pause. ---
+            (680,  0,  170, 30),
+
+            // --- TENSION PEAK: cluster B — tight, high, spiked (see hazards) ---
+            (850,  50,  90, 25),
+            (975,  20,  80, 25),
+            (1100, 60,  90, 25),
+
+            // --- SHORT BREATH before the finale ---
+            (1240, 0,  130, 28),
+
+            // --- APPROACH: the last solid footing before the lie ---
+            (1400, 50,  90, 25),
+            (1500, 25,  80, 25),
+        ]
+
+        for (cx, dy, w, h) in beats {
+            let p = createPlatformNode(at: CGPoint(x: cx, y: g + dy), size: CGSize(width: w, height: h))
+            addChild(p)
+            levelPlatforms.append(p)
+        }
+
+        // Tension-peak hazards: vertical oscillators tucked into the GAPS between
+        // the cluster-B platforms (not on top of footing), so they threaten the
+        // jumps without ever fully blocking a landing. Avoidable by timing — the
+        // same dodge skill the iPhone path teaches, just staged at the peak beat.
+        let hazardPositions: [CGPoint] = [
+            CGPoint(x: 912, y: g + 95),
+            CGPoint(x: 1037, y: g + 100),
+        ]
+        for (i, pos) in hazardPositions.enumerated() {
+            let hazard = createSpike()
+            hazard.position = pos
+            hazard.name = "hazard_\(i)"
+            addChild(hazard)
+            hazardNodes.append(hazard)
+
+            let duration = 1.2 + Double(i) * 0.2
+            hazard.run(.repeatForever(.sequence([
+                .moveBy(x: 0, y: 40, duration: duration),
+                .moveBy(x: 0, y: -40, duration: duration)
+            ])), withKey: "movement")
+        }
+    }
+
+    // MARK: - Shared mechanic scaffolding (both paths)
+    //
+    // The fake exit (far right at fakeExitX), the real exit hidden back at spawn
+    // (x=80), and the full-course death zone. Identical on iPhone and iPad — the
+    // ONLY device difference is the absolute value of levelWidth/fakeExitX, so the
+    // walk-right -> fake-exit -> walk-back-to-real-exit mechanic is preserved
+    // byte-for-byte in RELATIVE terms.
+    private func buildExitsAndDeathZone() {
+        // Fake exit door (at far right) — the ISOLATED finale beat staging the lie.
         let fakeExitPlat = createPlatformNode(at: CGPoint(x: fakeExitX, y: groundY), size: CGSize(width: 100, height: 30))
         addChild(fakeExitPlat)
         levelPlatforms.append(fakeExitPlat)
@@ -345,13 +454,17 @@ final class TheLieScene: BaseLevelScene, SKPhysicsContactDelegate {
     }
 
     private func setupBit() {
-        spawnPoint = CGPoint(x: 80, y: 200)
+        // Spawn just above the start platform. Authored ground-relative so iPad's
+        // raised floor (playableGroundY) keeps Bit landing ON the start platform
+        // instead of dropping into the death zone. On iPhone groundY==160, so
+        // groundY+40 == 200 — byte-identical to the original spawn.
+        spawnPoint = CGPoint(x: 80, y: groundY + 40)
         bit = BitCharacter.make()
         bit.position = spawnPoint
         addChild(bit)
         registerPlayer(bit)
         playerController = PlayerController(character: bit, scene: self)
-        // BUG FIX: Allow player to traverse the full 1200-point world width
+        // Allow the player to traverse the full course width on either device.
         playerController.worldWidth = levelWidth
         lastPlayerX = spawnPoint.x
     }

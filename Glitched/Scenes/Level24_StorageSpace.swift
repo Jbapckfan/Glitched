@@ -41,9 +41,52 @@ final class StorageSpaceScene: BaseLevelScene, SKPhysicsContactDelegate {
     private var playerController: PlayerController!
     private var spawnPoint: CGPoint = .zero
 
-    // Logical floor / surface (platform top sits at groundY + halfHeight=15 → 175).
-    private let groundY: CGFloat = 160
+    // MARK: - Native-iPad composition gate (Phase 0 / L3 template)
+    //
+    // iPad gets a HAND-COMPOSED, paced-beat course at ABSOLUTE positions (never
+    // size.width fractions, never scaled geometry): a teach beat, two stepped
+    // clusters with a wide REST platform between them, a short breath, then the
+    // level's signature twist (the unjumpable JUNK-MASS wall + its PURGE TERMINAL)
+    // staged as an isolated FINALE beat. The course is wider than the screen, so
+    // installCameraFollow scrolls it; the floor is raised via playableGroundY for
+    // vertical fill. iPhone is byte-identical: the gate is false on phone-class
+    // canvases, so buildPhoneLevel() (the verbatim original layout) runs and every
+    // anchor below collapses to its original courseX()/groundY value.
+    //
+    // Spacing is FIXED jump reach (Bit physics are device-independent): every
+    // authored center-to-center step is <= BaseLevelScene.maxJumpableGap (130) and
+    // every top-to-top RISE is <= BaseLevelScene.maxJumpableRise (85). Platform
+    // heights vary across three tiers (base / mid / high) for rhythm.
+    private var isWideCanvas: Bool { size.height > 1000 && size.width > 820 }
+
+    // Logical floor / surface (platform top sits at gpGroundY + halfHeight=15).
+    // On iPhone gpGroundY == 160 (byte-identical); on iPad the floor is lifted via
+    // playableGroundY so the composed band + its upper tiers fill the tall canvas.
+    private let iphoneGroundY: CGFloat = 160
+    private lazy var gpGroundY: CGFloat = isWideCanvas ? playableGroundY(iphoneGround: iphoneGroundY) : iphoneGroundY
+    private var groundY: CGFloat { gpGroundY }
     private var surfaceY: CGFloat { groundY + 15 }
+
+    // Absolute X anchors for the composed iPad course (scene-space points). The
+    // create* helpers (junk mass, terminal, exit, spawn, asides) read these so the
+    // mechanic plumbing stays identical to iPhone — only the anchor values move.
+    // On iPhone every anchor falls back to the original courseX() position, so the
+    // phone output is unchanged.
+    private var ipadSpawnX: CGFloat { 90 }
+    private var ipadTerminalLedgeX: CGFloat { 1045 }
+    private var ipadLowerFloorX: CGFloat { 1200 }
+    private var ipadLowerFloorWidth: CGFloat { 280 }
+    private var ipadJunkX: CGFloat { 1240 }
+    private var ipadExitX: CGFloat { 1320 }
+    private var ipadCourseWidth: CGFloat { 1420 }
+
+    // Unified anchors used by every create* method. Phone path = original
+    // courseX()/courseLen() values; iPad path = absolute composed anchors.
+    private var spawnX: CGFloat { isWideCanvas ? ipadSpawnX : courseX(70) }
+    private var terminalLedgeX: CGFloat { isWideCanvas ? ipadTerminalLedgeX : courseX(250) }
+    private var junkX: CGFloat { isWideCanvas ? ipadJunkX : courseX(355) }
+    private var junkWidth: CGFloat { isWideCanvas ? 70 : courseLen(70) }
+    private var exitX: CGFloat { isWideCanvas ? ipadExitX : courseX(410) }
 
     // Junk mass (the wall that blocks the exit). Built as several stacked
     // "strata" so the dissolve can cascade and feel like clearing real clutter.
@@ -60,6 +103,10 @@ final class StorageSpaceScene: BaseLevelScene, SKPhysicsContactDelegate {
     // HUD
     private var storageLabel: SKLabelNode!
     private var armPromptLabel: SKLabelNode?
+    // The armed-purge instruction panel. Tracked directly (not by childNode name)
+    // because on iPad it is parented to the camera, where a scene-level name lookup
+    // would miss it during dissolve cleanup.
+    private weak var armPanel: SKNode?
 
     override func configureScene() {
         levelID = LevelID(world: .world3, index: 24)
@@ -106,7 +153,14 @@ final class StorageSpaceScene: BaseLevelScene, SKPhysicsContactDelegate {
         title.position = CGPoint(x: 80, y: topSafeY - 30)
         title.horizontalAlignmentMode = .left
         title.zPosition = 100
-        addChild(title)
+        // iPad: pin the title to the camera (top-left of the viewport) so it stays
+        // on screen as the course scrolls. iPhone path unchanged (scene-space).
+        if isWideCanvas, let cam = gameCamera {
+            title.position = CGPoint(x: -size.width / 2 + 80, y: size.height / 2 - 30)
+            cam.addChild(title)
+        } else {
+            addChild(title)
+        }
     }
 
     // MARK: - Level Geometry
@@ -125,6 +179,17 @@ final class StorageSpaceScene: BaseLevelScene, SKPhysicsContactDelegate {
     // and the exit, so even after arming the player still has to come back down
     // and the cleared path is the only way through.
     private func buildLevel() {
+        if isWideCanvas {
+            buildComposedIPadLevel()
+        } else {
+            buildPhoneLevel()
+        }
+    }
+
+    /// iPhone path — VERBATIM original layout. Phone output must be byte-identical,
+    /// so this is the exact pre-rework body (uses courseX()/courseLen(); on phone
+    /// every unified anchor above resolves to these same values).
+    private func buildPhoneLevel() {
         // START platform (left)
         createPlatform(at: CGPoint(x: courseX(90), y: groundY), size: CGSize(width: courseLen(160), height: 30))
 
@@ -152,8 +217,83 @@ final class StorageSpaceScene: BaseLevelScene, SKPhysicsContactDelegate {
         addSignArrow(at: CGPoint(x: courseX(185), y: surfaceY + 70), text: "↑ TERMINAL")
     }
 
-    /// Raised ledge surface Y. Rise from the START surface (175) is 60pt, within
-    /// the ~80pt usable rise from a single jump (apex ~91).
+    // MARK: - Composed iPad Level (hand-authored paced beats)
+    //
+    // Beats, left → right (all surfaces relative to the lifted surfaceY = S):
+    //   1. SPAWN/TEACH    [x=90]   S, wide floor — safe footing, the asides read.
+    //   2. STEP CLUSTER A — three platforms varying height for rhythm:
+    //        P1 [x=210] S+55 (high tier)   gap 120, rise +55
+    //        P2 [x=330] S+30 (mid tier)    gap 120, step down
+    //        P3 [x=450] S+80 (high tier)   gap 120, rise +50
+    //   3. REST PLATFORM  [x=570] S+25, WIDE (150) — a deliberate breath/pause.
+    //   4. STEP CLUSTER B (tension peak):
+    //        P4 [x=690] S+78 (high tier)   gap 120, rise +53
+    //        P5 [x=810] S+38 (mid tier)    gap 120, step down
+    //   5. SHORT BREATH   [x=925] S, floor — settle before the finale.
+    //   6. FINALE BEAT (signature twist): the PURGE TERMINAL on a raised LEDGE
+    //      [x=1045 S+60, rise +60 — identical to the iPhone teach-rise], then a
+    //      drop onto the LOWER floor where the floor-to-ceiling UNJUMPABLE JUNK
+    //      MASS [x=1240] walls off the EXIT [x=1320]. The wall + exit are built by
+    //      createJunkMass()/createExitDoor() off the unified anchors, so the TRAP
+    //      geometry (unjumpable, floor-to-ceiling) is preserved exactly.
+    //
+    // Vertical fill: groundY is lifted via playableGroundY. Horizontal fill: the
+    // course (~1420pt) is wider than the screen, so installCameraFollow scrolls it
+    // (called once in setupBit after spawn). All rises <= 85, all center steps <= 130.
+    private func buildComposedIPadLevel() {
+        let S = surfaceY  // lifted base surface (platform top)
+
+        // Helper: place a platform by its TOP (surface) Y so rises read directly.
+        func plat(x: CGFloat, top: CGFloat, width: CGFloat) {
+            createPlatform(at: CGPoint(x: x, y: top - 15), size: CGSize(width: width, height: 30))
+        }
+
+        // 1. SPAWN / TEACH
+        plat(x: ipadSpawnX, top: S, width: 170)
+
+        // 2. STEP CLUSTER A (varied tiers)
+        plat(x: 210, top: S + 55, width: 96)   // gap 120, rise +55
+        plat(x: 330, top: S + 30, width: 96)   // gap 120, step down 25
+        plat(x: 450, top: S + 80, width: 96)   // gap 120, rise +50
+
+        // 3. REST PLATFORM (wide breath)
+        plat(x: 570, top: S + 25, width: 150)  // gap 120, step down 55
+
+        // 4. STEP CLUSTER B (tension peak)
+        plat(x: 690, top: S + 78, width: 96)   // gap 120, rise +53
+        plat(x: 810, top: S + 38, width: 96)   // gap 120, step down 40
+
+        // 5. SHORT BREATH
+        plat(x: 925, top: S, width: 130)       // gap 115, step down 38
+
+        // 6a. FINALE — terminal LEDGE (rise +60 from breath, == iPhone teach-rise).
+        plat(x: ipadTerminalLedgeX, top: ledgeSurfaceY, width: 120) // gap 120, rise +60
+
+        // 6b. LOWER approach floor — holds the junk wall + exit. The ledge (top
+        // S+60) sits ABOVE and X-overlaps this floor, so reaching it is a forgiving
+        // DOWNWARD step-off, not a gap to clear.
+        plat(x: ipadLowerFloorX, top: S, width: ipadLowerFloorWidth)
+
+        // EXIT door behind the junk mass (built off the unified exit anchor).
+        createExitDoor(at: CGPoint(x: exitX, y: surfaceY + 35))
+
+        // Death zone spans the FULL course on iPad (centered on the course, width
+        // covers the whole scrolling extent so a fall anywhere is caught).
+        let death = SKNode()
+        death.position = CGPoint(x: ipadCourseWidth / 2, y: -50)
+        death.physicsBody = SKPhysicsBody(rectangleOf: CGSize(width: ipadCourseWidth + size.width, height: 100))
+        death.physicsBody?.isDynamic = false
+        death.physicsBody?.categoryBitMask = PhysicsCategory.hazard
+        addChild(death)
+
+        // Directional signposting: arrow from start toward cluster A.
+        addSignArrow(at: CGPoint(x: 150, y: S + 70), text: "↑ CLIMB")
+        // Second arrow near the breath, pointing to the finale terminal ledge.
+        addSignArrow(at: CGPoint(x: 985, y: S + 70), text: "↑ TERMINAL")
+    }
+
+    /// Raised ledge surface Y. Rise from the START surface is 60pt, within the
+    /// ~80pt usable rise from a single jump (apex ~91). Same on both devices.
     private var ledgeSurfaceY: CGFloat { surfaceY + 60 }
 
     private func createPlatform(at position: CGPoint, size: CGSize) {
@@ -198,11 +338,14 @@ final class StorageSpaceScene: BaseLevelScene, SKPhysicsContactDelegate {
         let wallCenterY = wallBottom + wallHeight / 2
 
         let container = SKNode()
-        // Logical x=355: between the ledge landing and the exit, on the LOWER floor.
-        container.position = CGPoint(x: courseX(355), y: wallCenterY)
+        // Between the ledge landing and the exit, on the LOWER floor. On iPhone
+        // this is courseX(355); on iPad it's the absolute composed junk anchor.
+        // The wall stays floor-to-ceiling (UNJUMPABLE) on both — width never grows
+        // a load-bearing gap, height keeps the top far above Bit's ~91pt apex.
+        container.position = CGPoint(x: junkX, y: wallCenterY)
         container.name = "junk_mass"
 
-        let wallWidth: CGFloat = courseLen(70)
+        let wallWidth: CGFloat = junkWidth
         let blockSize: CGFloat = 12
         let cols = max(1, Int(wallWidth / blockSize))
         let rows = max(1, Int(wallHeight / blockSize))
@@ -264,10 +407,17 @@ final class StorageSpaceScene: BaseLevelScene, SKPhysicsContactDelegate {
         // size.width-16 bound, applied unconditionally to whichever line overshoots.
         // No-op on iPad (column centered, far from the right edge), where the size-7
         // sub also stays inside its column-tile backing.
-        let rightBound = size.width - 16
-        let labelRight = container.position.x + label.frame.width / 2
-        if labelRight > rightBound {
-            label.position.x -= labelRight - rightBound
+        //
+        // GUARD: on the composed iPad course the wall sits mid-course at an absolute
+        // X far past size.width (camera-followed), so a size.width-based screen-edge
+        // clamp is meaningless there and would shove the label off its own tile. Only
+        // apply the iPhone right-edge clamp on the (non-scrolling) phone layout.
+        if !isWideCanvas {
+            let rightBound = size.width - 16
+            let labelRight = container.position.x + label.frame.width / 2
+            if labelRight > rightBound {
+                label.position.x -= labelRight - rightBound
+            }
         }
 
         // Physical blocker.
@@ -284,7 +434,10 @@ final class StorageSpaceScene: BaseLevelScene, SKPhysicsContactDelegate {
 
     private func createPurgeTerminal() {
         let node = SKNode()
-        node.position = CGPoint(x: courseX(250), y: ledgeSurfaceY + 34)
+        // Sits on the raised terminal LEDGE (iPhone courseX(250); iPad composed
+        // anchor). Must be reached by a jump + armed before any purge counts —
+        // unchanged on both devices.
+        node.position = CGPoint(x: terminalLedgeX, y: ledgeSurfaceY + 34)
         node.zPosition = 60
         node.name = "purge_terminal"
 
@@ -403,7 +556,18 @@ final class StorageSpaceScene: BaseLevelScene, SKPhysicsContactDelegate {
             panel.addChild(label)
         }
 
-        addChild(panel)
+        // iPad: this load-bearing instruction surfaces at the FINALE (player far
+        // right of spawn), so a scene-space anchor would have scrolled off-screen.
+        // Parent it to the camera in camera-local coords so it stays pinned to the
+        // viewport top band wherever the course has scrolled. iPhone path unchanged
+        // (scene-space, single screen). Tracked via armPanel for dissolve cleanup.
+        if isWideCanvas, let cam = gameCamera {
+            panel.position = CGPoint(x: 0, y: size.height / 2 - 120 - boxHeight / 2)
+            cam.addChild(panel)
+        } else {
+            addChild(panel)
+        }
+        armPanel = panel
         armPromptLabel = panel.children.first as? SKLabelNode
         panel.alpha = 0
         panel.run(.fadeIn(withDuration: 0.3))
@@ -460,7 +624,15 @@ final class StorageSpaceScene: BaseLevelScene, SKPhysicsContactDelegate {
         // (its rect x[~108,282] on iPhone 390 stays left of the junk mass column).
         storageLabel.position = CGPoint(x: size.width / 2, y: topSafeY - 224)
         storageLabel.zPosition = 200
-        addChild(storageLabel)
+        // iPad: this HUD readout also flips to "SPACE RECLAIMED" at the finale (far
+        // right of spawn), so pin it to the camera in camera-local coords so it
+        // stays visible across the scroll. iPhone path unchanged (scene-space).
+        if isWideCanvas, let cam = gameCamera {
+            storageLabel.position = CGPoint(x: 0, y: size.height / 2 - 224)
+            cam.addChild(storageLabel)
+        } else {
+            addChild(storageLabel)
+        }
 
         // In-character 4th-wall aside (the OS taunting you about the storage it's
         // hoarding). This line is CONTEXTUAL — it points the player at the TERMINAL
@@ -479,27 +651,34 @@ final class StorageSpaceScene: BaseLevelScene, SKPhysicsContactDelegate {
         aside.fontSize = 9
         aside.fontColor = strokeColor.withAlphaComponent(0.55)
         aside.horizontalAlignmentMode = .center
-        aside.position = CGPoint(x: courseX(70), y: surfaceY + 150)
+        // World-space flavor over the SPAWN floor (iPhone courseX(70); iPad spawn
+        // anchor, so it rides above the spawn/teach beat where the camera starts).
+        aside.position = CGPoint(x: isWideCanvas ? spawnX : courseX(70), y: surfaceY + 150)
         aside.zPosition = 50
         addChild(aside)
         // iPhone has courseOriginX≈0 so courseX(70)≈64; a CENTERED ~35-char line
         // spills ~40pt off the LEFT edge there (caught in the iPhone re-audit).
         // Clamp the center so the full label stays on-screen with a 12pt margin.
-        // No-op on iPad (courseX(70)≈367, already clear of the terminal at ≈547).
-        aside.position.x = min(max(courseX(70), aside.frame.width / 2 + 12),
-                               size.width - aside.frame.width / 2 - 12)
+        // GUARD: only on the non-scrolling phone layout — the iPad course is
+        // camera-followed, so a size.width screen-edge clamp doesn't apply.
+        if !isWideCanvas {
+            aside.position.x = min(max(courseX(70), aside.frame.width / 2 + 12),
+                                   size.width - aside.frame.width / 2 - 12)
+        }
 
         let aside2 = SKLabelNode(text: "REACH THE TERMINAL, THEN MAKE ME LET GO.")
         aside2.fontName = "Menlo"
         aside2.fontSize = 8
         aside2.fontColor = strokeColor.withAlphaComponent(0.5)
         aside2.horizontalAlignmentMode = .center
-        aside2.position = CGPoint(x: courseX(70), y: surfaceY + 136)
+        aside2.position = CGPoint(x: isWideCanvas ? spawnX : courseX(70), y: surfaceY + 136)
         aside2.zPosition = 50
         addChild(aside2)
         // Same left-edge clamp as the line above (longest line, 40 chars).
-        aside2.position.x = min(max(courseX(70), aside2.frame.width / 2 + 12),
-                                size.width - aside2.frame.width / 2 - 12)
+        if !isWideCanvas {
+            aside2.position.x = min(max(courseX(70), aside2.frame.width / 2 + 12),
+                                    size.width - aside2.frame.width / 2 - 12)
+        }
     }
 
     private func showInstructionPanel() {
@@ -528,7 +707,16 @@ final class StorageSpaceScene: BaseLevelScene, SKPhysicsContactDelegate {
         panel.position = CGPoint(x: size.width / 2, y: topSafeY - 170)
         panel.zPosition = 300
         panel.name = "intro_panel"
-        addChild(panel)
+        // iPad: pin to the camera so the intro instruction stays centered even if
+        // the player starts moving during its 6s lifetime. iPhone unchanged. (It
+        // auto-removes well before the finale dissolve, so the scene-level
+        // intro_panel cleanup there is a harmless no-op on iPad.)
+        if isWideCanvas, let cam = gameCamera {
+            panel.position = CGPoint(x: 0, y: size.height / 2 - 170)
+            cam.addChild(panel)
+        } else {
+            addChild(panel)
+        }
 
         let bg = SKShapeNode(rectOf: CGSize(width: 200, height: 80), cornerRadius: 8)
         bg.fillColor = fillColor
@@ -553,12 +741,24 @@ final class StorageSpaceScene: BaseLevelScene, SKPhysicsContactDelegate {
     }
 
     private func setupBit() {
-        spawnPoint = CGPoint(x: courseX(70), y: 220)
+        // iPhone: original spawn (courseX(70), y=220 == surfaceY 175 + 45). iPad:
+        // over the lifted spawn floor at the composed spawn anchor; spawn Y stays
+        // ground-relative (surfaceY + 45) so the drop-in is identical in feel.
+        spawnPoint = isWideCanvas
+            ? CGPoint(x: spawnX, y: surfaceY + 45)
+            : CGPoint(x: courseX(70), y: 220)
         bit = BitCharacter.make()
         bit.position = spawnPoint
         addChild(bit)
         registerPlayer(bit)
         playerController = PlayerController(character: bit, scene: self)
+
+        // The composed iPad course is wider than the viewport — scroll it via the
+        // shared camera-follow (ticks in base update()). Called once, after the
+        // player + course exist. No-op on iPhone (single-screen, non-scrolling).
+        if isWideCanvas {
+            installCameraFollow(worldWidth: ipadCourseWidth, playerController: playerController)
+        }
     }
 
     // MARK: - Purge / Dissolve
@@ -597,7 +797,9 @@ final class StorageSpaceScene: BaseLevelScene, SKPhysicsContactDelegate {
             }
         }
 
-        childNode(withName: "arm_panel")?.run(.sequence([.fadeOut(withDuration: 0.3), .removeFromParent()]))
+        // arm_panel may be parented to the camera on iPad, so dismiss it via the
+        // tracked reference (a scene-level name lookup would miss it there).
+        armPanel?.run(.sequence([.fadeOut(withDuration: 0.3), .removeFromParent()]))
         childNode(withName: "intro_panel")?.removeFromParent()
 
         storageLabel.text = "0.0MB - SPACE RECLAIMED"
@@ -608,8 +810,11 @@ final class StorageSpaceScene: BaseLevelScene, SKPhysicsContactDelegate {
         msg.fontName = "Menlo-Bold"
         msg.fontSize = 14
         msg.fontColor = strokeColor
-        msg.position = CGPoint(x: size.width / 2, y: size.height / 2 + 40)
         msg.zPosition = 400
+        // Anchor the marquee to the visible viewport center. On iPad the camera has
+        // scrolled to the finale, so use the camera-relative center; on iPhone this
+        // resolves to the static scene center (unchanged).
+        msg.position = CGPoint(x: screenSpaceCenter.x, y: screenSpaceCenter.y + 40)
         addChild(msg)
         msg.run(.sequence([.wait(forDuration: 2), .fadeOut(withDuration: 0.5), .removeFromParent()]))
 
