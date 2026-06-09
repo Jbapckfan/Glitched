@@ -70,33 +70,11 @@ final class HeaderScene: BaseLevelScene, SKPhysicsContactDelegate {
     // a full-height climb without modifying BaseLevelScene. All Y are ABSOLUTE scene
     // points; all rises stay <= maxJumpableRise (85) by construction.
 
-    /// Top of the usable vertical band — just under the title/HUD drag band so the
-    /// highest finale platform never collides with the screen-space draggable title.
-    private func playableCeilingY() -> CGFloat { topSafeY - 80 }
-
-    /// Full usable vertical band on iPad: low floor -> ceiling.
-    private func playableBandHeight(iphoneGround: CGFloat) -> CGFloat {
-        max(0, playableCeilingY() - playableGroundY(iphoneGround: iphoneGround))
-    }
-
     /// Number of evenly-spaced tiers needed so every tier-to-tier rise stays
-    /// <= maxJumpableRise (85). Spanning the FULL band requires ceil(band/85)+1 tiers;
-    /// this is what lets the climb actually reach the ceiling with only safe hops.
+    /// <= maxJumpableRise (85). Uses the shared BaseLevelScene band helpers.
     private func tierCount(iphoneGround: CGFloat) -> Int {
         let band = playableBandHeight(iphoneGround: iphoneGround)
         return max(2, Int((band / BaseLevelScene.maxJumpableRise).rounded(.up)) + 1)
-    }
-
-    /// Y (platform TOP) for tier `index` of `count` evenly-spaced tiers spanning the
-    /// FULL band. Tier 0 = floor, tier count-1 = near ceiling. Because `count` is
-    /// chosen so band/(count-1) <= 85, each adjacent-tier rise is auto-safe.
-    private func verticalTier(_ index: Int, of count: Int, iphoneGround: CGFloat) -> CGFloat {
-        guard count > 1 else { return playableGroundY(iphoneGround: iphoneGround) }
-        let floor = playableGroundY(iphoneGround: iphoneGround)
-        let band = playableBandHeight(iphoneGround: iphoneGround)
-        let step = band / CGFloat(count - 1)
-        let clamped = max(0, min(count - 1, index))
-        return floor + step * CGFloat(clamped)
     }
 
     // Line art style
