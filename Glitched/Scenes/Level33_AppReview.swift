@@ -54,8 +54,12 @@ final class AppReviewScene: BaseLevelScene, SKPhysicsContactDelegate {
     /// portrait (>1000h) above this width gets the composed climb.
     private let designWidth: CGFloat = 820
 
-    /// True on iPad-proportioned canvases (matches the base helpers' gate).
-    private var isWideCanvas: Bool { size.height > 1000 && size.width > designWidth }
+    /// Reverted per operator: the iPad must solve the SAME way as iPhone (a flat
+    /// full-width walk through the two gag gates to the exit), not a top-to-bottom
+    /// climb. Forcing this false routes every branch to the phone layout, which fills
+    /// the iPad height via gameplayVerticalLift without changing the solution; this
+    /// also removes the climb-introduced jumpable-gate geometry (iPad now == iPhone).
+    private var isWideCanvas: Bool { false }
 
     // Composed iPad anchors (set in buildComposedIPadLevel; unused on iPhone).
     private var composedSpawnX: CGFloat = 0

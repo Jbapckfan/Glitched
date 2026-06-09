@@ -69,8 +69,11 @@ final class VolumeScene: BaseLevelScene, SKPhysicsContactDelegate {
     // spawn to exit is reachable. Everything below is gated on `isWideCanvas`;
     // iPhone output stays byte-identical.
 
-    /// True on iPad-proportioned canvases (matches the base helpers' gate).
-    private var isWideCanvas: Bool { size.height > 1000 && size.width > designSize.width }
+    /// Reverted per operator: the iPad must solve the SAME way as iPhone (a flat
+    /// "keep quiet" walk), not a vertical climb. Forcing this false routes every
+    /// branch to the phone layout, which fills the iPad height via gameplayVerticalLift
+    /// (the flat band lifts to center on tall canvases) without changing the solution.
+    private var isWideCanvas: Bool { false }
 
     /// The iPhone ground baseline this level hard-codes; fed to the verticalTier /
     /// playableGroundY / playableCeilingY helpers so they collapse correctly on
