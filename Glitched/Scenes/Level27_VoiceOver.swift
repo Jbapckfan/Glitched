@@ -182,7 +182,7 @@ final class VoiceOverScene: BaseLevelScene, SKPhysicsContactDelegate {
     /// canvas — iPhone in any orientation, Split View, Slide Over — falls through to
     /// the UNCHANGED procedural `buildPhoneLevel()`, so the phone build is
     /// byte-identical.
-    private var isWideCanvas: Bool { size.height > 1000 && size.width > 1000 }
+    private var isWideCanvas: Bool { min(size.width, size.height) >= 700 }
 
     private func buildLevel() {
         if isWideCanvas {

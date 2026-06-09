@@ -104,7 +104,7 @@ final class FlashlightScene: BaseLevelScene, SKPhysicsContactDelegate {
 
     /// True only on iPad-class canvases. Gates the NEW composed vertical-climb layout
     /// so iPhone output stays byte-identical (mirrors L29's isWideCanvas convention).
-    private var isWideCanvas: Bool { size.height > 1000 && size.width > 800 }
+    private var isWideCanvas: Bool { min(size.width, size.height) >= 700 }
 
     /// Spawn / respawn footing, ground-relative (160 + 60 = 220 on iPhone, so
     /// byte-identical). Used as the iPhone spawn/checkpoint Y; the iPad path tracks a

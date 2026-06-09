@@ -37,7 +37,7 @@ final class DarkModeScene: BaseLevelScene, SKPhysicsContactDelegate {
     /// not an iPhone strip. Mirrors the Phase 0 helpers' height>1000 threshold and
     /// adds a width floor so a tall-but-narrow phone in some future split never trips
     /// it. When false the level renders the byte-identical iPhone path.
-    private var isWideCanvas: Bool { size.height > 1000 && size.width > 760 }
+    private var isWideCanvas: Bool { min(size.width, size.height) >= 700 }
 
     /// Exact center of the composed iPad start platform, so Bit spawns on it.
     /// Unused on iPhone (spawn there stays the original width-fractional formula).

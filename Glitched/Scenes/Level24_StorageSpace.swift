@@ -69,7 +69,7 @@ final class StorageSpaceScene: BaseLevelScene, SKPhysicsContactDelegate {
     // authored edge-to-edge step is <= BaseLevelScene.maxJumpableGap (130) and every
     // top-to-top RISE comes straight from verticalTier(), whose per-tier step is
     // auto-clamped to BaseLevelScene.maxJumpableRise (85).
-    private var isWideCanvas: Bool { size.height > 1000 && size.width > 820 }
+    private var isWideCanvas: Bool { min(size.width, size.height) >= 700 }
 
     // Logical floor / surface (platform top sits at gpGroundY + halfHeight=15).
     // On iPhone gpGroundY == 160 (byte-identical → surfaceY 175); on iPad the floor

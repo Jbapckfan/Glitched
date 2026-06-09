@@ -35,7 +35,7 @@ final class TheLieScene: BaseLevelScene, SKPhysicsContactDelegate {
     // full-height course (buildComposedIPadLevel); everything else keeps the
     // byte-identical iPhone layout (buildPhoneLevel). Thresholded on BOTH a tall and
     // a wide canvas so it only ever fires on iPad-class screens, never any iPhone.
-    private var isWideCanvas: Bool { size.height > 1000 && size.width > 800 }
+    private var isWideCanvas: Bool { min(size.width, size.height) >= 700 }
 
     // Extended level width for scrolling.
     // BUG FIX (P1): on iPhone, scale to device so the fake exit at the far right

@@ -51,7 +51,7 @@ final class AirplaneModeScene: BaseLevelScene, SKPhysicsContactDelegate {
     // original phone layout byte-for-byte. designWidth*2 = 780 sits well above any
     // iPhone logical width and below the narrowest iPad (768pt portrait), so the
     // branch is iPad-exclusive.
-    private var isWideCanvas: Bool { size.height > 1000 && size.width > designWidth * 2 }
+    private var isWideCanvas: Bool { min(size.width, size.height) >= 700 }
 
     // Full horizontal extent of the composed iPad course (exit-inclusive). Used to
     // size the death zone and drive installCameraFollow(). 0 on the phone path.

@@ -87,7 +87,7 @@ final class ScreenshotScene: BaseLevelScene, SKPhysicsContactDelegate {
     // createGhostBridge() and the entire freeze/unfreeze mechanic run UNCHANGED on
     // both devices. Gate: tall AND wide enough to be a tablet.
     private let designWidth: CGFloat = 820
-    private var isWideCanvas: Bool { size.height > 1000 && size.width > designWidth }
+    private var isWideCanvas: Bool { min(size.width, size.height) >= 700 }
 
     // iPad-only: spawn override (the composed climb spawns on its wide low TEACH
     // platform, NOT on the finale chasm's left cliff). Set in buildComposedIPadLevel();

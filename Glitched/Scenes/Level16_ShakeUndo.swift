@@ -33,7 +33,7 @@ final class ShakeUndoScene: BaseLevelScene, SKPhysicsContactDelegate {
     // above the widest iPhone (430pt) and below iPad portrait (768pt+), so the
     // composed full-height course is chosen exactly on iPad-class hardware. The
     // height>1000 half mirrors the base helpers' own iPad gate (playableGroundY etc.).
-    private var isWideCanvas: Bool { size.height > 1000 && size.width > 760 }
+    private var isWideCanvas: Bool { min(size.width, size.height) >= 700 }
 
     /// The iPhone ground value this level hard-codes; passed to the base
     /// playableGroundY helper so the iPad floor is derived from it (near the bottom)
