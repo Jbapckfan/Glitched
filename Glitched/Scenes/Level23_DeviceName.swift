@@ -139,7 +139,7 @@ final class DeviceNameScene: BaseLevelScene, SKPhysicsContactDelegate {
     private var hasShownGreeting = false
 
     override func configureScene() {
-        levelID = LevelID(world: .world3, index: 23)
+        levelID = LevelID(world: .world3, index: 21)
         backgroundColor = fillColor
 
         physicsWorld.gravity = CGVector(dx: 0, dy: -14)
@@ -226,7 +226,7 @@ final class DeviceNameScene: BaseLevelScene, SKPhysicsContactDelegate {
     }
 
     private func setupLevelTitle() {
-        let title = SKLabelNode(text: "LEVEL 23")
+        let title = SKLabelNode(text: "LEVEL 21")
         title.fontName = VisualConstants.Fonts.display
         title.fontSize = 28
         title.fontColor = strokeColor

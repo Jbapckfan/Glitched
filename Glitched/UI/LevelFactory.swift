@@ -27,9 +27,9 @@ enum LevelFactory {
         case (.world1, 8):
             scene = DarkModeScene(size: size)
         case (.world1, 9):
-            scene = OrientationScene(size: size)
-        case (.world1, 10):
             scene = TimeTravelScene(size: size)
+        case (.world1, 10):
+            scene = OrientationScene(size: size)
 
         // World 2: Control Surface
         case (.world2, 11):
@@ -55,11 +55,11 @@ enum LevelFactory {
 
         // World 3: Data Corruption
         case (.world3, 21):
-            scene = VoiceCommandScene(size: size)
-        case (.world3, 22):
-            scene = BatteryPercentScene(size: size)
-        case (.world3, 23):
             scene = DeviceNameScene(size: size)
+        case (.world3, 22):
+            scene = VoiceCommandScene(size: size)
+        case (.world3, 23):
+            scene = BatteryPercentScene(size: size)
         case (.world3, 24):
             scene = StorageSpaceScene(size: size)
         case (.world3, 25):

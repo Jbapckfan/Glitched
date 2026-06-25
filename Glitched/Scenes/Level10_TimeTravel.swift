@@ -92,7 +92,7 @@ final class TimeTravelScene: BaseLevelScene, SKPhysicsContactDelegate {
     // MARK: - Configuration
 
     override func configureScene() {
-        levelID = LevelID(world: .world1, index: 10)
+        levelID = LevelID(world: .world1, index: 9)
         backgroundColor = fillColor
 
         physicsWorld.gravity = CGVector(dx: 0, dy: -14)
@@ -243,7 +243,7 @@ final class TimeTravelScene: BaseLevelScene, SKPhysicsContactDelegate {
     private var titleUnderline: SKShapeNode?
 
     private func setupLevelTitle() {
-        let title = SKLabelNode(text: "LEVEL 10")
+        let title = SKLabelNode(text: "LEVEL 9")
         title.fontName = VisualConstants.Fonts.display
         title.fontSize = 28
         title.fontColor = strokeColor

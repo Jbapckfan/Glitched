@@ -96,7 +96,7 @@ If you're stuck on any level for 30+ seconds, a hint will appear at the bottom o
 
 ---
 
-### Level 9 — Orientation
+### Level 10 — Orientation
 **Mechanic:** Device rotation (portrait vs. landscape)
 **Objective:** Rotate your phone to landscape to widen a narrow corridor and escape a crusher wall.
 **How to solve:** A massive crusher wall (complete with skull decoration and grinding teeth) slowly advances from the left. A narrow corridor blocks your path -- in portrait mode the gap is only 18 points wide, but your character is 22 points wide, making it impossible to pass. Rotate your phone to landscape mode and the corridor gap widens to 100 points, letting you squeeze through and reach the exit.
@@ -105,7 +105,7 @@ If you're stuck on any level for 30+ seconds, a hint will appear at the bottom o
 
 ---
 
-### Level 10 — Time Travel
+### Level 9 — Time Travel
 **Mechanic:** App backgrounding (pressing Home / swiping up)
 **Objective:** Grow a sapling into a mature tree by letting time pass while the app is backgrounded.
 **How to solve:** A small sapling blocks a gap. The instruction panel says "LEAVE APP" and "WAIT 5 SEC" then "RETURN." Press the Home button (or swipe up) to background the app, wait at least 5 seconds, then return. Time passes at 2x rate while you're away, and the tree grows through stages: sapling, young tree, mature tree, ancient tree. Once it's fully grown, it creates a physical bridge you can walk across to reach the exit. The tree needs about 10 "game years" (approximately 5 real seconds away).
@@ -207,7 +207,7 @@ Toggle Low Power Mode on and off as needed for each section.
 
 ## World 3: Data Corruption
 
-### Level 21 — Voice Command
+### Level 22 — Voice Command
 **Mechanic:** Voice/speech recognition
 **Objective:** Speak specific commands to manipulate the game world.
 **How to solve:** Three obstacles require three different voice commands:
@@ -221,7 +221,7 @@ Hint labels near each puzzle show which command to say. Speak clearly into your 
 
 ---
 
-### Level 22 — Battery Percentage
+### Level 23 — Battery Percentage
 **Mechanic:** Battery level reading
 **Objective:** Discover that the real exit is hidden below platform 5, reachable only at lower battery.
 **How to solve:** 10 stepping stones span a chasm, but their visibility depends on your battery percentage. At 100% all 10 are visible, leading to a FAKE exit on the far right. The real exit is hidden BELOW stepping stone #5, only reachable when platforms 6-10 vanish (battery under 60%). The trick: follow the obvious path to discover the fake exit is a dead end, then realize you need fewer platforms to reveal the gap that leads down to the real exit.
@@ -229,7 +229,7 @@ Hint labels near each puzzle show which command to say. Speak clearly into your 
 
 ---
 
-### Level 23 — Device Name
+### Level 21 — Device Name
 **Mechanic:** Device name reading (Settings > General > About > Name)
 **Objective:** Prove you're the real player, not the doppelganger.
 **How to solve:** The game reads your device's owner name and addresses you personally. A name-labeled door displays your device name and opens when you approach (it recognizes you). A doppelganger NPC (a mirror copy of your character) follows a preset path through the level. The exit door only opens for the "real" player -- you must reach it while the doppelganger is elsewhere. The doppelganger cannot open the name door.

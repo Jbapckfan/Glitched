@@ -262,7 +262,7 @@ final class OrientationScene: BaseLevelScene, SKPhysicsContactDelegate {
     // MARK: - Configuration
 
     override func configureScene() {
-        levelID = LevelID(world: .world1, index: 9)
+        levelID = LevelID(world: .world1, index: 10)
         backgroundColor = fillColor
 
         physicsWorld.gravity = CGVector(dx: 0, dy: -14)
@@ -507,7 +507,7 @@ final class OrientationScene: BaseLevelScene, SKPhysicsContactDelegate {
     }
 
     private func setupLevelTitle() {
-        let title = SKLabelNode(text: "LEVEL 9")
+        let title = SKLabelNode(text: "LEVEL 10")
         title.fontName = VisualConstants.Fonts.display
         title.fontSize = 28
         title.fontColor = strokeColor
