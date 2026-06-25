@@ -845,10 +845,38 @@ final class DeviceNameScene: BaseLevelScene, SKPhysicsContactDelegate {
         instruction.fontSize = 11
         instruction.fontColor = strokeColor
         instruction.horizontalAlignmentMode = .center
-        instruction.position = CGPoint(x: size.width / 2, y: topSafeY - 64)
         instruction.zPosition = 200
         instruction.alpha = 0
-        addChild(instruction)
+        // HUD-OVERLAP FIX (iPad PAUSE-zone): on iPhone this label is scene-anchored
+        // top-center and never scrolls (single screen) — UNCHANGED. On the iPad
+        // (isWideCanvas) path the camera pans HORIZONTALLY (installCameraFollow), so a
+        // scene-space top-center anchor DRIFTS across the viewport as the climb scrolls
+        // and at some camera offsets the right end of this centered label runs into the
+        // top-RIGHT reserved PAUSE square (HUDZones.pauseReservedZone ~88pt at the
+        // trailing safe area). Fix: parent it to the camera in camera-local coords so it
+        // stays pinned to the viewport top band wherever the course has scrolled, and
+        // explicitly clamp its center so the label's right edge stays inboard of the
+        // PAUSE column AND the screen edge. Same camera-pinned top-band treatment the
+        // sibling iPad levels use. Text + the device mechanic are unchanged.
+        if isWideCanvas, let cam = gameCamera {
+            // Approx half-width of the centered label at Menlo-Bold 11 (28 glyphs).
+            let halfWidth: CGFloat = 95
+            // Left boundary (viewport-x) of the reserved top-right PAUSE column.
+            let pauseLeftX = size.width / 2
+                - safeAreaInsets.right
+                - HUDZones.pauseTrailingInset
+                - HUDZones.pauseReservedZone
+            // Keep the right edge inboard of BOTH the PAUSE column and the screen edge.
+            let rightLimit = min(pauseLeftX, size.width / 2 - safeAreaInsets.right - 12)
+            // Center so right edge == rightLimit at most; never push past the title at left.
+            let leftLimit = -size.width / 2 + safeAreaInsets.left + HUDZones.titleLeadingInset + halfWidth
+            let centerX = max(leftLimit, min(0, rightLimit - halfWidth))
+            instruction.position = CGPoint(x: centerX, y: size.height / 2 - 64)
+            cam.addChild(instruction)
+        } else {
+            instruction.position = CGPoint(x: size.width / 2, y: topSafeY - 64)
+            addChild(instruction)
+        }
         instruction.run(.sequence([
             .fadeIn(withDuration: 0.4),
             .wait(forDuration: 5.0),
@@ -1019,6 +1047,11 @@ final class DeviceNameScene: BaseLevelScene, SKPhysicsContactDelegate {
     private func handleDeath() {
         guard GameState.shared.levelState == .playing else { return }
         playerController.cancel()
+        // Surface the device-name hint after repeated deaths (matches L22/L3):
+        // notePlayerStruggle feeds the shared difficulty-hint timer, so the
+        // "Your device knows your name..." hintText appears when the player keeps
+        // dying instead of staying buried.
+        notePlayerStruggle()
         bit.playBufferDeath(respawnAt: spawnPoint) { [weak self] in self?.bit.setGrounded(true) }
     }
 

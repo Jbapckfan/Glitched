@@ -762,27 +762,22 @@ final class StaticScene: BaseLevelScene, SKPhysicsContactDelegate {
         badge.zPosition = 30
         badge.position = CGPoint(x: 0, y: 34 * visualScale)
 
-        let plate = SKShapeNode(rectOf: CGSize(width: 86 * visualScale, height: 34 * visualScale), cornerRadius: 4 * visualScale)
+        // Plate widened (86 -> 156) so the longer single atmospheric line fits on
+        // one row without clipping; height tightened to match the now single-line label.
+        let plate = SKShapeNode(rectOf: CGSize(width: 156 * visualScale, height: 24 * visualScale), cornerRadius: 4 * visualScale)
         plate.fillColor = fillColor
         plate.strokeColor = strokeColor
         plate.lineWidth = lineWidth * 0.8
         badge.addChild(plate)
 
-        let top = SKLabelNode(text: "INVERSE")
+        let top = SKLabelNode(text: "THIS ONE LISTENS DIFFERENTLY.")
         top.fontName = "Menlo-Bold"
-        top.fontSize = 9 * visualScale
+        top.fontSize = 7 * visualScale
         top.fontColor = strokeColor
         top.verticalAlignmentMode = .center
-        top.position = CGPoint(x: 0, y: 8 * visualScale)
+        top.horizontalAlignmentMode = .center
+        top.position = CGPoint(x: 0, y: 0)
         badge.addChild(top)
-
-        let bottom = SKLabelNode(text: "QUIET = SAFE")
-        bottom.fontName = "Menlo"
-        bottom.fontSize = 8 * visualScale
-        bottom.fontColor = strokeColor
-        bottom.verticalAlignmentMode = .center
-        bottom.position = CGPoint(x: 0, y: -7 * visualScale)
-        badge.addChild(bottom)
 
         // Gentle pulse to draw the eye to the rule reversal.
         badge.run(.repeatForever(.sequence([
@@ -1278,7 +1273,7 @@ final class StaticScene: BaseLevelScene, SKPhysicsContactDelegate {
         // CHARM: the old hint ("noise = shield") was actively LETHAL at the 4th
         // barrier, which is INVERSE — there, noise arms the laser and silence
         // clears it. Teach both halves so the hint never kills the player.
-        return "Noise blocks the first lasers. The dashed 4th is INVERSE — go QUIET to pass it."
+        return "The first three lasers die when you make noise — but the dashed 4th is wired backwards: noise ARMS it. Hold your breath and let the room go SILENT to cross the last barrier."
     }
 
     // MARK: - Cleanup

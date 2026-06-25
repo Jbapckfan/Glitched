@@ -606,7 +606,10 @@ final class TimeOfDayScene: BaseLevelScene, SKPhysicsContactDelegate {
         panel.zPosition = 300
         addChild(panel)
 
-        let bg = SKShapeNode(rectOf: CGSize(width: 300, height: 76), cornerRadius: 8)
+        // Box widened to 340 so the longer atmospheric clue (~52 chars at Menlo 9
+        // ≈ 281pt) clears the inner padding without clipping. Top edge stays below
+        // the pause band (half-height still 38 at the unchanged center).
+        let bg = SKShapeNode(rectOf: CGSize(width: 340, height: 76), cornerRadius: 8)
         bg.fillColor = fillColor
         bg.strokeColor = strokeColor
         panel.addChild(bg)
@@ -618,7 +621,7 @@ final class TimeOfDayScene: BaseLevelScene, SKPhysicsContactDelegate {
         text1.position = CGPoint(x: 0, y: 12)
         panel.addChild(text1)
 
-        let text2 = SKLabelNode(text: "TAP CYCLE TIME TO SLEEP THE ENEMIES")
+        let text2 = SKLabelNode(text: "SOMETHING GUARDS THAT LEDGE. IT WON'T ALWAYS BE WATCHING.")
         text2.fontName = "Menlo"
         text2.fontSize = 9
         text2.fontColor = strokeColor
@@ -891,6 +894,11 @@ final class TimeOfDayScene: BaseLevelScene, SKPhysicsContactDelegate {
     }
 
     private func cycleTimeOverride() {
+        // Engaging the time mechanic is the key forward-progress moment this level
+        // teaches — reset the stall/struggle timer so the hint doesn't fire after
+        // the player has clearly understood and started using CYCLE TIME.
+        notePlayerProgress()
+
         let modes: [TimeMode] = [.day, .night, .secret]
         toggleIndex = (toggleIndex + 1) % modes.count
         overrideMode = modes[toggleIndex]
@@ -990,6 +998,8 @@ final class TimeOfDayScene: BaseLevelScene, SKPhysicsContactDelegate {
 
     private func handleDeath() {
         guard GameState.shared.levelState == .playing else { return }
+        // Repeated deaths escalate the progressive hint reveal.
+        notePlayerStruggle()
         playerController.cancel()
         bit.playBufferDeath(respawnAt: spawnPoint) { [weak self] in self?.bit.setGrounded(true) }
     }
@@ -1005,7 +1015,7 @@ final class TimeOfDayScene: BaseLevelScene, SKPhysicsContactDelegate {
     }
 
     override func hintText() -> String? {
-        return "The level changes based on the time of day"
+        return "The guard on that ledge only moves in daylight. Tap CYCLE TIME until it reads NIGHT, then cross while it sleeps."
     }
 
     override func willMove(from view: SKView) {

@@ -173,22 +173,14 @@ final class MetaFinaleScene: BaseLevelScene, SKPhysicsContactDelegate {
                 .run { [weak self] in
                     guard let self = self else { return }
 
-                    let label = SKLabelNode(fontNamed: "Menlo-Bold")
-                    label.text = warning
-                    label.fontSize = index == 0 ? 32 : 14
-                    label.fontColor = index == 0 ? .red : .white
-                    label.position = CGPoint(x: self.size.width / 2, y: self.size.height / 2)
-                    label.zPosition = 1000
-                    label.alpha = 0
-                    self.addChild(label)
-
-                    // Glitch in
-                    label.run(.sequence([
-                        .fadeIn(withDuration: 0.1),
-                        .wait(forDuration: 0.8),
-                        .fadeOut(withDuration: 0.2),
-                        .removeFromParent()
-                    ]))
+                    // VOICE CONSISTENCY: these are boss-tier fourth-wall purge
+                    // threats ("SYSTEM PURGE", "CORRUPTION LEVEL: TERMINAL", …).
+                    // Route them through the shared narrator in the reserved
+                    // lower-center band instead of ad-hoc center-screen labels so
+                    // the OS's voice reads identically to every other boss beat.
+                    // Each call cleanly replaces the prior line, so the staggered
+                    // 1.2s cadence below still flickers them up one at a time.
+                    GlitchedNarrator.present(warning, in: self, style: .boss)
 
                     // Sound and haptic for each
                     AudioManager.shared.playBeep(frequency: Float(400 + index * 100), duration: 0.1, volume: 0.3)
@@ -216,6 +208,10 @@ final class MetaFinaleScene: BaseLevelScene, SKPhysicsContactDelegate {
         // Flash to white
         JuiceManager.shared.flash(color: .white, duration: 0.3)
         backgroundColor = fillColor
+
+        // The intro purge-threat lines are spoken through the narrator; clear any
+        // lingering one as the level reveals so it doesn't hold over the gameplay.
+        GlitchedNarrator.dismiss(in: self)
 
         // Setup everything
         setupBackground()
@@ -613,7 +609,7 @@ final class MetaFinaleScene: BaseLevelScene, SKPhysicsContactDelegate {
         // Bit, so a fixed scene-space x would drift off-screen — anchor both to the
         // camera (camera-local coords) so they stay pinned near the bottom-center of
         // the viewport throughout the climb.
-        hintLabel = SKLabelNode(text: "WALK INTO THE CORRUPTION TO PURGE IT")
+        hintLabel = SKLabelNode(text: "IT WANTS YOU TO TURN BACK. EVERYTHING DOES.")
         hintLabel.fontName = "Menlo"
         hintLabel.fontSize = 9
         hintLabel.fontColor = strokeColor
@@ -621,7 +617,7 @@ final class MetaFinaleScene: BaseLevelScene, SKPhysicsContactDelegate {
         hintLabel.zPosition = 100
 
         // Progress saved indicator
-        progressSavedLabel = SKLabelNode(text: "TOUCH THE WALL TO BEGIN PURGE")
+        progressSavedLabel = SKLabelNode(text: "ERR:0x4F21 // SECTOR UNREADABLE")
         progressSavedLabel.fontName = "Menlo"
         progressSavedLabel.fontSize = 10
         progressSavedLabel.fontColor = strokeColor
@@ -702,7 +698,7 @@ final class MetaFinaleScene: BaseLevelScene, SKPhysicsContactDelegate {
             addChild(panel)
         }
 
-        let bg = SKShapeNode(rectOf: CGSize(width: 280, height: 100), cornerRadius: 8)
+        let bg = SKShapeNode(rectOf: CGSize(width: 320, height: 100), cornerRadius: 8)
         bg.fillColor = fillColor
         bg.strokeColor = strokeColor
         panel.addChild(bg)
@@ -721,14 +717,14 @@ final class MetaFinaleScene: BaseLevelScene, SKPhysicsContactDelegate {
         text2.position = CGPoint(x: 0, y: 5)
         panel.addChild(text2)
 
-        let text3 = SKLabelNode(text: "WALK INTO IT TO PURGE THE CORRUPTION")
+        let text3 = SKLabelNode(text: "IT WANTS YOU TO TURN BACK. EVERYTHING DOES.")
         text3.fontName = "Menlo"
         text3.fontSize = 10
         text3.fontColor = strokeColor
         text3.position = CGPoint(x: 0, y: -15)
         panel.addChild(text3)
 
-        let text4 = SKLabelNode(text: "(YOUR PROGRESS SURVIVES THE PURGE)")
+        let text4 = SKLabelNode(text: "(NOTHING TRUE IS EVER LOST)")
         text4.fontName = "Menlo"
         text4.fontSize = 8
         text4.fontColor = strokeColor
@@ -740,7 +736,7 @@ final class MetaFinaleScene: BaseLevelScene, SKPhysicsContactDelegate {
 
         // A11Y: the gate instruction is purely visual (pulsing label + timed panel).
         // Speak it once so VoiceOver users get the actionable objective.
-        announceObjective("Corrupted data blocks the exit. Walk into the corruption to purge it. Your progress survives the purge.")
+        announceObjective("The corruption gate. Corrupted data blocks the exit. It wants you to turn back. Everything does.")
     }
 
     private func setupBit() {
@@ -883,6 +879,10 @@ final class MetaFinaleScene: BaseLevelScene, SKPhysicsContactDelegate {
     private func clearCorruption() {
         guard !isCleared else { return }
         isCleared = true
+
+        // PROGRESSIVE HINT: purging the gate is the level's decisive forward-progress
+        // beat — reset the struggle/stall counters so the earned hint won't re-fire.
+        notePlayerProgress()
 
         // EPIC CORRUPTION CLEAR SEQUENCE
 
@@ -1154,6 +1154,9 @@ final class MetaFinaleScene: BaseLevelScene, SKPhysicsContactDelegate {
 
     private func handleDeath() {
         guard GameState.shared.levelState == .playing else { return }
+        // PROGRESSIVE HINT: each death is a struggle signal. Repeated failure
+        // escalates toward the earned hintText() reveal.
+        notePlayerStruggle()
         playerController?.cancel()
         bit.playBufferDeath(respawnAt: spawnPoint) { [weak self] in self?.bit.setGrounded(true) }
     }
@@ -1174,7 +1177,7 @@ final class MetaFinaleScene: BaseLevelScene, SKPhysicsContactDelegate {
     }
 
     override func hintText() -> String? {
-        return "Some things must be destroyed to be rebuilt..."
+        return "There is no path around the corruption. Stop trying to avoid it — hold toward the wall and push Bit INTO the blocks. The contact is the purge."
     }
 
     override func willMove(from view: SKView) {

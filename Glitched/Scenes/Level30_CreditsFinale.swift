@@ -19,7 +19,10 @@ final class CreditsFinaleScene: BaseLevelScene, SKPhysicsContactDelegate {
 
     // Credits data
     private let credits: [(role: String, name: String)] = [
-        ("CREATED BY", "A GLITCHED PRODUCTION"),
+        // Shortened from "A GLITCHED PRODUCTION": the 10pt Menlo-Bold nameLabel
+        // overflowed the ~110pt zigzag rung and clipped to "GLITCHED PRODUCTIO".
+        // Dropping the leading "A " keeps the credit reading while fitting the box.
+        ("CREATED BY", "GLITCHED PRODUCTION"),
         ("DESIGNED BY", "THE FOURTH WALL"),
         ("PROGRAMMED BY", "ONES AND ZEROS"),
         ("MUSIC BY", "YOUR IMAGINATION"),
@@ -180,7 +183,17 @@ final class CreditsFinaleScene: BaseLevelScene, SKPhysicsContactDelegate {
             let x = size.width / 2 + xOffset
             let y = startY + CGFloat(i + 1) * verticalSpacing
 
-            createCreditPlatform(at: CGPoint(x: x, y: y), role: credit.role, name: credit.name, width: platformWidth)
+            // BOX-WIDTH FIX (this rung only): "GLITCHED PRODUCTION" (credits[0], the
+            // 19-char 10pt Menlo-Bold name) overflows the default 110pt rung box on
+            // iPhone — its border cuts through "...TION". Widen JUST this credit's box
+            // to centeredWidth (150) so the word fits inside the border. This is the
+            // LEFT-column rung (i=0 -> xOffset -30, iPhone 390 center 165), so the 150pt
+            // box spans x[90,240]; right edge 240 < pause-left 290 -> still clears the
+            // top-right pause column. No zigzag/rise/gap change; every other rung keeps
+            // platformWidth (110). Same code path on iPad, where boxes are already wide.
+            let rungWidth: CGFloat = (i == 0) ? centeredWidth : platformWidth
+
+            createCreditPlatform(at: CGPoint(x: x, y: y), role: credit.role, name: credit.name, width: rungWidth)
         }
 
         // "THANK YOU FOR PLAYING" platform at the top with exit
@@ -836,8 +849,11 @@ final class CreditsFinaleScene: BaseLevelScene, SKPhysicsContactDelegate {
             ]))
         }
 
-        // Mark game as complete
-        UserDefaults.standard.set(true, forKey: "glitched_game_complete")
+        // FAKE-OUT FRAMING: L30's credits are a DELIBERATE bait ending — World 5
+        // (L31-33) rips it back. The real `glitched_game_complete` flag is owned by
+        // the TRUE finale (L33), not here. We only record that the player reached the
+        // credits fake-out so downstream beats can react to it.
+        UserDefaults.standard.set(true, forKey: "glitched_reached_credits")
     }
 
     private func returnToBoot() {
@@ -899,6 +915,11 @@ final class CreditsFinaleScene: BaseLevelScene, SKPhysicsContactDelegate {
 
     private func handleDeath() {
         guard GameState.shared.levelState == .playing else { return }
+
+        // PROGRESSIVE-HINT SAFETY NET: count this failure so repeated deaths
+        // escalate toward the earned hintText() — matches every sibling scene's
+        // death wiring (this was the only level missing the call).
+        notePlayerStruggle()
         playerController.cancel()
 
         // Snap the camera (and its tracked death zone) back to the spawn level so the
@@ -924,7 +945,7 @@ final class CreditsFinaleScene: BaseLevelScene, SKPhysicsContactDelegate {
     }
 
     override func hintText() -> String? {
-        return "Walk across the credits — watch for bugs!"
+        return "Climb the credits — watch for bugs!"
     }
 
     override func willMove(from view: SKView) {

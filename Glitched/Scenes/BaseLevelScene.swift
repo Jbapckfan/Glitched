@@ -202,6 +202,16 @@ class BaseLevelScene: SKScene {
         let extended = ProgressManager.shared.load().settings.extendedHintTimers
         return extended ? baseNoProgressHintDelay * 1.75 : baseNoProgressHintDelay
     }
+    // NO-PROGRESS HINT SAFETY-NET: wall-clock timestamp of the last forward
+    // progress (or play start). Drives a time-based fallback so EVERY level can
+    // escalate a hint for a stuck player, even the 27/33 that never call
+    // notePlayerStruggle(). Reset in notePlayerProgress() and at play start.
+    private var lastProgressAt: Date?
+    private let baseNoProgressFallbackDelay: TimeInterval = 22.0
+    private var noProgressFallbackDelay: TimeInterval {
+        let extended = ProgressManager.shared.load().settings.extendedHintTimers
+        return extended ? baseNoProgressFallbackDelay * 1.75 : baseNoProgressFallbackDelay
+    }
     private var struggleCount = 0
     private var hintShown = false
     private var playStartedAt: Date?
@@ -475,6 +485,9 @@ class BaseLevelScene: SKScene {
     func startPlay() {
         isPaused = false
         playStartedAt = Date()
+        // NO-PROGRESS HINT SAFETY-NET: seed the fallback clock at play start so a
+        // player who never makes progress still gets a hint after the timeout.
+        lastProgressAt = Date()
         // Keep the screen awake during active gameplay (SKScene lifecycle runs
         // on the main thread). Reset in willMove(from:) so we never leave the
         // idle timer disabled after leaving a level.
@@ -692,6 +705,18 @@ class BaseLevelScene: SKScene {
             showDifficultyHintIfNeeded()
         }
 
+        // NO-PROGRESS HINT SAFETY-NET: wall-clock fallback so EVERY level escalates
+        // a hint for a stuck player even if it never calls notePlayerStruggle().
+        // Fires once, only while .playing and before any hint has shown, after the
+        // player has gone ~22s (longer with extendedHintTimers) since the last
+        // forward progress / struggle reset. The struggle-count path above still
+        // fires FASTER (8s) on repeated death.
+        if !hintShown,
+           let lastProgressAt,
+           Date().timeIntervalSince(lastProgressAt) >= noProgressFallbackDelay {
+            showDifficultyHintIfNeeded()
+        }
+
         updatePlaying(deltaTime: clampedDt)
 
         // Tick the shared horizontal camera-follow (no-op unless the level called
@@ -709,6 +734,9 @@ class BaseLevelScene: SKScene {
 
     func notePlayerProgress() {
         noProgressTimer = 0
+        // NO-PROGRESS HINT SAFETY-NET: stamp the last forward-progress moment so
+        // the time-based fallback measures elapsed stall time from here.
+        lastProgressAt = Date()
         struggleCount = 0
         hintShown = false
     }

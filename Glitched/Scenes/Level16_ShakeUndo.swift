@@ -628,9 +628,10 @@ final class ShakeUndoScene: BaseLevelScene, SKPhysicsContactDelegate {
         bg.strokeColor = strokeColor
         panel.addChild(bg)
 
-        // ACTIONABLE instruction (added): tells the player the core verb up front,
-        // while the two atmospheric lines below preserve the level's voice.
-        let instruction = SKLabelNode(text: "SHAKE TO REWIND TIME")
+        // ATMOSPHERIC clue line: replaces the old explicit "SHAKE TO REWIND TIME"
+        // verb-instruction. The mechanic is now discovered via play + the earned hint;
+        // the three lines together carry the level's voice without spelling out the verb.
+        let instruction = SKLabelNode(text: "REGRET HAS A GRIP. USE IT.")
         instruction.fontName = "Menlo-Bold"
         instruction.fontSize = 11
         instruction.fontColor = strokeColor
@@ -653,8 +654,9 @@ final class ShakeUndoScene: BaseLevelScene, SKPhysicsContactDelegate {
 
         // Accessibility: speak the panel so the clue reaches VoiceOver (matches the
         // pattern documented on announceObjective — subclasses with their own clue
-        // labels should announce the same text). Lead with the actionable verb.
-        announceObjective("Shake to rewind time. Mistakes can be unmade, but not forever.")
+        // labels should announce the same text). Mirrors the atmospheric clue lines
+        // verbatim (no explicit verb — the mechanic is earned via the hint).
+        announceObjective("Mistakes can be unmade, but not forever. Regret has a grip. Use it.")
 
         panel.run(.sequence([.wait(forDuration: 5), .fadeOut(withDuration: 0.5), .removeFromParent()]))
     }
@@ -815,6 +817,11 @@ final class ShakeUndoScene: BaseLevelScene, SKPhysicsContactDelegate {
         exitBody.physicsBody?.categoryBitMask = PhysicsCategory.exit
         exitFrame.run(.fadeAlpha(to: 1.0, duration: 0.3))
         JuiceManager.shared.flash(color: .white, duration: 0.2)
+
+        // Progressive-hint wiring: repairing the trap via undo is the clear
+        // forward-progress moment (the player has discovered + used the core
+        // mechanic and the exit is now reachable) — reset the struggle/hint timer.
+        notePlayerProgress()
     }
 
     private func recordPosition() {
@@ -1072,6 +1079,9 @@ final class ShakeUndoScene: BaseLevelScene, SKPhysicsContactDelegate {
 
     private func handleDeath() {
         guard GameState.shared.levelState == .playing else { return }
+        // Progressive-hint wiring: each death is a failure beat — note the struggle so
+        // repeated deaths escalate toward the earned hintText() reveal.
+        notePlayerStruggle()
         playerController.cancel()
         // If the player fell during the trap's fuse (before disarming it), reset the
         // rotten platform to its pristine, solid state so the respawned run re-meets
@@ -1121,7 +1131,7 @@ final class ShakeUndoScene: BaseLevelScene, SKPhysicsContactDelegate {
     }
 
     override func hintText() -> String? {
-        return "Shake your device to rewind time"
+        return "Shake the device to rewind the last 3 seconds — the undo counter (top-left) shows how many rewinds you have left."
     }
 
     override func willMove(from view: SKView) {

@@ -228,20 +228,25 @@ final class LocaleScene: BaseLevelScene, SKPhysicsContactDelegate {
 
     // MARK: - iPad layout (HAND-COMPOSED, native — a FULL-HEIGHT vertical climb)
     //
-    // VERTICAL-FILL + ANTI-LADDER + CAMERA REWORK (L26-locale): the prior iPad pass
+    // VERTICAL-FILL + COMPACT-WIDTH + CAMERA REWORK (L26-locale): an earlier iPad pass
     // hardcoded tiers=6, so verticalTier clamped each step to 85pt and the FINALE
-    // landed at tier 5 ≈ 39% screen height — the top ~58% of the tall canvas was
-    // DEAD SKY. Worse, composedWorldWidth (=960) was NARROWER than the iPad viewport
-    // (1024), so installCameraFollow's clamp pinned the camera to a fixed center and
-    // never scrolled — the whole course crammed into one screen. This rebuild:
-    //   • sizes the tier budget with fillTierCount(iphoneGround:) so the REVEAL
-    //     staircase + exit reach playableCeilingY (no dead sky); ~14 tiers on iPad.
-    //   • replaces the even straight diagonal "ladder" with a HAND-COMPOSED rhythm:
-    //     varied widths (70..180), flat same-tier RUNS (rests), an occasional
-    //     down-step, a true PEAK that stands apart, asymmetric (non-alternating) X,
-    //     and a teach -> cluster -> rest -> traverse -> PEAK -> finale arc.
-    //   • widens the course to ~1.8x the viewport so installCameraFollow genuinely
-    //     follows and scrolls (worldWidth >> size.width).
+    // landed at tier 5 ≈ 39% screen height — the top ~58% of the tall canvas was DEAD
+    // SKY (and composedWorldWidth=960 < the 1024 viewport collapsed the camera). The
+    // tier budget was then fixed via fillTierCount (~14 tiers reach the ceiling), but
+    // the REVEAL staircase was WALKED MONOTONICALLY rightward (~150-195pt of X per +1
+    // tier), so the course ballooned to ~3000pt — ~3x the 1024 viewport. Each ~1024pt
+    // slice then showed only the low tiers under a vast empty sky (~46% dead) and the
+    // exit scrolled off-right. This pass keeps the full-height tier budget but makes
+    // the VERTICAL axis dominant so the world is COMPACT:
+    //   • the REVEAL staircase is a SWITCHBACK (two alternating columns ±sep/2 about a
+    //     slowly-creeping center), so it climbs ~14 tiers within ONE viewport-width
+    //     column — net horizontal travel is tiny.
+    //   • inter-stair X gaps are cut toward the minimum and stair widths trimmed (80),
+    //     and the WRONG cluster + PEAK advance only ~95pt past w3 (down from ~290pt).
+    //   • composedWorldWidth drops to ~1.2-1.5x the viewport (~1274pt on a 12.9"): a
+    //     single launch-frame viewport spans playableGroundY..playableCeilingY with
+    //     real content, yet the world is still wider than the screen so the camera
+    //     genuinely SCROLLS (never the sub-viewport collapse the old 960 width hit).
     // The signature locale dual-route trap is preserved verbatim: both layouts
     // populate the SAME wrongPlatforms / hiddenPlatforms / signLabels arrays, so
     // unscrambleWorld() / rescrambleWorld() / rescrambleTextOnly() work unchanged.
@@ -250,10 +255,10 @@ final class LocaleScene: BaseLevelScene, SKPhysicsContactDelegate {
     // verticalTier clamps the per-tier rise to maxJumpableRise (85). The route is
     // authored so EVERY playable leg rises by AT MOST ONE tier (≤85pt) and spans a
     // gap ≤ maxJumpableGap (130). The trap is geometric: while scrambled, the wrong
-    // route's PEAK and the rest pad are separated from the exit by a wide multi-tier
+    // route's PEAK and the rest pad are separated from the exit by a tall multi-tier
     // void that no single jump can clear; only the REVEALED hidden staircase bridges
-    // it. Beats are spread across the FULL course WIDTH (asymmetric X) AND the full
-    // HEIGHT — not a centered ladder.
+    // it. Beats are spread across the full HEIGHT (the dominant axis) and a COMPACT
+    // width — a switchback column, not a wide diagonal ladder.
     //
     // BEAT ARC (the SCRAMBLED lure vs the REVEALED solve):
     //   TEACH (T0)          — wide spawn pad on the floor + first scrambled sign.
@@ -261,21 +266,23 @@ final class LocaleScene: BaseLevelScene, SKPhysicsContactDelegate {
     //                          HIDDEN correct alt (h1) at the same low rung.
     //   CLUSTER (T1..T3)    — the wrong route bunches w1/w2/w3 (a 3-pad cluster) then a
     //                          GAP, luring the player up.
-    //   PEAK (high)         — wend: a true narrow dead-end PEAK that stands APART (a
-    //                          wide un-jumpable gap past w3). The visible climb ends here.
+    //   PEAK (high)         — wend: a true narrow dead-end PEAK that stands APART —
+    //                          only ~95pt past w3 horizontally (course stays compact)
+    //                          but MANY tiers above it, an un-jumpable RISE. Dead-end.
     //   REST (T2, low)      — a WIDE flat rest pad just past the fork: the breath +
-    //                          revert clue. Reachable while scrambled (off the cluster),
-    //                          but a HUGE void separates it from the exit.
+    //                          revert clue. Reachable while scrambled (a +1-tier hop off
+    //                          the fork), but a HUGE void separates it from the exit.
     //   TRAVERSE/REVEAL     — changing the device language reveals the hidden staircase
-    //                          (a down-step off the rest for rhythm, then a steady
-    //                          single-tier climb with varied widths) that bridges the
-    //                          void from the rest all the way up to the exit.
+    //                          (a down-step off the rest for rhythm, then a SWITCHBACK
+    //                          single-tier climb in two columns) that bridges the void
+    //                          from the rest all the way up to the exit.
     //   FINALE/EXIT (top)   — exit plateau + door at the CEILING tier.
     //
     // The whole course is authored adaptively from the runtime `tiers` count, so the
     // climb always SPANS floor..ceiling no matter the iPad size and never strands the
-    // top as dead sky. Hidden-staircase X positions are WALKED (each platform placed a
-    // safe gap past the previous) so every reveal leg is gap≤130 / rise≤1 tier.
+    // top as dead sky. Switchback X positions alternate two columns ±sep/2 about a
+    // slowly-creeping center, so each reveal leg is gap≤130 / rise≤1 tier while the
+    // course width stays ~1.2-1.5x the viewport (not ~3x).
     private func buildComposedIPadLevel() {
         // Vertical fill: floor near the BOTTOM; the route climbs the FULL band.
         let groundY = playableGroundY(iphoneGround: 160)
@@ -293,23 +300,29 @@ final class LocaleScene: BaseLevelScene, SKPhysicsContactDelegate {
         let h: CGFloat = 28
         let lm: CGFloat = 90   // left margin
 
+        // Wrong-route pad widths (kept narrow so the CLUSTER advances little
+        // horizontally — see the compact-world note above buildComposedIPadLevel).
+        let w1w: CGFloat = 80, w2w: CGFloat = 70, w3w: CGFloat = 90, wendw: CGFloat = 70
+
         // ---- SPAWN (always-solid spine, T0, wide TEACH pad) ----
-        let spawnW: CGFloat = 180
+        let spawnW: CGFloat = 150
         let spawnX = lm + 0
         createPlatform(at: CGPoint(x: spawnX, y: tierY(0)), size: CGSize(width: spawnW, height: h))
 
         // ---- WRONG route (VISIBLE, scrambled): a climbable CLUSTER that dead-ends ----
         // spawn -> w1(T1) -> w2(T2) -> w3(T3) is a tight 3-pad cluster (each leg gap≤130,
-        // +1 tier), luring the player up. Then wend is a true PEAK that stands APART:
-        // a ~200pt gap past w3 (far beyond the 130 reach) AND several tiers higher, so
-        // the visible route DEAD-ENDS — the peak itself is unreachable while scrambled
-        // and leads nowhere. Widths vary (70..110); X is asymmetric (no strict L/R).
-        let w1x = spawnX + spawnW / 2 + 80 + 45
+        // +1 tier), luring the player up. Then wend is a true PEAK that stands APART —
+        // its dead-end is now ENFORCED VERTICALLY, not horizontally: a modest ~95pt X
+        // gap past w3 keeps the course COMPACT (the old ~290pt advance ballooned the
+        // world to ~3x the viewport), while the peak sits MANY tiers higher (peakTier
+        // ≈ topTier-2 ≈ +600pt above w3) — a rise no single jump can clear, so the
+        // visible route still DEAD-ENDS. X is asymmetric (no strict L/R); widths 70..90.
+        let w1x = spawnX + spawnW / 2 + 55 + w1w / 2
         let wrongPositions: [(x: CGFloat, t: Int, w: CGFloat)] = [
-            (w1x,                      1, 90),         // w1 — fork up off spawn
-            (w1x + 45 + 75,            2, 80),         // w2 — cluster step
-            (w1x + 45 + 75 + 45 + 95,  3, 110),        // w3 — cluster top
-            (w1x + 45 + 75 + 45 + 95 + 200 + 90, peakTier, 70)  // wend — PEAK, stands apart (dead-end)
+            (w1x,                              1, w1w),       // w1 — fork up off spawn
+            (w1x + w1w / 2 + 50 + w2w / 2,     2, w2w),       // w2 — cluster step
+            (w1x + w1w / 2 + 50 + w2w + 55 + w3w / 2, 3, w3w),// w3 — cluster top
+            (w1x + w1w / 2 + 50 + w2w + 55 + w3w + 95 + wendw / 2, peakTier, wendw) // wend — PEAK (dead-end via height)
         ]
         for item in wrongPositions {
             let pos = CGPoint(x: item.x, y: tierY(item.t))
@@ -320,33 +333,49 @@ final class LocaleScene: BaseLevelScene, SKPhysicsContactDelegate {
         }
 
         // ---- WIDE REST pad (always-solid spine, low T2): the breath + revert clue ----
-        // Reachable while scrambled (a short hop down off the cluster top), but a HUGE
-        // void separates it from the exit — only the revealed staircase bridges it.
-        let restW: CGFloat = 180
-        let restX = w1x + 90 / 2 + 85 + restW / 2
+        // Reachable while scrambled (a +1-tier hop off the fork w1), but a HUGE void
+        // separates it from the exit — only the revealed staircase bridges it.
+        let restW: CGFloat = 150
+        let restX = w1x + w1w / 2 + 65 + restW / 2
         createPlatform(at: CGPoint(x: restX, y: tierY(restTier)), size: CGSize(width: restW, height: h))
 
         // ---- CORRECT route (HIDDEN until unscrambled): the REVEAL staircase ----
         // h1(T1) is the low alt of the fork (beside w1). The rest of the staircase
         // climbs from the REST pad: first a DOWN-STEP (tier restTier-1) for rhythm,
-        // then a steady single-tier climb (tier 2,3,4,...,topTier-1) of varied-width
-        // pads that bridges the void up to the exit plateau. Every leg is walked a
-        // safe gap past the previous (gap≤130) and rises at most one tier (≤85).
+        // then a steady single-tier climb (tier 2,3,4,...,topTier-1) up to the exit.
+        //
+        // ANTI-OVER-WIDEN (L26-locale): the old version walked each stair MONOTONICALLY
+        // rightward (~60-95pt gap + ~80-150pt pad ≈ 150-195pt of X per +1 tier). Across
+        // ~12 tiers that pushed the world to ~3000pt (~3x the 1024 viewport) — each
+        // viewport slice showed only low tiers under a vast empty sky and the exit
+        // scrolled off-right. The staircase is now a SWITCHBACK: it climbs in two
+        // alternating columns (≈±sep/2 about a slowly-creeping center) so the VERTICAL
+        // axis dominates and net horizontal travel is tiny. Each consecutive pair is
+        // one column apart, so the diagonal hop is gap = (sep ∓ creep) − stairW; with
+        // sep=158 / creep=42 / stairW=80 every leg is gap ∈ [36,120] (≤130) and rises
+        // exactly +1 tier (≤85). The whole reveal climb fits ONE viewport-width column,
+        // dropping the world to ~1.2-1.5x the viewport (camera still scrolls).
         var correctPositions: [(x: CGFloat, t: Int, w: CGFloat)] = [
-            (w1x, 1, 90)   // h1 — low alt of the fork (beside/under w1)
+            (w1x, 1, w1w)   // h1 — low alt of the fork (beside/under w1)
         ]
         // Build the climbing tier sequence: down-step, then 2..(topTier-1).
         var stairTiers: [Int] = [max(0, restTier - 1)]
         var t = restTier
         while t <= topTier - 1 { stairTiers.append(t); t += 1 }
-        // Walk X rightward from the rest pad, varying widths and gaps (asymmetric).
-        let stairWidths: [CGFloat] = [90, 80, 100, 80, 90, 110, 80, 90, 150, 80, 100, 90, 80]
+        // Switchback geometry: two columns ±sep/2 about a center that creeps right.
+        let stairW: CGFloat = 80
+        let sep: CGFloat = 158     // column center-to-center (sep − stairW = 78 base gap)
+        let creep: CGFloat = 42    // gentle rightward drift per step (sizes the world)
+        // First stair: an explicit DOWN-STEP a comfortable gap right of the rest pad.
+        let stair0X = restX + restW / 2 + 55 + stairW / 2
+        let colCenter = stair0X - sep / 2   // anchor so stair0 is the +sep/2 branch
         var prevX = restX
         var prevW = restW
         for (i, st) in stairTiers.enumerated() {
-            let w = stairWidths[i % stairWidths.count]
-            let gap: CGFloat = 60 + (i % 2 == 0 ? 0 : 35)   // 60 / 95 alternating-ish
-            let cx = prevX + prevW / 2 + gap + w / 2
+            let w = stairW
+            let cx = (i == 0)
+                ? stair0X
+                : colCenter + (i % 2 == 0 ? sep / 2 : -sep / 2) + creep * CGFloat(i)
             correctPositions.append((cx, st, w))
             prevX = cx; prevW = w
         }
@@ -384,9 +413,13 @@ final class LocaleScene: BaseLevelScene, SKPhysicsContactDelegate {
         // at the CEILING tier so the finale tops out the band (no dead sky).
         createExitDoor(at: CGPoint(x: composedExitDoorX, y: tierY(topTier) + 55))
 
-        // Course extent: exit plateau right edge + margin. The walked staircase makes
-        // the course ~2.5-3.0x the viewport on iPad, so installCameraFollow genuinely
-        // SCROLLS (the old fixed 960 < 1024 viewport collapsed the camera to center).
+        // Course extent: exit plateau right edge + margin. The switchback staircase
+        // keeps the course ~1.2-1.5x the viewport on iPad (≈1274pt on a 12.9"), so a
+        // single ~1024pt viewport slice spans playableGroundY..playableCeilingY with
+        // real content (the vertical climb fills the frame) instead of the old ~3x
+        // course where each slice was mostly empty sky. It's still WIDER than the
+        // viewport, so installCameraFollow genuinely SCROLLS (and never collapses to a
+        // fixed center the way the old sub-viewport 960 width did).
         composedWorldWidth = exitX + exitW / 2 + 120
 
         // Death zone spans the FULL course width on iPad (not just the viewport)
@@ -538,7 +571,12 @@ final class LocaleScene: BaseLevelScene, SKPhysicsContactDelegate {
         addChild(panel)
 
         // FIX #16: Larger panel with revert instructions in English AND target locale
-        let bg = SKShapeNode(rectOf: CGSize(width: 320, height: 130), cornerRadius: 8)
+        // DE-SPOIL: the old explicit "CHANGE YOUR LANGUAGE TO READ" headline is
+        // replaced by two atmospheric lines. They're longer than the old single
+        // line, so the panel is widened (320 -> 360) and the body is split across
+        // two label slots so nothing clips. The scrambled-glyph line (text1) and
+        // the small revert hints below are unchanged.
+        let bg = SKShapeNode(rectOf: CGSize(width: 360, height: 130), cornerRadius: 8)
         bg.fillColor = fillColor
         bg.strokeColor = strokeColor
         panel.addChild(bg)
@@ -547,15 +585,22 @@ final class LocaleScene: BaseLevelScene, SKPhysicsContactDelegate {
         text1.fontName = "Menlo-Bold"
         text1.fontSize = 11
         text1.fontColor = strokeColor
-        text1.position = CGPoint(x: 0, y: 35)
+        text1.position = CGPoint(x: 0, y: 38)
         panel.addChild(text1)
 
-        let text2 = SKLabelNode(text: "CHANGE YOUR LANGUAGE TO READ")
+        let text2 = SKLabelNode(text: "THE SIGNS ARE TRYING TO TELL YOU SOMETHING.")
         text2.fontName = "Menlo"
-        text2.fontSize = 10
+        text2.fontSize = 9
         text2.fontColor = strokeColor
-        text2.position = CGPoint(x: 0, y: 18)
+        text2.position = CGPoint(x: 0, y: 22)
         panel.addChild(text2)
+
+        let text3 = SKLabelNode(text: "BUT NOT IN A TONGUE THIS DEVICE STILL REMEMBERS.")
+        text3.fontName = "Menlo"
+        text3.fontSize = 9
+        text3.fontColor = strokeColor
+        text3.position = CGPoint(x: 0, y: 9)
+        panel.addChild(text3)
 
         // FIX #16: Revert instructions in English
         let revertEN = SKLabelNode(text: "TO REVERT: Settings > General > Language")
@@ -652,6 +697,11 @@ final class LocaleScene: BaseLevelScene, SKPhysicsContactDelegate {
         // The correct route to the exit now exists; the puzzle is solved.
         // Latch so any later revert is non-destructive to footing.
         puzzleLatched = true
+
+        // PROGRESSIVE HINT WIRING: solving the locale puzzle (the correct route
+        // is now revealed) is the clear forward-progress moment — reset the
+        // struggle counter and clear any shown hint.
+        notePlayerProgress()
 
         // Unscramble sign text
         for (i, label) in signLabels.enumerated() {
@@ -797,6 +847,9 @@ final class LocaleScene: BaseLevelScene, SKPhysicsContactDelegate {
 
     private func handleDeath() {
         guard GameState.shared.levelState == .playing else { return }
+        // PROGRESSIVE HINT WIRING: each death escalates the earned reveal so
+        // repeated failure surfaces the locale hint sooner.
+        notePlayerStruggle()
         playerController.cancel()
         bit.playBufferDeath(respawnAt: spawnPoint) { [weak self] in self?.bit.setGrounded(true) }
     }
@@ -812,7 +865,7 @@ final class LocaleScene: BaseLevelScene, SKPhysicsContactDelegate {
     }
 
     override func hintText() -> String? {
-        return "Change your device language in Settings"
+        return "The signs aren't broken, they're foreign. Open Settings > General > Language & Region and switch your device to a different language, then come back and read what the path was hiding."
     }
 
     override func willMove(from view: SKView) {

@@ -260,18 +260,18 @@ final class LowPowerScene: BaseLevelScene, SKPhysicsContactDelegate {
     // MARK: - iPad layout (hand-composed FULL-HEIGHT climb — Phase-0 vertical-fill API)
 
     private func buildComposedIPadLevel() {
-        // FULL-HEIGHT, HAND-COMPOSED climb. The old iPad path crammed a 390-pt strip
-        // into the centre with a uniform diagonal staircase (operator-rejected even
-        // "ladder") and left the upper band as dead sky. This route now (a) SIZES the
-        // tier budget with fillTierCount(iphoneGround:) so the climb genuinely reaches
-        // the band ceiling at the safe 85-pt step, (b) replaces the even ladder with a
-        // hand-shaped BEAT PLAN — teach -> tight cluster -> flat REST -> a DOWN-STEP ->
-        // harder traverse -> an isolated PEAK -> a dip to the finale-feed tier — using
-        // VARIED widths, ASYMMETRIC X spacing and cluster/gap grouping, and (c) sweeps
-        // LEFT->RIGHT across a world ~2.2-3x the viewport so the camera actually scrolls
-        // instead of collapsing the course onto one screen. It caps at a high low-power
-        // FLOAT FINALE just under the ceiling (playableCeilingY): a float-only shelf
-        // reachable ONLY by the lunar-gravity arc.
+        // FULL-HEIGHT, HAND-COMPOSED climb CONFINED TO ONE VIEWPORT. The prior iPad
+        // path swept the 4 gravity beats LEFT->RIGHT across a world ~2.2-3x the viewport
+        // and installed installCameraFollow, so at spawn the camera rested low-LEFT on the
+        // floor beat while the high tiers + finale sat OFF-SCREEN RIGHT — the upper half
+        // of the frame was empty dead-sky (the residual iPad void). FIX (mirrors the
+        // Level27/Level23 confined-column pattern): keep the same FULL-HEIGHT tier climb
+        // and the byte-identical mechanic geometry, but stack the beats as a slim VERTICAL
+        // ZIG-ZAG COLUMN centered on size.width/2 that ALTERNATES left/right as it ascends.
+        // The whole course's horizontal extent fits within ~one iPad portrait width, so the
+        // ENTIRE floor->ceiling climb is visible in ONE resting frame with NO horizontal
+        // camera-follow (composedCourseExtent stays 0 -> the setupBit guard never installs
+        // it, the camera rests at scene center on the column).
         //
         // The two MECHANIC beats are translated RIGIDLY from the phone version so the
         // apex math is byte-for-byte the same in RELATIVE terms:
@@ -281,7 +281,9 @@ final class LowPowerScene: BaseLevelScene, SKPhysicsContactDelegate {
         //     +200 height-gate shelf. The whole finale unit is TRANSLATED UPWARD as a
         //     block (launch ledge AND shelf shift together), so its internal offsets —
         //     and therefore the apex re-derivation — are unchanged; only its absolute
-        //     altitude moves up to cap the band.
+        //     altitude moves up to cap the band. The finale block is also CENTERED on
+        //     size.width/2 as a rigid unit (its internal chasm/shelf offsets are never
+        //     touched — only the whole block is shifted) so it sits inside the column.
         //
         // ---- Physics model (no clampVelocity; jump launches at the 620 dy cap;
         //      apex = v^2 / (2 * |g| * 150)) ----
@@ -295,6 +297,7 @@ final class LowPowerScene: BaseLevelScene, SKPhysicsContactDelegate {
 
         let groundY = playableGroundY(iphoneGround: 160)   // floor near the bottom
         let ceilingY = playableCeilingY()                  // top of the usable band
+        let center = size.width / 2                         // the column is centered here
 
         // === FINALE GEOMETRY (anchored to the CEILING so the climb caps the band) ===
         // The float-only shelf is the HIGHEST element, sitting just under the ceiling.
@@ -307,11 +310,12 @@ final class LowPowerScene: BaseLevelScene, SKPhysicsContactDelegate {
 
         // === TIER BUDGET (fillTierCount — sizes the climb so it REACHES the ceiling) ===
         // Passing too FEW tiers was the dead-sky bug (band/(count-1) clamps to maxRise
-        // and the top of the band is stranded). fillTierCount returns the band-derived
-        // count that fills floor->ceiling at the safe per-tier step; we min() it with a
-        // level cap (12) so very tall canvases don't over-subdivide. verticalTier then
-        // returns each tier's Y with the per-tier rise auto-clamped to maxJumpableRise.
-        let nTiers = min(fillTierCount(iphoneGround: 160), 12)
+        // and the top of the band is stranded). fillTierCount(iphoneGround:) clamps to a
+        // sane upper bound of 16 internally and is the band-derived count that fills
+        // floor->ceiling at the safe per-tier step. verticalTier then returns each tier's
+        // Y with the per-tier rise auto-clamped to maxJumpableRise (so MORE tiers can only
+        // SHRINK each rise, never widen it).
+        let nTiers = fillTierCount(iphoneGround: 160)
         func tierTop(_ index: Int) -> CGFloat {
             verticalTier(min(max(index, 0), nTiers - 1), of: nTiers, iphoneGround: 160)
         }
@@ -327,39 +331,38 @@ final class LowPowerScene: BaseLevelScene, SKPhysicsContactDelegate {
         // the band has no dead space below it either. Each subsequent beat moves the tier
         // index by only -1 / 0 / +1, so every vertical hop is AT MOST one tier step
         // (<= maxJumpableRise = 85) — safe by construction. The SHAPE of the index
-        // sequence is what breaks the ladder; the plan adapts its length to feedTier:
+        // sequence breaks the ladder:
         //   teach climb (0->1->2->3) -> FLAT REST (3, a wide platform, no rise) ->
         //   DOWN-STEP (3->2) -> recover (2->3) -> [padded +1 climbs to feedTier-1] ->
         //   step to feedTier -> isolated PEAK (feedTier+1, a NARROW platform standing
         //   apart) -> dip back DOWN to feedTier (the finale-feed). When the band is too
         //   short for a peak above feedTier, the tail instead does a micro dip+return so
         //   the ending still isn't a straight monotonic ladder.
-        // Widths VARY (78-168) and gaps are ASYMMETRIC (46-100) so the route reads as
-        // grouped clusters + breaths, never a strict L/R alternating march.
+        // Widths are kept MODERATE (78-118) so two opposite-side beats in the narrow
+        // ±58 column never overlap; the wide flat REST is held to 118 and pushed wholly
+        // to one side (see the X assignment below) so it still clears its neighbours.
         var beatTiers:  [Int]     = [0, 1, 2, 3, 3, 2, 3]            // teach / rest / down-step / recover
-        var beatWidths: [CGFloat] = [150, 80, 96, 84, 168, 78, 104]  // [4]=wide REST
-        var beatGaps:   [CGFloat] = [0, 64, 54, 46, 100, 92, 60]     // gapBefore (cluster gaps tighten)
+        var beatWidths: [CGFloat] = [110, 80, 96, 84, 118, 78, 104]  // [4]=wide REST (capped for the column)
 
         // Pad +1 climb beats from the recover tier (3) up to feedTier-1 (med width).
         while beatTiers[beatTiers.count - 1] < feedTier - 1 {
             beatTiers.append(beatTiers[beatTiers.count - 1] + 1)
             beatWidths.append(96)
-            beatGaps.append(70)
         }
         if feedTier + 1 <= nTiers - 1 && beatTiers[beatTiers.count - 1] == feedTier - 1 {
             // Room for a true PEAK above the feed tier: step up, spike, then dip down.
-            beatTiers.append(feedTier);     beatWidths.append(104); beatGaps.append(86)
-            beatTiers.append(feedTier + 1); beatWidths.append(84);  beatGaps.append(70) // PEAK (narrow)
-            beatTiers.append(feedTier);     beatWidths.append(120); beatGaps.append(64) // dip to feed
+            beatTiers.append(feedTier);     beatWidths.append(104)
+            beatTiers.append(feedTier + 1); beatWidths.append(84)  // PEAK (narrow)
+            beatTiers.append(feedTier);     beatWidths.append(110) // dip to feed
         } else {
             // Short band: land on feedTier, then a micro dip+return so the tail isn't a
             // straight ladder into the finale.
             if beatTiers[beatTiers.count - 1] != feedTier {
-                beatTiers.append(feedTier); beatWidths.append(104); beatGaps.append(86)
+                beatTiers.append(feedTier); beatWidths.append(104)
             }
             if feedTier >= 1 {
-                beatTiers.append(feedTier - 1); beatWidths.append(84);  beatGaps.append(70)
-                beatTiers.append(feedTier);     beatWidths.append(120); beatGaps.append(64)
+                beatTiers.append(feedTier - 1); beatWidths.append(84)
+                beatTiers.append(feedTier);     beatWidths.append(110)
             }
         }
 
@@ -373,13 +376,26 @@ final class LowPowerScene: BaseLevelScene, SKPhysicsContactDelegate {
         beatTiers[beatTiers.count - 1] = feedTier
 
         func beatWidth(_ i: Int) -> CGFloat { beatWidths[min(i, beatWidths.count - 1)] }
-        func beatGap(_ i: Int) -> CGFloat { beatGaps[min(i, beatGaps.count - 1)] }
 
-        // Accumulate centers left->right; gapBefore is edge-to-edge (<= maxJumpableGap).
-        var beatCenterX: [CGFloat] = [90]
-        for i in 1..<beatTiers.count {
-            let dx = beatWidth(i - 1) / 2 + beatGap(i) + beatWidth(i) / 2
-            beatCenterX.append(beatCenterX[i - 1] + dx)
+        // --- CONFINED ZIG-ZAG: X is authored as center + offset (NOT accumulated L->R). ---
+        // The climb ZIG-ZAGS around center: beat 0 (spawn floor) sits dead-center; every
+        // subsequent beat alternates to the opposite side at ±colOffset. Two opposite-side
+        // beats are 2*colOffset apart center-to-center; with beat widths <= 118 and
+        // colOffset 64 the edge-to-edge horizontal gap between consecutive beats stays in
+        // the ~10-58pt band (always positive — no overlap — and always <= maxJumpableGap
+        // 130). The whole column's horizontal extent is center ± (colOffset + maxHalfWidth)
+        // ≈ center ± 123, far narrower than the iPad viewport, so the entire climb is on
+        // one frame. The flat REST (the widest beat) lands on a side where its far edge
+        // still clears the column, keeping the extent bounded.
+        let colOffset: CGFloat = 64
+        var beatCenterX: [CGFloat] = []
+        for i in 0..<beatTiers.count {
+            if i == 0 {
+                beatCenterX.append(center)                       // spawn floor, dead-center
+            } else {
+                // Alternate sides each beat: odd beats right, even beats left of center.
+                beatCenterX.append(center + (i % 2 == 1 ? colOffset : -colOffset))
+            }
         }
 
         // BEAT 0 — SPAWN floor; subsequent beats trace the hand-composed rhythm above.
@@ -394,22 +410,39 @@ final class LowPowerScene: BaseLevelScene, SKPhysicsContactDelegate {
                            size: CGSize(width: beatWidth(i), height: h))
         }
 
+        // === FINALE BLOCK (trap + chasm + shelf), CENTERED on the column as a rigid unit ===
+        // The trap + gravity-gate is a fixed-geometry block whose INTERNAL horizontal
+        // offsets (effective-width drop, 125-pt chasm, 138-pt shelf) are NEVER touched —
+        // only the whole block is shifted so it sits centered in the column. The block's
+        // natural horizontal span runs from the left mini-ledge edge to the shelf right
+        // edge; we center that span on `center` by solving for the block's anchor
+        // (gapCenterX). All offsets below are RELATIVE to gapCenterX, byte-identical to
+        // the phone version, so every gap/rise inside the finale is unchanged.
+        //   leftMiniEdge  = gapCenterX - narrowGap/2 - miniLedgeWidth        (block left)
+        //   shelfRightEdge = gapCenterX + 25 + 125 + 138                     (block right)
+        // -> block midpoint = gapCenterX + (shelfRightEdge_off + leftMini_off)/2
+        // Setting block midpoint == center gives gapCenterX below.
+        let narrowGap = playerEffectiveBodyWidth + 12        // iPhone 34 / iPad 39.5 (window ~12)
+        let miniLedgeWidth: CGFloat = 15
+        let chasmWidth: CGFloat = 125                        // identical to phone — NEVER widened
+        let shelfWidth: CGFloat = 138
+        let trapWidth: CGFloat = 50
+        // Offsets from gapCenterX (catch/high-ledge/mini-ledges all centered at gapCenterX):
+        let leftMiniOffset  = -(narrowGap / 2 + miniLedgeWidth)        // far-left finale edge
+        let shelfRightOffset = (50 / 2) + chasmWidth + shelfWidth      // far-right finale edge (catch right edge + chasm + shelf)
+        let blockMidOffset  = (leftMiniOffset + shelfRightOffset) / 2  // block midpoint relative to gapCenterX
+        let gapCenterX = center - blockMidOffset                      // centers the whole finale block on the column
+
         // === BEAT (tension peak): NARROW-DROP TRAP (NEEDS NORMAL GRAVITY) ===
         // High ledge the player jumps UP onto from the feed tier (rise <=85, gap <=130),
-        // then threads a body-width drop down to the catch ledge. Low gravity floats
-        // the player into the mini ledges, so this gate REQUIRES normal gravity. The
-        // geometry is translated rigidly from the phone version (high ledge / mini
-        // ledges / catch with the effective-width gap formula).
-        let lastBeatRightEdge = beatCenterX[beatTiers.count - 1] + beatWidth(beatTiers.count - 1) / 2
-        let trapWidth: CGFloat = 50
-        let trapGap: CGFloat = 70                           // edge-to-edge from feed tier
-        let trapHighX = lastBeatRightEdge + trapGap + trapWidth / 2
+        // then threads a body-width drop down to the catch ledge. Low gravity floats the
+        // player into the mini ledges, so this gate REQUIRES normal gravity. Geometry is
+        // translated rigidly from the phone version (high ledge / mini ledges / catch with
+        // the effective-width gap formula); only the block's absolute X/Y moved.
+        let trapHighX = gapCenterX
         createPlatform(at: CGPoint(x: trapHighX, y: highLedgeTopY - 20 / 2),
                        size: CGSize(width: trapWidth, height: 20))   // top = highLedgeTopY
 
-        let narrowGap = playerEffectiveBodyWidth + 12        // iPhone 34 / iPad 39.5 (window ~12)
-        let gapCenterX = trapHighX
-        let miniLedgeWidth: CGFloat = 15
         let leftMiniX  = gapCenterX - narrowGap / 2 - miniLedgeWidth / 2
         let rightMiniX = gapCenterX + narrowGap / 2 + miniLedgeWidth / 2
         // Mini ledges 40pt below the high-ledge top, mirroring the phone offset
@@ -433,8 +466,6 @@ final class LowPowerScene: BaseLevelScene, SKPhysicsContactDelegate {
         // over and lands on top. The 125-pt chasm and the +200 height-gate are copied
         // verbatim from the phone version — NEVER widened.
         let catchRightEdge = gapCenterX + 50 / 2
-        let chasmWidth: CGFloat = 125                        // identical to phone
-        let shelfWidth: CGFloat = 138
         let shelfLeftEdge = catchRightEdge + chasmWidth
         let shelfCenterX = shelfLeftEdge + shelfWidth / 2
         let shelfCenterY = shelfTopY - shelfHeight / 2
@@ -446,17 +477,22 @@ final class LowPowerScene: BaseLevelScene, SKPhysicsContactDelegate {
         // mandatory exactly as on iPhone.
         createExitDoor(at: CGPoint(x: shelfCenterX, y: shelfTopY + 30))
 
-        // Course extent for camera-follow + death zone (full climb width on iPad).
-        let courseExtent = shelfCenterX + shelfWidth / 2 + 60
-        composedCourseExtent = courseExtent
+        // === No camera-follow: the whole climb fits one frame ===
+        // The confined zig-zag column + centered finale block span only ~center ± ~160pt
+        // horizontally, far narrower than the iPad viewport, so the entire floor->ceiling
+        // climb — spawn floor, every tier, the trap, and the finale shelf + exit — is
+        // visible at once. composedCourseExtent stays 0 (setupBit's
+        // `composedCourseExtent > size.width` guard is never met, so installCameraFollow
+        // is skipped and the camera rests at scene center on the column).
+        composedCourseExtent = 0
 
-        // Death zone spans the FULL course at groundY-120 (well below the floor top, so
-        // a missed normal-gravity finale arc — which falls down the platform-free chasm
-        // to the right of every tier — dies, exactly as on iPhone). Relative geometry
-        // preserved: it stays a fixed drop below the lowest gameplay surface.
+        // Death zone spans the FULL width (centered on size.width/2) at groundY-120 (well
+        // below the floor top, so a missed normal-gravity finale arc — which falls down the
+        // platform-free chasm — dies, exactly as on iPhone). Relative geometry preserved:
+        // it stays a fixed drop below the lowest gameplay surface.
         let death = SKNode()
-        death.position = CGPoint(x: courseExtent / 2, y: groundY - 120)
-        death.physicsBody = SKPhysicsBody(rectangleOf: CGSize(width: courseExtent * 2, height: 100))
+        death.position = CGPoint(x: center, y: groundY - 120)
+        death.physicsBody = SKPhysicsBody(rectangleOf: CGSize(width: size.width * 2, height: 100))
         death.physicsBody?.isDynamic = false
         death.physicsBody?.categoryBitMask = PhysicsCategory.hazard
         addChild(death)
@@ -623,9 +659,9 @@ final class LowPowerScene: BaseLevelScene, SKPhysicsContactDelegate {
         let textMaxWidth = panelWidth - 24
 
         // HEADING — center at y=+16. At fontSize 12 (Menlo-Bold, monospace) the
-        // 23-char string renders ~166pt wide, comfortably inside the 216pt inner box
-        // (no wrap). Visual band ≈ [+10, +22].
-        let text1 = SKLabelNode(text: "CONSERVE ENERGY. FLOAT.")
+        // 21-char string renders ~151pt wide, comfortably inside the 216pt inner box
+        // (no wrap). Visual band ≈ [+10, +22]. Atmospheric, not instructional.
+        let text1 = SKLabelNode(text: "THE BATTERY IS DYING.")
         text1.fontName = "Menlo-Bold"
         text1.fontSize = 12
         text1.fontColor = strokeColor
@@ -637,13 +673,13 @@ final class LowPowerScene: BaseLevelScene, SKPhysicsContactDelegate {
         panel.addChild(text1)
 
         // BODY — center at y=-16, a clear 21pt below the heading's bottom. The
-        // actionable instruction (41 chars) renders ~197pt at fontSize 8
-        // (Menlo monospace ≈ 4.8pt/char: 41 * 4.8 = 197 < 216 inner box) and
+        // atmospheric line (39 chars) renders ~187pt at fontSize 8
+        // (Menlo monospace ≈ 4.8pt/char: 39 * 4.8 = 187 < 216 inner box) and
         // stays on ONE line; numberOfLines forced to 1 so it can never wrap upward
-        // into the heading again. (fontSize was 9 for the old 36-char body; dropped
-        // to 8 so the longer, clearer copy still fits on one line.)
+        // into the heading again. (No explicit instruction here anymore — the
+        // POWER-button mechanic is left for the player to discover / earn via hint.)
         // Visual band ≈ [-20, -12].
-        let text2 = SKLabelNode(text: "TAP POWER TO GO LIGHT. TAP AGAIN TO DROP.")
+        let text2 = SKLabelNode(text: "EVERYTHING GETS LIGHTER WHEN I LET GO.")
         text2.fontName = "Menlo"
         text2.fontSize = 8
         text2.fontColor = strokeColor
@@ -659,10 +695,11 @@ final class LowPowerScene: BaseLevelScene, SKPhysicsContactDelegate {
 
     private func setupBit() {
         if isWideCanvas {
-            // iPad composed climb: spawn above the spawn floor (tier 0 top
-            // composedSpawn.y + 15), ~35pt clear, matching the phone spawn-above-floor
-            // margin, then promote to horizontal camera-follow because the climb
-            // marches wider than any iPad portrait viewport as it ascends.
+            // iPad composed climb: spawn above the dead-center spawn-floor beat
+            // (composedSpawn at column center, tier 0 top), ~35pt clear, matching the
+            // phone spawn-above-floor margin. The confined zig-zag column needs NO
+            // horizontal camera-follow (composedCourseExtent stays 0), so the camera
+            // rests at scene center and the whole floor->ceiling climb is on one frame.
             spawnPoint = CGPoint(x: composedSpawn.x, y: composedSpawn.y + 50)
         } else {
             // Spawn above the Section-1 floor (logical x=40, top y=175); the player
@@ -677,9 +714,11 @@ final class LowPowerScene: BaseLevelScene, SKPhysicsContactDelegate {
         registerPlayer(bit)
         playerController = PlayerController(character: bit, scene: self)
 
-        // Camera-follow only on the composed iPad climb (when it's wider than the
-        // viewport). The phone single-screen layout never scrolls. Called once after
-        // the player + controller exist; the base update() ticks the camera.
+        // Camera-follow guard, retained for safety: the confined iPad column sets
+        // composedCourseExtent = 0, so this is never met and the camera stays centered
+        // on the column (the whole climb fits one frame). The phone single-screen
+        // layout never scrolls either. Kept so any future wider iPad course can opt
+        // back into scrolling by setting composedCourseExtent > size.width.
         if isWideCanvas && composedCourseExtent > size.width {
             installCameraFollow(worldWidth: composedCourseExtent, playerController: playerController)
         }
@@ -721,6 +760,10 @@ final class LowPowerScene: BaseLevelScene, SKPhysicsContactDelegate {
         // OS reacting to a system state change (power mode) with a taunt.
         if lowPower && !hasShownFourthWall {
             hasShownFourthWall = true
+            // PROGRESSIVE HINT: first engaging the gravity flip is the clear
+            // forward-progress moment (the player discovered the mechanic), so reset
+            // the struggle/hint timer here.
+            notePlayerProgress()
             GlitchedNarrator.present("LOW POWER MODE? I BARELY HAVE ENOUGH ENERGY TO RENDER THESE PLATFORMS.", in: self, style: .alert)
         }
 
@@ -823,6 +866,9 @@ final class LowPowerScene: BaseLevelScene, SKPhysicsContactDelegate {
 
     private func handleDeath() {
         guard GameState.shared.levelState == .playing else { return }
+        // PROGRESSIVE HINT: each real death escalates the struggle counter so the
+        // earned POWER-button reveal (hintText) surfaces after repeated failure.
+        notePlayerStruggle()
         playerController.cancel()
         bit.playBufferDeath(respawnAt: spawnPoint) { [weak self] in self?.bit.setGrounded(true) }
     }
@@ -838,7 +884,7 @@ final class LowPowerScene: BaseLevelScene, SKPhysicsContactDelegate {
     }
 
     override func hintText() -> String? {
-        return "Turn on Low Power Mode in Settings"
+        return "The POWER button (lower-right) flips gravity. Tap it to read POWER OFF and float the wide chasm; tap again to read POWER ON and weigh yourself down to thread the narrow drop."
     }
 
     override func willMove(from view: SKView) {

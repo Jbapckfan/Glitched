@@ -188,7 +188,7 @@ final class MultiTouchScene: BaseLevelScene, SKPhysicsContactDelegate {
         title.zPosition = 100
         addChild(title)
 
-        let subtitle = SKLabelNode(text: "MULTI-TOUCH")
+        let subtitle = SKLabelNode(text: "CONTACT REQUIRED")
         subtitle.fontName = VisualConstants.Fonts.secondary
         subtitle.fontSize = 11
         subtitle.fontColor = strokeColor.withAlphaComponent(0.5)
@@ -683,7 +683,7 @@ final class MultiTouchScene: BaseLevelScene, SKPhysicsContactDelegate {
         plate.position = cameraPosition
         plate.zPosition = 501
         plate.isAccessibilityElement = true
-        plate.accessibilityLabel = "Pressure node, group \(group), inactive"
+        plate.accessibilityLabel = "Contact pad, group \(group), inactive"
         gameCamera.addChild(plate)
 
         // Pulse ring (visible when all plates in group active)
@@ -843,7 +843,7 @@ final class MultiTouchScene: BaseLevelScene, SKPhysicsContactDelegate {
     // MARK: - Instruction Panel
 
     private func setupInstructionPanel() {
-        let label = SKLabelNode(text: "PLACE YOUR FINGERS ON THE NODES")
+        let label = SKLabelNode(text: "ONE OF YOU IS NOT ENOUGH.")
         label.fontName = VisualConstants.Fonts.secondary
         label.fontSize = 10
         label.fontColor = strokeColor.withAlphaComponent(0.6)
@@ -960,7 +960,7 @@ final class MultiTouchScene: BaseLevelScene, SKPhysicsContactDelegate {
         plate.glowRing.glowWidth = 8
 
         // Accessibility: announce the active state for this node.
-        plate.node.accessibilityLabel = "Pressure node, group \(plate.group), active"
+        plate.node.accessibilityLabel = "Contact pad, group \(plate.group), active"
 
         // Scale pop
         plate.node.run(.sequence([
@@ -987,7 +987,7 @@ final class MultiTouchScene: BaseLevelScene, SKPhysicsContactDelegate {
         plate.pulseRing.removeAction(forKey: "pulse")
 
         // Accessibility: announce the inactive state for this node.
-        plate.node.accessibilityLabel = "Pressure node, group \(plate.group), inactive"
+        plate.node.accessibilityLabel = "Contact pad, group \(plate.group), inactive"
 
         let shimmer = SKAction.sequence([
             .run { plate.node.strokeColor = SKColor.black.withAlphaComponent(0.5) },
@@ -1298,6 +1298,8 @@ final class MultiTouchScene: BaseLevelScene, SKPhysicsContactDelegate {
 
     private func handleDeath() {
         guard GameState.shared.levelState == .playing else { return }
+        // PROGRESSIVE HINT: each death escalates the earned reveal.
+        notePlayerStruggle()
         playerController.cancel()
         movementTouch = nil
         // Deactivate all plates
@@ -1331,7 +1333,7 @@ final class MultiTouchScene: BaseLevelScene, SKPhysicsContactDelegate {
     }
 
     override func hintText() -> String? {
-        return "Place multiple fingers on the glowing nodes simultaneously"
+        return "Hold every glowing contact pad in a group down at once and KEEP holding — two pads for the first gate, three for the second, four for the last — then walk Bit through while they stay pressed."
     }
 
     // MARK: - Cleanup

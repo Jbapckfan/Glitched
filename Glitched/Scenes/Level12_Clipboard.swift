@@ -438,8 +438,10 @@ final class ClipboardScene: BaseLevelScene, SKPhysicsContactDelegate {
         pwLabel.position = CGPoint(x: 0, y: 20)
         terminal.addChild(pwLabel)
 
-        // Password display (shows clipboard content)
-        passwordDisplay = SKLabelNode(text: "________")
+        // Password display — redacted by default (DE-SPOIL: never render the literal
+        // password on screen). Block glyphs read as a masked/locked field; the answer
+        // is sourced from the clipboard, never displayed.
+        passwordDisplay = SKLabelNode(text: "▓▓▓▓▓▓▓▓")
         passwordDisplay.fontName = "Menlo-Bold"
         passwordDisplay.fontSize = 12
         passwordDisplay.fontColor = strokeColor
@@ -480,15 +482,27 @@ final class ClipboardScene: BaseLevelScene, SKPhysicsContactDelegate {
         pasteText.name = "pasteButton"
         pasteButton.addChild(pasteText)
 
-        // COPY hint, anchored relative to the terminal (child offset) so it stays
-        // positioned with the terminal on iPad rather than at a raw point.
-        let hint = SKLabelNode(text: "COPY: \(correctPassword)")
-        hint.fontName = "Menlo"
-        hint.fontSize = 14
-        hint.fontColor = strokeColor
-        hint.position = CGPoint(x: 0, y: 80)
-        hint.zPosition = 50
-        terminal.addChild(hint)
+        // DE-SPOIL: the literal password must NOT be printed here. The terminal's own
+        // PASSWORD field renders a redacted glyph row (the password is sourced from the
+        // clipboard, not shown on screen), and the on-screen clue is now atmospheric —
+        // a two-line tease split across two label slots so neither line clips. Same
+        // Menlo/strokeColor styling; the lines stack above the terminal at the same
+        // anchor the old single hint used (y=80), with the second line just below.
+        let hintLine1 = SKLabelNode(text: "IT REMEMBERS WHAT YOU LAST HELD.")
+        hintLine1.fontName = "Menlo"
+        hintLine1.fontSize = 11
+        hintLine1.fontColor = strokeColor
+        hintLine1.position = CGPoint(x: 0, y: 92)
+        hintLine1.zPosition = 50
+        terminal.addChild(hintLine1)
+
+        let hintLine2 = SKLabelNode(text: "THE KEY IS NOT HERE. IT IS SOMEWHERE YOU ALREADY WERE.")
+        hintLine2.fontName = "Menlo"
+        hintLine2.fontSize = 9
+        hintLine2.fontColor = strokeColor
+        hintLine2.position = CGPoint(x: 0, y: 78)
+        hintLine2.zPosition = 50
+        terminal.addChild(hintLine2)
     }
 
     private func createExitDoor(at position: CGPoint) {
@@ -600,7 +614,7 @@ final class ClipboardScene: BaseLevelScene, SKPhysicsContactDelegate {
     }
 
     private func checkPassword(_ text: String) {
-        passwordDisplay.text = "________"
+        passwordDisplay.text = "▓▓▓▓▓▓▓▓"
 
         if text.uppercased() == correctPassword {
             passwordDisplay.text = correctPassword
@@ -618,6 +632,10 @@ final class ClipboardScene: BaseLevelScene, SKPhysicsContactDelegate {
     private func unlock() {
         guard !isUnlocked else { return }
         isUnlocked = true
+
+        // PROGRESSIVE HINT: pasting the password is the clear forward-progress beat —
+        // reset the struggle/hint state now that the core puzzle is solved.
+        notePlayerProgress()
 
         statusLabel.text = "ACCESS GRANTED"
         terminalScreen.fillColor = strokeColor.withAlphaComponent(0.1)
@@ -696,6 +714,8 @@ final class ClipboardScene: BaseLevelScene, SKPhysicsContactDelegate {
 
     private func handleDeath() {
         guard GameState.shared.levelState == .playing else { return }
+        // PROGRESSIVE HINT: each death escalates the earned hint reveal.
+        notePlayerStruggle()
         playerController.cancel()
         bit.playBufferDeath(respawnAt: spawnPoint) { [weak self] in self?.bit.setGrounded(true) }
     }
@@ -713,7 +733,7 @@ final class ClipboardScene: BaseLevelScene, SKPhysicsContactDelegate {
     }
 
     override func hintText() -> String? {
-        return "Extract external data"
+        return "Copy the password GLITCH3D to your clipboard (grab it anywhere outside the level), come back, and tap PASTE PASSWORD on the terminal."
     }
 
     override func willMove(from view: SKView) {

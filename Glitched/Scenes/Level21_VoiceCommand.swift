@@ -731,6 +731,9 @@ final class VoiceCommandScene: BaseLevelScene, SKPhysicsContactDelegate {
     private func extendBridge() {
         guard !bridgeExtended, let bridge = bridgeNode else { return }
         bridgeExtended = true
+        // Forward progress: extending the bridge is a clear gate cleared, so reset
+        // the struggle/hint timers (matches the shared difficulty-hint contract).
+        notePlayerProgress()
 
         // Add physics to bridge. Width must match the visual span created
         // in createBridge() so the walkable surface reaches from the start
@@ -774,6 +777,9 @@ final class VoiceCommandScene: BaseLevelScene, SKPhysicsContactDelegate {
     private func openDoor() {
         guard !doorOpened, let door = doorNode else { return }
         doorOpened = true
+        // Forward progress: opening the door clears the second gate, so reset the
+        // struggle/hint timers.
+        notePlayerProgress()
 
         // Remove blocker physics
         doorBlocker?.physicsBody?.categoryBitMask = 0
@@ -800,6 +806,9 @@ final class VoiceCommandScene: BaseLevelScene, SKPhysicsContactDelegate {
         }
         flyActive = true
         flyUsed = true
+        // Forward progress: FLY (the ordered final gate) fired successfully, so
+        // reset the struggle/hint timers.
+        notePlayerProgress()
 
         // Brief reduced gravity + upward impulse
         physicsWorld.gravity = CGVector(dx: 0, dy: -5)
@@ -1094,6 +1103,10 @@ final class VoiceCommandScene: BaseLevelScene, SKPhysicsContactDelegate {
     private func handleDeath() {
         guard GameState.shared.levelState == .playing else { return }
         playerController.cancel()
+        // Surface the voice-command hint after repeated deaths (matches L22): each
+        // death feeds the shared difficulty-hint timer, so the FLY-must-come-last
+        // hintText escalates when the player keeps falling instead of staying buried.
+        notePlayerStruggle()
         bit.playBufferDeath(respawnAt: spawnPoint) { [weak self] in self?.bit.setGrounded(true) }
     }
 
@@ -1108,7 +1121,7 @@ final class VoiceCommandScene: BaseLevelScene, SKPhysicsContactDelegate {
     }
 
     override func hintText() -> String? {
-        return "Speak a command: OPEN, BRIDGE, FLY, or JUMP"
+        return "Speak the commands in order: BRIDGE, then OPEN, then FLY last — FLY only works after the bridge and door."
     }
 
     override func willMove(from view: SKView) {

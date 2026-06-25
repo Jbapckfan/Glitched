@@ -260,23 +260,9 @@ final class VolumeScene: BaseLevelScene, SKPhysicsContactDelegate {
             bubbles.append(bubble)
         }
 
-        // Warning label — names the flood hazard explicitly so the player
-        // understands the water/volume link. Persists (no auto-fade) while the
-        // flood band matters. iPhone: mid-screen. iPad: anchored over the BOTTOM
-        // flood band beside the spawn floor (just above the rising water) so the
-        // clue reads exactly where the flood will appear.
-        let floodLabelX = isWideCanvas ? composedSpawnX : size.width / 2
-        let floodLabelY = isWideCanvas ? composedFloorY + 56 * visualScale
-                                       : activeGroundY + 110 * visualScale
-        let warningLabel = SKLabelNode(text: "TOO LOUD = FLOOD")
-        warningLabel.fontName = "Menlo-Bold"
-        warningLabel.fontSize = 10
-        warningLabel.fontColor = strokeColor
-        warningLabel.position = CGPoint(x: floodLabelX, y: floodLabelY)
-        warningLabel.zPosition = 200
-        warningLabel.alpha = 0.7
-        warningLabel.name = "flood_warning"
-        addChild(warningLabel)
+        // De-spoiled: the persistent "TOO LOUD = FLOOD" warning label is removed so
+        // the volume->water link is discovered, not handed to the player. The flood
+        // still rises with volume; the player learns it by feeling it.
     }
 
     private func updateWaterLevel() {
@@ -1230,12 +1216,21 @@ final class VolumeScene: BaseLevelScene, SKPhysicsContactDelegate {
         label1.position = CGPoint(x: 25, y: 8)
         instructionPanel?.addChild(label1)
 
-        let label2 = SKLabelNode(text: "Lower volume — loud noises wake the wolf")
+        // Atmospheric clue lines replace the old explicit "lower volume" tell.
+        // Split across two slots so the longer line never clips the 230pt plate.
+        let label2 = SKLabelNode(text: "IT SLEEPS. THE WATER LISTENS.")
         label2.fontName = "Menlo"
         label2.fontSize = 7
         label2.fontColor = strokeColor
-        label2.position = CGPoint(x: 22, y: -12)
+        label2.position = CGPoint(x: 22, y: -10)
         instructionPanel?.addChild(label2)
+
+        let label3 = SKLabelNode(text: "DON'T MAKE A SOUND IT CAN HEAR.")
+        label3.fontName = "Menlo"
+        label3.fontSize = 7
+        label3.fontColor = strokeColor
+        label3.position = CGPoint(x: 22, y: -22)
+        instructionPanel?.addChild(label3)
 
         // Fade out after delay
         instructionPanel?.run(.sequence([
@@ -1543,6 +1538,9 @@ final class VolumeScene: BaseLevelScene, SKPhysicsContactDelegate {
 
     private func handleDeath() {
         guard GameState.shared.levelState == .playing else { return }
+        // PROGRESSIVE HINT: every failure (wolf, drown, fall) escalates the earned
+        // hint so repeated death surfaces the volume-button reveal.
+        notePlayerStruggle()
         playerController.cancel()
         bit.playBufferDeath(respawnAt: spawnPoint) { [weak self] in
             self?.bit.setGrounded(true)
@@ -1567,7 +1565,7 @@ final class VolumeScene: BaseLevelScene, SKPhysicsContactDelegate {
     }
 
     override func hintText() -> String? {
-        return "Use your device's volume buttons"
+        return "Press your device's Volume-Down button. The quieter you go, the deeper it sleeps — and the lower the water stays. Loud wakes it and floods you both."
     }
 
     // MARK: - Cleanup

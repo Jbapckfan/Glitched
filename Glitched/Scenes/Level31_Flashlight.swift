@@ -148,6 +148,24 @@ final class FlashlightScene: BaseLevelScene, SKPhysicsContactDelegate {
         showInstructionPanel()
         setupBit()
         setupAmbientGlow()
+
+        // SUBVERSION BEAT (World 5 begins) — L31 is the FIRST level after L30's
+        // credits fake-out. Retroactively frame those credits as a bluff and announce
+        // System Override through the shared 4th-wall voice (lower-center safe band).
+        // Fired ONCE, ~1.2s after the scene composes, in the .boss register so it lands
+        // as the OS reasserting control. Purely an added narrator line — it does NOT
+        // touch the flashlight mechanic, the crop-mask, or the t=0 instruction clue.
+        run(.sequence([
+            .wait(forDuration: 1.2),
+            .run { [weak self] in
+                guard let self else { return }
+                GlitchedNarrator.present(
+                    "SYSTEM OVERRIDE: ENGAGED. CREDITS? CUTE. I'M NOT DONE WITH YOU.",
+                    in: self,
+                    style: .boss
+                )
+            }
+        ]), withKey: "subversionBeat")
     }
 
     // MARK: - Crop Node Light System
@@ -1305,8 +1323,10 @@ final class FlashlightScene: BaseLevelScene, SKPhysicsContactDelegate {
         instructionPanel?.zPosition = 200
         gameCamera.addChild(instructionPanel!)
 
-        // Panel background
-        let panelBG = SKShapeNode(rectOf: CGSize(width: 240, height: 100), cornerRadius: 8)
+        // Panel background. DE-SPOIL: the tease lines below are longer than the old
+        // "TURN ON YOUR / FLASHLIGHT" goal, so the plate is widened (240 -> 320) to
+        // hold them without clipping; height unchanged so the icons stay placed.
+        let panelBG = SKShapeNode(rectOf: CGSize(width: 320, height: 100), cornerRadius: 8)
         panelBG.fillColor = fillColor
         panelBG.strokeColor = strokeColor
         panelBG.lineWidth = lineWidth
@@ -1322,8 +1342,11 @@ final class FlashlightScene: BaseLevelScene, SKPhysicsContactDelegate {
         phoneIcon.position = CGPoint(x: 20, y: 10)
         instructionPanel?.addChild(phoneIcon)
 
-        // Text line 1
-        let label1 = SKLabelNode(text: "TURN ON YOUR")
+        // Text line 1. DE-SPOIL: replaced the explicit "TURN ON YOUR / FLASHLIGHT"
+        // goal with an atmospheric tease split across the two existing label slots.
+        // Same Menlo-Bold styling and slot positions; the wider plate above keeps
+        // the longer copy from clipping.
+        let label1 = SKLabelNode(text: "IT'S DARK DOWN HERE.")
         label1.fontName = "Menlo-Bold"
         label1.fontSize = 11
         label1.fontColor = strokeColor
@@ -1331,9 +1354,9 @@ final class FlashlightScene: BaseLevelScene, SKPhysicsContactDelegate {
         instructionPanel?.addChild(label1)
 
         // Text line 2
-        let label2 = SKLabelNode(text: "FLASHLIGHT")
+        let label2 = SKLabelNode(text: "I CAN'T SEE A THING FROM IN HERE — CAN YOU?")
         label2.fontName = "Menlo-Bold"
-        label2.fontSize = 11
+        label2.fontSize = 9
         label2.fontColor = VisualConstants.Colors.accent
         label2.position = CGPoint(x: 0, y: -40)
         instructionPanel?.addChild(label2)
@@ -1685,6 +1708,10 @@ final class FlashlightScene: BaseLevelScene, SKPhysicsContactDelegate {
 
     private func handleDeath() {
         guard GameState.shared.levelState == .playing else { return }
+        // PROGRESSIVE HINT: every genuine death is a struggle signal. Repeated
+        // failures escalate to the earned hintText() reveal. The .playing guard
+        // above keeps this from double-counting re-entrant death calls.
+        notePlayerStruggle()
         failLevel()
         playerController.cancel()
         bit.playBufferDeath(respawnAt: spawnPoint) { [weak self] in
@@ -1727,7 +1754,7 @@ final class FlashlightScene: BaseLevelScene, SKPhysicsContactDelegate {
     }
 
     override func hintText() -> String? {
-        return "Turn on your flashlight and hold your phone up to look ahead. Tilt your phone flat to light up the floor and spot pits."
+        return "You're holding a light, you know. Switch on the phone's flashlight. Stand the phone upright to throw the beam far ahead — tilt it flat to pool the light on the floor and catch the pits."
     }
 
     // MARK: - Cleanup

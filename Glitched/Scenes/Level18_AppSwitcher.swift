@@ -536,7 +536,7 @@ final class AppSwitcherScene: BaseLevelScene, SKPhysicsContactDelegate {
         line1c.position = CGPoint(x: 0, y: -2)
         panel.addChild(line1c)
 
-        let text2 = SKLabelNode(text: "SWIPE UP TO PEEK & FREEZE TIME")
+        let text2 = SKLabelNode(text: "SO. STOP WATCHING.")
         text2.fontName = "Menlo"
         text2.fontSize = 9
         text2.fontColor = strokeColor
@@ -574,6 +574,10 @@ final class AppSwitcherScene: BaseLevelScene, SKPhysicsContactDelegate {
         isPeeking = true
         peekCount += 1
         peekTimeRemaining = currentMaxPeekTime
+
+        // Forward-progress moment: successfully invoking the App-Switcher freeze
+        // means the player understood the mechanic, so reset the hint timer.
+        notePlayerProgress()
 
         // Pause hazards
         for hazard in movingHazards {
@@ -751,6 +755,7 @@ final class AppSwitcherScene: BaseLevelScene, SKPhysicsContactDelegate {
 
     private func handleDeath() {
         guard GameState.shared.levelState == .playing else { return }
+        notePlayerStruggle()
         playerController.cancel()
         bit.playBufferDeath(respawnAt: spawnPoint) { [weak self] in self?.bit.setGrounded(true) }
     }
@@ -766,7 +771,7 @@ final class AppSwitcherScene: BaseLevelScene, SKPhysicsContactDelegate {
     }
 
     override func hintText() -> String? {
-        return "Swipe up slightly to peek at the App Switcher"
+        return "Swipe up slightly — just enough to peek the App Switcher, not leave. Everything stops while you're half-gone, and the spikes' paths draw themselves. Read them, then drop back in."
     }
 
     override func willMove(from view: SKView) {

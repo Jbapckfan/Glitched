@@ -883,25 +883,28 @@ final class ScreenshotScene: BaseLevelScene, SKPhysicsContactDelegate {
         instructionPanel?.zPosition = 200
         addChild(instructionPanel!)
 
-        // Panel background
-        let panelBG = SKShapeNode(rectOf: CGSize(width: 180, height: 100), cornerRadius: 8)
+        // Panel background. Widened 180 -> 300 and grown 100 -> 116 tall so the
+        // atmospheric tease lines fit without clipping. The longest beat ("THE
+        // BRIDGE ONLY EXISTS WHEN NOTHING IS LOOKING. SO LOOK.") is split across
+        // two centered rows (project convention, cf. L3 "MAKE NOISE"/"TO BLOCK
+        // LASERS") so every row stays inside the 300-wide box at Menlo 9pt. Still
+        // well inside the canvas on every device: on iPhone 390 the centered box
+        // spans x[45,345], clear of the title (left) / pause (right) which live in
+        // the HUD band above this panel (topSafeY-245).
+        let panelBG = SKShapeNode(rectOf: CGSize(width: 300, height: 116), cornerRadius: 8)
         panelBG.fillColor = fillColor
         panelBG.strokeColor = strokeColor
         panelBG.lineWidth = lineWidth
         instructionPanel?.addChild(panelBG)
 
-        // Camera icon
-        let camera = createCameraIcon()
-        camera.position = CGPoint(x: -50, y: 10)
-        camera.setScale(1.5)
-        instructionPanel?.addChild(camera)
-
-        // Flash animation
+        // Flash animation. Centered above the tease text now that the camera
+        // body / explicit "SCREENSHOT" copy is gone — keeps the flickering
+        // camera-flash motif (thematic, not a spoiler) at the panel top.
         let flashBurst = SKShapeNode(circleOfRadius: 8)
         flashBurst.fillColor = .clear
         flashBurst.strokeColor = strokeColor
         flashBurst.lineWidth = lineWidth * 0.5
-        flashBurst.position = CGPoint(x: -50, y: 10)
+        flashBurst.position = CGPoint(x: 0, y: 42)
         flashBurst.alpha = 0
         instructionPanel?.addChild(flashBurst)
 
@@ -914,30 +917,41 @@ final class ScreenshotScene: BaseLevelScene, SKPhysicsContactDelegate {
         ])
         flashBurst.run(.repeatForever(flashAction))
 
-        // Text
-        let label = SKLabelNode(text: "SCREENSHOT")
+        // Atmospheric tease (NO explicit "SCREENSHOT / SIDE + VOLUME UP" spoiler).
+        // Centered rows styled to match the slots they replace (Menlo / strokeColor).
+        // The earned, explicit reveal lives in hintText(), surfaced only after the
+        // player struggles. Three tease beats; the middle beat spans two rows.
+        let label = SKLabelNode(text: "SOME MOMENTS REFUSE TO MOVE...")
         label.fontName = "Menlo-Bold"
-        label.fontSize = 16
+        label.fontSize = 11
         label.fontColor = strokeColor
-        label.position = CGPoint(x: 20, y: 5)
+        label.horizontalAlignmentMode = .center
+        label.position = CGPoint(x: 0, y: 20)
         instructionPanel?.addChild(label)
 
-        let subLabel = SKLabelNode(text: "TO FREEZE")
-        subLabel.fontName = "Menlo"
-        subLabel.fontSize = 12
-        subLabel.fontColor = strokeColor
-        subLabel.position = CGPoint(x: 20, y: -15)
-        instructionPanel?.addChild(subLabel)
+        // Middle beat split across two rows so neither overruns the 300-wide box.
+        let subLabelTop = SKLabelNode(text: "THE BRIDGE ONLY EXISTS WHEN")
+        subLabelTop.fontName = "Menlo"
+        subLabelTop.fontSize = 9
+        subLabelTop.fontColor = strokeColor
+        subLabelTop.horizontalAlignmentMode = .center
+        subLabelTop.position = CGPoint(x: 0, y: 2)
+        instructionPanel?.addChild(subLabelTop)
 
-        // Explicit gesture so the screenshot mechanic is discoverable without
-        // trial-and-error. Centered under the panel, smaller than the action
-        // lines so it reads as a caption. Fits inside the 180-wide box.
-        let gestureLabel = SKLabelNode(text: "PRESS SIDE + VOLUME UP")
+        let subLabelBottom = SKLabelNode(text: "NOTHING IS LOOKING. SO LOOK.")
+        subLabelBottom.fontName = "Menlo"
+        subLabelBottom.fontSize = 9
+        subLabelBottom.fontColor = strokeColor
+        subLabelBottom.horizontalAlignmentMode = .center
+        subLabelBottom.position = CGPoint(x: 0, y: -14)
+        instructionPanel?.addChild(subLabelBottom)
+
+        let gestureLabel = SKLabelNode(text: "CATCH IT BEFORE IT FORGETS ITSELF.")
         gestureLabel.fontName = "Menlo"
-        gestureLabel.fontSize = 8
+        gestureLabel.fontSize = 9
         gestureLabel.fontColor = strokeColor
         gestureLabel.horizontalAlignmentMode = .center
-        gestureLabel.position = CGPoint(x: 0, y: -38)
+        gestureLabel.position = CGPoint(x: 0, y: -34)
         instructionPanel?.addChild(gestureLabel)
     }
 
@@ -1291,6 +1305,10 @@ final class ScreenshotScene: BaseLevelScene, SKPhysicsContactDelegate {
 
     private func handleDeath() {
         guard GameState.shared.levelState == .playing else { return }
+        // Progressive hint: each failed crossing escalates toward the explicit
+        // hintText() reveal (the screenshot gesture). Repeated falls into the
+        // chasm are the "struggle" signal the base class watches for.
+        notePlayerStruggle()
         playerController.cancel()
         screenshotCount = 0
         bit.playBufferDeath(respawnAt: spawnPoint) { [weak self] in
@@ -1321,7 +1339,7 @@ final class ScreenshotScene: BaseLevelScene, SKPhysicsContactDelegate {
     }
 
     override func hintText() -> String? {
-        return "Take a screenshot (press Side + Volume Up) to freeze the bridge"
+        return "Capture this moment and it cannot move. Take a screenshot — press the Side button + Volume Up — to pin the bridge solid long enough to cross."
     }
 
     // MARK: - Cleanup

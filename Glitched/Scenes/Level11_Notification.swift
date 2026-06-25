@@ -657,11 +657,17 @@ final class NotificationScene: BaseLevelScene, SKPhysicsContactDelegate {
     }
 
     private func showInstructionPanel() {
-        // Centered mid-screen so the 260x100 panel sits well below the
-        // topSafeY-anchored notification stack (button / waiting / faux) on every
-        // device and never overlaps it.
+        // OCCLUSION FIX: the cyan "SYSTEM ACCESS REQUIRED" permission modal is
+        // centered at size.height/2 and ~170pt tall (center ±85). The clue panel
+        // used to sit at that SAME center, so at t=0 it was fully hidden behind the
+        // modal and only read after "GOT IT" was tapped. Drop it into the
+        // lower-center safe band (well below the modal's bottom edge, clear of the
+        // top-right PAUSE column and the topSafeY notification stack) so it is
+        // visible from the opening frame. The 6s fade is ALSO restarted when the
+        // permission overlay is dismissed (see touchesBegan) so a slow tapper still
+        // gets the full read after "GOT IT".
         instructionPanel = SKNode()
-        instructionPanel?.position = CGPoint(x: uiX(size.width / 2), y: uiY(size.height / 2))
+        instructionPanel?.position = CGPoint(x: uiX(size.width / 2), y: uiY(size.height * 0.26))
         instructionPanel?.zPosition = 300
         uiLayer.addChild(instructionPanel!)
 
@@ -692,11 +698,27 @@ final class NotificationScene: BaseLevelScene, SKPhysicsContactDelegate {
         text3.position = CGPoint(x: 0, y: -20)
         instructionPanel?.addChild(text3)
 
-        instructionPanel?.run(.sequence([
+        runInstructionFade()
+    }
+
+    /// (Re)start the instruction panel's 6s visible-then-fade timer. Run under a
+    /// named key so dismissing the permission overlay can restart it from full
+    /// opacity — a slow "GOT IT" tapper would otherwise have already burned part
+    /// (or all) of the 6s while the modal covered nothing here (the panel now
+    /// lives in the lower band), but restarting guarantees a clean full read on
+    /// dismissal regardless. No-op once the panel has removed itself.
+    private func runInstructionFade() {
+        guard let panel = instructionPanel else { return }
+        panel.removeAction(forKey: "instructionFade")
+        panel.alpha = 1.0
+        panel.run(.sequence([
             .wait(forDuration: 6.0),
             .fadeOut(withDuration: 0.5),
-            .removeFromParent()
-        ]))
+            .run { [weak self] in
+                self?.instructionPanel?.removeFromParent()
+                self?.instructionPanel = nil
+            }
+        ]), withKey: "instructionFade")
     }
 
     // MARK: - Setup
@@ -935,6 +957,10 @@ final class NotificationScene: BaseLevelScene, SKPhysicsContactDelegate {
 
         currentDoorIndex += 1
 
+        // PROGRESSIVE HINT: unlocking a door is unambiguous forward progress —
+        // reset the struggle/no-progress timers so the next segment starts fresh.
+        notePlayerProgress()
+
         let generator = UINotificationFeedbackGenerator()
         generator.notificationOccurred(.success)
     }
@@ -983,7 +1009,20 @@ final class NotificationScene: BaseLevelScene, SKPhysicsContactDelegate {
     override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent?) {
         guard let touch = touches.first else { return }
         let location = touch.location(in: self)
-        if handlePermissionOverlayTouch(at: location) { return }
+
+        // Detect the "GOT IT" dismissal of the centered permission modal. The
+        // overlay node itself is private to BaseLevelScene, but its dismiss button
+        // is named "permissionContinueButton"; if it existed before the touch and
+        // is gone after handlePermissionOverlayTouch(), the modal was just closed —
+        // restart the instruction panel's 6s timer so it reads fully from full
+        // opacity now that nothing covers the screen.
+        let overlayWasUp = childNode(withName: "//permissionContinueButton") != nil
+        if handlePermissionOverlayTouch(at: location) {
+            if overlayWasUp && childNode(withName: "//permissionContinueButton") == nil {
+                runInstructionFade()
+            }
+            return
+        }
 
         // Check if button tapped. uiContains converts the touch into the UI
         // layer's space so the button stays tappable whether it's anchored to
@@ -1050,6 +1089,10 @@ final class NotificationScene: BaseLevelScene, SKPhysicsContactDelegate {
 
     private func handleDeath() {
         guard GameState.shared.levelState == .playing else { return }
+        // PROGRESSIVE HINT: a real in-play death is a struggle signal. Repeated
+        // deaths escalate the shared difficulty-hint system so the EARNED reveal
+        // (hintText) fires for a stuck player.
+        notePlayerStruggle()
         playerController.cancel()
         bit.playBufferDeath(respawnAt: spawnPoint) { [weak self] in self?.bit.setGrounded(true) }
     }

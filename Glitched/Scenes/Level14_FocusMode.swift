@@ -730,12 +730,14 @@ final class FocusModeScene: BaseLevelScene, SKPhysicsContactDelegate {
         text2.position = CGPoint(x: 0, y: 1)
         panel.addChild(text2)
 
-        // 3rd line: explicit mechanic prompt so players know the OS-level action
-        // that solves the level (matches hintText() / LEVEL-GUIDE). Box height
-        // (80) is unchanged; the three lines pack inside the existing bounds.
-        let text3 = SKLabelNode(text: "ENABLE FOCUS / DO NOT DISTURB TO FREEZE THE CHAOS")
+        // 3rd line: atmospheric provocation (no explicit mechanic). The earned
+        // mechanic reveal lives in hintText() after the player struggles. Box
+        // height (80) is unchanged; the three lines pack inside the existing
+        // bounds. Bumped to fontSize 10 (matching line 2) since the shorter
+        // line fits the 240-wide plate comfortably.
+        let text3 = SKLabelNode(text: "SO HOW QUIET CAN YOU MAKE YOURSELF?")
         text3.fontName = "Menlo"
-        text3.fontSize = 7
+        text3.fontSize = 10
         text3.fontColor = strokeColor
         text3.position = CGPoint(x: 0, y: -18)
         panel.addChild(text3)
@@ -905,6 +907,9 @@ final class FocusModeScene: BaseLevelScene, SKPhysicsContactDelegate {
 
     private func handleDeath() {
         guard GameState.shared.levelState == .playing else { return }
+        // Progressive hint wiring: each death escalates the earned hint reveal so
+        // repeated failure surfaces the Focus / Do Not Disturb solution sooner.
+        notePlayerStruggle()
         playerController.cancel()
         bit.playBufferDeath(respawnAt: spawnPoint) { [weak self] in self?.bit.setGrounded(true) }
     }
@@ -957,7 +962,7 @@ final class FocusModeScene: BaseLevelScene, SKPhysicsContactDelegate {
     }
 
     override func hintText() -> String? {
-        return "Enable Do Not Disturb or Focus Mode"
+        return "Turn on Focus / Do Not Disturb in iOS Control Center (the crescent-moon toggle) — it freezes every spike mid-orbit and unlocks the door. Stuck without it? Tap CAN'T DO THIS? in the bottom corner."
     }
 
     override func willMove(from view: SKView) {

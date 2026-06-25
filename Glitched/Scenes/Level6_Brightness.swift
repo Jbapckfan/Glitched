@@ -32,6 +32,8 @@ final class BrightnessScene: BaseLevelScene, SKPhysicsContactDelegate {
     private var burnWarning: SKLabelNode?
     private var screenFlash: SKShapeNode?
     private var isBurning = false
+    /// De-spoil: the LUX-bar safe band stays hidden until the player burns once.
+    private var hasBurnedOnce = false
 
     /// A11Y: suppress the repeating white burn strobe when either the system-level
     /// Reduce Motion switch or the in-game Reduce Flash toggle is on. Matches the
@@ -102,6 +104,169 @@ final class BrightnessScene: BaseLevelScene, SKPhysicsContactDelegate {
         createMaxBrightnessSun()
         updateMaxBrightnessSun()
         updateBrightnessCommentary()
+        presentOpeningLines()
+    }
+
+    // MARK: - Opening Lines (t=0)
+
+    /// De-spoiled t=0 tease lines (unchanged content — iPad already renders them
+    /// clean via the shared narrator). Defined once here so the iPhone-only
+    /// custom placement below speaks the EXACT same two strings.
+    private static let teaseLine1 = "I CAN'T SEE EITHER, YOU KNOW."
+    private static let teaseLine2 = "THE DARK IS HIDING THE FLOOR FROM BOTH OF US."
+
+    /// De-spoiled t=0 atmosphere. The old opening told the player exactly what to do
+    /// ("NOT TOO BRIGHT ~80%" caption + telegraphed safe band). Instead the OS just
+    /// admits it's blind in the dark too, framing the brightness puzzle as a shared
+    /// problem to discover rather than a printed instruction. Two whisper lines,
+    /// sequenced so the narrator never stacks (present() dismisses the prior line).
+    ///
+    /// PLACEMENT: the shared `GlitchedNarrator` parks every line in a fixed
+    /// lower-center band. On the wide iPad that band is empty sky, so the iPad
+    /// path stays BYTE-IDENTICAL (it keeps calling the narrator). On the narrow
+    /// iPhone the *widened* t=0 tease wraps to two lines and that lower-center
+    /// band sits right on top of Bit's spawn / the start platform art — a z-order
+    /// collision with the game world. So on the compact canvas ONLY we render the
+    /// same two strings ourselves in the clear UPPER band (below the title /
+    /// BRIGHTNESS panel, above the climb, clear of the top-right PAUSE) on a
+    /// backing plate, so the de-spoil text reads cleanly without covering the
+    /// character.
+    private func presentOpeningLines() {
+        // Mark the first opening aside as "shown" so the dark-state commentary
+        // (same first line) doesn't immediately re-fire and double up.
+        darkCommentaryShown = true
+
+        if isCompactCanvas {
+            presentCompactOpeningTease()
+            return
+        }
+
+        GlitchedNarrator.present(BrightnessScene.teaseLine1, in: self, style: .whisper)
+        run(.sequence([
+            .wait(forDuration: 3.4),
+            .run { [weak self] in
+                guard let self = self else { return }
+                GlitchedNarrator.present(
+                    BrightnessScene.teaseLine2,
+                    in: self,
+                    style: .whisper
+                )
+            }
+        ]), withKey: "openingLines")
+    }
+
+    /// iPhone-only t=0 tease. Renders the same two de-spoil strings as the iPad
+    /// path, but in the clear upper band on a backing plate instead of the
+    /// narrator's fixed lower-center band (which overlaps Bit's spawn on the
+    /// narrow canvas). Matches the whisper voice: Menlo / cyan accent, full
+    /// opacity, auto-fading and sequenced exactly like the narrator opening.
+    private func presentCompactOpeningTease() {
+        showUpperBandTease(BrightnessScene.teaseLine1)
+        run(.sequence([
+            .wait(forDuration: 3.4),
+            .run { [weak self] in
+                self?.showUpperBandTease(BrightnessScene.teaseLine2)
+            }
+        ]), withKey: "openingLines")
+    }
+
+    /// Build (and replace any prior) upper-band tease caption with a legibility
+    /// backing plate, positioned in the clear strip BELOW the title + BRIGHTNESS
+    /// panel and ABOVE the gameplay climb, horizontally centered so it clears the
+    /// top-left title and the top-right PAUSE square. Word-wrapped to the canvas
+    /// width, full opacity, then auto-fades and removes itself.
+    private func showUpperBandTease(_ text: String) {
+        // Replace any prior tease so the two lines never stack/overlap (mirrors
+        // the narrator's dismiss-on-present behavior).
+        childNode(withName: "l6_opening_tease")?.removeFromParent()
+
+        let container = SKNode()
+        container.name = "l6_opening_tease"
+        // Above gameplay/HUD art, below full-screen death/transition juice.
+        container.zPosition = 250
+
+        // Word-wrap to the canvas width so the widened line never clips the edges.
+        let fontName = VisualConstants.Fonts.secondary
+        let fontSize: CGFloat = 15
+        let lineHeight: CGFloat = fontSize * 1.4
+        let maxLineWidth = size.width - 2 * (layoutSideMargin + 14)
+        let lines = wrapTease(text, font: fontName, fontSize: fontSize, maxWidth: maxLineWidth)
+        guard !lines.isEmpty else { return }
+
+        // Measure the widest line for the backing-plate width.
+        let uiFont = UIFont(name: fontName, size: fontSize)
+            ?? UIFont.monospacedSystemFont(ofSize: fontSize, weight: .regular)
+        let widestLine = lines.map { ($0 as NSString).size(withAttributes: [.font: uiFont]).width }.max() ?? 0
+
+        let totalTextHeight = CGFloat(lines.count) * lineHeight
+        let topY = totalTextHeight / 2 - lineHeight / 2
+
+        // Backing plate for legibility over the line-art background.
+        let plateWidth = min(size.width - 2 * layoutSideMargin, widestLine + 28)
+        let plateHeight = totalTextHeight + 18
+        let plate = SKShapeNode(rectOf: CGSize(width: plateWidth, height: plateHeight), cornerRadius: 8)
+        plate.fillColor = fillColor
+        plate.strokeColor = strokeColor
+        plate.lineWidth = lineWidth
+        plate.zPosition = 0
+        container.addChild(plate)
+
+        for (index, line) in lines.enumerated() {
+            let label = SKLabelNode(fontNamed: fontName)
+            label.text = line
+            label.fontSize = fontSize
+            label.fontColor = VisualConstants.Colors.accent
+            label.horizontalAlignmentMode = .center
+            label.verticalAlignmentMode = .center
+            label.position = CGPoint(x: 0, y: topY - CGFloat(index) * lineHeight)
+            label.zPosition = 1
+            container.addChild(label)
+        }
+
+        // CLEAR UPPER BAND: pin the plate's TOP just under the title/PAUSE row and
+        // keep its BOTTOM above the gameplay climb, horizontally centered (clear of
+        // the top-left title column and the top-right PAUSE square).
+        let bandTop = layoutTopY - 96            // below the ~88pt title / PAUSE row
+        let bandBottom = layoutTopY - 168         // above the compact climb top
+        let centerY = clamp((bandTop + bandBottom) / 2,
+                            lower: bandBottom + plateHeight / 2,
+                            upper: bandTop - plateHeight / 2)
+        container.position = CGPoint(x: size.width / 2, y: centerY)
+        addChild(container)
+
+        // Auto-fade + self-remove, matching the whisper hold cadence.
+        container.run(.sequence([
+            .wait(forDuration: 2.8),
+            .fadeOut(withDuration: 0.45),
+            .removeFromParent()
+        ]))
+    }
+
+    /// Greedy word-wrap for the iPhone tease, measured with the real font so the
+    /// widened line wraps cleanly inside the upper band instead of clipping.
+    private func wrapTease(_ text: String, font: String, fontSize: CGFloat, maxWidth: CGFloat) -> [String] {
+        let words = text.split(separator: " ").map(String.init)
+        guard !words.isEmpty else { return [] }
+
+        let uiFont = UIFont(name: font, size: fontSize)
+            ?? UIFont.monospacedSystemFont(ofSize: fontSize, weight: .regular)
+        func width(_ s: String) -> CGFloat {
+            (s as NSString).size(withAttributes: [.font: uiFont]).width
+        }
+
+        var lines: [String] = []
+        var current = ""
+        for word in words {
+            let candidate = current.isEmpty ? word : current + " " + word
+            if width(candidate) <= maxWidth || current.isEmpty {
+                current = candidate
+            } else {
+                lines.append(current)
+                current = word
+            }
+        }
+        if !current.isEmpty { lines.append(current) }
+        return lines
     }
 
     override func didUpdateSafeArea() {
@@ -210,6 +375,12 @@ final class BrightnessScene: BaseLevelScene, SKPhysicsContactDelegate {
                 }
             }
 
+            // First burn teaches the ceiling: reveal the previously hidden LUX-bar
+            // safe band so the player can now aim for the high-but-not-max window.
+            if shouldBurn {
+                revealSweetSpotBand()
+            }
+
             // Warning flash
             if shouldBurn {
                 burnWarning?.run(.sequence([
@@ -243,6 +414,14 @@ final class BrightnessScene: BaseLevelScene, SKPhysicsContactDelegate {
                 screenFlash?.run(.fadeOut(withDuration: 0.2))
             }
         }
+    }
+
+    /// De-spoil reveal: fade in the LUX-bar safe band the first time the player
+    /// burns, turning the burn ceiling from up-front instruction into an earned cue.
+    private func revealSweetSpotBand() {
+        guard !hasBurnedOnce else { return }
+        hasBurnedOnce = true
+        sweetSpotBand?.run(.fadeAlpha(to: 0.45, duration: 0.4))
     }
 
     private func burnZonePositions() -> [CGPoint] {
@@ -1213,14 +1392,17 @@ final class BrightnessScene: BaseLevelScene, SKPhysicsContactDelegate {
         barBG.lineWidth = lineWidth
         brightnessBar?.addChild(barBG)
 
-        // Mark the target 0.8-0.95 band: solid platforms without max-brightness burn.
+        // De-spoiled: the 0.8-0.95 "sweet spot" band used to be pre-drawn, telegraphing
+        // the exact safe window. It now starts HIDDEN (alpha 0) and is only revealed
+        // after the player's first burn (see revealSweetSpotBand()), so the burn
+        // ceiling is discovered through play, not handed to the player up front.
         let sweetSpotHeight = (burnThreshold - solidThreshold) * brightnessBarHeight
         let sweetSpotCenterY = ((burnThreshold + solidThreshold) / 2) * brightnessBarHeight - brightnessBarHeight / 2
         let sweetSpot = SKShapeNode(rectOf: CGSize(width: 14, height: sweetSpotHeight))
         sweetSpot.fillColor = .clear
         sweetSpot.strokeColor = strokeColor
         sweetSpot.lineWidth = lineWidth * 0.35
-        sweetSpot.alpha = 0.45
+        sweetSpot.alpha = 0
         sweetSpot.position = CGPoint(x: 0, y: sweetSpotCenterY)
         brightnessBar?.addChild(sweetSpot)
         sweetSpotBand = sweetSpot
@@ -1325,15 +1507,10 @@ final class BrightnessScene: BaseLevelScene, SKPhysicsContactDelegate {
         label.position = CGPoint(x: 0, y: -29)
         instructionPanel?.addChild(label)
 
-        // Caption: cue players that the target is the high-but-not-max band so they
-        // don't blow past the sweet spot into the burn zone. Text only; both lines
-        // stay inside the existing 100pt-tall panel background (spans -50…+50).
-        let caption = SKLabelNode(text: "NOT TOO BRIGHT  ~80%")
-        caption.fontName = "Menlo"
-        caption.fontSize = isCompactPhone ? 8 : 9
-        caption.fontColor = strokeColor
-        caption.position = CGPoint(x: 0, y: -43)
-        instructionPanel?.addChild(caption)
+        // De-spoiled: the explicit "NOT TOO BRIGHT  ~80%" caption was removed so the
+        // burn ceiling is something the player discovers rather than is told. The
+        // earned hint (hintText) reveals the pull-back-before-max rule after struggle,
+        // and the burn band on the LUX bar only appears AFTER a first burn.
         layoutHUDNodes()
     }
 
@@ -1489,6 +1666,11 @@ final class BrightnessScene: BaseLevelScene, SKPhysicsContactDelegate {
 
             // Hide instruction panel when brightness raised
             if level > 0.6 && oldBrightness <= 0.6 {
+                // PROGRESSIVE HINT: raising brightness past the ghost threshold is the
+                // core "I figured out the mechanic" beat — reset the struggle/hint
+                // timer so the earned hint waits for fresh failure rather than firing
+                // on a player who is already making progress.
+                notePlayerProgress()
                 instructionPanel?.run(.sequence([
                     .fadeOut(withDuration: 0.3),
                     .removeFromParent()
@@ -1570,6 +1752,9 @@ final class BrightnessScene: BaseLevelScene, SKPhysicsContactDelegate {
 
     private func handleDeath() {
         guard GameState.shared.levelState == .playing else { return }
+        // PROGRESSIVE HINT: every death (fall or burn) is a struggle beat; repeated
+        // failure escalates toward the earned hintText() reveal.
+        notePlayerStruggle()
         playerController.cancel()
         currentGroundPlatform = nil
         bit.playBufferDeath(respawnAt: spawnPoint) { [weak self] in
@@ -1597,7 +1782,7 @@ final class BrightnessScene: BaseLevelScene, SKPhysicsContactDelegate {
     }
 
     override func hintText() -> String? {
-        return "Adjust your screen brightness"
+        return "Raise your device brightness slider near the top to make the ghost platforms solid — but pull back before full: max brightness lights a burn hazard."
     }
 
     // MARK: - Cleanup

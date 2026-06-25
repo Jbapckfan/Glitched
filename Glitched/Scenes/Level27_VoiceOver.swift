@@ -334,63 +334,82 @@ final class VoiceOverScene: BaseLevelScene, SKPhysicsContactDelegate {
         let edgePlatformW: CGFloat = 84
         let edgePlatformH: CGFloat = 30
 
-        // --- BEAT 0: spawn / teach platform (low-left, on the FLOOR tier) ---
-        // Start platform center x=70, width 84 → right surface edge at x=112, top at
-        // floorY+15. First stone S1@180 (left edge 160) clears it by 48pt horizontal;
-        // its rise = tierY(1) - (floorY+15) = step - 15 <= 70 (safe).
-        let startCx: CGFloat = 70
+        // --- TRUE VERTICAL FILL — a narrow ZIG-ZAG COLUMN around screen center ---
+        // The old iPad layout marched left→right across a ~1732pt-wide course, so the
+        // 14 tiers stacked DIAGONALLY off-screen RIGHT and the portrait camera rested
+        // on the lone bottom-left spawn under blank dead-sky. Fix: keep the same 14
+        // tiers / +1-tier-per-surface climb, but stack them UPWARD as a slim column
+        // that ALTERNATES left/right of the live screen center as it climbs. The whole
+        // column's horizontal extent is ~250pt (well under 900), centered on
+        // size.width/2, so the entire floor→ceiling climb is visible in ONE resting
+        // frame with NO horizontal camera-follow (composedCourseExtent stays nil).
+        //
+        // x is authored as `center + offset`. Two opposite-side 40-wide stones sit
+        // ±58 apart → center-to-center 116 → edge-to-edge horizontal gap 76 (in the
+        // 40-80 band). Wide pauses (REST 120, BREATH 90) are pushed to one side so
+        // their nearer edge still leaves a ~60pt gap to the neighbouring stone.
+        let center = size.width / 2
+
+        // --- BEAT 0: spawn / teach platform (FLOOR tier, left of center) ---
+        // Start platform top at floorY+15 (createPlatform y is the CENTER). The spawn
+        // in setupBit() uses the same center-58 x so Bit lands here and respawns here.
+        let startCx: CGFloat = center - 58
         createPlatform(at: CGPoint(x: startCx, y: floorY), size: CGSize(width: edgePlatformW, height: edgePlatformH))
 
-        // Real solution stones authored as (centerX, tierIndex). The route CLIMBS one
-        // tier per surface (rise <= ~83 <= 85). Centers march ~120pt apart left→right
-        // (stones 40 wide → ~80pt edge-to-edge gaps, well under 130) so it reads as a
-        // diagonal climb spread across the full width. stoneSize = 40w x 22h, so a
-        // stone's top = center.y + 11; we center each so its TOP == tierY(tier).
+        // Real solution stones authored as (offsetFromCenter, tierIndex). The route
+        // CLIMBS exactly one tier per surface (rise == one ~83pt step <= 85) and
+        // ZIG-ZAGS ±58 around center so consecutive edge-to-edge horizontal gaps land
+        // at 54-76pt (in the 40-80 band, well under maxJumpableGap 130). stoneSize =
+        // 40w x 22h; a stone's top = center.y + 11, so we center each so its TOP ==
+        // tierY(tier).
         //
-        //   teach: S1 @180 t1,  S2 @300 t2                 (gentle steps off the floor)
-        //   build: S3 @420 t3,  S4 @540 t4                 (steady climb)
-        //   (REST wide platform @ 660, t5 — a deliberate mid-air breath)
-        //   peak:  S5 @790 t6,  S6 @910 t7,  S7 @1030 t8   (push toward the top, decoys hot)
-        //   S8 @1150 t9
-        //   (BREATH platform @ 1270, t10 — short high pause)
-        //   S9 @1390 t11
-        //   FINALE: S10 @1510 t12 (lone real stone near the ceiling, decoy each side)
-        //   exit:  platform + door @ 1630, ceilTier(13)
-        struct RealStone { let cx: CGFloat; let tier: Int }
+        //   teach: S1 t1 (R),  S2 t2 (L)                    (gentle steps off the floor)
+        //   build: S3 t3 (R),  S4 t4 (L)                    (steady climb)
+        //   (REST wide platform t5 — a deliberate mid-air breath)
+        //   peak:  S5 t6 (L),  S6 t7 (R),  S7 t8 (L)        (push toward the top, decoys hot)
+        //   S8 t9 (R)
+        //   (BREATH platform t10 — short high pause)
+        //   S9 t11 (R)
+        //   FINALE: S10 t12 (L, lone real stone near the ceiling, decoy each side)
+        //   exit:  platform + door t13 (R)
+        struct RealStone { let dx: CGFloat; let tier: Int }
         let realStones: [RealStone] = [
-            RealStone(cx: 180, tier: 1),
-            RealStone(cx: 300, tier: 2),
-            RealStone(cx: 420, tier: 3),
-            RealStone(cx: 540, tier: 4),
-            // (660 REST platform, t5)
-            RealStone(cx: 790, tier: 6),
-            RealStone(cx: 910, tier: 7),
-            RealStone(cx: 1030, tier: 8),
-            RealStone(cx: 1150, tier: 9),
-            // (1270 BREATH platform, t10)
-            RealStone(cx: 1390, tier: 11),
-            RealStone(cx: 1510, tier: 12)     // isolated finale beat, near the ceiling
+            RealStone(dx:  58, tier: 1),
+            RealStone(dx: -58, tier: 2),
+            RealStone(dx:  58, tier: 3),
+            RealStone(dx: -58, tier: 4),
+            // (REST platform, t5)
+            RealStone(dx: -58, tier: 6),
+            RealStone(dx:  58, tier: 7),
+            RealStone(dx: -58, tier: 8),
+            RealStone(dx:  58, tier: 9),
+            // (BREATH platform, t10)
+            RealStone(dx:  58, tier: 11),
+            RealStone(dx: -58, tier: 12)      // isolated finale beat, near the ceiling
         ]
 
         // --- REST + BREATH platforms (wider, visually safe pauses on the climb) ---
-        // REST is the >=1 WIDE rest platform required by the design: 120pt wide, sits
-        // at tier 5 between S4(t4) and S5(t6) — one tier from each neighbour. Because
-        // createPlatform's y is the platform CENTER (top = y + height/2), we place the
-        // center at tierY(5)-15 so its TOP == tierY(5).
-        let restCx: CGFloat = 660
+        // REST is the >=1 WIDE rest platform required by the design: 120pt wide at
+        // tier 5 between S4(t4, dx-58) and S5(t6, dx-58) — one tier from each. Pushed
+        // RIGHT (center+82) so its left edge (center+22) leaves a 60pt gap to S4's
+        // right edge (center-38). createPlatform y is the CENTER (top = y + height/2),
+        // so center.y = tierY(5)-15 → TOP == tierY(5).
+        let restCx: CGFloat = center + 82
         let restW: CGFloat = 120
         createPlatform(at: CGPoint(x: restCx, y: tierY(5) - 15), size: CGSize(width: restW, height: 30))
 
-        // High BREATH: narrower pause at tier 10, between S8(t9) and S9(t11) — one
-        // tier from each. Top == tierY(10).
-        let breathCx: CGFloat = 1270
+        // High BREATH: 90pt pause at tier 10 between S8(t9, dx+58) and S9(t11, dx+58)
+        // — one tier from each. Pushed LEFT (center-67) so its right edge (center-22)
+        // leaves a 60pt gap to S8's left edge (center+38). Top == tierY(10).
+        let breathCx: CGFloat = center - 67
         let breathW: CGFloat = 90
         createPlatform(at: CGPoint(x: breathCx, y: tierY(10) - 15), size: CGSize(width: breathW, height: 30))
 
-        // --- EXIT platform + door (top-right of the course, at the CEILING tier) ---
+        // --- EXIT platform + door (CEILING tier, right of center) ---
         // Place the exit platform TOP at tierY(13) so the finale stone (t12) → exit
-        // rise == one tier step (<= 85). center = tierY(13) - 15 → top == tierY(13).
-        let exitCx: CGFloat = 1630
+        // rise == one tier step (<= 85). center.y = tierY(13)-15 → top == tierY(13).
+        // dx +58 from S10(t12, dx-58) → 76pt edge gap.
+        let exitCx: CGFloat = center + 58
         let exitTopY = tierY(ceilTier)
         createPlatform(at: CGPoint(x: exitCx, y: exitTopY - 15), size: CGSize(width: edgePlatformW, height: edgePlatformH))
         createExitDoor(at: CGPoint(x: exitCx, y: exitTopY + 35))
@@ -399,45 +418,44 @@ final class VoiceOverScene: BaseLevelScene, SKPhysicsContactDelegate {
         for (i, rs) in realStones.enumerated() {
             let top = tierY(rs.tier)
             let y = top - stoneSize.height / 2     // center so the stone TOP == tierY
-            let stone = makeStone(at: CGPoint(x: rs.cx, y: y), isReal: true, index: i)
+            let stone = makeStone(at: CGPoint(x: center + rs.dx, y: y), isReal: true, index: i)
             stones.append(stone)
         }
 
         // --- DECOYS — staged per beat, most aggressive at the tension peak and the
-        // finale. Each sits just OFF the true arc (one tier LOWER + nudged forward),
-        // tempting the naive "every shimmer is a floor" read. Decoys reveal but never
-        // solidify. Per the level note: staged invisible platforms at VARIED HEIGHTS
-        // across the screen — these span tiers 0..t11, not one floating band.
-        // (cx, tierIndex). Lower than the neighbouring real stones so they read as a
-        // cheap shortcut and dump the player into the void.
-        let decoyPlacements: [(cx: CGFloat, tier: Int)] = [
-            (240, 0),      // teach: the obvious low hop along the floor
-            (480, 2),      // build: a tempting under-step below the climb
-            (850, 5),      // tension peak: deep under the high stones
-            (1450, 11),    // finale: decoy BEFORE the lone real stone (same low tier)
-            (1570, 11)     // finale: decoy AFTER it — the signature twist beat
+        // finale. Each sits just OFF the true arc (one tier LOWER, nudged to a tempting
+        // side) so the naive "every shimmer is a floor" read walks off into the void.
+        // Decoys reveal but never solidify (intangible → they don't change any reach
+        // math; only readability). They share the column so they stay on-screen with
+        // the climb. Authored as (offsetFromCenter, tierIndex) at VARIED heights.
+        let decoyPlacements: [(dx: CGFloat, tier: Int)] = [
+            ( 58, 0),      // teach: an obvious low hop on the opposite side of the floor
+            (-58, 2),      // build: a tempting under-step below the climb
+            ( 58, 5),      // tension peak: deep under the high stones
+            (-58, 11),     // finale: decoy on the LEFT, beside the lone real stone
+            (118, 11)      // finale: decoy on the RIGHT — the signature twist beat
         ]
         for (j, d) in decoyPlacements.enumerated() {
             let top = tierY(d.tier)
             let y = top - stoneSize.height / 2
-            let stone = makeStone(at: CGPoint(x: d.cx, y: y), isReal: false, index: 1000 + j)
+            let stone = makeStone(at: CGPoint(x: center + d.dx, y: y), isReal: false, index: 1000 + j)
             stones.append(stone)
         }
 
-        // --- Course extent / camera-follow / world bound / death zone ---
-        // Course extends from x=0 to just past the exit platform's right edge.
-        // installCameraFollow needs the playerController (built in setupBit, AFTER
-        // buildLevel), so we stash the extent here and install it in configureScene
-        // once the controller exists.
-        let courseExtent = exitCx + edgePlatformW / 2 + 60    // 1732
-        composedCourseExtent = courseExtent
+        // --- No camera-follow: the whole climb fits one frame ---
+        // The column's horizontal extent (~250pt centered on size.width/2) is far
+        // narrower than the iPad viewport, so the entire floor→ceiling climb — spawn,
+        // REST t5, BREATH t10, finale t12 and the exit t13 — is visible at once. We
+        // therefore install NO horizontal camera-follow: composedCourseExtent stays
+        // nil (configureScene's installCameraFollow guard is skipped) and the camera
+        // rests at scene center on the climb column, not in a corner.
+        composedCourseExtent = nil
 
-        // Death zone spans the whole course (not just the viewport) so a fall anywhere
-        // along the scrolling course is caught. Positioned a fixed offset below the
-        // FLOOR tier (lowest real surface), matching the phone path's relative offset.
+        // Death zone spans the full width well below the FLOOR tier so a fall anywhere
+        // off the column is caught. Same relative offset below groundY as the phone path.
         let death = SKNode()
-        death.position = CGPoint(x: courseExtent / 2, y: floorY - 110)
-        death.physicsBody = SKPhysicsBody(rectangleOf: CGSize(width: courseExtent * 2, height: 100))
+        death.position = CGPoint(x: size.width / 2, y: floorY - 110)
+        death.physicsBody = SKPhysicsBody(rectangleOf: CGSize(width: size.width * 2, height: 100))
         death.physicsBody?.isDynamic = false
         death.physicsBody?.categoryBitMask = PhysicsCategory.hazard
         addChild(death)
@@ -694,21 +712,21 @@ final class VoiceOverScene: BaseLevelScene, SKPhysicsContactDelegate {
         bg.strokeColor = strokeColor
         panel.addChild(bg)
 
-        let text1 = SKLabelNode(text: "THE BRIDGE ISN'T THERE UNTIL YOU")
+        let text1 = SKLabelNode(text: "THE GAP DOESN'T CARE THAT YOU SEE IT.")
         text1.fontName = "Menlo-Bold"
         text1.fontSize = 10
         text1.fontColor = strokeColor
         text1.position = CGPoint(x: 0, y: 16)
         panel.addChild(text1)
 
-        let text2 = SKLabelNode(text: "PERCEIVE IT. TOGGLE VOICEOVER —")
+        let text2 = SKLabelNode(text: "BUT SOMETHING HERE IS LISTENING FOR YOU.")
         text2.fontName = "Menlo"
         text2.fontSize = 9
         text2.fontColor = strokeColor
         text2.position = CGPoint(x: 0, y: 0)
         panel.addChild(text2)
 
-        let text3 = SKLabelNode(text: "OR TAP THE ACCESSIBILITY BUTTON.")
+        let text3 = SKLabelNode(text: "A PATH EXISTS ONLY ONCE IT'S NAMED ALOUD.")
         text3.fontName = "Menlo"
         text3.fontSize = 9
         text3.fontColor = strokeColor
@@ -720,11 +738,12 @@ final class VoiceOverScene: BaseLevelScene, SKPhysicsContactDelegate {
 
     private func setupBit() {
         if isWideCanvas {
-            // iPad composed path: spawn ON the start platform (centered x=70, top at
-            // playableGroundY+15). Use the same floor tier as the composed build so
-            // Bit lands on the start platform and respawns there. Absolute, no lift.
+            // iPad composed path: spawn ON the start platform of the zig-zag column
+            // (start platform center x = size.width/2 - 58, top at playableGroundY+15).
+            // Use the same floor tier as the composed build so Bit lands on the start
+            // platform and respawns there. Absolute, no lift.
             let floorY = verticalTier(0, of: 14, iphoneGround: groundY)
-            spawnPoint = CGPoint(x: 70, y: floorY + 60)
+            spawnPoint = CGPoint(x: size.width / 2 - 58, y: floorY + 60)
         } else {
             // iPHONE PATH — UNCHANGED. Lift the spawn (and therefore the respawn,
             // which reuses spawnPoint) by the SAME uniform band lift computed in
@@ -770,6 +789,11 @@ final class VoiceOverScene: BaseLevelScene, SKPhysicsContactDelegate {
     /// Make the real stones SOLID (add collision) and reveal all stones visually.
     private func phasePathIn() {
         pathPhasedIn = true
+
+        // PROGRESSIVE HINT WIRING: phasing the path in is the level's clear
+        // forward-progress moment (the gap becomes crossable). Reset the struggle/
+        // stall counters so the player isn't immediately escalated after engaging.
+        notePlayerProgress()
 
         for stone in stones where stone.isReal {
             // Add collision now — this is what makes the gap crossable.
@@ -941,6 +965,11 @@ final class VoiceOverScene: BaseLevelScene, SKPhysicsContactDelegate {
         playerController.cancel()
         deathCount += 1
 
+        // PROGRESSIVE HINT WIRING: every death is a struggle beat. This escalates the
+        // shared difficulty-hint system (notePlayerStruggle) so repeated failure earns
+        // the hintText() reveal, in addition to the level's own deathCount nudges.
+        notePlayerStruggle()
+
         // Fallback nudges:
         //  * If the player keeps falling before ever phasing the path in, the
         //    always-present accessibility button (and the "CAN'T DO THIS?" hatch)
@@ -979,7 +1008,7 @@ final class VoiceOverScene: BaseLevelScene, SKPhysicsContactDelegate {
     }
 
     override func hintText() -> String? {
-        return "Toggle VoiceOver (or tap the accessibility button) to phase the bridge in. Solid tiles are real; barred tiles are voids."
+        return "Toggle VoiceOver in Settings — or tap the accessibility button at the bottom-left — to phase the path in. Once it's solid it STAYS solid: turn VoiceOver back off and cross with normal taps. Land only on the SOLID stones."
     }
 
     override func willMove(from view: SKView) {

@@ -35,8 +35,6 @@ final class OrientationScene: BaseLevelScene, SKPhysicsContactDelegate {
     private let firstLifeGrace: TimeInterval = 5.0   // near-idle creep window (life 1)
     private let respawnGrace: TimeInterval = 2.0     // shorter window after a death
     private var hasDiedOnce = false
-    private var hasShownEarlyRotateCue = false
-    private let earlyRotateCueDelay: TimeInterval = 3.0
 
     private let portraitGap: CGFloat = 18   // Clearly impossible (player is 22pts wide)
     private let landscapeGap: CGFloat = 100  // Comfortable passage in landscape
@@ -140,10 +138,12 @@ final class OrientationScene: BaseLevelScene, SKPhysicsContactDelegate {
         guard isWideCanvas, !ipadFramingCached else { return }
         ipadFramingCached = true
 
+        let bandBottom: CGFloat
         if size.height > 1000 {
             // Portrait-class: seed straight from the canonical Phase-0 helpers.
             ipadGroundSceneY = playableGroundY(iphoneGround: iphoneGroundBaseline)
             ipadCeilingSceneY = playableCeilingY()
+            bandBottom = max(safeAreaInsets.bottom, 20)
         } else {
             // Landscape at cache time: reconstruct the portrait result from the long
             // dimension so the framing is stable across rotation.
@@ -152,7 +152,37 @@ final class OrientationScene: BaseLevelScene, SKPhysicsContactDelegate {
             let bottomInset: CGFloat = max(safeAreaInsets.bottom, 20)
             ipadGroundSceneY = bottomInset + portraitH * 0.22   // == playableGroundY (iPad)
             ipadCeilingSceneY = (portraitH - topInset) - 150     // == playableCeilingY (iPad)
+            bandBottom = bottomInset
         }
+
+        // POLISH (L9 flat crusher-chase): the canonical iPad ground pins the floor
+        // to ~22% up, marooning the flat course in the bottom quarter and leaving
+        // the upper ~60-70% as dead sky. This level is a FLAT single-floor chase
+        // (no tiers/climb), so there is nothing to grow vertically into that band.
+        //
+        // UNIFORM VERTICAL LIFT (completability-neutral): raise the floor's scene-Y
+        // toward the band center so the whole flat course (floor + corridor + crusher
+        // + exit) sits around mid-screen. This ONLY moves ipadGroundSceneY, which
+        // flows entirely through ipadWorldOriginY (the worldNode Y origin). EVERY
+        // gameplay Y is authored in worldNode-LOCAL space and is shifted by the SAME
+        // delta, so the spawn->corridor->exit walk, the corridorGap 18->100 swap, the
+        // crusher creep, and the death zone are all byte-identical — only the framing
+        // moves up. The ceiling (ipadCeilingSceneY) is left at the canvas top so the
+        // backdrop grid + ceiling girders + stretch arrows (which track
+        // ipadBandTopLocalY) still bracket the full visible band, giving the now-
+        // exposed upper region real structure instead of empty sky.
+        //
+        // Center the course's visual strip (floor local -120 .. crusher-top ~+160,
+        // mid ~+20) in the band [bandBottom, ceiling]: the strip center in scene-Y is
+        // ipadWorldOriginY + courseMidLocal = (ground + 120) + 20 = ground + 140, so
+        // solving ground + 140 == (bandBottom + ceiling)/2 lifts the floor to center.
+        let courseMidLocal: CGFloat = 20
+        let courseHalfFromFloor: CGFloat = 120 + courseMidLocal   // floorLocalY offset + mid
+        let bandCenter = (bandBottom + ipadCeilingSceneY) / 2
+        let centeredGround = bandCenter - courseHalfFromFloor
+        // Never LOWER the floor below the canonical bottom-pin (only lift), and keep
+        // it from rising so far the crusher bulk clips the ceiling band.
+        ipadGroundSceneY = min(max(ipadGroundSceneY, centeredGround), ipadCeilingSceneY - 320)
     }
 
     // Stable worldNode Y origin on iPad so the floor (floorLocalY) sits at the
@@ -283,7 +313,8 @@ final class OrientationScene: BaseLevelScene, SKPhysicsContactDelegate {
         // Discovery-first atmospheric line (t=0). Added to the SCENE (not the
         // scaled worldNode) so it stays a fixed-size HUD overlay, matching the
         // L11+ convention. Non-spoiler: it does NOT name the device feature; the
-        // explicit clue lives in hintText() (shown at 18s if the player stalls).
+        // explicit clue is the EARNED reveal in hintText(), escalated by
+        // notePlayerStruggle() after repeated death.
         showDiscoveryPanel()
     }
 
@@ -298,6 +329,71 @@ final class OrientationScene: BaseLevelScene, SKPhysicsContactDelegate {
 
         // Ceiling structure
         drawCeilingBeams()
+
+        // iPad-only: decorative hazard framing that bridges the lifted course up to
+        // the ceiling band so the upper region reads as machinery, not dead sky.
+        if isWideCanvas {
+            drawIPadHazardFraming()
+        }
+    }
+
+    /// NON-LOAD-BEARING upper-band fill (iPad only). The flat course is now lifted
+    /// toward center; this brackets the exposed upper band with vertical support
+    /// pillars + a hazard apron descending from the ceiling beams, so the canvas
+    /// reads as an industrial shaft instead of empty sky. NO physics bodies, NO
+    /// effect on collision/clamps/creep — purely visual, gated behind isWideCanvas,
+    /// drawn into worldNode so it scales/scrolls with the backdrop. Phone never
+    /// calls this (call site is isWideCanvas-gated).
+    private func drawIPadHazardFraming() {
+        let halfW = backdropWidth / 2
+        let cx = playfieldCenterX
+        // Span from the ceiling beams down to just above the floor.
+        let topY = ipadBackdropCenterY + ipadBackdropHalfHeight - 35
+        let bottomY = floorLocalY + 12.5
+
+        // Vertical support pillars at the band edges (frame the shaft).
+        for sign in [-1.0, 1.0] {
+            let px = cx + CGFloat(sign) * (halfW - 30)
+            let pillar = SKShapeNode(rectOf: CGSize(width: 14, height: max(0, topY - bottomY)))
+            pillar.fillColor = fillColor
+            pillar.strokeColor = strokeColor
+            pillar.lineWidth = lineWidth * 0.5
+            pillar.position = CGPoint(x: px, y: (topY + bottomY) / 2)
+            pillar.alpha = 0.5
+            pillar.zPosition = -22
+            worldNode.addChild(pillar)
+            lineElements.append(pillar)
+
+            // Rivet bolts down the pillar.
+            for ry in stride(from: bottomY + 40, through: topY - 40, by: 90) {
+                let bolt = SKShapeNode(circleOfRadius: 3)
+                bolt.fillColor = strokeColor
+                bolt.strokeColor = strokeColor
+                bolt.position = CGPoint(x: px, y: ry)
+                bolt.alpha = 0.45
+                bolt.zPosition = -21
+                worldNode.addChild(bolt)
+                lineElements.append(bolt)
+            }
+        }
+
+        // Hazard apron: diagonal warning chevrons descending from the ceiling beams
+        // across the upper band (echoes the crusher's stripe motif overhead).
+        let apronTop = topY - 18
+        let apronBottom = max(bottomY + 120, topY - 160)
+        for x in stride(from: cx - halfW + 70, through: cx + halfW - 70, by: 64) {
+            let chevron = SKShapeNode()
+            let path = CGMutablePath()
+            path.move(to: CGPoint(x: x, y: apronTop))
+            path.addLine(to: CGPoint(x: x + 22, y: apronBottom))
+            chevron.path = path
+            chevron.strokeColor = strokeColor
+            chevron.lineWidth = lineWidth * 0.5
+            chevron.alpha = 0.3
+            chevron.zPosition = -23
+            worldNode.addChild(chevron)
+            lineElements.append(chevron)
+        }
     }
 
     private func drawAspectGrid() {
@@ -913,34 +1009,49 @@ final class OrientationScene: BaseLevelScene, SKPhysicsContactDelegate {
 
     // MARK: - Instruction Panel
 
-    /// Local Y for the instruction panel.
+    /// Camera-local Y for the instruction panel (BOTH devices now parent it to the
+    /// camera as a fixed, unscaled viewport HUD — see showInstructionPanel()).
     ///
-    /// Phone (worldNode child, centered+scaled): keep the original +130 on tall
-    /// canvases, but on short/landscape ones tuck the 100pt panel under the safe
-    /// inset so it doesn't overlap the title or corridor — mapping the scene-space
-    /// safe top into local space.
+    /// iPad (unchanged): worldNode.position.x is pinned to 0 and the camera scrolls,
+    /// so a worldNode-local panel would slide off as the camera follows Bit along
+    /// the floor. The camera HUD keeps it on-screen; (0,0) is the viewport center,
+    /// so we offset UP into the top band, clear of the title and the course.
     ///
-    /// iPad (camera child): worldNode.position.x is pinned to 0 and the camera
-    /// scrolls, so a worldNode-local panel would slide off as the camera follows
-    /// Bit along the floor. Parenting to the camera keeps it a fixed viewport HUD;
-    /// camera-local (0,0) is the viewport center, so we offset UP into the top band
-    /// (clear of the title and the course).
+    /// iPhone (CLIP FIX): the panel — which carries the de-spoil tease
+    /// "THIS HALL WASN'T / BUILT FOR YOU." — used to be a worldNode child at local
+    /// x=0. Because the playfield is rebased far to the right (playfieldCenterX=455)
+    /// and then portrait-fit-scaled (~0.49x), local x=0 mapped to a strongly
+    /// NEGATIVE screen x (~-27pt), dragging the 200pt plate's left half — and most
+    /// of the tease text — off the LEFT screen edge (only fragments showed). Making
+    /// it a camera HUD pins it to the true viewport center (x=0), so the full line
+    /// now reads on-screen. We sit it in the band just BELOW the top-center
+    /// discovery panel ("UP IS A MATTER OF OPINION...", scene box bottom at
+    /// topSafeY-178) and well below the top-right PAUSE reserved square (bottom
+    /// ~topSafeY-115): with a 100pt-tall plate, centering at
+    /// (topSafeY - h/2 - 242) puts the plate's TOP edge at topSafeY - h/2 - 192,
+    /// i.e. ~14pt under the discovery box and clear of both HUD columns on every
+    /// iPhone, while staying above the bottom floor/corridor gameplay band.
     private func instructionPanelLocalY() -> CGFloat {
         if isWideCanvas {
             return (size.height / 2) - 150
         }
-        let yScale = worldNode.yScale == 0 ? 1 : worldNode.yScale
-        let safeTopLocal = ((topSafeY - size.height / 2) / yScale) - 70
-        return min(130, safeTopLocal)
+        return (topSafeY - size.height / 2) - 242
     }
 
     private func showInstructionPanel() {
         instructionPanel = SKNode()
         instructionPanel?.position = CGPoint(x: 0, y: instructionPanelLocalY())
         instructionPanel?.zPosition = 200
-        // iPad: fixed viewport HUD on the camera so it stays on-screen while the
-        // course scrolls. Phone: worldNode child (byte-identical to shipping).
-        if isWideCanvas, let cam = gameCamera {
+        // Fixed viewport HUD on the camera (BOTH devices) so it stays on-screen,
+        // centered horizontally, unscaled. iPad already needed this (the camera
+        // scrolls X across the wide floor). iPhone now uses it too: the prior
+        // worldNode-child parenting placed the plate at local x=0, which the
+        // playfield rebase (+playfieldCenterX) + portrait-fit scale mapped to a
+        // negative screen x, clipping the de-spoil tease off the LEFT edge. The
+        // camera HUD pins it to the true viewport center so the full line reads.
+        // gameCamera is guaranteed live here (set up before configureScene). Fall
+        // back to worldNode only in the impossible nil case.
+        if let cam = gameCamera {
             cam.addChild(instructionPanel!)
         } else {
             worldNode.addChild(instructionPanel!)
@@ -998,8 +1109,8 @@ final class OrientationScene: BaseLevelScene, SKPhysicsContactDelegate {
         lineElements.append(arrowHead)
 
         // Animate rotation (cosmetic; gated behind Reduce Motion). The icon and
-        // its "ROTATE / LANDSCAPE" text remain visible either way — only the
-        // looping spin is suppressed.
+        // its in-voice text remain visible either way — only the looping spin is
+        // suppressed.
         if !systemReduceMotion {
             phone.run(.repeatForever(.sequence([
                 .rotate(toAngle: .pi / 2, duration: 0.8),
@@ -1009,17 +1120,22 @@ final class OrientationScene: BaseLevelScene, SKPhysicsContactDelegate {
             ])))
         }
 
-        // Text
-        let label = SKLabelNode(text: "ROTATE")
+        // Text — DE-SPOILED: the old explicit "ROTATE / LANDSCAPE" instruction is
+        // replaced with a single in-voice line that hints at the hostile geometry
+        // without naming the device feature. The earned, explicit reveal lives in
+        // hintText() (shown after the player struggles). The 31-char line is split
+        // across the two existing label slots (the panel plate is the same 200pt
+        // box) so nothing clips: "THIS HALL WASN'T" over "BUILT FOR YOU.".
+        let label = SKLabelNode(text: "THIS HALL WASN'T")
         label.fontName = "Menlo-Bold"
-        label.fontSize = 16
+        label.fontSize = 12
         label.fontColor = strokeColor
         label.position = CGPoint(x: 30, y: 10)
         instructionPanel?.addChild(label)
         lineElements.append(label)
 
-        let subLabel = SKLabelNode(text: "LANDSCAPE")
-        subLabel.fontName = "Menlo"
+        let subLabel = SKLabelNode(text: "BUILT FOR YOU.")
+        subLabel.fontName = "Menlo-Bold"
         subLabel.fontSize = 12
         subLabel.fontColor = strokeColor
         subLabel.position = CGPoint(x: 30, y: -10)
@@ -1033,7 +1149,7 @@ final class OrientationScene: BaseLevelScene, SKPhysicsContactDelegate {
     /// "THE SIGNAL COMES AND GOES..." panel). Lives on the SCENE in scene-space
     /// (NOT the scaled worldNode), so it stays a fixed-size HUD overlay anchored
     /// just below the safe-area top. The line is evocative and NON-SPOILER — it
-    /// never says "rotate"; the explicit clue is reserved for hintText() at 18s.
+    /// never says "rotate"; the explicit clue is the earned hintText() reveal.
     private func showDiscoveryPanel() {
         let panel = SKNode()
         // Sit the panel BELOW the reserved TITLE band AND below the top-right
@@ -1257,57 +1373,17 @@ final class OrientationScene: BaseLevelScene, SKPhysicsContactDelegate {
             let creepSpeed: CGFloat = 8.0 * speedFactor * CGFloat(deltaTime)
             crusherWall.position.x += creepSpeed
 
-            // Surface an explicit rotate cue a few seconds in (well before the 18s
-            // base hint timer) so the player learns the answer instead of dying
-            // into it. Once only; the persistent ROTATE panel still carries it.
-            if !hasShownEarlyRotateCue && armedTime >= earlyRotateCueDelay {
-                hasShownEarlyRotateCue = true
-                showEarlyRotateCue()
-            }
+            // DE-SPOILED: the early EXPLICIT "TURN YOUR DEVICE SIDEWAYS" cue is
+            // gone. The in-voice instruction panel ("THIS HALL WASN'T / BUILT FOR
+            // YOU.") carries the t=0 hint; the explicit answer is the EARNED reveal
+            // in hintText(), surfaced by the base hint timer after the player
+            // struggles (escalated via notePlayerStruggle() in handleDeath).
 
             // Check if crusher caught up to Bit
             if crusherWall.position.x + 60 > bit.position.x - 20 {
                 handleDeath()
             }
         }
-    }
-
-    /// Early, explicit rotate nudge shown a few seconds into the first portrait
-    /// life — long before the 18s base no-progress hint — so a reading player is
-    /// told the answer before the crusher becomes lethal. Scene-space HUD overlay
-    /// placed in the cleared band BELOW the title/discovery panel, centered, so it
-    /// never overlaps the TITLE, the top-right PAUSE zone, or the discovery panel.
-    private func showEarlyRotateCue() {
-        let cue = SKNode()
-        // Center at topSafeY-200 (34pt tall -> y[topSafeY-217, topSafeY-183]) so it
-        // clears the now-lowered discovery panel (bottom at topSafeY-178) with a
-        // 5pt margin during the brief 3-5s window where both can be visible. (The
-        // discovery panel was dropped to clear the top-right pause column, so this
-        // cue follows it down to preserve the vertical separation.)
-        cue.position = CGPoint(x: size.width / 2, y: topSafeY - 200)
-        cue.zPosition = 320
-        cue.alpha = 0
-        addChild(cue)
-
-        let bg = SKShapeNode(rectOf: CGSize(width: 250, height: 34), cornerRadius: 8)
-        bg.fillColor = fillColor
-        bg.strokeColor = strokeColor
-        bg.lineWidth = lineWidth * 0.6
-        cue.addChild(bg)
-
-        let label = SKLabelNode(text: "TURN YOUR DEVICE SIDEWAYS")
-        label.fontName = "Menlo-Bold"
-        label.fontSize = 12
-        label.fontColor = strokeColor
-        label.verticalAlignmentMode = .center
-        cue.addChild(label)
-
-        cue.run(.sequence([
-            .fadeIn(withDuration: 0.3),
-            .wait(forDuration: 4.0),
-            .fadeOut(withDuration: 0.5),
-            .removeFromParent()
-        ]))
     }
 
     // MARK: - Input Handling
@@ -1318,6 +1394,14 @@ final class OrientationScene: BaseLevelScene, SKPhysicsContactDelegate {
             if newIsLandscape != isLandscape {
                 isLandscape = newIsLandscape
                 updateWorldScale(animated: true)
+
+                // Forward progress: rotating to landscape disarms the crusher and
+                // widens the corridor — the core mechanic — so reset the hint
+                // timers. (Rotating back to portrait re-arms the threat and is not
+                // counted as progress.)
+                if newIsLandscape {
+                    notePlayerProgress()
+                }
 
                 let generator = UIImpactFeedbackGenerator(style: .medium)
                 generator.impactOccurred()
@@ -1425,6 +1509,10 @@ final class OrientationScene: BaseLevelScene, SKPhysicsContactDelegate {
         guard GameState.shared.levelState == .playing else { return }
         playerController.cancel()
 
+        // Progressive hint: each failure escalates the earned reveal so a player
+        // who keeps dying to the crusher in portrait is nudged toward rotating.
+        notePlayerStruggle()
+
         // Reset crusher and re-grant a (shorter) grace window for the respawn so
         // the player still gets a beat to react instead of dying on contact again.
         crusherWall.position.x = crusherBaseX
@@ -1459,7 +1547,7 @@ final class OrientationScene: BaseLevelScene, SKPhysicsContactDelegate {
     }
 
     override func hintText() -> String? {
-        return "Rotate your device to landscape"
+        return "Rotate the device to landscape — turn the phone sideways and the corridor widens enough to pass the crusher."
     }
 
     // MARK: - Cleanup

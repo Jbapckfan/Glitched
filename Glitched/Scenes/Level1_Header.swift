@@ -102,6 +102,14 @@ final class HeaderScene: BaseLevelScene, SKPhysicsContactDelegate {
         } else {
             buildPhoneLevel()
         }
+
+        // DE-SPOIL t=0 nudge: the explicit "DRAG DOWN" affordance row was removed;
+        // a delayed in-voice whisper points the player at the banner without naming
+        // the gesture (the OS noticing its own sign is alive). Lower-center safe band.
+        run(.sequence([.wait(forDuration: 2.0), .run { [weak self] in
+            guard let self else { return }
+            GlitchedNarrator.present("EVERYTHING HERE BELONGS TO ME. EVEN THE SIGN WITH MY NUMBER ON IT.", in: self, style: .whisper)
+        }]))
         // Note: Level title is the draggable HUD element provided by SwiftUI
     }
 
@@ -809,6 +817,6 @@ override func onLevelSucceeded() {
 }
 
 override func hintText() -> String? {
-    return "Drag the LEVEL 1 title into the gap."
+    return "Grab the LEVEL 1 banner and drag it straight down into the spike pit — drop it across the gap and it becomes your bridge."
 }
 }

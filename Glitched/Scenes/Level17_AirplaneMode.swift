@@ -530,11 +530,11 @@ final class AirplaneModeScene: BaseLevelScene, SKPhysicsContactDelegate {
         text2.position = CGPoint(x: 0, y: 2)
         panel.addChild(text2)
 
-        // Plain, unambiguous instruction so the cryptic flavor lines above
-        // never leave the player guessing how to act on the mechanic.
-        let text3 = SKLabelNode(text: "TURN ON AIRPLANE MODE — TAP THE PLANE OR USE CONTROL CENTER")
+        // Third atmospheric line completes the t=0 trio — no explicit how-to
+        // instruction; the earned reveal lives in hintText() after struggle.
+        let text3 = SKLabelNode(text: "EVERYTHING TETHERED IS WAITING TO LEAVE.")
         text3.fontName = "Menlo"
-        text3.fontSize = 7
+        text3.fontSize = 10
         text3.fontColor = strokeColor
         text3.position = CGPoint(x: 0, y: -18)
         panel.addChild(text3)
@@ -737,7 +737,7 @@ final class AirplaneModeScene: BaseLevelScene, SKPhysicsContactDelegate {
     }
 
     override func hintText() -> String? {
-        return "Toggle Airplane Mode in Control Center"
+        return "Turn ON Airplane Mode — tap the plane icon or swipe Control Center down — to raise the platforms into their flying positions."
     }
 
     override func willMove(from view: SKView) {

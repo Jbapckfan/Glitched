@@ -578,6 +578,10 @@ final class TheLieScene: BaseLevelScene, SKPhysicsContactDelegate {
 
     private func revealTruth() {
         hasRevealed = true
+        // PROGRESSIVE-HINT SAFETY NET: the lie is exposed and the real exit
+        // physically opens — a clear forward-progress beat, so reset the struggle
+        // count and stall timer.
+        notePlayerProgress()
 
         // Reveal the real exit at the start
         realExitPlatform?.physicsBody?.categoryBitMask = PhysicsCategory.ground
@@ -853,6 +857,9 @@ final class TheLieScene: BaseLevelScene, SKPhysicsContactDelegate {
 
     private func handleDeath() {
         guard GameState.shared.levelState == .playing else { return }
+        // PROGRESSIVE-HINT SAFETY NET: count this failure so repeated deaths
+        // escalate toward the earned hintText() ("Are you sure the exit is ahead?").
+        notePlayerStruggle()
         playerController.cancel()
         bit.playBufferDeath(respawnAt: spawnPoint) { [weak self] in self?.bit.setGrounded(true) }
     }

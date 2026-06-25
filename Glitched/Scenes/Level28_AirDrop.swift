@@ -499,14 +499,14 @@ final class AirDropScene: BaseLevelScene, SKPhysicsContactDelegate {
         text1.position = CGPoint(x: 0, y: 16)
         panel.addChild(text1)
 
-        let text2 = SKLabelNode(text: "SHARE THE TRANSMISSION TO DECODE IT,")
+        let text2 = SKLabelNode(text: "I CAN'T READ MYSELF IN HERE.")
         text2.fontName = "Menlo"
         text2.fontSize = 9
         text2.fontColor = strokeColor
         text2.position = CGPoint(x: 0, y: -2)
         panel.addChild(text2)
 
-        let text3 = SKLabelNode(text: "THEN KEY THE DECODED CODE BACK IN.")
+        let text3 = SKLabelNode(text: "TAKE ME SOMEWHERE I CAN.")
         text3.fontName = "Menlo"
         text3.fontSize = 9
         text3.fontColor = strokeColor
@@ -935,6 +935,9 @@ final class AirDropScene: BaseLevelScene, SKPhysicsContactDelegate {
     private func handleDeath() {
         guard GameState.shared.levelState == .playing else { return }
         playerController.cancel()
+        // Death is a failure beat too — escalate the progressive hint so repeated
+        // falls eventually surface the EARNED reveal (matches the wrong-submit path).
+        notePlayerStruggle()
         bit.playBufferDeath(respawnAt: spawnPoint) { [weak self] in self?.bit.setGrounded(true) }
     }
 
@@ -949,10 +952,7 @@ final class AirDropScene: BaseLevelScene, SKPhysicsContactDelegate {
     }
 
     override func hintText() -> String? {
-        if !codeRevealed {
-            return "Tap SHARE TO DECODE — the shared text is the real code"
-        }
-        return "Type the DECODED code; the keypad has decoy symbols"
+        return "Tap SHARE TO DECODE and send the transmission to yourself — AirDrop, Messages, or Notes. What arrives is the real code. Then key those 6 symbols back in (the keypad is salted with decoys)."
     }
 
     override func willMove(from view: SKView) {

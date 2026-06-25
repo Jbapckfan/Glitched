@@ -1163,46 +1163,44 @@ final class DarkModeScene: BaseLevelScene, SKPhysicsContactDelegate {
             .moveBy(x: -5, y: 0, duration: 0.3)
         ])))
 
-        // Text
-        let label = SKLabelNode(text: "DARK MODE")
-        label.fontName = "Menlo-Bold"
-        label.fontSize = 14
-        label.fontColor = strokeColor
-        label.position = CGPoint(x: 30, y: 10)
-        label.name = "instruction_label"
-        instructionPanel?.addChild(label)
-        lineElements.append(label)
+        // Atmospheric clue text (de-spoiled). The explicit "toggle dark mode" /
+        // "moon = dark, sun = light" rule lines are gone; these three lines hint at
+        // the day/night duality and the dark-locked door without naming the action.
+        // The earned reveal lives in hintText() after the player struggles. Solidity
+        // is still driven entirely by categoryBitMask (updateDualPlatforms); these
+        // labels are copy only. The phone/moon/settings-arrow art above remains as
+        // atmosphere. Lines sit at x:30 beside the art (top two) and centered across
+        // the 180pt-wide panel (bottom line), all above the panel bottom edge
+        // (y = -55) so they fit on the narrowest iPhone canvas.
+        let clueLine1 = SKLabelNode(text: "NIGHT AND DAY DON'T AGREE ON WHAT'S REAL.")
+        clueLine1.fontName = "Menlo"
+        clueLine1.fontSize = 7
+        clueLine1.fontColor = strokeColor
+        clueLine1.position = CGPoint(x: 30, y: 12)
+        clueLine1.horizontalAlignmentMode = .center
+        clueLine1.name = "instruction_clue1"
+        instructionPanel?.addChild(clueLine1)
+        lineElements.append(clueLine1)
 
-        let subLabel = SKLabelNode(text: "IN CONTROL CENTER")
-        subLabel.fontName = "Menlo"
-        subLabel.fontSize = 11
-        subLabel.fontColor = strokeColor
-        subLabel.position = CGPoint(x: 30, y: -8)
-        subLabel.name = "instruction_sublabel"
-        instructionPanel?.addChild(subLabel)
-        lineElements.append(subLabel)
+        let clueLine2 = SKLabelNode(text: "WHAT HOLDS YOU IN ONE IS A RUMOR IN THE OTHER.")
+        clueLine2.fontName = "Menlo"
+        clueLine2.fontSize = 7
+        clueLine2.fontColor = strokeColor
+        clueLine2.position = CGPoint(x: 30, y: -2)
+        clueLine2.horizontalAlignmentMode = .center
+        clueLine2.name = "instruction_clue2"
+        instructionPanel?.addChild(clueLine2)
+        lineElements.append(clueLine2)
 
-        // The actual rule, spelled out so the moon/sun platform icons aren't a guess.
-        // Solidity is still driven entirely by categoryBitMask (updateDualPlatforms);
-        // these labels are copy only. Centered across the 180pt-wide panel and kept
-        // above its bottom edge (y = -55) so they fit on the narrowest iPhone canvas.
-        let ruleLine1 = SKLabelNode(text: "MOON PLATFORMS: SOLID IN DARK")
-        ruleLine1.fontName = "Menlo"
-        ruleLine1.fontSize = 8
-        ruleLine1.fontColor = strokeColor
-        ruleLine1.position = CGPoint(x: 0, y: -28)
-        ruleLine1.name = "instruction_rule_moon"
-        instructionPanel?.addChild(ruleLine1)
-        lineElements.append(ruleLine1)
-
-        let ruleLine2 = SKLabelNode(text: "SUN PLATFORMS: SOLID IN LIGHT")
-        ruleLine2.fontName = "Menlo"
-        ruleLine2.fontSize = 8
-        ruleLine2.fontColor = strokeColor
-        ruleLine2.position = CGPoint(x: 0, y: -42)
-        ruleLine2.name = "instruction_rule_sun"
-        instructionPanel?.addChild(ruleLine2)
-        lineElements.append(ruleLine2)
+        let clueLine3 = SKLabelNode(text: "THE DOOR ONLY TRUSTS THE DARK.")
+        clueLine3.fontName = "Menlo-Bold"
+        clueLine3.fontSize = 8
+        clueLine3.fontColor = strokeColor
+        clueLine3.position = CGPoint(x: 0, y: -40)
+        clueLine3.horizontalAlignmentMode = .center
+        clueLine3.name = "instruction_clue3"
+        instructionPanel?.addChild(clueLine3)
+        lineElements.append(clueLine3)
     }
 
     // MARK: - Hidden Dark Mode Aside (narrator)
@@ -1336,6 +1334,11 @@ final class DarkModeScene: BaseLevelScene, SKPhysicsContactDelegate {
         if shouldUnlock && !isDoorUnlocked {
             // Unlock
             isDoorUnlocked = true
+
+            // Forward progress: entering dark mode and unlocking the exit door is
+            // the "you figured out the mechanic" beat. Reset the struggle/hint timer
+            // so the hint doesn't keep escalating once the player is on the right path.
+            notePlayerProgress()
 
             // Animate lock opening
             doorLock.run(.sequence([
@@ -1674,6 +1677,10 @@ final class DarkModeScene: BaseLevelScene, SKPhysicsContactDelegate {
 
     private func handleDeath() {
         guard GameState.shared.levelState == .playing else { return }
+        // Escalate the progressive hint: repeated deaths surface (and then expand)
+        // the earned hintText() reveal so a stuck player eventually learns the
+        // dark-mode toggle + dark-locked-door rule.
+        notePlayerStruggle()
         playerController.cancel()
         currentGroundPlatform = nil
         bit.playBufferDeath(respawnAt: spawnPoint) { [weak self] in
@@ -1703,7 +1710,7 @@ final class DarkModeScene: BaseLevelScene, SKPhysicsContactDelegate {
     }
 
     override func hintText() -> String? {
-        return "Toggle Dark Mode in Control Center"
+        return "Swipe down from the top-right and tap Dark Mode on/off to swap which platforms are solid. The exit door only unlocks while you are in dark mode."
     }
 
     // MARK: - Cleanup
