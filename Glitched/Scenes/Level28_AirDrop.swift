@@ -50,18 +50,44 @@ final class AirDropScene: BaseLevelScene, SKPhysicsContactDelegate {
     private var terminalScreen: SKNode?
     private let designWidth: CGFloat = 390
 
-    // iPad vertical-void fix. Flat ground-anchored band: lowest gameplay surface is the
+    // iPhone vertical-void fix. Flat ground-anchored band: lowest gameplay surface is the
     // ground platforms at groundY (160); highest reachable obstruction is the locked
     // door body top at groundY + 75 + 60 = groundY + 135 (door is 120 tall, centered).
     // The helper returns 0 on iPhone-class canvases (height <= 1000) so phone layout is
     // byte-identical; on iPad it returns a positive uniform lift added to EVERY gameplay
     // node Y, leaving all relative gaps/rises/jump distances unchanged.
+    //
+    // NOTE: `gameplayLift` ONLY applies to the iPhone single-screen layout
+    // (buildPhoneLevel). The composed iPad layout (buildComposedIPadLevel) builds its OWN
+    // full-height vertical climb off verticalTier(), so it must NOT also add gameplayLift
+    // (that would double-lift). The lazy guard returns 0 on iPhone-class canvases anyway,
+    // so the phone branch is unchanged either way.
     private lazy var gameplayLift: CGFloat = gameplayVerticalLift(bandBottom: 160, bandTop: 295)
 
     private var courseScale: CGFloat { min(1.0, size.width / designWidth) }
     private var courseOriginX: CGFloat { (size.width - designWidth * courseScale) / 2 }
     private func courseX(_ logicalX: CGFloat) -> CGFloat { courseOriginX + logicalX * courseScale }
     private func courseLen(_ logical: CGFloat) -> CGFloat { logical * courseScale }
+
+    // MARK: - Native-iPad layout (hand-composed, full-height climb)
+    //
+    // iPhone keeps the original centered 390-wide single-screen layout (buildPhoneLevel),
+    // byte-identical. iPad gets a HAND-COMPOSED, camera-scrolled course
+    // (buildComposedIPadLevel) that CLIMBS the full height: a switchback staircase from a
+    // low spawn near the bottom, through staged beats, to the SHARE-TO-DECODE + locked-door
+    // TRAP staged HIGH near the ceiling. Bit's physics are device-independent, so every
+    // gap stays <= maxJumpableGap (130) horizontal and every rise <= maxJumpableRise (85)
+    // top-to-top. The course is wider than the viewport, so it scrolls via the Phase 0
+    // installCameraFollow. Everything is gated on `isWideCanvas`; iPhone is unchanged.
+
+    /// True on iPad-proportioned canvases (matches the base helpers' gate).
+    private var isWideCanvas: Bool { size.height > 1000 && size.width > designWidth }
+
+    // Composed iPad anchors (set in buildComposedIPadLevel; unused on iPhone).
+    private var composedSpawnX: CGFloat = 0
+    private var composedTerminalPoint: CGPoint = .zero
+    private var composedDoorPoint: CGPoint = .zero
+    private var composedWorldWidth: CGFloat = 0
 
     override func configureScene() {
         levelID = LevelID(world: .world4, index: 28)
@@ -131,9 +157,20 @@ final class AirDropScene: BaseLevelScene, SKPhysicsContactDelegate {
     }
 
     private func buildLevel() {
+        if isWideCanvas {
+            buildComposedIPadLevel()
+            return
+        }
+        buildPhoneLevel()
+    }
+
+    // MARK: - iPhone layout (unchanged, byte-identical to the shipped phone level)
+
+    private func buildPhoneLevel() {
         // groundY is the single anchor every gameplay element derives from. Lifting it by
         // the iPad-only `gameplayLift` shifts the whole band uniformly; all element offsets
         // (+110 terminal, +75 door, death zone) ride along so relative geometry is unchanged.
+        // (gameplayLift is 0 on iPhone-class canvases, so this is the original layout.)
         let groundY: CGFloat = 160 + gameplayLift
 
         createPlatform(at: CGPoint(x: courseX(80), y: groundY), size: CGSize(width: courseLen(120), height: 30))
@@ -151,6 +188,111 @@ final class AirDropScene: BaseLevelScene, SKPhysicsContactDelegate {
         let death = SKNode()
         death.position = CGPoint(x: size.width / 2, y: -50 + gameplayLift)
         death.physicsBody = SKPhysicsBody(rectangleOf: CGSize(width: size.width * 2, height: 100))
+        death.physicsBody?.isDynamic = false
+        death.physicsBody?.categoryBitMask = PhysicsCategory.hazard
+        addChild(death)
+    }
+
+    // MARK: - iPad layout (HAND-COMPOSED, native — full-height vertical climb, scrolled)
+    //
+    // The prior iPad pass filled WIDTH but left the top half empty: the whole course sat
+    // in a thin low band. This rework spans the FULL HEIGHT — a switchback staircase that
+    // CLIMBS from a low spawn near the bottom up through staged beats to the SHARE-TO-DECODE
+    // + locked-door FINALE staged HIGH near the ceiling. Verticality comes from
+    // BaseLevelScene.verticalTier(): tiers are evenly spaced across the entire usable band
+    // (playableGroundY near the bottom -> playableCeilingY just under the title/HUD), and
+    // EVERY per-tier rise is auto-clamped to the safe jump rise (maxJumpableRise=85). The
+    // route also spreads across the WIDTH (centers march left->right, never a centered
+    // ladder), so the course outgrows the viewport and scrolls horizontally via
+    // installCameraFollow (set up in setupBit; camera Y stays centered, so the whole
+    // vertical band reads top-to-bottom at once).
+    //
+    // The level reads:
+    //   1. TEACH    — wide low spawn platform near the FLOOR (learn the jump), easy.
+    //   2. CLIMB    — switchback steps, one safe tier rise each, widths varied for rhythm.
+    //   3. REST     — a WIDE breath platform mid-climb (rise 0 — pure horizontal pause).
+    //   4. ASCEND   — resume the climb, tightening toward the top.
+    //   5. FINALE   — the SIGNATURE TRAP staged HIGH near the ceiling: the SHARE-TO-DECODE
+    //                 terminal on a wide finale platform, the 120pt un-jumpable LOCKED DOOR
+    //                 (the EXIT) at its right edge. Door body is IDENTICAL to iPhone (120
+    //                 tall, centered at finaleY+75) so it stays un-jumpable — the climax
+    //                 mechanic gets its own high beat at the top of the climb.
+    //
+    // Spacing budget (BaseLevelScene): horizontal gap <= 130 (maxJumpableGap), vertical
+    // rise <= 85 (maxJumpableRise). Every center steps by pitch=120 (edge-to-edge gap
+    // between adjacent mid platforms ~10..30, always < 130) and every rise is exactly one
+    // verticalTier step (<= 85), so the whole climb is within Bit's audited reach.
+    private func buildComposedIPadLevel() {
+        let h: CGFloat = 30                         // platform thickness (matches iPhone)
+        let iphoneGround: CGFloat = 160            // the value buildPhoneLevel hard-codes
+        let pitch: CGFloat = 120                   // safe horizontal step (<= 130 gap)
+
+        // tierCount evenly-spaced tiers span the FULL band (floor near the bottom ->
+        // ceiling just under the HUD). step = bandHeight/(tierCount-1); 14 keeps the step
+        // ~83 on a 1024x1366 iPad — under maxJumpableRise(85), so verticalTier never
+        // clamps and each single-tier rise is a guaranteed-safe jump. The climb occupies
+        // tiers 0..10; the FINALE sits at tier 11 (a few tiers below the absolute top) so
+        // the tall terminal (146pt) and the 120pt door body clear the title/HUD band.
+        let tierCount = 14
+        func tierY(_ i: Int) -> CGFloat { verticalTier(i, of: tierCount, iphoneGround: iphoneGround) }
+
+        // Switchback staircase, authored at ABSOLUTE x (never size.width fractions).
+        // Tuple: (centerX, width, tierIndex, label). Centers march left->right at a uniform
+        // pitch so the route SPREADS across the width; rhythm comes from TIER (height) and
+        // WIDTH variation, never from widening a gap. The tier-6 entry is a WIDE REST at
+        // the same horizontal step as the climb (rise 0 from tier 5 would be flat, so it is
+        // placed one tier up but extra-wide) — a deliberate breath platform.
+        struct Beat { let cx: CGFloat; let w: CGFloat; let tier: Int; let name: String }
+        let leftMargin: CGFloat = 120
+        func px(_ step: CGFloat) -> CGFloat { leftMargin + step * pitch }
+        let beats: [Beat] = [
+            Beat(cx: px(0),  w: 200, tier: 0,  name: "spawn / teach"),   // wide low breath near the floor
+            Beat(cx: px(1),  w: 120, tier: 1,  name: "step up"),
+            Beat(cx: px(2),  w: 110, tier: 2,  name: "step up"),
+            Beat(cx: px(3),  w: 100, tier: 3,  name: "step up"),
+            Beat(cx: px(4),  w: 110, tier: 4,  name: "step up"),
+            Beat(cx: px(5),  w: 100, tier: 5,  name: "cluster crest"),
+            Beat(cx: px(6),  w: 220, tier: 6,  name: "REST breath"),     // WIDE deliberate pause
+            Beat(cx: px(7),  w: 110, tier: 7,  name: "resume climb"),
+            Beat(cx: px(8),  w: 100, tier: 8,  name: "step up"),
+            Beat(cx: px(9),  w: 110, tier: 9,  name: "tension rise"),
+            Beat(cx: px(10), w: 90,  tier: 10, name: "staging ledge"),   // narrow exposed approach
+        ]
+        for beat in beats {
+            createPlatform(at: CGPoint(x: beat.cx, y: tierY(beat.tier)), size: CGSize(width: beat.w, height: h))
+        }
+
+        composedSpawnX = beats[0].cx               // spawn on the wide low teach platform
+
+        // FINALE beat: the signature TRAP staged HIGH near the ceiling, on its own wide
+        // platform one safe tier rise above the staging ledge (tier 10 -> tier 11).
+        // Terminal sits above the finale platform center; the locked door (the EXIT)
+        // stands at the platform's right edge. Door body is IDENTICAL to iPhone (120 tall,
+        // centered at finaleY+75 above the finale floor) so it stays un-jumpable; terminal
+        // at finaleY+110 matches iPhone's terminal offset above the ground.
+        let finaleTier = 11
+        let finaleY = tierY(finaleTier)
+        let finaleWidth: CGFloat = 200
+        let finaleX = px(11)                        // one pitch right of the staging ledge
+        createPlatform(at: CGPoint(x: finaleX, y: finaleY), size: CGSize(width: finaleWidth, height: h))
+
+        composedTerminalPoint = CGPoint(x: finaleX, y: finaleY + 110)
+        // Door at the right edge of the wide finale platform (finaleWidth/2 from center),
+        // matching the iPhone door's offset past the platform edge.
+        composedDoorPoint = CGPoint(x: finaleX + finaleWidth / 2 + 20, y: finaleY + 75)
+
+        createTerminalScreen(at: composedTerminalPoint)
+        createLockedDoor(at: composedDoorPoint)
+
+        // Course extent: door right edge + margin (drives the death zone + camera clamp
+        // so the high finale + exit stay reachable on-screen).
+        composedWorldWidth = composedDoorPoint.x + 44 / 2 + pitch
+
+        // Death zone spans the full course (so a fall anywhere along the scrolling climb
+        // is fatal). Sits well below the raised floor, mirroring the iPhone offset.
+        let death = SKNode()
+        death.position = CGPoint(x: composedWorldWidth / 2, y: -50)
+        death.physicsBody = SKPhysicsBody(rectangleOf: CGSize(width: composedWorldWidth * 2, height: 100))
         death.physicsBody?.isDynamic = false
         death.physicsBody?.categoryBitMask = PhysicsCategory.hazard
         addChild(death)
@@ -333,9 +475,17 @@ final class AirDropScene: BaseLevelScene, SKPhysicsContactDelegate {
         // TRANSMISSION TO DECODE IT," 37 chars * ~5.4pt Menlo-9 = ~200pt) fits the
         // 300-wide box with ~50pt of margin per side and stays clear of the title.
         let panel = SKNode()
-        panel.position = CGPoint(x: size.width / 2, y: topSafeY - 164)
         panel.zPosition = 300
-        addChild(panel)
+        // On iPad the camera scrolls, so anchor the (transient) instruction panel to the
+        // VIEWPORT via the camera in camera-local coords. On iPhone it stays a scene child
+        // at the original scene-space position, so phone output is byte-identical.
+        if isWideCanvas, let camera = gameCamera {
+            panel.position = CGPoint(x: 0, y: (topSafeY - 164) - size.height / 2)
+            camera.addChild(panel)
+        } else {
+            panel.position = CGPoint(x: size.width / 2, y: topSafeY - 164)
+            addChild(panel)
+        }
 
         let bg = SKShapeNode(rectOf: CGSize(width: 300, height: 84), cornerRadius: 8)
         bg.fillColor = fillColor
@@ -349,14 +499,14 @@ final class AirDropScene: BaseLevelScene, SKPhysicsContactDelegate {
         text1.position = CGPoint(x: 0, y: 16)
         panel.addChild(text1)
 
-        let text2 = SKLabelNode(text: "SHARE THE TRANSMISSION TO DECODE IT,")
+        let text2 = SKLabelNode(text: "I CAN'T READ MYSELF IN HERE.")
         text2.fontName = "Menlo"
         text2.fontSize = 9
         text2.fontColor = strokeColor
         text2.position = CGPoint(x: 0, y: -2)
         panel.addChild(text2)
 
-        let text3 = SKLabelNode(text: "THEN KEY THE DECODED CODE BACK IN.")
+        let text3 = SKLabelNode(text: "TAKE ME SOMEWHERE I CAN.")
         text3.fontName = "Menlo"
         text3.fontSize = 9
         text3.fontColor = strokeColor
@@ -367,15 +517,28 @@ final class AirDropScene: BaseLevelScene, SKPhysicsContactDelegate {
     }
 
     private func setupBit() {
-        // Spawn (and the respawn target — handleDeath reuses spawnPoint) rides with the
-        // band: y = 200 is groundY(160) + 40, so + gameplayLift keeps Bit the SAME 40pt
-        // above the lifted ground on iPad and exactly y=200 on iPhone (lift == 0).
-        spawnPoint = CGPoint(x: courseX(80), y: 200 + gameplayLift)
+        // Spawn (and the respawn target — handleDeath reuses spawnPoint).
+        // iPhone: x = courseX(80) on the spawn platform; y = 200 (groundY 160 + 40), lift 0.
+        // iPad: x = composedSpawnX (the leftmost low TEACH platform); y = the raised floor
+        // tier (verticalTier 0) + 40.
+        if isWideCanvas {
+            let groundY = verticalTier(0, of: 14, iphoneGround: 160)
+            spawnPoint = CGPoint(x: composedSpawnX, y: groundY + 40)
+        } else {
+            spawnPoint = CGPoint(x: courseX(80), y: 200 + gameplayLift)
+        }
         bit = BitCharacter.make()
         bit.position = spawnPoint
         addChild(bit)
         registerPlayer(bit)
         playerController = PlayerController(character: bit, scene: self)
+
+        // NATIVE-iPad: the composed course is wider than the viewport, so promote the
+        // level to horizontal camera-follow. No-op gate on iPhone (isWideCanvas false),
+        // so the phone stays a static single-screen course.
+        if isWideCanvas {
+            installCameraFollow(worldWidth: composedWorldWidth, playerController: playerController)
+        }
     }
 
     // MARK: - Share Flow (the decode step)
@@ -455,8 +618,12 @@ final class AirDropScene: BaseLevelScene, SKPhysicsContactDelegate {
         // the bottom safe area. baseY=144 puts the CLEAR bottom edge near y=44.
         let baseY: CGFloat = 144
         keyboardNode = SKNode()
-        keyboardNode!.position = CGPoint(x: size.width / 2, y: baseY)
         keyboardNode!.zPosition = 200
+        // On iPad the camera scrolls, so the keypad modal must ride the VIEWPORT, not the
+        // world — attach it to the camera and position in camera-local coords (origin =
+        // viewport center). On iPhone (no camera-follow) it stays a scene child at the
+        // original scene-space position, so phone output is byte-identical. (Positioned +
+        // parented at the end of this method, once all keys are built.)
 
         // Build the symbol set for the keypad.
         var keySet = Set(doorCode)             // the answer symbols
@@ -579,7 +746,16 @@ final class AirDropScene: BaseLevelScene, SKPhysicsContactDelegate {
         clearBtn.accessibilityTraits = .button
 
         keyboardNode!.addChild(clearBtn)
-        addChild(keyboardNode!)
+
+        if isWideCanvas, let camera = gameCamera {
+            // Camera-local: origin is the viewport center, so subtract half the height to
+            // place the block at the same on-screen height as the iPhone scene-space baseY.
+            keyboardNode!.position = CGPoint(x: 0, y: baseY - size.height / 2)
+            camera.addChild(keyboardNode!)
+        } else {
+            keyboardNode!.position = CGPoint(x: size.width / 2, y: baseY)
+            addChild(keyboardNode!)
+        }
     }
 
     private func handleKeyTap(_ keyName: String) {
@@ -759,6 +935,9 @@ final class AirDropScene: BaseLevelScene, SKPhysicsContactDelegate {
     private func handleDeath() {
         guard GameState.shared.levelState == .playing else { return }
         playerController.cancel()
+        // Death is a failure beat too — escalate the progressive hint so repeated
+        // falls eventually surface the EARNED reveal (matches the wrong-submit path).
+        notePlayerStruggle()
         bit.playBufferDeath(respawnAt: spawnPoint) { [weak self] in self?.bit.setGrounded(true) }
     }
 
@@ -773,10 +952,7 @@ final class AirDropScene: BaseLevelScene, SKPhysicsContactDelegate {
     }
 
     override func hintText() -> String? {
-        if !codeRevealed {
-            return "Tap SHARE TO DECODE — the shared text is the real code"
-        }
-        return "Type the DECODED code; the keypad has decoy symbols"
+        return "Tap SHARE TO DECODE and send the transmission to yourself — AirDrop, Messages, or Notes. What arrives is the real code. Then key those 6 symbols back in (the keypad is salted with decoys)."
     }
 
     override func willMove(from view: SKView) {

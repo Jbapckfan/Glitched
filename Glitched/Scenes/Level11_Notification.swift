@@ -66,6 +66,22 @@ final class NotificationScene: BaseLevelScene, SKPhysicsContactDelegate {
     private func courseX(_ logicalX: CGFloat) -> CGFloat { courseOriginX + logicalX * courseScale }
     private func courseLen(_ logical: CGFloat) -> CGFloat { logical * courseScale }
 
+    // Native-iPad gate: a tall AND wide canvas (portrait iPad). iPhone-class
+    // canvases (height <= 1000) fall through to the byte-identical phone layout.
+    // Width threshold is the iPhone design width so a narrow-but-tall canvas
+    // never trips the composed path.
+    private var isWideCanvas: Bool { size.height > 1000 && size.width > designWidth }
+
+    // iPhone ground baseline this level has always used; fed to the Phase-0
+    // vertical-fill helpers (playableGroundY / verticalTier) on the iPad path.
+    private let iphoneGround: CGFloat = 160
+
+    // The mid-air platform the SIGNAL drops in when door 0 unlocks. Authored
+    // off-screen-high on iPad and animated down into its tier slot so the unlock
+    // visibly REVEALS the upper climb. Nil on iPhone (no drop mechanic).
+    private var signalDroppedPlatform: SKNode?
+    private var signalDropTargetY: CGFloat = 0
+
     // MARK: - Configuration
 
     override func configureScene() {
@@ -86,6 +102,7 @@ final class NotificationScene: BaseLevelScene, SKPhysicsContactDelegate {
         createNotificationUI()
         showInstructionPanel()
         setupBit()
+        installIPadCameraIfNeeded()
         observeForegroundForRearm()
     }
 
@@ -259,7 +276,23 @@ final class NotificationScene: BaseLevelScene, SKPhysicsContactDelegate {
 
     // MARK: - Level Building
 
+    // Full horizontal extent of the composed iPad course (for camera-follow +
+    // death-zone sizing). 0 on iPhone (no camera-follow path taken).
+    private var composedCourseWidth: CGFloat = 0
+
     private func buildLevel() {
+        if isWideCanvas {
+            buildComposedIPadLevel()
+        } else {
+            buildPhoneLevel()
+        }
+    }
+
+    /// iPhone-class layout — byte-identical to the original buildLevel() body.
+    /// Fits a 390-pt logical course centered on the device, with the uniform
+    /// band lift (0 on phone) applied to ground/doors/exit/death zone. Spawn is
+    /// set in setupBit(). The iPad path never runs this.
+    private func buildPhoneLevel() {
         // Band: lowest gameplay surface anchor = groundY (160); highest gameplay
         // anchor = groundY + 50 (locked doors / exit door = 210). Compute the
         // uniform iPad lift ONCE from that band and add it to groundY so every
@@ -293,6 +326,168 @@ final class NotificationScene: BaseLevelScene, SKPhysicsContactDelegate {
         addChild(deathZone)
     }
 
+    /// Native-iPad layout — a HAND-COMPOSED, camera-followed course that ASCENDS
+    /// the FULL vertical band one safe tier at a time: floor near the bottom
+    /// (playableGroundY) → finale near the top (playableCeilingY). Every platform
+    /// top sits exactly on a verticalTier(_:of:iphoneGround:160) Y, and the route
+    /// climbs ONE tier per step, so each top-to-top rise is a single tier step
+    /// (verticalTier clamps it to <= maxJumpableRise=85). Horizontal spacing is a
+    /// fixed march (xStep) chosen so every edge-to-edge gap stays <= maxJumpableGap
+    /// =130. The number of rungs scales with canvas height (more tiers on a taller
+    /// iPad) so the climb always reaches near the ceiling — no dead sky up top.
+    ///
+    /// The notification mechanic is preserved EXACTLY: still TWO sequential locked
+    /// doors (indices 0 and 1 → doorStates stays [false,false]); each blocks
+    /// forward travel with the same un-jumpable 115pt frame. Door 0 gates the very
+    /// FIRST rise off the floor, so the entire climb is locked until the signal
+    /// arrives; door 1 is staged near the ceiling, gating the final rise to the
+    /// exit. The level SIGNATURE beat — "the signal visibly drops a mid-air
+    /// platform" — fires on door 0's unlock: a mid-climb rung, authored but parked
+    /// off-screen-high, descends into its tier slot. Until it drops that rung is a
+    /// gap in the ladder, so the unlock literally REVEALS / completes the climb.
+    ///
+    /// BEATS (left→right, low→high):
+    ///   1. SPAWN / TEACH  — wide low REST platform on tier 0.
+    ///   2. DOOR 0         — locked door gating the first rise; its unlock both
+    ///                       opens the path AND drops the mid-climb rung (#4).
+    ///   3. CLIMB          — one rung per tier, marching up and to the right, so
+    ///                       gameplay spans top-to-bottom and left-to-right.
+    ///   4. SIGNAL-DROP RUNG — a mid-climb tier left empty until door 0 drops it
+    ///                       in (the signature visual).
+    ///   5. REST / BREATH  — extra-wide platform partway up (deliberate pause).
+    ///   6. DOOR 1 (FINALE) — locked door near the ceiling gating the last rise.
+    ///   7. EXIT LANDING   — top-tier landing + exit door, near playableCeilingY.
+    private func buildComposedIPadLevel() {
+        gameplayLift = 0   // floor is lifted directly via verticalTier, not by a band shift
+
+        let pH: CGFloat = 30
+        // Enough tiers that the TOP tier reaches near playableCeilingY with each
+        // per-tier rise ~maxJumpableRise (verticalTier clamps the step to 85; too
+        // few tiers would top out mid-screen and leave dead sky). +1 keeps a small
+        // margin so tier 0 == floor and tier (count-1) == near ceiling.
+        let band = playableBandHeight(iphoneGround: iphoneGround)
+        let tierCount = max(6, Int(ceil(band / BaseLevelScene.maxJumpableRise)) + 1)
+        let topTier = tierCount - 1
+        func tierY(_ i: Int) -> CGFloat {
+            verticalTier(min(max(i, 0), topTier), of: tierCount, iphoneGround: iphoneGround)
+        }
+        let doorYOffset: CGFloat = 50   // door center sits ground+50 (phone-identical)
+
+        // Horizontal march. Platforms are ~120 wide (rests wider); xStep 150 keeps
+        // the edge-to-edge gap at ~30 (<= 130) even between two 120-wide pads, and
+        // wider rest pads only SHRINK the gap. The course therefore spreads the
+        // climb across the full width instead of a center ladder.
+        let xStart: CGFloat = 130
+        let xStep: CGFloat = 150
+        func rungX(_ tier: Int) -> CGFloat { xStart + CGFloat(tier) * xStep }
+
+        // Which mid tier the signal drops in, and which high tier the rest sits on.
+        let dropTier = max(2, topTier / 2)          // a real mid-climb rung
+        let restTier = max(dropTier + 1, topTier - 2)
+
+        // 1. SPAWN / TEACH — wide low REST platform on the floor tier.
+        createPlatform(at: CGPoint(x: rungX(0), y: tierY(0)), size: CGSize(width: 200, height: pH))
+
+        // 2. DOOR 0 — gates the first rise off the floor (whole climb locked until
+        //    the signal). Sits in the seam between tier-0 pad and the tier-1 rung;
+        //    its un-jumpable 115pt frame blocks the jump up.
+        doors.append(createLockedDoor(at: CGPoint(x: rungX(0) + 100, y: tierY(0) + doorYOffset), index: 0))
+
+        // 3+4. CLIMB — one rung per tier, ascending. The dropTier rung is the
+        //    SIGNAL-DROPPED platform (parked off-screen until door 0 unlocks); the
+        //    restTier rung is an extra-wide breather. All others are standard
+        //    rungs with widths varied for rhythm. Door 1 + exit handled after.
+        for tier in 1...topTier {
+            let x = rungX(tier)
+            let y = tierY(tier)
+            if tier == dropTier {
+                // SIGNATURE: authored at its final X/Y but started off-screen high,
+                // animated down on door-0 unlock (dropSignalPlatform()). Until then
+                // this rung is missing, so the ladder has a gap here.
+                signalDropTargetY = y
+                signalDroppedPlatform = createDroppablePlatform(
+                    at: CGPoint(x: x, y: y),
+                    size: CGSize(width: 120, height: pH),
+                    startY: playableCeilingY() + 140
+                )
+            } else if tier == restTier {
+                // REST / BREATH — extra-wide platform partway up.
+                createPlatform(at: CGPoint(x: x, y: y), size: CGSize(width: 210, height: pH))
+            } else if tier == topTier {
+                // Top-tier rung is the finale EXIT LANDING (wider so the finish
+                // reads as a destination).
+                createPlatform(at: CGPoint(x: x, y: y), size: CGSize(width: 170, height: pH))
+            } else {
+                // Standard rung; alternate widths for rhythm.
+                let w: CGFloat = (tier % 2 == 0) ? 130 : 110
+                createPlatform(at: CGPoint(x: x, y: y), size: CGSize(width: w, height: pH))
+            }
+        }
+
+        // 6. DOOR 1 (FINALE) — gates the last rise onto the top tier, staged near
+        //    the ceiling (the "I'LL OPEN IT MYSELF" / decoy-vs-genuine beat). Sits
+        //    in the seam just before the top-tier exit landing.
+        doors.append(createLockedDoor(at: CGPoint(x: rungX(topTier) - 70, y: tierY(topTier) + doorYOffset), index: 1))
+
+        // 7. EXIT — on the top-tier landing rung built in the loop above.
+        createExitDoor(at: CGPoint(x: rungX(topTier) + 30, y: tierY(topTier) + doorYOffset))
+
+        // Course extent past the exit for camera bound + death-zone width (scales
+        // with tier count so taller iPads with more rungs still fit the exit).
+        composedCourseWidth = rungX(topTier) + 200
+
+        // Death zone spans the FULL course (not just the screen) so a fall anywhere
+        // along the scrolling course kills, a fixed distance below the floor tier.
+        let deathZone = SKNode()
+        deathZone.position = CGPoint(x: composedCourseWidth / 2, y: tierY(0) - 210)
+        deathZone.physicsBody = SKPhysicsBody(rectangleOf: CGSize(width: composedCourseWidth * 2, height: 100))
+        deathZone.physicsBody?.isDynamic = false
+        deathZone.physicsBody?.categoryBitMask = PhysicsCategory.hazard
+        addChild(deathZone)
+    }
+
+    /// Promote the composed iPad course to horizontal camera-follow once the
+    /// player + controller exist. No-op on iPhone (composedCourseWidth == 0).
+    private func installIPadCameraIfNeeded() {
+        guard isWideCanvas, composedCourseWidth > size.width else { return }
+        installCameraFollow(worldWidth: composedCourseWidth, playerController: playerController)
+    }
+
+    // MARK: - UI Anchoring (camera-stable on iPad)
+    //
+    // Under iPad camera-follow the course scrolls, so the notification mechanic's
+    // interactive UI (REQUEST UNLOCK button, waiting indicator, faux alert,
+    // instruction/denied text) must ride the camera or it scrolls off-screen and
+    // the puzzle becomes untappable. On iPhone there is NO camera-follow, so the
+    // UI layer is the scene itself and every position below is byte-identical to
+    // the original (uiX/uiY are identities). On iPad the UI layer is parented to
+    // the camera and positions are translated to camera-local (center-relative).
+    private lazy var uiLayer: SKNode = {
+        guard isWideCanvas, let cam = gameCamera else { return self }
+        let layer = SKNode()
+        cam.addChild(layer)
+        return layer
+    }()
+
+    private var uiIsCameraAnchored: Bool { uiLayer !== self }
+
+    /// Translate a scene-space X into the UI layer's coordinate space.
+    /// iPhone: identity (scene space). iPad: camera-local (center-relative).
+    private func uiX(_ sceneX: CGFloat) -> CGFloat {
+        uiIsCameraAnchored ? sceneX - size.width / 2 : sceneX
+    }
+
+    /// Translate a scene-space Y into the UI layer's coordinate space.
+    private func uiY(_ sceneY: CGFloat) -> CGFloat {
+        uiIsCameraAnchored ? sceneY - size.height / 2 : sceneY
+    }
+
+    /// Hit-test a scene-space touch against a node parented in the UI layer.
+    private func uiContains(_ node: SKNode, _ sceneLocation: CGPoint) -> Bool {
+        guard uiIsCameraAnchored else { return node.contains(sceneLocation) }
+        return node.contains(uiLayer.convert(sceneLocation, from: self))
+    }
+
     private func createPlatform(at position: CGPoint, size platformSize: CGSize) {
         let container = SKNode()
         container.position = position
@@ -308,6 +503,55 @@ final class NotificationScene: BaseLevelScene, SKPhysicsContactDelegate {
         container.physicsBody = SKPhysicsBody(rectangleOf: platformSize)
         container.physicsBody?.isDynamic = false
         container.physicsBody?.categoryBitMask = PhysicsCategory.ground
+    }
+
+    /// iPad-only: a platform authored at its FINAL X but parked off-screen-high at
+    /// `startY`, so it isn't part of the route until the signal drops it in. Its
+    /// static ground physics rides with the node (kinematic move), so once it
+    /// settles at `signalDropTargetY` it is a solid surface. Returned so
+    /// dropSignalPlatform() can animate it. The drop is triggered by door 0's
+    /// unlock, making the unlock visibly REVEAL the upper climb.
+    private func createDroppablePlatform(at finalPosition: CGPoint, size platformSize: CGSize, startY: CGFloat) -> SKNode {
+        let container = SKNode()
+        container.position = CGPoint(x: finalPosition.x, y: startY)
+        container.alpha = 0
+        addChild(container)
+
+        let surface = SKShapeNode(rectOf: platformSize)
+        surface.fillColor = fillColor
+        surface.strokeColor = strokeColor
+        surface.lineWidth = lineWidth
+        surface.zPosition = 5
+        container.addChild(surface)
+
+        container.physicsBody = SKPhysicsBody(rectangleOf: platformSize)
+        container.physicsBody?.isDynamic = false
+        container.physicsBody?.categoryBitMask = PhysicsCategory.ground
+
+        return container
+    }
+
+    /// Animate the signal-dropped platform down into its tier slot. Called once,
+    /// on door 0's unlock (iPad path only). The descent + settle "thud" sells the
+    /// 4th-wall conceit that the notification literally placed the platform that
+    /// reveals the upper climb. No-op on iPhone (signalDroppedPlatform is nil).
+    private func dropSignalPlatform() {
+        guard let platform = signalDroppedPlatform else { return }
+        signalDroppedPlatform = nil   // fire once
+
+        let drop = SKAction.group([
+            SKAction.fadeIn(withDuration: 0.15),
+            SKAction.moveTo(y: signalDropTargetY, duration: 0.45)
+        ])
+        drop.timingMode = .easeIn
+        let settle = SKAction.sequence([
+            SKAction.scaleX(to: 1.06, y: 0.88, duration: 0.06),
+            SKAction.scale(to: 1.0, duration: 0.10)
+        ])
+        platform.run(.sequence([drop, settle]))
+
+        let generator = UIImpactFeedbackGenerator(style: .rigid)
+        generator.impactOccurred()
     }
 
     private func createLockedDoor(at position: CGPoint, index: Int) -> SKNode {
@@ -362,9 +606,9 @@ final class NotificationScene: BaseLevelScene, SKPhysicsContactDelegate {
         // "LEVEL 11" on a 390/402-wide phone, and its 180-wide footprint
         // (right edge = w/2+90) stays clear of the top-right pause column.
         notificationButton = SKNode()
-        notificationButton.position = CGPoint(x: size.width / 2, y: topSafeY - 95)
+        notificationButton.position = CGPoint(x: uiX(size.width / 2), y: uiY(topSafeY - 95))
         notificationButton.zPosition = 200
-        addChild(notificationButton)
+        uiLayer.addChild(notificationButton)
 
         let buttonBG = SKShapeNode(rectOf: CGSize(width: 180, height: 50), cornerRadius: 10)
         buttonBG.fillColor = fillColor
@@ -413,13 +657,19 @@ final class NotificationScene: BaseLevelScene, SKPhysicsContactDelegate {
     }
 
     private func showInstructionPanel() {
-        // Centered mid-screen so the 260x100 panel sits well below the
-        // topSafeY-anchored notification stack (button / waiting / faux) on every
-        // device and never overlaps it.
+        // OCCLUSION FIX: the cyan "SYSTEM ACCESS REQUIRED" permission modal is
+        // centered at size.height/2 and ~170pt tall (center ±85). The clue panel
+        // used to sit at that SAME center, so at t=0 it was fully hidden behind the
+        // modal and only read after "GOT IT" was tapped. Drop it into the
+        // lower-center safe band (well below the modal's bottom edge, clear of the
+        // top-right PAUSE column and the topSafeY notification stack) so it is
+        // visible from the opening frame. The 6s fade is ALSO restarted when the
+        // permission overlay is dismissed (see touchesBegan) so a slow tapper still
+        // gets the full read after "GOT IT".
         instructionPanel = SKNode()
-        instructionPanel?.position = CGPoint(x: size.width / 2, y: size.height / 2)
+        instructionPanel?.position = CGPoint(x: uiX(size.width / 2), y: uiY(size.height * 0.26))
         instructionPanel?.zPosition = 300
-        addChild(instructionPanel!)
+        uiLayer.addChild(instructionPanel!)
 
         let bg = SKShapeNode(rectOf: CGSize(width: 260, height: 100), cornerRadius: 10)
         bg.fillColor = fillColor
@@ -448,21 +698,43 @@ final class NotificationScene: BaseLevelScene, SKPhysicsContactDelegate {
         text3.position = CGPoint(x: 0, y: -20)
         instructionPanel?.addChild(text3)
 
-        instructionPanel?.run(.sequence([
+        runInstructionFade()
+    }
+
+    /// (Re)start the instruction panel's 6s visible-then-fade timer. Run under a
+    /// named key so dismissing the permission overlay can restart it from full
+    /// opacity — a slow "GOT IT" tapper would otherwise have already burned part
+    /// (or all) of the 6s while the modal covered nothing here (the panel now
+    /// lives in the lower band), but restarting guarantees a clean full read on
+    /// dismissal regardless. No-op once the panel has removed itself.
+    private func runInstructionFade() {
+        guard let panel = instructionPanel else { return }
+        panel.removeAction(forKey: "instructionFade")
+        panel.alpha = 1.0
+        panel.run(.sequence([
             .wait(forDuration: 6.0),
             .fadeOut(withDuration: 0.5),
-            .removeFromParent()
-        ]))
+            .run { [weak self] in
+                self?.instructionPanel?.removeFromParent()
+                self?.instructionPanel = nil
+            }
+        ]), withKey: "instructionFade")
     }
 
     // MARK: - Setup
 
     private func setupBit() {
-        // Spawn (and respawn, via spawnPoint in handleDeath) sits 40pt above
-        // groundY (200 = 160 + 40). Add the SAME gameplayLift computed in
-        // buildLevel() so spawn rises with the band and its relation to the
-        // ground is byte-identical. iPhone: gameplayLift == 0 → y == 200.
-        spawnPoint = CGPoint(x: courseX(50), y: 200 + gameplayLift)
+        // Spawn (and respawn, via spawnPoint in handleDeath).
+        //   iPhone: sits 40pt above groundY (200 = 160 + 40). Add the SAME
+        //     gameplayLift computed in buildPhoneLevel() so spawn rises with the
+        //     band and its relation to the ground is byte-identical. gameplayLift
+        //     == 0 on iPhone → y == 200.
+        //   iPad: spawn on the composed floor-tier spawn pad (120, tier0 + 40).
+        if isWideCanvas {
+            spawnPoint = CGPoint(x: 120, y: verticalTier(0, of: 2, iphoneGround: iphoneGround) + 40)
+        } else {
+            spawnPoint = CGPoint(x: courseX(50), y: 200 + gameplayLift)
+        }
         bit = BitCharacter.make()
         bit.position = spawnPoint
         addChild(bit)
@@ -542,10 +814,10 @@ final class NotificationScene: BaseLevelScene, SKPhysicsContactDelegate {
         label.fontName = "Menlo-Bold"
         label.fontSize = 10
         label.fontColor = strokeColor
-        label.position = CGPoint(x: size.width / 2, y: size.height / 2 + 90)
+        label.position = CGPoint(x: uiX(size.width / 2), y: uiY(size.height / 2 + 90))
         label.zPosition = 500
         label.alpha = 0
-        addChild(label)
+        uiLayer.addChild(label)
         fourthWallLabel = label
 
         label.run(.sequence([
@@ -570,7 +842,7 @@ final class NotificationScene: BaseLevelScene, SKPhysicsContactDelegate {
         // y-band, so its width can't intrude on the pause zone, and it clears the
         // mid-screen instruction panel.
         let notif = SKNode()
-        notif.position = CGPoint(x: size.width / 2, y: topSafeY - 210)
+        notif.position = CGPoint(x: uiX(size.width / 2), y: uiY(topSafeY - 210))
         notif.zPosition = 600
         notif.name = "fauxNotification"
 
@@ -598,7 +870,7 @@ final class NotificationScene: BaseLevelScene, SKPhysicsContactDelegate {
         body.name = "fauxNotification"
         notif.addChild(body)
 
-        addChild(notif)
+        uiLayer.addChild(notif)
         fauxNotificationNode = notif
 
         // Slide in from top
@@ -616,9 +888,9 @@ final class NotificationScene: BaseLevelScene, SKPhysicsContactDelegate {
         // Below the request button (bottom ≈ topSafeY-120) and above the faux
         // notification (topSafeY-210), giving each a clear band.
         waitingIndicator = SKNode()
-        waitingIndicator?.position = CGPoint(x: size.width / 2, y: topSafeY - 150)
+        waitingIndicator?.position = CGPoint(x: uiX(size.width / 2), y: uiY(topSafeY - 150))
         waitingIndicator?.zPosition = 200
-        addChild(waitingIndicator!)
+        uiLayer.addChild(waitingIndicator!)
 
         let label = SKLabelNode(text: "WAITING FOR NOTIFICATION...")
         label.fontName = "Menlo"
@@ -669,6 +941,14 @@ final class NotificationScene: BaseLevelScene, SKPhysicsContactDelegate {
             ]))
         }
 
+        // SIGNATURE BEAT (iPad): unlocking door 0 makes the signal visibly drop
+        // the mid-air platform that reveals the upper climb. signalDroppedPlatform
+        // is nil on iPhone and after the first fire, so this is a one-shot no-op
+        // elsewhere and never affects the phone layout.
+        if currentDoorIndex == 0 {
+            dropSignalPlatform()
+        }
+
         // Clear waiting state
         waitingIndicator?.removeFromParent()
         waitingIndicator = nil
@@ -676,6 +956,10 @@ final class NotificationScene: BaseLevelScene, SKPhysicsContactDelegate {
         decoyNotificationId = nil
 
         currentDoorIndex += 1
+
+        // PROGRESSIVE HINT: unlocking a door is unambiguous forward progress —
+        // reset the struggle/no-progress timers so the next segment starts fresh.
+        notePlayerProgress()
 
         let generator = UINotificationFeedbackGenerator()
         generator.notificationOccurred(.success)
@@ -725,10 +1009,25 @@ final class NotificationScene: BaseLevelScene, SKPhysicsContactDelegate {
     override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent?) {
         guard let touch = touches.first else { return }
         let location = touch.location(in: self)
-        if handlePermissionOverlayTouch(at: location) { return }
 
-        // Check if button tapped
-        if notificationButton.contains(location) {
+        // Detect the "GOT IT" dismissal of the centered permission modal. The
+        // overlay node itself is private to BaseLevelScene, but its dismiss button
+        // is named "permissionContinueButton"; if it existed before the touch and
+        // is gone after handlePermissionOverlayTouch(), the modal was just closed —
+        // restart the instruction panel's 6s timer so it reads fully from full
+        // opacity now that nothing covers the screen.
+        let overlayWasUp = childNode(withName: "//permissionContinueButton") != nil
+        if handlePermissionOverlayTouch(at: location) {
+            if overlayWasUp && childNode(withName: "//permissionContinueButton") == nil {
+                runInstructionFade()
+            }
+            return
+        }
+
+        // Check if button tapped. uiContains converts the touch into the UI
+        // layer's space so the button stays tappable whether it's anchored to
+        // the scene (iPhone) or to the camera (iPad camera-follow).
+        if uiContains(notificationButton, location) {
             requestNotification()
             return
         }
@@ -790,6 +1089,10 @@ final class NotificationScene: BaseLevelScene, SKPhysicsContactDelegate {
 
     private func handleDeath() {
         guard GameState.shared.levelState == .playing else { return }
+        // PROGRESSIVE HINT: a real in-play death is a struggle signal. Repeated
+        // deaths escalate the shared difficulty-hint system so the EARNED reveal
+        // (hintText) fires for a stuck player.
+        notePlayerStruggle()
         playerController.cancel()
         bit.playBufferDeath(respawnAt: spawnPoint) { [weak self] in self?.bit.setGrounded(true) }
     }

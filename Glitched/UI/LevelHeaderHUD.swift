@@ -73,21 +73,11 @@ struct LevelHeaderHUD: View {
                                 .blur(radius: 4)
                         )
 
-                    // CLARITY: drop-handle affordance — a grip + down chevron + hint
-                    // label so the banner reads as something you DRAG DOWN into the
-                    // level. Decorative only (accessibility hint lives on the card).
-                    HStack(spacing: VisualConstants.Spacing.xs) {
-                        Image(systemName: "line.3.horizontal")
-                            .font(.system(size: VisualConstants.Fonts.sizeSmall, weight: .bold))
-                        Text("DRAG DOWN")
-                            .font(.custom(VisualConstants.Fonts.secondary, size: VisualConstants.Fonts.captionSize))
-                            .tracking(2)
-                        Image(systemName: "chevron.down")
-                            .font(.system(size: VisualConstants.Fonts.sizeSmall, weight: .bold))
-                    }
-                    .foregroundColor(VisualConstants.Colors.accentUI)
-                    .opacity(idleStrong ? 0.95 : 0.55)
-                    .accessibilityHidden(true)
+                    // DE-SPOIL: the explicit "≡ DRAG DOWN ⌄" affordance row was
+                    // removed so the first level no longer hands the player the
+                    // drag mechanic at t=0. The banner still reads as grabbable
+                    // via the breathing border-glow + accent shadow below (idleStrong),
+                    // and the VoiceOver accessibilityHint still describes the drag.
                 }
                 .padding(.horizontal, 24)
                 .padding(.vertical, 16)

@@ -360,7 +360,7 @@ final class BootSequenceScene: BaseLevelScene {
 
         // Hint text with arrow
         let hint = SKLabelNode(fontNamed: VisualConstants.Fonts.secondary)
-        hint.text = "drag to complete →"
+        hint.text = "DRAG TO COMPLETE →"
         hint.fontSize = 13
         hint.fontColor = SKColor(white: 0.6, alpha: 1)
         hint.position = CGPoint(x: 0, y: barY - 60)

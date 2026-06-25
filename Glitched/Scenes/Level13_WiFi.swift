@@ -21,10 +21,51 @@ final class WiFiScene: BaseLevelScene, SKPhysicsContactDelegate {
     private let designSize = CGSize(width: 430, height: 932)
     private var courseScale: CGFloat { min(1.0, size.width / designSize.width) }
     private var courseOriginX: CGFloat { (size.width - designSize.width * courseScale) / 2 }
-    /// Map a logical x (0...designSize.width) into centered course space.
+    /// Map a logical x (0...designSize.width) into centered course space. Used by
+    /// the iPhone layout (buildPhoneLevel). The COMPOSED iPad layout authors its own
+    /// ABSOLUTE positions and does NOT go through courseX.
     private func courseX(_ logicalX: CGFloat) -> CGFloat { courseOriginX + logicalX * courseScale }
     /// Scale a logical length (platform width, etc.) into course space.
     private func courseLen(_ logical: CGFloat) -> CGFloat { logical * courseScale }
+
+    // MARK: - Native-iPad layout (hand-composed)
+    //
+    // iPhone uses the original fixed 430-wide centered course (buildPhoneLevel),
+    // byte-identical to the shipped phone level. iPad gets a HAND-COMPOSED level
+    // (buildComposedIPadLevel) with paced beats — teach -> cluster -> rest ->
+    // harder traverse (with a down-step dip) -> a true PEAK that stands apart ->
+    // the WiFi trap as an isolated FINALE beat pinned near the ceiling -> exit.
+    // Bit's physics are device-independent, so all traversable spacing stays inside
+    // the fixed jump reach (gaps <= maxJumpableGap 130, rises <= maxJumpableRise 85;
+    // verticalTier auto-clamps each rise). The composed course is genuinely wider
+    // than the viewport (~1.5-3x), so it scrolls via installCameraFollow. Everything
+    // is gated on `isWideCanvas`; iPhone is unchanged.
+    //
+    // CRITICAL TRAP PRESERVATION: the signature WiFi trap (the 232-wide un-jumpable
+    // chasm bridged ONLY by WiFi-ON stepping stones, then the TALL WiFi wall whose
+    // top is un-jumpable + the WiFi-OFF climb step + the elevated exit) is translated
+    // RIGIDLY as one block via `finaleX(_:)` — a pure 1:1 offset from the phone's
+    // logical course (iPad scale is 1.0). Every internal offset (chasm 232, wall top
+    // restTop+130, OFF-step +55, exit +100) is preserved EXACTLY so the trap stays
+    // un-jumpable in both WiFi states. No gap is widened; the finale block is only
+    // TRANSLATED to sit at the top of the paced lead-in.
+
+    /// True on iPad-proportioned canvases (matches the base helpers' gate).
+    private var isWideCanvas: Bool { size.height > 1000 && size.width > designSize.width }
+
+    /// Origin (logical-45 → absolute) of the rigid finale trap block on iPad.
+    /// Set in buildComposedIPadLevel before any finale platform is authored.
+    private var finaleBookendX: CGFloat = 0
+    /// Rigid 1:1 translation of a phone-logical x into the composed finale block.
+    /// `logical` is the SAME logical coordinate the phone layout uses (bookend = 45),
+    /// so chasm width / wall position / step / exit keep their exact phone offsets.
+    private func finaleX(_ logical: CGFloat) -> CGFloat { finaleBookendX + (logical - 45) }
+
+    // Composed iPad anchors (set in buildComposedIPadLevel; unused on iPhone).
+    private var composedSpawnX: CGFloat = 0
+    private var composedWorldWidth: CGFloat = 0
+    /// Ground origin for the composed iPad layout (raised via playableGroundY).
+    private var composedGroundY: CGFloat = 160
 
     private var bit: BitCharacter!
     private var playerController: PlayerController!
@@ -97,6 +138,16 @@ final class WiFiScene: BaseLevelScene, SKPhysicsContactDelegate {
     private var gameplayLift: CGFloat = 0
 
     private func buildLevel() {
+        if isWideCanvas {
+            buildComposedIPadLevel()
+            return
+        }
+        buildPhoneLevel()
+    }
+
+    // MARK: - iPhone layout (unchanged, byte-identical to the shipped phone level)
+
+    private func buildPhoneLevel() {
         // Band: bandBottom = the lowest gameplay surface anchor (groundY, the
         // bookend / rest-ledge base at 160). bandTop = the highest gameplay marker,
         // the exit door at exitLedgeTopY + 30 = (groundY + 15) + 100 + 30 = 305.
@@ -206,6 +257,205 @@ final class WiFiScene: BaseLevelScene, SKPhysicsContactDelegate {
         let death = SKNode()
         death.position = CGPoint(x: size.width / 2, y: -50 + gameplayLift)
         death.physicsBody = SKPhysicsBody(rectangleOf: CGSize(width: size.width * 2, height: 100))
+        death.physicsBody?.isDynamic = false
+        death.physicsBody?.categoryBitMask = PhysicsCategory.hazard
+        addChild(death)
+    }
+
+    // MARK: - iPad layout (HAND-COMPOSED, native — a chase-the-signal CLIMB to a HIGH finale trap)
+    //
+    // The previous iPad behaviour just CENTERED the 430-wide phone course in the
+    // viewport: all gameplay sat in a thin low band, the top ~60% of the canvas was
+    // empty dead sky, and the wide side margins held nothing. The native fix is a
+    // real multi-tier ROUTE that ASCENDS the FULL height: the floor sits NEAR THE
+    // BOTTOM (playableGroundY → bottomSafeY+90) and the course builds UPWARD through
+    // verticalTier rungs to a FINALE pinned just under playableCeilingY. The WiFi
+    // signal-strength theme becomes load-bearing — the climb reads as chasing the
+    // signal UP a tower, so the background arcs anchor to real gameplay tiers.
+    //
+    // The route is HAND-COMPOSED for rhythm (NOT an even diagonal ladder): platform
+    // widths vary 64..168; the vertical pacing varies (a same-tier FLAT REST run, a
+    // deliberate DOWN-STEP dip, a true PEAK that stands apart); platforms are GROUPED
+    // into a tight cluster then a gap; and the X is ASYMMETRIC (hand-placed per beat,
+    // never strict L/R alternation). Every rise is sized via verticalTier (auto-≤85)
+    // and every horizontal hop is kept ≤ maxJumpableGap 130 (validated for all iPad
+    // aspect ratios). Beats:
+    //   1. TEACH  (tier 0/1, low-left) — spawn bookend + a lone WiFi-ON teach stone
+    //      + a landing ledge: learn "WiFi ON = stone appears" where falling is safe.
+    //   2. CLUSTER — two platforms grouped tight (narrow then WIDE), then a gap.
+    //   3. REST   — a flat run: two platforms at the SAME tier (the breather).
+    //   4. TRAVERSE — ascend, then a DOWN-STEP dip, then resume the climb (one tier
+    //      per hop) — the harder, more textured stretch.
+    //   5. PEAK   — a narrow platform that stands apart at the top of the climb.
+    //   6. FINALE (HIGH, near the ceiling) — the SIGNATURE WiFi TRAP, translated
+    //      RIGIDLY via finaleX(_:) so every internal offset (chasm 232 / wall top
+    //      restTop+130 / OFF-step +55 / exit +100) is byte-identical to the phone in
+    //      RELATIVE terms — only MOVED up to the top, never widened.
+    //   7. EXIT   (the very top of the tower, just under the ceiling).
+    //
+    // The finale's BASE shelf is pinned so the trap's TOP (finaleRestTop+130) lands
+    // just below playableCeilingY; the climb stops one safe rise below that base, so
+    // the BREATH hop onto the finale shelf is a normal rise and the canvas fills
+    // top-to-bottom with no dead sky.
+    private func buildComposedIPadLevel() {
+        // Vertical fill: floor sits NEAR THE BOTTOM (bottomSafeY+90) so we build
+        // UPWARD. All gameplay Y is ground-relative. No-op on iPhone (never here).
+        let iphoneGround: CGFloat = 160
+        let groundY = playableGroundY(iphoneGround: iphoneGround)
+        composedGroundY = groundY
+        gameplayLift = 0   // composed layout bakes the fill into groundY directly
+
+        // Tier budget that makes the climb actually REACH playableCeilingY at the
+        // safe 85pt step. fillTierCount is the canonical sizer — passing too FEW
+        // tiers is the bug that strands the upper screen as dead sky, so we ALWAYS
+        // size the route with it (clamped >=4 so the route still has shape on a
+        // short iPad). On a 1366-pt canvas band ≈ 1082 → ~14 tiers, no empty void.
+        let ceiling = playableCeilingY()
+        let tierCount = max(4, fillTierCount(iphoneGround: iphoneGround))
+        func tierY(_ index: Int) -> CGFloat {
+            verticalTier(index, of: tierCount, iphoneGround: iphoneGround)
+        }
+
+        // The FINALE trap is 145pt tall (base → wall top). Pin its TOP just under the
+        // ceiling, so its BASE shelf target sits at ceiling-145. The climb stops at
+        // the highest tier at/below that base, so the BREATH hop onto the finale
+        // shelf is a normal one-tier rise and nothing overshoots the ceiling.
+        let trapInternalHeight: CGFloat = 145              // base → wall top (restTop+130)
+        let finaleBaseTarget = ceiling - trapInternalHeight
+
+        // Highest climb tier whose surface sits at/below the finale base target.
+        var climbTopTier = 2
+        for tierIndex in 2..<tierCount {
+            if tierY(tierIndex) <= finaleBaseTarget {
+                climbTopTier = tierIndex
+            } else {
+                break
+            }
+        }
+
+        // ---------- BEAT 1 — TEACH (tiers 0/1, low-left) ----------
+        // Spawn bookend (wide, safe footing).
+        createPlatform(at: CGPoint(x: 120, y: tierY(0)),
+                       size: CGSize(width: 120, height: 30), solidity: .always)
+        // A SINGLE WiFi-ON teach stone, half a tier up over a tiny gap — the player
+        // learns the rule ("ON = stone") here, where falling is harmless, before the
+        // stones become load-bearing across the finale chasm.
+        createPlatform(at: CGPoint(x: 250, y: (tierY(0) + tierY(1)) / 2),
+                       size: CGSize(width: 64, height: 24), solidity: .wifiOn)
+        // Landing ledge after the teach stone (tier 1).
+        createPlatform(at: CGPoint(x: 372, y: tierY(1)),
+                       size: CGSize(width: 96, height: 30), solidity: .always)
+
+        // ---------- BEATS 2-5 — HAND-COMPOSED CLIMB (cluster, rest, traverse, peak) ----------
+        // Each beat is an explicit (tier, width, dx) step. The TIER never jumps more
+        // than +1 between consecutive solid platforms (so verticalTier keeps every
+        // rise ≤85); dx (the X advance) and width are hand-tuned per beat so every
+        // edge-to-edge gap stays ≤ maxJumpableGap 130 while the X stays ASYMMETRIC.
+        // Down-steps are allowed (a dip is a free descent). Built as a list so the
+        // route degrades gracefully on short iPads (a beat is skipped if there isn't
+        // a tall enough climb for it) while never producing an even ladder.
+        struct ClimbBeat { let tier: Int; let width: CGFloat; let dx: CGFloat }
+        var beats: [ClimbBeat] = []
+        // BEAT 2 — CLUSTER: two platforms grouped tight (narrow → WIDE), then a gap.
+        beats.append(ClimbBeat(tier: 2, width: 76, dx: 120))   // cluster-a (narrow)
+        beats.append(ClimbBeat(tier: 3, width: 168, dx: 108))  // cluster-b (WIDE contrast)
+        // BEAT 3 — REST: a flat run, two platforms at the SAME tier 3 (the breather).
+        beats.append(ClimbBeat(tier: 3, width: 150, dx: 150))  // gap then wide rest
+        beats.append(ClimbBeat(tier: 3, width: 92,  dx: 118))  // flat continuation
+        // BEAT 4 — TRAVERSE: ascend, then a DOWN-STEP dip, then resume one tier/hop.
+        if climbTopTier >= 4 { beats.append(ClimbBeat(tier: 4, width: 80, dx: 116)) }
+        if climbTopTier >= 5 { beats.append(ClimbBeat(tier: 5, width: 70, dx: 124)) } // narrow tense
+        var resumeTier = 6
+        if climbTopTier >= 6 {
+            beats.append(ClimbBeat(tier: 4, width: 96, dx: 110))   // DOWN-STEP dip
+            resumeTier = 5                                          // climb back up from 5
+        }
+        if climbTopTier >= 6 {
+            var t = resumeTier
+            while t <= climbTopTier - 1 {
+                let w: CGFloat = (t % 2 == 0) ? 104 : 74
+                beats.append(ClimbBeat(tier: t, width: w, dx: 120))
+                t += 1
+            }
+        }
+        // BEAT 5 — PEAK: a narrow platform that stands apart at the top of the climb
+        // (bigger dx so it reads as an isolated high point).
+        beats.append(ClimbBeat(tier: climbTopTier, width: 72, dx: 126))
+
+        // Lay the beats down left→right from the landing ledge. cursorX marches by
+        // each beat's hand-tuned dx (asymmetric, never a constant stride).
+        var cursorX: CGFloat = 372
+        var peakX: CGFloat = cursorX
+        var peakTier = 1
+        for beat in beats {
+            cursorX += beat.dx
+            createPlatform(at: CGPoint(x: cursorX, y: tierY(beat.tier)),
+                           size: CGSize(width: beat.width, height: 30), solidity: .always)
+            peakX = cursorX
+            peakTier = beat.tier
+        }
+
+        // ---------- BEAT 6 — FINALE = RIGID WiFi TRAP BLOCK, staged HIGH (translated 1:1) ----------
+        // The trap is reproduced via finaleX(logical) so chasm 232 / wall top
+        // finaleRestTop+130 / OFF-step +55 / exit +100 are byte-identical in RELATIVE
+        // terms. Its BASE shelf is RAISED to finaleBaseTarget (ceiling-145), so the
+        // trap's TOP lands just under the ceiling — pinning the climax at the top of
+        // the canvas. The climb stops one tier below this base, so the BREATH hop
+        // onto the finale shelf is a normal one-tier rise.
+        let peakTop = tierY(peakTier) + 15
+        // Clamp defensively: never demand more than a safe rise from the PEAK surface
+        // to the finale base (base is a CENTER; its top is +15, so the reachable
+        // center cap is peakTop + maxRise - 15). On normal canvases finaleBaseTarget
+        // is already within reach; this only guards extreme aspects.
+        let reachableBase = peakTop + BaseLevelScene.maxJumpableRise - 15
+        let finaleBase = min(finaleBaseTarget, reachableBase)
+        let finaleRestTop = finaleBase + 15
+
+        // Finale block X: continue marching right past the PEAK so the BREATH hop's
+        // horizontal gap (peak right edge → finale bookend left edge) stays in reach.
+        finaleBookendX = peakX + 124
+
+        // Segment A — finale bookend (also the BREATH landing) + WiFi-ON stepping
+        // stones + solid REST ledge, all on the HIGH finale shelf.
+        createPlatform(at: CGPoint(x: finaleX(45), y: finaleBase),
+                       size: CGSize(width: 70, height: 30), solidity: .always)
+        // Solid REST ledge — left edge 232 logical past the bookend right edge: the
+        // LOAD-BEARING un-jumpable chasm A. Translated rigidly (still 232 on iPad),
+        // so it can NOT be cleared in one jump; the WiFi-ON stones are the only bridge.
+        createPlatform(at: CGPoint(x: finaleX(352), y: finaleBase),
+                       size: CGSize(width: 80, height: 30), solidity: .always)
+        // WiFi-ON stepping stones across chasm A (solid only when WiFi ON), exact
+        // phone offsets (logical 140/205/270, heights base+26/+46/+26).
+        createPlatform(at: CGPoint(x: finaleX(140), y: finaleBase + 26), size: CGSize(width: 46, height: 24), solidity: .wifiOn)
+        createPlatform(at: CGPoint(x: finaleX(205), y: finaleBase + 46), size: CGSize(width: 46, height: 24), solidity: .wifiOn)
+        createPlatform(at: CGPoint(x: finaleX(270), y: finaleBase + 26), size: CGSize(width: 46, height: 24), solidity: .wifiOn)
+
+        // Segment B — tall WiFi wall (un-jumpable top) + WiFi-OFF climb step + exit.
+        // Wall: bottom on the rest ledge, top finaleRestTop+130 — above the rest-floor
+        // apex, so un-jumpable while ON. Translated rigidly.
+        createWiFiWall(at: CGPoint(x: finaleX(340), y: finaleRestTop + 65))
+        // WiFi-OFF step (solid ONLY when OFF), top finaleRestTop+55 — the +55 hop is
+        // inside Bit's apex; it forms the mandatory mid-stair to the exit.
+        createWiFiOffPlatform(at: CGPoint(x: finaleX(378), y: finaleRestTop + 55 - 12),
+                              size: CGSize(width: 55, height: 24))
+        // Elevated exit ledge (always solid). Top finaleRestTop+100 — beyond the
+        // rest-floor apex, so direct-jumping to it is impossible: the player MUST go
+        // OFF and use the step. Rigidly translated.
+        let exitLedgeTopY = finaleRestTop + 100
+        createPlatform(at: CGPoint(x: finaleX(400), y: exitLedgeTopY - 15),
+                       size: CGSize(width: 60, height: 30), solidity: .always)
+
+        createExitDoor(at: CGPoint(x: finaleX(400), y: exitLedgeTopY + 30))
+
+        // Anchors + world extent for spawn / camera-follow / death zone.
+        composedSpawnX = 120
+        composedWorldWidth = finaleX(400) + 30 + 130   // exit-ledge right edge + margin
+
+        // Death zone spans the FULL composed course (not just one viewport width) so
+        // a fall anywhere along the scrolling level is caught.
+        let death = SKNode()
+        death.position = CGPoint(x: composedWorldWidth / 2, y: -50)
+        death.physicsBody = SKPhysicsBody(rectangleOf: CGSize(width: composedWorldWidth * 2, height: 100))
         death.physicsBody?.isDynamic = false
         death.physicsBody?.categoryBitMask = PhysicsCategory.hazard
         addChild(death)
@@ -504,14 +754,27 @@ final class WiFiScene: BaseLevelScene, SKPhysicsContactDelegate {
     }
 
     private func setupBit() {
-        // Spawn (and respawn — handleDeath reuses spawnPoint) lifts with the band
-        // by the SAME gameplayLift so its rise above the ground footing is unchanged.
-        spawnPoint = CGPoint(x: courseX(50), y: 200 + gameplayLift)
+        // Spawn (and respawn — handleDeath reuses spawnPoint). On iPhone it lifts
+        // with the band by the SAME gameplayLift so its rise above the ground footing
+        // is unchanged (byte-identical). On iPad the composed layout spawns above its
+        // raised bookend (composedGroundY) at the SAME +40pt drop-in offset.
+        if isWideCanvas {
+            spawnPoint = CGPoint(x: composedSpawnX, y: composedGroundY + 40)
+        } else {
+            spawnPoint = CGPoint(x: courseX(50), y: 200 + gameplayLift)
+        }
         bit = BitCharacter.make()
         bit.position = spawnPoint
         addChild(bit)
         registerPlayer(bit)
         playerController = PlayerController(character: bit, scene: self)
+
+        // NATIVE-iPad: the composed course is wider than the viewport, so promote
+        // the level to horizontal camera-follow. No-op on iPhone (isWideCanvas
+        // false), so the phone stays a static single-screen course.
+        if isWideCanvas {
+            installCameraFollow(worldWidth: composedWorldWidth, playerController: playerController)
+        }
     }
 
     private func updateWiFiState(_ enabled: Bool) {

@@ -80,6 +80,54 @@ final class FlashlightScene: BaseLevelScene, SKPhysicsContactDelegate {
     // Death zone y position
     private let deathZoneY: CGFloat = -100
 
+    // MARK: - Native-iPad vertical fill (Phase 0)
+    //
+    // L31 is ALREADY a worldWidth (3200) camera-follow course, so it fills the iPad
+    // horizontally via the bespoke updateCamera below — no installCameraFollow needed
+    // (that would double-register a camera tick). The gap was VERTICAL: the cave's
+    // gameplay was pinned to a single low floor (groundY 160) while the tall iPad
+    // canvas above stayed dark and EMPTY — the dark cave read as "broken", not
+    // deliberate. The fix is a NEW iPad-only route (buildComposedIPadLevel) that
+    // CLIMBS through the full usable band using the shared verticalTier helper: a low
+    // spawn on tier 0 rises through staged stalactite + pit-trap beats to the signature
+    // finale (exit door) on the TOP tier near the ceiling, so the cave reads
+    // top-to-bottom. Faint silhouette hints (ledges, hanging stalactites, a far wall)
+    // are drawn across the full height so the darkness is clearly intentional.
+    //
+    // iPhone is untouched: isWideCanvas is false on phones, so buildLevel() routes to
+    // the original section builders verbatim, groundY returns 160, and spawn/checkpoint
+    // Y stays 220. The iPad path is fully gated behind isWideCanvas. The flashlight +
+    // tilt + bespoke camera mechanic, the fallback (always-on ambient glow + exit
+    // glow), spawn/exit reachability, and the stalactite apex-clearance / pit-spacing
+    // trap geometry are all preserved.
+    private var groundY: CGFloat { playableGroundY(iphoneGround: 160) }
+
+    /// True only on iPad-class canvases. Gates the NEW composed vertical-climb layout
+    /// so iPhone output stays byte-identical (mirrors L29's isWideCanvas convention).
+    private var isWideCanvas: Bool { min(size.width, size.height) >= 700 }
+
+    /// Spawn / respawn footing, ground-relative (160 + 60 = 220 on iPhone, so
+    /// byte-identical). Used as the iPhone spawn/checkpoint Y; the iPad path tracks a
+    /// per-checkpoint Y instead (see ipadCheckpoints) because its route is tiered.
+    private var spawnY: CGFloat { groundY + 60 }
+
+    /// iPad-only checkpoint (x, respawnY) pairs, populated by buildComposedIPadLevel so
+    /// a respawn after the climb begins lands ON the tier the player had reached rather
+    /// than back at the floor (or in a gap). Empty on iPhone (which uses the original
+    /// x-only sectionCheckpoints at y=220).
+    private var ipadCheckpoints: [(x: CGFloat, y: CGFloat)] = []
+
+    /// Number of tiers the iPad climb uses. Chosen so the band/(count-1) per-tier rise
+    /// stays at or under the safe jump (verticalTier also clamps to maxJumpableRise),
+    /// AND so the TOP tier reaches the ceiling — i.e. the route spans the FULL height.
+    /// With the rise clamped at 85, a tall iPad band needs ~13 single-jump steps to
+    /// climb floor->ceiling, so count scales with the band rather than a fixed small N.
+    private var ipadTierCount: Int {
+        let band = playableBandHeight(iphoneGround: 160)
+        let needed = Int(ceil(band / BaseLevelScene.maxJumpableRise)) + 1
+        return max(4, min(needed, 16))   // 4..16 tiers; top tier reaches the ceiling
+    }
+
     // MARK: - Configuration
 
     override func configureScene() {
@@ -100,6 +148,24 @@ final class FlashlightScene: BaseLevelScene, SKPhysicsContactDelegate {
         showInstructionPanel()
         setupBit()
         setupAmbientGlow()
+
+        // SUBVERSION BEAT (World 5 begins) — L31 is the FIRST level after L30's
+        // credits fake-out. Retroactively frame those credits as a bluff and announce
+        // System Override through the shared 4th-wall voice (lower-center safe band).
+        // Fired ONCE, ~1.2s after the scene composes, in the .boss register so it lands
+        // as the OS reasserting control. Purely an added narrator line — it does NOT
+        // touch the flashlight mechanic, the crop-mask, or the t=0 instruction clue.
+        run(.sequence([
+            .wait(forDuration: 1.2),
+            .run { [weak self] in
+                guard let self else { return }
+                GlitchedNarrator.present(
+                    "SYSTEM OVERRIDE: ENGAGED. CREDITS? CUTE. I'M NOT DONE WITH YOU.",
+                    in: self,
+                    style: .boss
+                )
+            }
+        ]), withKey: "subversionBeat")
     }
 
     // MARK: - Crop Node Light System
@@ -150,12 +216,16 @@ final class FlashlightScene: BaseLevelScene, SKPhysicsContactDelegate {
         ceiling.fillColor = .clear
         bgContainer.addChild(ceiling)
 
-        // Cave floor line
+        // Cave floor line. Drawn 40pt below the gameplay floor (groundY) so on iPad
+        // the faint cave-floor silhouette tracks the lifted ground instead of sitting
+        // far below it. On iPhone groundY is 160 -> base 120, byte-identical to the
+        // prior literal.
+        let caveFloorBaseY = groundY - 40
         let floorPath = CGMutablePath()
-        floorPath.move(to: CGPoint(x: -50, y: 120))
+        floorPath.move(to: CGPoint(x: -50, y: caveFloorBaseY))
         x = 0
         while x <= levelWidth + 50 {
-            let y: CGFloat = 120 + CGFloat.random(in: -10...10)
+            let y: CGFloat = caveFloorBaseY + CGFloat.random(in: -10...10)
             floorPath.addLine(to: CGPoint(x: x, y: y))
             x += CGFloat.random(in: 30...80)
         }
@@ -164,6 +234,18 @@ final class FlashlightScene: BaseLevelScene, SKPhysicsContactDelegate {
         floor.lineWidth = lineWidth
         floor.fillColor = .clear
         bgContainer.addChild(floor)
+
+        // ANALYSIS NOTE — "dark cave reads empty/broken": on iPad the gameplay now
+        // climbs the full height, but the BACKGROUND must also read as a deliberate
+        // tall cave (not a void) at every elevation. Add faint silhouette hints across
+        // the whole band: a far back-wall seam, a few mid-air hanging-rock ghosts, and
+        // sparse ledge ticks at the tier elevations. Drawn outside the crop node at
+        // very low alpha so they sit under the flashlight beam — present enough to say
+        // "the dark is on purpose", invisible enough to keep the reveal mechanic.
+        // iPhone-gated: skipped on phone so phone output is byte-identical.
+        if isWideCanvas {
+            buildCaveSilhouetteHints(in: bgContainer)
+        }
 
         // Faint vertical crack lines in the background
         for i in 0..<20 {
@@ -182,6 +264,82 @@ final class FlashlightScene: BaseLevelScene, SKPhysicsContactDelegate {
             crack.strokeColor = strokeColor.withAlphaComponent(0.04)
             crack.lineWidth = 1.0
             bgContainer.addChild(crack)
+        }
+    }
+
+    // MARK: - Cave Silhouette Hints (iPad-only, full-height "deliberate darkness")
+
+    /// Faint, always-dark background silhouettes spanning the full usable band so the
+    /// tall iPad cave reads as an intentional dark space, not an empty/broken void.
+    /// Everything here is purely cosmetic (no physics, no contact), drawn at very low
+    /// alpha OUTSIDE the crop node so it never competes with the flashlight reveal.
+    /// Authored at absolute scene coordinates across the full 3200 width and from the
+    /// gameplay floor up to just under the title, so the silhouette tracks the climbing
+    /// route. iPad-gated by the caller; never runs on iPhone.
+    private func buildCaveSilhouetteHints(in bg: SKNode) {
+        let floorY = groundY
+        let ceilingY = playableCeilingY()
+        let band = max(120, ceilingY - floorY)
+
+        // 1) A far back-wall seam: a single soft vertical-ish ridge line running the
+        //    full height at a few x stations, so the eye reads depth at every elevation.
+        let seamStations: [CGFloat] = stride(from: 220, through: levelWidth - 200, by: 360).map { $0 }
+        for sx in seamStations {
+            let seam = CGMutablePath()
+            seam.move(to: CGPoint(x: sx, y: floorY - 30))
+            var sy = floorY - 30
+            while sy < ceilingY {
+                sy += CGFloat.random(in: 40...70)
+                seam.addLine(to: CGPoint(x: sx + CGFloat.random(in: -14...14), y: min(sy, ceilingY)))
+            }
+            let seamNode = SKShapeNode(path: seam)
+            seamNode.strokeColor = strokeColor.withAlphaComponent(0.035)
+            seamNode.lineWidth = 1.5
+            seamNode.fillColor = .clear
+            seamNode.zPosition = -90
+            bg.addChild(seamNode)
+        }
+
+        // 2) Mid-air hanging-rock ghosts: faint stalactite silhouettes at varied mid
+        //    heights so the upper half is never blank. Spread across the width.
+        for i in 0..<14 {
+            let gx = 260 + CGFloat(i) * (levelWidth - 460) / 13 + CGFloat.random(in: -30...30)
+            // Stagger the suspended tip across the band (avoid the floor/ceiling edges).
+            let tipY = floorY + band * CGFloat.random(in: 0.30...0.92)
+            let len = CGFloat.random(in: 30...64)
+            let w = CGFloat.random(in: 10...20)
+            let ghost = CGMutablePath()
+            ghost.move(to: CGPoint(x: gx - w / 2, y: tipY + len))
+            ghost.addLine(to: CGPoint(x: gx, y: tipY))
+            ghost.addLine(to: CGPoint(x: gx + w / 2, y: tipY + len))
+            let ghostNode = SKShapeNode(path: ghost)
+            ghostNode.strokeColor = strokeColor.withAlphaComponent(0.05)
+            ghostNode.lineWidth = 1.2
+            ghostNode.fillColor = fillColor.withAlphaComponent(0.4)
+            ghostNode.zPosition = -88
+            bg.addChild(ghostNode)
+        }
+
+        // 3) Ledge ticks at the climbing tier elevations: short horizontal dashes that
+        //    hint "there is footing up here", scattered along the route so the player
+        //    senses the staircase even before the beam finds it.
+        let tierCount = ipadTierCount
+        for tier in 1..<tierCount {
+            let ty = verticalTier(tier, of: tierCount, iphoneGround: 160)
+            guard ty < ceilingY else { continue }
+            let ticks = 3 + (tier % 3)
+            for _ in 0..<ticks {
+                let tx = 300 + CGFloat.random(in: 0...(levelWidth - 600))
+                let tickPath = CGMutablePath()
+                let halfW = CGFloat.random(in: 14...34)
+                tickPath.move(to: CGPoint(x: tx - halfW, y: ty + CGFloat.random(in: -6...6)))
+                tickPath.addLine(to: CGPoint(x: tx + halfW, y: ty + CGFloat.random(in: -6...6)))
+                let tick = SKShapeNode(path: tickPath)
+                tick.strokeColor = strokeColor.withAlphaComponent(0.04)
+                tick.lineWidth = 1.0
+                tick.zPosition = -89
+                bg.addChild(tick)
+            }
         }
     }
 
@@ -222,8 +380,27 @@ final class FlashlightScene: BaseLevelScene, SKPhysicsContactDelegate {
 
     // MARK: - Level Building
 
+    // L3 pattern dispatcher: iPhone keeps its exact historic flat-cave layout
+    // (buildPhoneSections, byte-identical); iPad gets a NEW hand-composed VERTICAL
+    // climb that spans the full height. The signature flashlight mechanic, exit
+    // door, and death zone are shared scaffolding on both paths.
     private func buildLevel() {
-        let groundY: CGFloat = 160
+        if isWideCanvas {
+            buildComposedIPadLevel()
+        } else {
+            buildPhoneSections()
+        }
+
+        // === Global death zone (shared) ===
+        buildDeathZone()
+    }
+
+    // MARK: - iPhone path (byte-identical to the original flat-cave layout)
+    //
+    // groundY is the member that returns 160 on iPhone-class canvases, so every
+    // platform/hazard Y below is unchanged from the original hard-coded layout.
+    private func buildPhoneSections() {
+        let groundY = self.groundY
 
         // === SECTION 1: Start alcove (x: 0 - 400) ===
         buildStartSection(groundY: groundY)
@@ -239,9 +416,193 @@ final class FlashlightScene: BaseLevelScene, SKPhysicsContactDelegate {
 
         // === SECTION 5: Exit area (x: 2600 - 3200) ===
         buildExitSection(groundY: groundY)
+    }
 
-        // === Global death zone ===
-        buildDeathZone()
+    // MARK: - iPad path (NEW hand-composed full-height vertical climb)
+    //
+    // Model: L30 — a true vertical climb that fills top-to-bottom. The same cave
+    // language (continuous footing -> stalactite gauntlet -> pit-trap floor -> mixed
+    // tension -> exit) is re-staged as a STAIRCASE climbing across the full 3200-wide
+    // camera-follow course, rising from a low tier-0 spawn to the exit door on the TOP
+    // tier near the ceiling. Geometry is NEVER scaled: every step uses verticalTier
+    // (per-tier rise auto-clamped to maxJumpableRise=85) and every horizontal gap is
+    // bounded <= maxJumpableGap=130. Heights vary tier-to-tier (the route dips and
+    // climbs, it is not a monotonic ladder), the beats are spread across the width
+    // (not a centered column), and there is a wide REST platform mid-climb.
+    //
+    //   tier 0  (floor)      : wide spawn alcove                     — teach
+    //   tiers 1-3            : stalactite gauntlet, climbing          — vertical aim
+    //   tier  ~mid           : WIDE REST platform (a breath)          — pause
+    //   tiers mid..high      : pit-trap floor + mixed tension         — flat aim
+    //   tier  count-1 (top)  : exit door FINALE near the ceiling      — signature beat
+    //
+    // The stalactite hazards are authored RELATIVE to each beat's own tier floor with
+    // the proven gapFromFloor (175) so the apex-clearance trap geometry is preserved at
+    // every elevation. Pit-trap visuals sit in the gaps between beats. Cave creatures
+    // and stalagmites are scattered for the same readability the iPhone path has.
+    private func buildComposedIPadLevel() {
+        let count = ipadTierCount
+        let lastTier = count - 1
+        func tierY(_ i: Int) -> CGFloat { verticalTier(min(max(i, 0), count - 1), of: count, iphoneGround: 160) }
+
+        // The climb is authored as a SAFE STAIRCASE. Each beat declares a desired
+        // fractional progress (0 = floor, 1 = ceiling) and an optional `dip`; we then
+        // WALK the current tier toward that target by AT MOST ONE tier per beat (a dip
+        // forces a single -1 step). That walk-by-one rule GUARANTEES every consecutive
+        // rise is <= one verticalTier step (<= maxJumpableRise=85) regardless of how
+        // many tiers `count` resolves to on a given iPad — so the route fills the full
+        // band on a 12.9" exactly as safely as on an 11". X spacing is hand-tuned so
+        // every edge-to-edge gap stays <= maxJumpableGap=130. Beats are spread from
+        // x~120 to x~2980 across the full 3200 camera-follow width (NOT a centered
+        // column), heights vary (the dips), and one beat is a WIDE REST platform.
+        //
+        //   (centerX, width, targetFrac, dip, role)
+        struct Beat { let x: CGFloat; let w: CGFloat; let frac: CGFloat; let dip: Bool }
+        let specs: [Beat] = [
+            Beat(x: 140,  w: 280, frac: 0.00, dip: false), // TEACH: wide tier-0 spawn alcove
+            Beat(x: 360,  w: 120, frac: 0.10, dip: false), // GAUNTLET climb begins
+            Beat(x: 560,  w: 110, frac: 0.20, dip: false),
+            Beat(x: 760,  w: 100, frac: 0.28, dip: true ), // local dip — vary height
+            Beat(x: 950,  w: 110, frac: 0.36, dip: false),
+            Beat(x: 1180, w: 240, frac: 0.44, dip: false), // WIDE REST platform (a breath)
+            Beat(x: 1410, w: 90,  frac: 0.52, dip: false), // PIT-TRAP floor begins
+            Beat(x: 1590, w: 80,  frac: 0.58, dip: true ), // dip
+            Beat(x: 1760, w: 90,  frac: 0.66, dip: false),
+            Beat(x: 1950, w: 90,  frac: 0.74, dip: false),
+            Beat(x: 2150, w: 100, frac: 0.82, dip: false), // MIXED TENSION near the top
+            Beat(x: 2350, w: 80,  frac: 0.88, dip: true ), // dip
+            Beat(x: 2540, w: 90,  frac: 0.94, dip: false),
+            Beat(x: 2720, w: 100, frac: 0.98, dip: false),
+            Beat(x: 2950, w: 220, frac: 1.00, dip: false), // FINALE landing on the TOP tier
+        ]
+
+        // Resolve each beat's tier via the walk-by-one rule.
+        var tiers: [Int] = []
+        var cur = 0
+        for (idx, b) in specs.enumerated() {
+            if idx == 0 {
+                cur = 0
+            } else if idx == specs.count - 1 {
+                cur = lastTier                       // pin finale to the ceiling tier
+            } else {
+                let target = Int((CGFloat(lastTier) * b.frac).rounded())
+                if b.dip { cur = max(0, cur - 1) }
+                else if cur < target { cur += 1 }
+                else if cur > target { cur -= 1 }
+            }
+            tiers.append(cur)
+        }
+        // Guarantee the second-to-last beat is within one tier of the finale so the last
+        // jump is reachable (defensive; the fracs above already trend to the top).
+        if specs.count >= 2 {
+            var i = tiers.count - 2
+            while i >= 1 && tiers[i] < tiers[i + 1] - 1 {
+                tiers[i] = tiers[i + 1] - 1
+                i -= 1
+            }
+        }
+
+        // Build the climbing platforms. The FINAL spec (the finale landing) is the
+        // same platform buildExitSection draws below, so skip it here to avoid a
+        // duplicate — it stays in `specs`/`tiers` only so the walk-by-one rule validates
+        // the last jump onto the top tier.
+        for (idx, b) in specs.enumerated() where idx < specs.count - 1 {
+            createPlatform(at: CGPoint(x: b.x, y: tierY(tiers[idx])), size: CGSize(width: b.w, height: 40))
+        }
+
+        // Nearest-beat tier lookup so hazards/decorations attach to the route's actual
+        // elevation at any x (keeps every stalactite/pit authored relative to the real
+        // tier floor it threatens).
+        func tierNear(_ x: CGFloat) -> Int {
+            var best = 0; var bestD = CGFloat.greatestFiniteMagnitude
+            for (idx, b) in specs.enumerated() {
+                let d = abs(b.x - x)
+                if d < bestD { bestD = d; best = tiers[idx] }
+            }
+            return best
+        }
+
+        // Stalactite hazards staged over the climb (the vertical-aim mechanic). Authored
+        // relative to each nearby beat's own tier floor with the proven gapFromFloor
+        // (175) so the apex-clearance trap geometry is preserved AT EVERY elevation.
+        let stalactites: [(x: CGFloat, length: CGFloat)] = [
+            (x: 460,  length: 150),
+            (x: 660,  length: 130),
+            (x: 855,  length: 160),
+            (x: 1300, length: 140),
+            (x: 2050, length: 150),
+            (x: 2250, length: 130),
+            (x: 2440, length: 160),
+            (x: 2630, length: 140),
+        ]
+        for s in stalactites {
+            createStalactiteHazard(
+                at: CGPoint(x: s.x, y: topSafeY - 15),
+                length: s.length,
+                gapFromFloor: 175,           // proven apex-clearance, per-tier floor
+                floorY: tierY(tierNear(s.x))
+            )
+        }
+
+        // Pit-trap visuals + edge cracks in the pit-trap floor section (the flat-aim
+        // mechanic). Sit just below/at the route tier so they read as floor hazards.
+        let pits: [(x: CGFloat, width: CGFloat)] = [
+            (x: 1500, width: 50),
+            (x: 1675, width: 55),
+            (x: 1855, width: 55),
+            (x: 2050, width: 60),
+            (x: 2250, width: 55),
+        ]
+        for p in pits {
+            let py = tierY(tierNear(p.x))
+            createPitTrapVisual(at: CGPoint(x: p.x, y: py - 20), width: p.width)
+            createFloorCrack(at: CGPoint(x: p.x, y: py + 18))
+        }
+
+        // Start-alcove framing wall + decorative rocks (mirrors Section 1 readability).
+        let g0 = tierY(0)
+        let wallPath = CGMutablePath()
+        wallPath.move(to: CGPoint(x: 0, y: g0 - 20))
+        wallPath.addLine(to: CGPoint(x: 0, y: size.height))
+        let leftWall = SKShapeNode(path: wallPath)
+        leftWall.strokeColor = strokeColor
+        leftWall.lineWidth = lineWidth * 1.5
+        leftWall.zPosition = 15
+        levelContainer.addChild(leftWall)
+        for i in 0..<4 {
+            let rockX = CGFloat(i) * 60 + 30
+            let rockSize = CGFloat.random(in: 6...14)
+            let rock = SKShapeNode(circleOfRadius: rockSize)
+            rock.fillColor = fillColor
+            rock.strokeColor = strokeColor
+            rock.lineWidth = lineWidth * 0.6
+            rock.position = CGPoint(x: rockX, y: g0 + 20 + rockSize)
+            rock.zPosition = 12
+            levelContainer.addChild(rock)
+        }
+
+        // Stalagmites + creatures for visual interest, scattered along the climb.
+        for (idx, b) in specs.enumerated() where idx % 2 == 1 {
+            createStalagmite(at: CGPoint(x: b.x + 30, y: tierY(tiers[idx]) + 20), height: CGFloat.random(in: 15...40))
+        }
+        createCaveCreature(at: CGPoint(x: 760,  y: tierY(tierNear(760))  + 40))
+        createCaveCreature(at: CGPoint(x: 1760, y: tierY(tierNear(1760)) + 35))
+        createCaveCreature(at: CGPoint(x: 2540, y: tierY(tierNear(2540)) + 35))
+
+        // The exit FINALE on the top tier (signature beat near the ceiling). Platform
+        // and door X tightened so the door sits just past the wide top landing.
+        buildExitSection(groundY: tierY(lastTier), exitCenterX: 3050, platformCenterX: 2950, platformWidth: 220)
+
+        // Respawn checkpoints at the climb's section heads, each carrying the tier's
+        // surface Y (tier + 60, the same +60 footing offset as spawnY) so a fall after a
+        // checkpoint lands ON the reached tier — never back at the floor or in a gap.
+        ipadCheckpoints = [
+            (x: 360,  y: tierY(tiers[1])  + 60),
+            (x: 950,  y: tierY(tiers[4])  + 60),
+            (x: 1180, y: tierY(tiers[5])  + 60),   // the wide REST tier
+            (x: 1950, y: tierY(tiers[9])  + 60),
+            (x: 2720, y: tierY(tiers[13]) + 60),
+        ]
     }
 
     // MARK: Section 1 — Start Alcove
@@ -439,14 +800,21 @@ final class FlashlightScene: BaseLevelScene, SKPhysicsContactDelegate {
 
     // MARK: Section 5 — Exit Area
 
-    private func buildExitSection(groundY: CGFloat) {
+    /// Exit area. Defaults reproduce the original iPhone layout EXACTLY (wide platform
+    /// at x:2850 w:400, door at x:3050) so the iPhone path is byte-identical. The iPad
+    /// climb passes its top-tier groundY plus a tighter platform/door X so the finale
+    /// lands on the ceiling-height landing it builds.
+    private func buildExitSection(groundY: CGFloat,
+                                  exitCenterX: CGFloat = 3050,
+                                  platformCenterX: CGFloat = 2850,
+                                  platformWidth: CGFloat = 400) {
         // Wide safe platform leading to exit
-        createPlatform(at: CGPoint(x: 2850, y: groundY), size: CGSize(width: 400, height: 40))
+        createPlatform(at: CGPoint(x: platformCenterX, y: groundY), size: CGSize(width: platformWidth, height: 40))
 
         // Exit door (inline, matching other levels' createExitDoor pattern)
         let doorWidth: CGFloat = 40
         let doorHeight: CGFloat = 60
-        let doorPos = CGPoint(x: 3050, y: groundY + 50)
+        let doorPos = CGPoint(x: exitCenterX, y: groundY + 50)
 
         // Door frame
         let frame = SKShapeNode(rectOf: CGSize(width: doorWidth, height: doorHeight))
@@ -955,8 +1323,10 @@ final class FlashlightScene: BaseLevelScene, SKPhysicsContactDelegate {
         instructionPanel?.zPosition = 200
         gameCamera.addChild(instructionPanel!)
 
-        // Panel background
-        let panelBG = SKShapeNode(rectOf: CGSize(width: 240, height: 100), cornerRadius: 8)
+        // Panel background. DE-SPOIL: the tease lines below are longer than the old
+        // "TURN ON YOUR / FLASHLIGHT" goal, so the plate is widened (240 -> 320) to
+        // hold them without clipping; height unchanged so the icons stay placed.
+        let panelBG = SKShapeNode(rectOf: CGSize(width: 320, height: 100), cornerRadius: 8)
         panelBG.fillColor = fillColor
         panelBG.strokeColor = strokeColor
         panelBG.lineWidth = lineWidth
@@ -972,8 +1342,11 @@ final class FlashlightScene: BaseLevelScene, SKPhysicsContactDelegate {
         phoneIcon.position = CGPoint(x: 20, y: 10)
         instructionPanel?.addChild(phoneIcon)
 
-        // Text line 1
-        let label1 = SKLabelNode(text: "TURN ON YOUR")
+        // Text line 1. DE-SPOIL: replaced the explicit "TURN ON YOUR / FLASHLIGHT"
+        // goal with an atmospheric tease split across the two existing label slots.
+        // Same Menlo-Bold styling and slot positions; the wider plate above keeps
+        // the longer copy from clipping.
+        let label1 = SKLabelNode(text: "IT'S DARK DOWN HERE.")
         label1.fontName = "Menlo-Bold"
         label1.fontSize = 11
         label1.fontColor = strokeColor
@@ -981,9 +1354,9 @@ final class FlashlightScene: BaseLevelScene, SKPhysicsContactDelegate {
         instructionPanel?.addChild(label1)
 
         // Text line 2
-        let label2 = SKLabelNode(text: "FLASHLIGHT")
+        let label2 = SKLabelNode(text: "I CAN'T SEE A THING FROM IN HERE — CAN YOU?")
         label2.fontName = "Menlo-Bold"
-        label2.fontSize = 11
+        label2.fontSize = 9
         label2.fontColor = VisualConstants.Colors.accent
         label2.position = CGPoint(x: 0, y: -40)
         instructionPanel?.addChild(label2)
@@ -1075,7 +1448,10 @@ final class FlashlightScene: BaseLevelScene, SKPhysicsContactDelegate {
     // MARK: - Bit Setup
 
     private func setupBit() {
-        spawnPoint = CGPoint(x: 100, y: 220)
+        // Spawn on the tier-0 alcove. spawnY is ground-relative (220 on iPhone,
+        // byte-identical); on iPad it tracks the lifted floor so Bit lands on the
+        // wide spawn platform rather than dropping into the death zone.
+        spawnPoint = CGPoint(x: 100, y: spawnY)
 
         bit = BitCharacter.make()
         bit.position = spawnPoint
@@ -1198,11 +1574,25 @@ final class FlashlightScene: BaseLevelScene, SKPhysicsContactDelegate {
     // MARK: - Section Progress Tracking
 
     private func checkSectionProgress() {
-        for (index, checkpoint) in sectionCheckpoints.enumerated() {
-            if bit.position.x > checkpoint && index > lastCheckpointReached {
-                lastCheckpointReached = index
-                resetProgressTimer()
-                spawnPoint = CGPoint(x: checkpoint, y: 220)
+        if isWideCanvas {
+            // iPad: tiered checkpoints carry a per-tier respawn Y so a fall after a
+            // checkpoint lands ON the reached tier of the climb (not back at the floor
+            // or into a gap), preserving spawn/exit reachability on the vertical route.
+            for (index, cp) in ipadCheckpoints.enumerated() {
+                if bit.position.x > cp.x && index > lastCheckpointReached {
+                    lastCheckpointReached = index
+                    resetProgressTimer()
+                    spawnPoint = CGPoint(x: cp.x, y: cp.y)
+                }
+            }
+        } else {
+            // iPhone: original x-only checkpoints at the flat-cave footing height.
+            for (index, checkpoint) in sectionCheckpoints.enumerated() {
+                if bit.position.x > checkpoint && index > lastCheckpointReached {
+                    lastCheckpointReached = index
+                    resetProgressTimer()
+                    spawnPoint = CGPoint(x: checkpoint, y: 220)
+                }
             }
         }
     }
@@ -1318,6 +1708,10 @@ final class FlashlightScene: BaseLevelScene, SKPhysicsContactDelegate {
 
     private func handleDeath() {
         guard GameState.shared.levelState == .playing else { return }
+        // PROGRESSIVE HINT: every genuine death is a struggle signal. Repeated
+        // failures escalate to the earned hintText() reveal. The .playing guard
+        // above keeps this from double-counting re-entrant death calls.
+        notePlayerStruggle()
         failLevel()
         playerController.cancel()
         bit.playBufferDeath(respawnAt: spawnPoint) { [weak self] in
@@ -1360,7 +1754,7 @@ final class FlashlightScene: BaseLevelScene, SKPhysicsContactDelegate {
     }
 
     override func hintText() -> String? {
-        return "Turn on your flashlight and hold your phone up to look ahead. Tilt your phone flat to light up the floor and spot pits."
+        return "You're holding a light, you know. Switch on the phone's flashlight. Stand the phone upright to throw the beam far ahead — tilt it flat to pool the light on the floor and catch the pits."
     }
 
     // MARK: - Cleanup

@@ -32,6 +32,8 @@ final class BrightnessScene: BaseLevelScene, SKPhysicsContactDelegate {
     private var burnWarning: SKLabelNode?
     private var screenFlash: SKShapeNode?
     private var isBurning = false
+    /// De-spoil: the LUX-bar safe band stays hidden until the player burns once.
+    private var hasBurnedOnce = false
 
     /// A11Y: suppress the repeating white burn strobe when either the system-level
     /// Reduce Motion switch or the in-game Reduce Flash toggle is on. Matches the
@@ -102,6 +104,169 @@ final class BrightnessScene: BaseLevelScene, SKPhysicsContactDelegate {
         createMaxBrightnessSun()
         updateMaxBrightnessSun()
         updateBrightnessCommentary()
+        presentOpeningLines()
+    }
+
+    // MARK: - Opening Lines (t=0)
+
+    /// De-spoiled t=0 tease lines (unchanged content — iPad already renders them
+    /// clean via the shared narrator). Defined once here so the iPhone-only
+    /// custom placement below speaks the EXACT same two strings.
+    private static let teaseLine1 = "I CAN'T SEE EITHER, YOU KNOW."
+    private static let teaseLine2 = "THE DARK IS HIDING THE FLOOR FROM BOTH OF US."
+
+    /// De-spoiled t=0 atmosphere. The old opening told the player exactly what to do
+    /// ("NOT TOO BRIGHT ~80%" caption + telegraphed safe band). Instead the OS just
+    /// admits it's blind in the dark too, framing the brightness puzzle as a shared
+    /// problem to discover rather than a printed instruction. Two whisper lines,
+    /// sequenced so the narrator never stacks (present() dismisses the prior line).
+    ///
+    /// PLACEMENT: the shared `GlitchedNarrator` parks every line in a fixed
+    /// lower-center band. On the wide iPad that band is empty sky, so the iPad
+    /// path stays BYTE-IDENTICAL (it keeps calling the narrator). On the narrow
+    /// iPhone the *widened* t=0 tease wraps to two lines and that lower-center
+    /// band sits right on top of Bit's spawn / the start platform art — a z-order
+    /// collision with the game world. So on the compact canvas ONLY we render the
+    /// same two strings ourselves in the clear UPPER band (below the title /
+    /// BRIGHTNESS panel, above the climb, clear of the top-right PAUSE) on a
+    /// backing plate, so the de-spoil text reads cleanly without covering the
+    /// character.
+    private func presentOpeningLines() {
+        // Mark the first opening aside as "shown" so the dark-state commentary
+        // (same first line) doesn't immediately re-fire and double up.
+        darkCommentaryShown = true
+
+        if isCompactCanvas {
+            presentCompactOpeningTease()
+            return
+        }
+
+        GlitchedNarrator.present(BrightnessScene.teaseLine1, in: self, style: .whisper)
+        run(.sequence([
+            .wait(forDuration: 3.4),
+            .run { [weak self] in
+                guard let self = self else { return }
+                GlitchedNarrator.present(
+                    BrightnessScene.teaseLine2,
+                    in: self,
+                    style: .whisper
+                )
+            }
+        ]), withKey: "openingLines")
+    }
+
+    /// iPhone-only t=0 tease. Renders the same two de-spoil strings as the iPad
+    /// path, but in the clear upper band on a backing plate instead of the
+    /// narrator's fixed lower-center band (which overlaps Bit's spawn on the
+    /// narrow canvas). Matches the whisper voice: Menlo / cyan accent, full
+    /// opacity, auto-fading and sequenced exactly like the narrator opening.
+    private func presentCompactOpeningTease() {
+        showUpperBandTease(BrightnessScene.teaseLine1)
+        run(.sequence([
+            .wait(forDuration: 3.4),
+            .run { [weak self] in
+                self?.showUpperBandTease(BrightnessScene.teaseLine2)
+            }
+        ]), withKey: "openingLines")
+    }
+
+    /// Build (and replace any prior) upper-band tease caption with a legibility
+    /// backing plate, positioned in the clear strip BELOW the title + BRIGHTNESS
+    /// panel and ABOVE the gameplay climb, horizontally centered so it clears the
+    /// top-left title and the top-right PAUSE square. Word-wrapped to the canvas
+    /// width, full opacity, then auto-fades and removes itself.
+    private func showUpperBandTease(_ text: String) {
+        // Replace any prior tease so the two lines never stack/overlap (mirrors
+        // the narrator's dismiss-on-present behavior).
+        childNode(withName: "l6_opening_tease")?.removeFromParent()
+
+        let container = SKNode()
+        container.name = "l6_opening_tease"
+        // Above gameplay/HUD art, below full-screen death/transition juice.
+        container.zPosition = 250
+
+        // Word-wrap to the canvas width so the widened line never clips the edges.
+        let fontName = VisualConstants.Fonts.secondary
+        let fontSize: CGFloat = 15
+        let lineHeight: CGFloat = fontSize * 1.4
+        let maxLineWidth = size.width - 2 * (layoutSideMargin + 14)
+        let lines = wrapTease(text, font: fontName, fontSize: fontSize, maxWidth: maxLineWidth)
+        guard !lines.isEmpty else { return }
+
+        // Measure the widest line for the backing-plate width.
+        let uiFont = UIFont(name: fontName, size: fontSize)
+            ?? UIFont.monospacedSystemFont(ofSize: fontSize, weight: .regular)
+        let widestLine = lines.map { ($0 as NSString).size(withAttributes: [.font: uiFont]).width }.max() ?? 0
+
+        let totalTextHeight = CGFloat(lines.count) * lineHeight
+        let topY = totalTextHeight / 2 - lineHeight / 2
+
+        // Backing plate for legibility over the line-art background.
+        let plateWidth = min(size.width - 2 * layoutSideMargin, widestLine + 28)
+        let plateHeight = totalTextHeight + 18
+        let plate = SKShapeNode(rectOf: CGSize(width: plateWidth, height: plateHeight), cornerRadius: 8)
+        plate.fillColor = fillColor
+        plate.strokeColor = strokeColor
+        plate.lineWidth = lineWidth
+        plate.zPosition = 0
+        container.addChild(plate)
+
+        for (index, line) in lines.enumerated() {
+            let label = SKLabelNode(fontNamed: fontName)
+            label.text = line
+            label.fontSize = fontSize
+            label.fontColor = VisualConstants.Colors.accent
+            label.horizontalAlignmentMode = .center
+            label.verticalAlignmentMode = .center
+            label.position = CGPoint(x: 0, y: topY - CGFloat(index) * lineHeight)
+            label.zPosition = 1
+            container.addChild(label)
+        }
+
+        // CLEAR UPPER BAND: pin the plate's TOP just under the title/PAUSE row and
+        // keep its BOTTOM above the gameplay climb, horizontally centered (clear of
+        // the top-left title column and the top-right PAUSE square).
+        let bandTop = layoutTopY - 96            // below the ~88pt title / PAUSE row
+        let bandBottom = layoutTopY - 168         // above the compact climb top
+        let centerY = clamp((bandTop + bandBottom) / 2,
+                            lower: bandBottom + plateHeight / 2,
+                            upper: bandTop - plateHeight / 2)
+        container.position = CGPoint(x: size.width / 2, y: centerY)
+        addChild(container)
+
+        // Auto-fade + self-remove, matching the whisper hold cadence.
+        container.run(.sequence([
+            .wait(forDuration: 2.8),
+            .fadeOut(withDuration: 0.45),
+            .removeFromParent()
+        ]))
+    }
+
+    /// Greedy word-wrap for the iPhone tease, measured with the real font so the
+    /// widened line wraps cleanly inside the upper band instead of clipping.
+    private func wrapTease(_ text: String, font: String, fontSize: CGFloat, maxWidth: CGFloat) -> [String] {
+        let words = text.split(separator: " ").map(String.init)
+        guard !words.isEmpty else { return [] }
+
+        let uiFont = UIFont(name: font, size: fontSize)
+            ?? UIFont.monospacedSystemFont(ofSize: fontSize, weight: .regular)
+        func width(_ s: String) -> CGFloat {
+            (s as NSString).size(withAttributes: [.font: uiFont]).width
+        }
+
+        var lines: [String] = []
+        var current = ""
+        for word in words {
+            let candidate = current.isEmpty ? word : current + " " + word
+            if width(candidate) <= maxWidth || current.isEmpty {
+                current = candidate
+            } else {
+                lines.append(current)
+                current = word
+            }
+        }
+        if !current.isEmpty { lines.append(current) }
+        return lines
     }
 
     override func didUpdateSafeArea() {
@@ -210,6 +375,12 @@ final class BrightnessScene: BaseLevelScene, SKPhysicsContactDelegate {
                 }
             }
 
+            // First burn teaches the ceiling: reveal the previously hidden LUX-bar
+            // safe band so the player can now aim for the high-but-not-max window.
+            if shouldBurn {
+                revealSweetSpotBand()
+            }
+
             // Warning flash
             if shouldBurn {
                 burnWarning?.run(.sequence([
@@ -243,6 +414,14 @@ final class BrightnessScene: BaseLevelScene, SKPhysicsContactDelegate {
                 screenFlash?.run(.fadeOut(withDuration: 0.2))
             }
         }
+    }
+
+    /// De-spoil reveal: fade in the LUX-bar safe band the first time the player
+    /// burns, turning the burn ceiling from up-front instruction into an earned cue.
+    private func revealSweetSpotBand() {
+        guard !hasBurnedOnce else { return }
+        hasBurnedOnce = true
+        sweetSpotBand?.run(.fadeAlpha(to: 0.45, duration: 0.4))
     }
 
     private func burnZonePositions() -> [CGPoint] {
@@ -678,7 +857,26 @@ final class BrightnessScene: BaseLevelScene, SKPhysicsContactDelegate {
 
     // MARK: - Level Building
 
+    /// iPad-native gate. Tall tablet canvases get the hand-composed full-height
+    /// climb (`buildComposedIPadLevel`); iPhone-class canvases fall through to
+    /// `buildPhoneLevel()` and stay BYTE-IDENTICAL to the pre-redesign layout.
+    ///
+    /// The `height > 1000 && width > 700` test mirrors the project's iPad gate and
+    /// excludes EVERY iPhone in either orientation (no iPhone point height exceeds
+    /// ~956). The width floor pulls in narrow portrait iPads (iPad mini, 744pt).
+    private var isWideCanvas: Bool { size.height > 1000 && size.width > 700 }
+
     private func buildLevel() {
+        if isWideCanvas {
+            buildComposedIPadLevel()
+        } else {
+            buildPhoneLevel()
+        }
+    }
+
+    // MARK: - iPhone Path (byte-identical to the pre-redesign layout)
+
+    private func buildPhoneLevel() {
         let centerX = size.width / 2
 
         // Responsive UV climb. The old layout hardcoded a 4-step staircase in a
@@ -740,6 +938,194 @@ final class BrightnessScene: BaseLevelScene, SKPhysicsContactDelegate {
         layoutMaxBrightnessSun()
 
         // Death zone
+        let deathZone = SKNode()
+        deathZone.position = CGPoint(x: size.width / 2, y: -50)
+        deathZone.physicsBody = SKPhysicsBody(rectangleOf: CGSize(width: size.width * 2, height: 100))
+        deathZone.physicsBody?.isDynamic = false
+        deathZone.physicsBody?.categoryBitMask = PhysicsCategory.hazard
+        deathZone.name = "death_zone"
+        addChild(deathZone)
+    }
+
+    // MARK: - iPad Path (hand-composed full-height climb)
+
+    /// Hand-composed iPad climb. The phone path builds a 2-column zig-zag whose
+    /// L<->R swing is jump-capped to ~218pt, so on an iPad it only fills the center
+    /// ~31% of the width and reads as a near-procedural alternating staircase that
+    /// stalls partway up the screen (dead sky above). This rebuild fixes all three
+    /// audit defects for L6 WITHOUT touching the phone path or any base helper:
+    ///
+    ///  - DEAD SKY: the tier COUNT is derived from the real usable band
+    ///    (`playableGroundY` floor -> `topSafeY`-headroom ceiling) at a safe per-tier
+    ///    rise just under maxJumpableRise, so the FINALE lands near the ceiling and
+    ///    the climb fills the FULL height instead of clamping at ~40-60%.
+    ///  - DIAGONAL LADDER: NO strict L/R alternation. The route uses THREE lateral
+    ///    lanes (left cluster / center rest / right cluster), varied platform widths
+    ///    (70-220), same-tier flat REST runs, an occasional down-step, a true
+    ///    isolated PEAK that stands apart, and clusters-then-gaps. Cadence:
+    ///    teach -> cluster -> rest -> harder traverse -> PEAK -> finale.
+    ///  - CAMERA: L6 is a single tall screen. We do NOT call installCameraFollow and
+    ///    instead spread the route across the FULL width so nothing collapses.
+    ///
+    /// The brightness/UV mechanic is untouched: every climb platform is a UV
+    /// platform (dashed -> solid at 0.8-0.95), the start slab is solid, and the burn
+    /// zones + max-brightness sun follow `generatedPlatformFrames` / `climbExitPoint`
+    /// exactly as before.
+    ///
+    /// GAP/RISE BUDGET AUDIT (Bit physics are FIXED: gap<=130, rise<=85):
+    ///   * Every UP step is one tier; per-tier rise == band / (tierCount-1) and the
+    ///     tier count is chosen so that rise <= 78 < maxJumpableRise (85). PASS.
+    ///   * Down-steps drop one tier (a gift, not a jump) and land on a wide slab.
+    ///   * Horizontal hops are authored as explicit center-to-center deltas; the
+    ///     widest single hop is the left-cluster -> center-rest reach, audited below
+    ///     to stay <= maxJumpableGap (130) EDGE-TO-EDGE. PASS.
+    private func buildComposedIPadLevel() {
+        let uvH: CGFloat = 30
+        let startSize = CGSize(width: 132, height: 34)
+        let iphoneGround: CGFloat = 150   // this level's phone-path ground baseline
+
+        // VERTICAL BAND. Floor lifts toward the lower third on iPad via the base
+        // helper; ceiling is topSafeY minus headroom for the sun / burn band + HUD.
+        let floorY = playableGroundY(iphoneGround: iphoneGround)
+        let ceilingY = topSafeY - 220                       // leave room for sun + exit door
+        let band = max(BaseLevelScene.maxJumpableRise, ceilingY - floorY)
+
+        // TIER COUNT derived from the band so the climb FILLS THE FULL HEIGHT. Pick
+        // enough tiers that the per-tier rise sits just under maxJumpableRise; the
+        // top tier then lands at the ceiling instead of clamping mid-screen (the
+        // dead-sky bug). safeRise (78) carries margin under the 85 hard cap.
+        let safeRise: CGFloat = 78
+        let tierCount = max(7, Int(ceil(band / safeRise)) + 1)
+        let topTier = tierCount - 1
+        let rise = band / CGFloat(topTier)                  // <= safeRise <= 85
+        func tierY(_ i: Int) -> CGFloat { floorY + CGFloat(i) * rise }
+
+        // THREE LATERAL LANES so the route reaches both edges instead of a 2-column
+        // ribbon. Lanes are clamped inside the screen so the widest slab never runs
+        // off an edge. The left/right CLUSTER lanes sit near the edges; the CENTER
+        // lane hosts the rest + finale slabs and the diagonal start.
+        let edgePad: CGFloat = 130
+        let leftLane   = edgePad + 70                        // left-cluster lane center
+        let rightLane  = size.width - edgePad - 70           // right-cluster lane center
+        let centerLane = size.width / 2
+
+        // Platform widths VARY for rhythm.
+        let thinW: CGFloat   = 74    // skinny challenge step
+        let stepW: CGFloat   = 104   // standard step
+        let midW: CGFloat    = 132   // chunkier step
+        let restW: CGFloat   = 196   // wide REST breath slab
+        let peakW: CGFloat   = 86    // isolated PEAK (stands apart, narrow)
+        let summitW: CGFloat = 220   // wide FINALE summit slab (the destination)
+
+        let cX = centerLane
+
+        // LATERAL HOP CAP. Each consecutive beat may move horizontally by at most
+        // `maxLatC2C` center-to-center. Worst case is two THIN platforms (hw=thinW/2
+        // each): edge-to-edge = maxLatC2C - thinW <= maxJumpableGap (130). Solving
+        // gives maxLatC2C = 130 + thinW = 204; we use a conservative cap so the
+        // e2e gap always sits under budget even when both ends are the narrowest
+        // platforms, and far under it for the wide rest/summit slabs.
+        let maxLatC2C = BaseLevelScene.maxJumpableGap + thinW   // 204
+
+        // BEAT BLUEPRINT (bottom -> top). Hand-composed rhythm, NOT an alternating
+        // ladder. Each beat is (tier, x, width). Multiple beats can share a tier
+        // (flat cluster / rest run); one beat steps DOWN a tier (a gift descent).
+        //
+        // To reach BOTH screen edges while never exceeding the lateral cap in a
+        // single hop, lane changes are realized over consecutive climbing beats
+        // (each hop bounded), not as one wide leap. `addBeat` enforces the cap
+        // against the previous beat by clamping x toward the previous x; the
+        // authored lane targets below are reachable because they are stepped into
+        // across multiple tiers.
+        struct Beat { let tier: Int; let x: CGFloat; let w: CGFloat }
+        var blueprint: [Beat] = []
+        var prevX: CGFloat = leftLane        // start slab is at leftLane, tier 0
+        func addBeat(tier: Int, x targetX: CGFloat, w: CGFloat) {
+            let dx = targetX - prevX
+            let clampedX = abs(dx) <= maxLatC2C
+                ? targetX
+                : prevX + (dx < 0 ? -maxLatC2C : maxLatC2C)
+            blueprint.append(Beat(tier: tier, x: clampedX, w: w))
+            prevX = clampedX
+        }
+
+        // Anchor tiers scale with device height.
+        let restTier = max(4, min(tierCount * 4 / 10, topTier - 3))  // ~40% up: the breath
+        let peakTier = topTier - 1                                   // isolated peak below finale
+
+        // 1) TEACH: one reachable step up-and-right from the start slab toward center.
+        addBeat(tier: 1, x: (leftLane + cX) / 2, w: midW)
+
+        // 2) LEFT CLUSTER (grouped pair, then a gap): swing back out toward the left
+        //    edge — a short flat-ish cluster the player reads as one shelf.
+        addBeat(tier: 2, x: leftLane, w: stepW)
+        addBeat(tier: 2, x: leftLane + 96, w: thinW)            // same-tier flat partner
+
+        // 3) Climb toward the WIDE REST, stepping through center so each hop is small.
+        for tier in 3..<restTier {
+            addBeat(tier: tier, x: cX, w: stepW)
+        }
+
+        // 4) WIDE REST: a centered breath slab + a true flat same-tier extension.
+        addBeat(tier: restTier, x: cX, w: restW)
+        addBeat(tier: restTier, x: cX + restW / 2 + 50, w: stepW)  // flat run, no rise
+
+        // 5) DOWN-STEP (deliberate descent breaking the monotonic climb): drop one
+        //    tier onto a wide ledge to the right. Reachable: it is BELOW the rest, so
+        //    the lateral hop is the only constraint and addBeat keeps it in budget.
+        addBeat(tier: restTier - 1, x: rightLane, w: midW)
+
+        // 6) RIGHT CLUSTER -> harder traverse back toward center, climbing every tier
+        //    up to (but not including) the peak. Thinner widths near the top = rising
+        //    tension. Sides bias right->center->left to use the full width.
+        for (offset, tier) in (restTier..<peakTier).enumerated() {
+            let nearTop = tier >= peakTier - 2
+            // Cycle right -> center -> left so the route keeps using both edges; the
+            // addBeat cap turns any too-wide target into a bounded intermediate hop.
+            let laneCycle = [rightLane, cX, leftLane]
+            let targetX = laneCycle[offset % laneCycle.count]
+            addBeat(tier: tier, x: targetX, w: nearTop ? thinW : stepW)
+        }
+
+        // 7) THE PEAK: a narrow, isolated platform offset to one side so it stands
+        //    apart from the finale — the hardest single placement of the climb.
+        addBeat(tier: peakTier, x: leftLane + 40, w: peakW)
+
+        // 8) FINALE: the wide centered summit slab under the sun / burn hazard, on the
+        //    top tier (== ceiling). The exit door is planted on top of it.
+        addBeat(tier: topTier, x: cX, w: summitW)
+
+        // Starting platform (always solid) on tier 0 at the LEFT lane, so the first
+        // UV step is a reachable diagonal up-and-right into the climb.
+        let startCenter = CGPoint(x: leftLane, y: tierY(0))
+        playerSpawnPoint = CGPoint(x: startCenter.x, y: startCenter.y + 60)
+        let startPlatform = createPlatform(at: startCenter, size: startSize, isUV: false)
+        startPlatform.name = "start_platform"
+
+        generatedPlatformFrames = []
+        var lastCenter = startCenter
+        for beat in blueprint {
+            let centerY = tierY(beat.tier) - uvH / 2   // platform TOP sits at the tier line
+            let pos = CGPoint(x: beat.x, y: centerY)
+            let uvSize = CGSize(width: beat.w, height: uvH)
+            let platform = createUVPlatform(at: pos, size: uvSize)
+            uvPlatforms.append(platform)
+            generatedPlatformFrames.append(
+                CGRect(x: pos.x - uvSize.width / 2, y: pos.y - uvSize.height / 2,
+                       width: uvSize.width, height: uvSize.height)
+            )
+            // The finale (top-tier centered summit) is the last beat -> the exit.
+            if beat.tier == topTier { lastCenter = pos }
+        }
+
+        // Exit door planted ON TOP of the finale summit slab so it reads as the
+        // destination, directly under the sun / burn hazard. Single tall screen:
+        // NO installCameraFollow (the route already spans the full width).
+        climbExitPoint = CGPoint(x: lastCenter.x, y: lastCenter.y + 50)
+        createExitDoor(at: climbExitPoint)
+        layoutMaxBrightnessSun()
+
+        // Death zone spans the full iPad width.
         let deathZone = SKNode()
         deathZone.position = CGPoint(x: size.width / 2, y: -50)
         deathZone.physicsBody = SKPhysicsBody(rectangleOf: CGSize(width: size.width * 2, height: 100))
@@ -1006,14 +1392,17 @@ final class BrightnessScene: BaseLevelScene, SKPhysicsContactDelegate {
         barBG.lineWidth = lineWidth
         brightnessBar?.addChild(barBG)
 
-        // Mark the target 0.8-0.95 band: solid platforms without max-brightness burn.
+        // De-spoiled: the 0.8-0.95 "sweet spot" band used to be pre-drawn, telegraphing
+        // the exact safe window. It now starts HIDDEN (alpha 0) and is only revealed
+        // after the player's first burn (see revealSweetSpotBand()), so the burn
+        // ceiling is discovered through play, not handed to the player up front.
         let sweetSpotHeight = (burnThreshold - solidThreshold) * brightnessBarHeight
         let sweetSpotCenterY = ((burnThreshold + solidThreshold) / 2) * brightnessBarHeight - brightnessBarHeight / 2
         let sweetSpot = SKShapeNode(rectOf: CGSize(width: 14, height: sweetSpotHeight))
         sweetSpot.fillColor = .clear
         sweetSpot.strokeColor = strokeColor
         sweetSpot.lineWidth = lineWidth * 0.35
-        sweetSpot.alpha = 0.45
+        sweetSpot.alpha = 0
         sweetSpot.position = CGPoint(x: 0, y: sweetSpotCenterY)
         brightnessBar?.addChild(sweetSpot)
         sweetSpotBand = sweetSpot
@@ -1118,15 +1507,10 @@ final class BrightnessScene: BaseLevelScene, SKPhysicsContactDelegate {
         label.position = CGPoint(x: 0, y: -29)
         instructionPanel?.addChild(label)
 
-        // Caption: cue players that the target is the high-but-not-max band so they
-        // don't blow past the sweet spot into the burn zone. Text only; both lines
-        // stay inside the existing 100pt-tall panel background (spans -50…+50).
-        let caption = SKLabelNode(text: "NOT TOO BRIGHT  ~80%")
-        caption.fontName = "Menlo"
-        caption.fontSize = isCompactPhone ? 8 : 9
-        caption.fontColor = strokeColor
-        caption.position = CGPoint(x: 0, y: -43)
-        instructionPanel?.addChild(caption)
+        // De-spoiled: the explicit "NOT TOO BRIGHT  ~80%" caption was removed so the
+        // burn ceiling is something the player discovers rather than is told. The
+        // earned hint (hintText) reveals the pull-back-before-max rule after struggle,
+        // and the burn band on the LUX bar only appears AFTER a first burn.
         layoutHUDNodes()
     }
 
@@ -1282,6 +1666,11 @@ final class BrightnessScene: BaseLevelScene, SKPhysicsContactDelegate {
 
             // Hide instruction panel when brightness raised
             if level > 0.6 && oldBrightness <= 0.6 {
+                // PROGRESSIVE HINT: raising brightness past the ghost threshold is the
+                // core "I figured out the mechanic" beat — reset the struggle/hint
+                // timer so the earned hint waits for fresh failure rather than firing
+                // on a player who is already making progress.
+                notePlayerProgress()
                 instructionPanel?.run(.sequence([
                     .fadeOut(withDuration: 0.3),
                     .removeFromParent()
@@ -1363,6 +1752,9 @@ final class BrightnessScene: BaseLevelScene, SKPhysicsContactDelegate {
 
     private func handleDeath() {
         guard GameState.shared.levelState == .playing else { return }
+        // PROGRESSIVE HINT: every death (fall or burn) is a struggle beat; repeated
+        // failure escalates toward the earned hintText() reveal.
+        notePlayerStruggle()
         playerController.cancel()
         currentGroundPlatform = nil
         bit.playBufferDeath(respawnAt: spawnPoint) { [weak self] in
@@ -1390,7 +1782,7 @@ final class BrightnessScene: BaseLevelScene, SKPhysicsContactDelegate {
     }
 
     override func hintText() -> String? {
-        return "Adjust your screen brightness"
+        return "Raise your device brightness slider near the top to make the ghost platforms solid — but pull back before full: max brightness lights a burn hazard."
     }
 
     // MARK: - Cleanup

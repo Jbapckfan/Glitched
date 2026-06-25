@@ -53,14 +53,164 @@ final class WindBridgeScene: BaseLevelScene, SKPhysicsContactDelegate {
         let bandTop = groundBaseHeight + 60 * visualScale   // exit door top
         return gameplayVerticalLift(bandBottom: bandBottom, bandTop: bandTop)
     }()
-    private var groundHeight: CGFloat { groundBaseHeight + gameplayLift }
-    private var chasmStartX: CGFloat { 140 * layoutXScale }
+
+    // MARK: - Native-iPad Composed Layout (FULL-HEIGHT vertical climb)
+    //
+    // The phone path is the flat two-platform-plus-chasm strip below. On a tall, wide
+    // iPad canvas this level instead ASCENDS through evenly-spaced vertical TIERS that
+    // span the FULL usable band (floor near the bottom safe edge up to a finale near
+    // the title/HUD ceiling) so the whole screen fills, instead of leaving the top
+    // third an empty sky. The route (low -> high): a wide low TEACH beat -> a stepped
+    // ascent of three pillars at LOW / MID / HIGH tiers (the analysis note's "vary the
+    // 3 pillar heights"; the MID pillar is the load-bearing switchback step that earns
+    // its purpose) -> a wide REST breath -> a HIGH tension pillar -> then the level's
+    // SIGNATURE wind-bridge chasm staged as the FINALE GUST near the ceiling. Tiers
+    // also spread LEFT-TO-RIGHT as they climb (a switchback, never a centered ladder),
+    // so the full WIDTH stays in play too. The course is wider than the viewport, so
+    // `installCameraFollow` scrolls it horizontally; camera Y stays scene-centered, so
+    // the entire height is always on screen. Every iPad-only branch is gated behind
+    // `isWideCanvas`, so the iPhone build is byte-identical.
+    //
+    // CRITICAL: the wind-bridge chasm stays UN-jumpable (235pt edge-to-edge, the same
+    // forced-gap design intent as the phone). The shared bridge/wind/chasm code reads
+    // `chasmStartX`/`chasmEndX`/`groundHeight`/`bridgeOverlap`, which switch to the
+    // iPad finale's absolute anchors when `isWideCanvas`, so the mechanic and its
+    // mic-fallback are preserved verbatim. Every composed (non-chasm) gap is
+    // <= BaseLevelScene.maxJumpableGap (130) and every rise <= maxJumpableRise (85),
+    // the latter guaranteed by `ipadVerticalTier` clamping per-tier spacing.
+
+    // iPad-class gate. The app is portrait-locked, so every portrait iPad (744-1024pt
+    // wide, >1000pt tall) trips this while every iPhone (<=932 tall) stays false.
+    private var isWideCanvas: Bool {
+        size.height > 1000 && size.width > 600
+    }
+
+    // FULL-HEIGHT band anchors (iPad only; absolute pt). Floor sits NEAR THE BOTTOM so
+    // we build UPWARD; ceiling sits just under the title/HUD band so the finale crowns
+    // the screen. (Mirrors the Phase-0 playableGroundY/playableCeilingY intent locally
+    // so no shared file is touched.)
+    private lazy var ipadFloorTop: CGFloat = bottomSafeY + 90
+    // Keep ~170pt clear under topSafeY for the LEVEL 2 title, the "LOOKS WINDY" placard
+    // (topSafeY-70) and the escalation mic hint (topSafeY-150), so no finale platform
+    // ever renders under the HUD.
+    private var ipadCeilingTop: CGFloat { topSafeY - 170 }
+    private var ipadBandHeight: CGFloat { max(0, ipadCeilingTop - ipadFloorTop) }
+
+    // Number of evenly-spaced tiers spanning the band. Chosen so the per-tier rise
+    // stays near (but never above) maxJumpableRise, and tier `ipadTierCount-1` lands at
+    // the ceiling. ceil(band / 85) + 1 guarantees spacing <= 85.
+    private var ipadTierCount: Int {
+        max(2, Int(ceil(ipadBandHeight / BaseLevelScene.maxJumpableRise)) + 1)
+    }
+    private var ipadTierSpacing: CGFloat {
+        let c = ipadTierCount
+        return c > 1 ? ipadBandHeight / CGFloat(c - 1) : 0
+    }
+
+    /// Y (platform TOP) for tier `index` of `ipadTierCount`, evenly spanning
+    /// `ipadFloorTop` (tier 0) -> `ipadCeilingTop` (tier count-1). Per-tier rise is
+    /// `band/(count-1)`, which is <= maxJumpableRise by construction of `ipadTierCount`,
+    /// so any single-tier step is always jumpable. Clamped to [0, count-1].
+    private func ipadVerticalTier(_ index: Int) -> CGFloat {
+        let count = ipadTierCount
+        guard count > 1 else { return ipadFloorTop }
+        let clamped = max(0, min(count - 1, index))
+        return ipadFloorTop + ipadTierSpacing * CGFloat(clamped)
+    }
+
+    // The FINALE finishing-chasm span (edge-to-edge between the approach bank and the
+    // exit bank). Same 235pt un-jumpable width as the phone's forced gap, so the
+    // wind-bridge mechanic is the only way across.
+    private var ipadChasmWidth: CGFloat { 235 }
+
+    // A resolved composed beat at absolute pt. `tier` indexes ipadVerticalTier.
+    private struct IPadBeat { let role: String; let cx: CGFloat; let w: CGFloat; let tier: Int }
+
+    /// The full composed iPad route, generated once per access from the device band.
+    /// ONE platform per tier (a true top-to-bottom climb like L30), each step rising a
+    /// single tier (rise == ipadTierSpacing <= 85) except a FLAT wide REST breath in the
+    /// middle (rise 0) and the un-jumpable finale chasm at the top. Widths vary for
+    /// rhythm (wide low teach, alternating mid/narrow pillars, wide rest, wide exit).
+    /// X advances left->right so the climb also sweeps the full WIDTH (a switchback, not
+    /// a centered ladder); every horizontal step is `ipadStepGap` edge-to-edge (<=130).
+    private let ipadStepGap: CGFloat = 105
+    private var ipadComposedRoute: [IPadBeat] {
+        let count = ipadTierCount
+        var beats: [IPadBeat] = []
+        let restAfterTier = count / 2   // flat breath taken just after reaching this tier
+        for t in 0..<count {
+            let w: CGFloat
+            let role: String
+            if t == 0 {
+                w = 360; role = "teach"            // wide low spawn / teach pad
+            } else if t == count - 1 {
+                w = 220; role = "approach"         // left bank of the finale chasm (top tier)
+            } else if t % 2 == 0 {
+                w = 170; role = "pillar"           // mid-width pillar
+            } else {
+                w = 130; role = "pillar"           // narrow pillar (tension)
+            }
+            beats.append(IPadBeat(role: role, cx: 0, w: w, tier: t))
+            if t == restAfterTier {
+                // FLAT wide REST breath: same tier as its predecessor (rise 0).
+                beats.append(IPadBeat(role: "rest", cx: 0, w: 300, tier: t))
+            }
+        }
+        // Resolve X left->right with a constant edge-to-edge gap.
+        var resolved: [IPadBeat] = []
+        var prevRight: CGFloat = 0
+        for (i, b) in beats.enumerated() {
+            let cx: CGFloat
+            if i == 0 {
+                cx = 360
+            } else {
+                cx = prevRight + ipadStepGap + b.w / 2
+            }
+            resolved.append(IPadBeat(role: b.role, cx: cx, w: b.w, tier: b.tier))
+            prevRight = cx + b.w / 2
+        }
+        // Append the exit bank: same (top) tier, 235pt un-jumpable chasm to the right.
+        let approach = resolved[resolved.count - 1]
+        let approachRight = approach.cx + approach.w / 2
+        let exitW: CGFloat = 360
+        let exitCx = approachRight + ipadChasmWidth + exitW / 2
+        resolved.append(IPadBeat(role: "exit", cx: exitCx, w: exitW, tier: count - 1))
+        return resolved
+    }
+    // Cache the route once (it is pure given `size`) so every anchor derives from the
+    // same numbers and we don't regenerate it on each property access.
+    private lazy var ipadBeats: [IPadBeat] = ipadComposedRoute
+    private var ipadApproachBeat: IPadBeat { ipadBeats[ipadBeats.count - 2] }
+    private var ipadExitBeat: IPadBeat { ipadBeats[ipadBeats.count - 1] }
+    private var ipadApproachRight: CGFloat { ipadApproachBeat.cx + ipadApproachBeat.w / 2 }
+    private var ipadExitBankCx: CGFloat { ipadExitBeat.cx }
+    private var ipadExitBankWidth: CGFloat { ipadExitBeat.w }
+    private var ipadCourseExtent: CGFloat { ipadExitBankCx + ipadExitBankWidth / 2 + 60 }
+
+    // On iPhone `groundHeight` is the tall pillar height (Bit walks on its top at
+    // y=groundHeight). On the composed iPad course the bridge/wind/chasm code needs a
+    // single "surface Y" that matches the finale banks' TOP tier; that is the top tier.
+    private var groundHeight: CGFloat {
+        isWideCanvas ? ipadVerticalTier(ipadTierCount - 1) : (groundBaseHeight + gameplayLift)
+    }
+    // The shared bridge/wind/chasm code spans `chasmStartX`..`chasmEndX`. On iPhone
+    // that is the original forced-gap chasm; on iPad it is the FINALE chasm between the
+    // approach bank's right edge and the exit bank's left edge -- the same 235pt
+    // un-jumpable span, just relocated to the composed course's high climax.
+    private var chasmStartX: CGFloat {
+        isWideCanvas ? ipadApproachRight : 140 * layoutXScale
+    }
     // Span widened 200 -> 235 design-pt (end 340 -> 375) so the chasm stays
     // genuinely unjumpable on the narrowest shipping iPhone (390pt, courseScale
     // ~0.907): 235 * 0.907 = ~213pt center-travel >= the ~210pt forced-gap floor,
     // closing the old mic-bypass where 181pt < the ~184pt running-jump reach.
-    private var chasmEndX: CGFloat { 375 * layoutXScale }
-    private var bridgeOverlap: CGFloat { 80 * layoutXScale }
+    // iPad keeps the same absolute 235pt span (un-jumpable, mechanic preserved).
+    private var chasmEndX: CGFloat {
+        isWideCanvas ? (ipadApproachRight + ipadChasmWidth) : 375 * layoutXScale
+    }
+    private var bridgeOverlap: CGFloat {
+        isWideCanvas ? 80 : 80 * layoutXScale
+    }
 
     private var windParticles: [SKShapeNode] = []
     private var lastMicLevel: Float = 0
@@ -80,6 +230,22 @@ final class WindBridgeScene: BaseLevelScene, SKPhysicsContactDelegate {
         AccessibilityManager.shared.forceHardwareFallback(for: .microphone)
 #endif
 
+        if isWideCanvas {
+            buildComposedIPadLevel()
+        } else {
+            buildPhoneLevel()
+        }
+
+        configureMechanicsWithMicrophonePermissionExplanation(
+            [.microphone],
+            message: "LEVEL REQUIRES ENVIRONMENTAL ACCESS"
+        )
+    }
+
+    /// iPhone path -- UNCHANGED. This is the exact build sequence the level shipped
+    /// with; it runs verbatim on every iPhone-class canvas so phone output stays
+    /// byte-identical to before the iPad redesign.
+    private func buildPhoneLevel() {
         setupBackground()
         setupPlatforms()
         setupChasm()
@@ -89,11 +255,81 @@ final class WindBridgeScene: BaseLevelScene, SKPhysicsContactDelegate {
         setupWindVisuals()
         setupLevelTitle()
         setupHint()
+    }
 
-        configureMechanicsWithMicrophonePermissionExplanation(
-            [.microphone],
-            message: "LEVEL REQUIRES ENVIRONMENTAL ACCESS"
+    /// Native-iPad composed path. A full-height ascending climb through vertical tiers,
+    /// with the wind-bridge chasm staged as the high finale. Reuses the SHARED bridge/
+    /// wind/chasm/bit/exit code (those read `chasmStartX`/`chasmEndX`/`groundHeight`,
+    /// which point at the iPad finale chasm when `isWideCanvas`), so the device mechanic
+    /// and its fallback are preserved verbatim. The composed tier platforms are the
+    /// additional hand-authored content the wide canvas earns.
+    private func buildComposedIPadLevel() {
+        setupBackground()
+        buildComposedBeats()      // teach (low) -> low/mid/high ascent -> rest -> high tension -> finale banks
+        setupComposedDeathZone()  // full-course death plane (the chasm + below-floor)
+        setupChasm()              // hatching visuals inside the finale chasm
+        setupBridge()             // shared wind-bridge spanning the finale chasm
+        setupBit()                // spawns on the low teach platform
+        setupExit()               // door on the exit bank (high, near ceiling)
+        setupWindVisuals()        // wind line indicators over the finale chasm
+        setupLevelTitle()
+        setupHint()
+
+        // Course is far wider than the iPad viewport -- scroll it horizontally.
+        // worldWidth == the full authored course extent so the exit bank is reachable
+        // and the camera clamps exactly to the course ends. Camera Y stays scene-centered
+        // (the full vertical climb fits the viewport), ticked in BaseLevelScene.update().
+        installCameraFollow(worldWidth: ipadCourseExtent, playerController: playerController)
+    }
+
+    /// Builds the hand-composed iPad tier platforms (everything EXCEPT the bridge,
+    /// which the shared mechanic owns). Each platform's TOP is `ipadVerticalTier(tier)`;
+    /// tiers climb low->high and spread left->right. Every consecutive step is a 1-tier
+    /// (or same-tier) move, so each rise <= maxJumpableRise (85) and each edge-to-edge
+    /// gap <= maxJumpableGap (130) by construction of the beat spacing.
+    private func buildComposedBeats() {
+        for beat in ipadBeats {
+            let top = ipadVerticalTier(beat.tier)
+            let platform = createComposedPlatform(
+                width: beat.w,
+                topY: top,
+                centerX: beat.cx
+            )
+            addChild(platform)
+        }
+    }
+
+    /// iPad composed-platform factory: a solid block whose TOP edge sits at `topY`
+    /// (so jump-reach math is top-to-top) and whose body drops toward the floor band so
+    /// it reads as grounded terrain rather than a floating tile. Absolute sizing --
+    /// never scaled by size.width.
+    private func createComposedPlatform(width: CGFloat, topY: CGFloat, centerX: CGFloat) -> SKNode {
+        // Extend each block down well below its top so it reads as solid ground; the
+        // bottom is clamped at the scene floor so higher tiers grow visibly taller.
+        let bottomY: CGFloat = max(0, ipadFloorTop - 60)
+        let minHeight: CGFloat = 44
+        let height = max(minHeight, topY - bottomY)
+        let centerY = topY - height / 2
+        return createPlatform(
+            width: width,
+            height: height,
+            position: CGPoint(x: centerX, y: centerY)
         )
+    }
+
+    /// Full-course death plane for the composed iPad layout. The phone path's
+    /// `setupChasm` death plane is only `size.width` wide and centered on the screen,
+    /// which would NOT cover the scrolled course beyond the first viewport -- Bit could
+    /// fall past the right beats without dying. This one spans the whole course at the
+    /// same low Y so every off-platform fall (including into the finale chasm) is fatal.
+    private func setupComposedDeathZone() {
+        let deathPlane = SKSpriteNode(color: .clear, size: CGSize(width: ipadCourseExtent * 2, height: 20))
+        deathPlane.position = CGPoint(x: ipadCourseExtent / 2, y: -10)
+        deathPlane.physicsBody = SKPhysicsBody(rectangleOf: deathPlane.size)
+        deathPlane.physicsBody?.isDynamic = false
+        deathPlane.physicsBody?.categoryBitMask = PhysicsCategory.hazard
+        deathPlane.name = "deathPlane"
+        addChild(deathPlane)
     }
 
     // MARK: - Background Elements
@@ -325,14 +561,18 @@ final class WindBridgeScene: BaseLevelScene, SKPhysicsContactDelegate {
     }
 
     private func setupChasm() {
-        // Death plane at bottom
-        let deathPlane = SKSpriteNode(color: .clear, size: CGSize(width: size.width, height: 20))
-        deathPlane.position = CGPoint(x: size.width / 2, y: -10)
-        deathPlane.physicsBody = SKPhysicsBody(rectangleOf: deathPlane.size)
-        deathPlane.physicsBody?.isDynamic = false
-        deathPlane.physicsBody?.categoryBitMask = PhysicsCategory.hazard
-        deathPlane.name = "deathPlane"
-        addChild(deathPlane)
+        // Death plane at bottom. On iPad the composed path installs its own
+        // full-course death plane (setupComposedDeathZone), so skip the screen-width
+        // one here to avoid a duplicate that wouldn't cover the scrolled course.
+        if !isWideCanvas {
+            let deathPlane = SKSpriteNode(color: .clear, size: CGSize(width: size.width, height: 20))
+            deathPlane.position = CGPoint(x: size.width / 2, y: -10)
+            deathPlane.physicsBody = SKPhysicsBody(rectangleOf: deathPlane.size)
+            deathPlane.physicsBody?.isDynamic = false
+            deathPlane.physicsBody?.categoryBitMask = PhysicsCategory.hazard
+            deathPlane.name = "deathPlane"
+            addChild(deathPlane)
+        }
 
         // Visual darkness in chasm with hatching
         for y in stride(from: CGFloat(0), to: groundHeight, by: 8 * visualScale) {
@@ -435,7 +675,13 @@ final class WindBridgeScene: BaseLevelScene, SKPhysicsContactDelegate {
     }
 
     private func setupBit() {
-        spawnPoint = CGPoint(x: 70 * layoutXScale, y: groundHeight + 40)
+        if isWideCanvas {
+            // Spawn atop the low TEACH platform (first composed beat), absolute x.
+            let teach = ipadBeats[0]
+            spawnPoint = CGPoint(x: teach.cx, y: ipadVerticalTier(teach.tier) + 40)
+        } else {
+            spawnPoint = CGPoint(x: 70 * layoutXScale, y: groundHeight + 40)
+        }
 
         bit = BitCharacter.make()
         bit.position = spawnPoint
@@ -449,7 +695,10 @@ final class WindBridgeScene: BaseLevelScene, SKPhysicsContactDelegate {
         // Door frame
         let doorWidth: CGFloat = 40 * visualScale
         let doorHeight: CGFloat = 60 * visualScale
-        let doorX = size.width - 60 * layoutXScale
+        // On iPad the exit lives on the finale's right bank (absolute x), inside the
+        // camera clamp [size.width/2, courseExtent - size.width/2] so it is always
+        // reachable and the camera can frame it. On iPhone it stays at the right edge.
+        let doorX = isWideCanvas ? (ipadExitBankCx + 40) : (size.width - 60 * layoutXScale)
         let doorY = groundHeight + doorHeight / 2
 
         let doorFrame = SKShapeNode()

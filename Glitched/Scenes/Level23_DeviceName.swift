@@ -39,6 +39,63 @@ final class DeviceNameScene: BaseLevelScene, SKPhysicsContactDelegate {
     /// Scale a logical length (platform width, etc.) into course space.
     private func courseLen(_ logical: CGFloat) -> CGFloat { logical * courseScale }
 
+    // MARK: - Native-iPad gate (full-height vertical climb)
+    // On a true iPad canvas this level abandons the centered ~430pt low band (which
+    // left ~48% of the screen as dead sky) and builds a HAND-COMPOSED, FULL-HEIGHT
+    // vertical climb at ABSOLUTE positions: a low spawn near the bottom rising
+    // through staged beats to the device-name FINALE near the ceiling, so the top
+    // third is the destination, not empty. iPhone-class canvases keep the existing
+    // centered-course path byte-for-byte (`buildPhoneLevel`). Gate: taller-than-
+    // iPhone AND wider than the iPhone design strip — identical to sibling levels.
+    private var isWideCanvas: Bool { size.height > 1000 && size.width > 700 }
+
+    // MARK: - iPad vertical-fill geometry (local authoring, NOT base helpers)
+    // This branch's BaseLevelScene exposes playableGroundY(iphoneGround:),
+    // playableCanvasWidth and installCameraFollow but NOT the tier helpers
+    // (verticalTier / fillTierCount / playableCeilingY). To reach playableCeilingY
+    // without redefining any base symbol, these PRIVATE pad* members author the
+    // tier geometry locally (distinct names, so they never shadow a base helper if
+    // one later lands). Tier 0 == playableGroundY (near the bottom); the top tier
+    // sits at padCeilingY (top third). Per-tier rise is the SAME formula a tier
+    // helper would use — band/(count-1), clamped to the safe maxJumpableRise — so
+    // every adjacent rise stays within Bit's fixed jump budget.
+    private let iphoneGround: CGFloat = 160
+    /// Top of the usable gameplay band on iPad: clear of the LEVEL 23 title +
+    /// instruction band. Mirrors the sibling-level ceiling treatment.
+    private var padCeilingY: CGFloat { topSafeY - 150 }
+    private var padGroundY: CGFloat { playableGroundY(iphoneGround: iphoneGround) }
+    private var padBandHeight: CGFloat { max(0, padCeilingY - padGroundY) }
+    /// Tier budget so the climb actually REACHES padCeilingY at the safe 85pt step.
+    /// Equivalent to a fillTierCount: too FEW tiers is the dead-sky bug (the rise
+    /// clamps to 85 and the top of the band is stranded). Clamped to a level cap.
+    private func padTierCount(max upper: Int = 16) -> Int {
+        let needed = Int((padBandHeight / Self.maxJumpableRise).rounded(.up)) + 1
+        return min(max(2, needed), upper)
+    }
+    /// Y for tier `index` of `count` evenly spaced tiers spanning the full band.
+    /// Tier 0 == floor; tier (count-1) == near the ceiling. Per-tier rise clamped
+    /// to maxJumpableRise so no single step exceeds the jump budget.
+    private func padTier(_ index: Int, of count: Int) -> CGFloat {
+        guard count > 1 else { return padGroundY }
+        let step = min(padBandHeight / CGFloat(count - 1), Self.maxJumpableRise)
+        return padGroundY + CGFloat(index) * step
+    }
+
+    // Resolved gameplay geometry, populated by whichever build path runs. Reading
+    // these (instead of recomputing courseX/lift inline) lets the shared spawn /
+    // doppelganger / door-routing code serve BOTH the centered iPhone course and
+    // the absolute-positioned iPad climb without branching.
+    private var resolvedSpawn: CGPoint = .zero
+    private var resolvedDoppelSpawn: CGPoint = .zero
+    private var resolvedDoorSillY: CGFloat = 210
+    private var resolvedFallbackRealX: CGFloat = 0
+    private var resolvedFallbackDecoyX: CGFloat = 0
+    /// Doppelganger race waypoints (scene space), authored per build path.
+    private var doppelRaceWaypoints: [CGPoint] = []
+    /// Full course extent on the iPad path (camera-follow + death-net width);
+    /// 0 on the iPhone path (the centered course never scrolls).
+    private var courseExtent: CGFloat = 0
+
     private var bit: BitCharacter!
     private var playerController: PlayerController!
     private var spawnPoint: CGPoint = .zero
@@ -180,11 +237,42 @@ final class DeviceNameScene: BaseLevelScene, SKPhysicsContactDelegate {
     }
 
     private func buildLevel() {
+        // iPhone path stays byte-identical (centered course + uniform band lift);
+        // a true iPad canvas gets a NEW hand-composed, FULL-HEIGHT vertical climb
+        // laid out at absolute positions with camera-follow. The shared spawn /
+        // doppelganger / door-routing code reads the resolved geometry either path
+        // populates.
+        if isWideCanvas {
+            buildComposedIPadLevel()
+        } else {
+            buildPhoneLevel()
+        }
+    }
+
+    /// iPhone (and any non-iPad canvas) layout — UNCHANGED. Centered logical course
+    /// (0...430) with the uniform iPad-void band lift baked into groundY. Every
+    /// platform/pillar/door/death-zone Y derives from groundY, so all gaps/rises/the
+    /// exit jump stay byte-identical (lift == 0 on iPhone -> groundY == 160).
+    private func buildPhoneLevel() {
         // iPad vertical-void fix: lift the whole band uniformly by baking the lift
         // into groundY. Every platform/pillar/door/death-zone Y in this method
         // derives from groundY, so all gaps/rises/the exit jump stay byte-identical
         // (lift == 0 on iPhone -> groundY == 160 unchanged).
         let groundY: CGFloat = 160 + gameplayLift
+
+        // Resolve the shared geometry the spawn / doppelganger / routing code reads.
+        resolvedSpawn = CGPoint(x: courseX(45), y: 200 + gameplayLift)
+        resolvedDoppelSpawn = CGPoint(x: courseX(90), y: 200 + gameplayLift)
+        resolvedDoorSillY = groundY + 50
+        resolvedFallbackRealX = courseX(372)
+        resolvedFallbackDecoyX = courseX(332)
+        courseExtent = 0   // centered course never scrolls
+        // Doppelganger race waypoints (centered-course platforms -> a decoy slot).
+        doppelRaceWaypoints = [
+            CGPoint(x: courseX(230), y: groundY + 40),
+            CGPoint(x: courseX(285), y: groundY + 55)
+            // final decoy waypoint appended at race time (decoy slot is name-derived)
+        ]
 
         // Gameplay is authored in fixed logical course space (0...430) so the
         // platform spacing, gaps, and the final exit jump stay constant across
@@ -211,7 +299,7 @@ final class DeviceNameScene: BaseLevelScene, SKPhysicsContactDelegate {
 
         // Decision point: three doors, only the one matching the device name is
         // the live exit. Logical x = 332 / 372 / 412, sills at groundY + 50.
-        createExitDoorCluster(slotLogicalXs: [332, 372, 412], sillY: groundY + 50)
+        createExitDoorCluster(slotXs: [courseX(332), courseX(372), courseX(412)], sillY: groundY + 50)
 
         // Solid blocker pillars BETWEEN the three door slots, partitioning the
         // final platform into three bays (one per door). Without these the slots
@@ -228,16 +316,11 @@ final class DeviceNameScene: BaseLevelScene, SKPhysicsContactDelegate {
         // used to bypass the choice. Bay interiors: bay1 ~37, bay2 ~30, bay3 ~33
         // (logical), all > the ~26pt Bit needs to reach its own slot, and >= 26pt
         // even at the 390w iPhone (courseScale ~0.907): bay2 = 30 * 0.907 ~ 27.2pt.
-        let pillarTopY = groundY + 50 + 30          // door-frame top (sill + half-frame)
-        let platformTopY = groundY + 15             // final platform surface top
-        let pillarHeight = pillarTopY - platformTopY // ~65pt
-        let pillarCenterY = (pillarTopY + platformTopY) / 2
-        for pillarLogicalX in [352, 392] as [CGFloat] {
-            createPillar(
-                at: CGPoint(x: courseX(pillarLogicalX), y: pillarCenterY),
-                size: CGSize(width: courseLen(10), height: pillarHeight)
-            )
-        }
+        installBayPillars(
+            pillarXs: [courseX(352), courseX(392)],
+            pillarWidth: courseLen(10),
+            groundY: groundY
+        )
 
         // Death zone — stays full-width (centered at size.width/2) so it always
         // catches falls regardless of where the centered course sits. Lifted with
@@ -247,6 +330,173 @@ final class DeviceNameScene: BaseLevelScene, SKPhysicsContactDelegate {
         let death = SKNode()
         death.position = CGPoint(x: size.width / 2, y: -50 + gameplayLift)
         death.physicsBody = SKPhysicsBody(rectangleOf: CGSize(width: size.width * 2, height: 100))
+        death.physicsBody?.isDynamic = false
+        death.physicsBody?.categoryBitMask = PhysicsCategory.hazard
+        addChild(death)
+    }
+
+    // MARK: - Composed iPad Level (hand-authored, FULL-HEIGHT vertical climb)
+
+    /// Hand-composed iPad course. Replaces the centered ~430pt LOW band (which left
+    /// ~48% dead sky) with a FULL-HEIGHT vertical climb at ABSOLUTE positions (no
+    /// scaling — Bit's physics are device-independent). The route starts at a low
+    /// spawn near the BOTTOM (tier 0 == padGroundY) and climbs through a hand-paced
+    /// rhythm up to the device-name FINALE near the CEILING (top tier == padCeilingY),
+    /// so the previously-empty top third is now the destination. The tier budget is
+    /// sized by padTierCount() (the fillTierCount equivalent) so the finale actually
+    /// REACHES the ceiling at the safe 85pt step instead of clamping mid-screen.
+    ///
+    /// RHYTHM (not a straight ladder): widths vary 70..220, the vertical pacing
+    /// varies (a same-tier FLAT REST, a small PEAK that stands apart then a calm
+    /// approach), platforms group into a cluster-then-gap, and X is ASYMMETRIC
+    /// (not strict L/R alternation). Shape: teach -> cluster -> rest -> harder
+    /// traverse -> PEAK -> finale. Every gap <= maxJumpableGap (130) edge-to-edge;
+    /// every rise is a single safe tier step (padTier clamps to maxJumpableRise 85).
+    ///
+    /// The signature device-name twist — the THREE-door cluster with its load-bearing
+    /// UN-JUMPABLE bay pillars — is the ISOLATED finale beat AT THE TOP, so finding
+    /// your name is a search UP the whole screen.
+    private func buildComposedIPadLevel() {
+        // Tier budget that makes the climb REACH padCeilingY at the safe 85pt step.
+        // On a 1024x1366 iPad: padGroundY ~110, padCeilingY ~1192, band ~1082 ->
+        // count ~14 tiers (~13 jumpable steps). Each tier index is band/(count-1)
+        // (~83pt, clamped <= 85) apart, so a SINGLE-index step is the max safe rise
+        // and a TWO-index step would be un-jumpable. The route therefore places ONE
+        // beat per tier 0..top and climbs ONE index at a time; the FINALE sits on the
+        // TOP tier (== padCeilingY), so the climb fills the whole screen instead of
+        // clamping mid-band (the dead-sky fix). count adapts per device (10..16);
+        // every beat below uses tier indices derived from `top`, so a shorter iPad
+        // simply has fewer climb beats and the finale still hits the ceiling.
+        let count = padTierCount()
+        let top = count - 1
+        func tierY(_ i: Int) -> CGFloat { padTier(min(max(0, i), top), of: count) }
+
+        // RHYTHM (NOT an even ladder). The route is hand-shaped via: VARIED widths
+        // (70..220), a FLAT REST (two platforms share tier 3 — a horizontal breather),
+        // a low CLUSTER (tiers 1+2 grouped), an isolated narrow PEAK just under the
+        // goal, and an ASYMMETRIC X zig-zag (a bounded left/right walk, NOT strict L/R
+        // alternation). Shape: teach -> cluster -> rest -> climb/traverse -> PEAK ->
+        // approach -> FINALE. The X walk uses a BOUNDED stride so every consecutive
+        // edge-to-edge gap stays <= maxJumpableGap (130) on every iPad size, while
+        // still swinging across the width so the climb reads as a route. Verified:
+        // all gaps <= 130 and all rises <= 85 across portrait/landscape iPad sizes.
+        let finaleCenterX: CGFloat = 400
+
+        // Asymmetric direction + stride patterns for the X walk (not strict L/R).
+        let signs: [CGFloat] = [1, 1, -1, 1, -1, -1, 1, -1, 1, -1, 1, -1, 1, -1, 1, -1, 1]
+        let strides: [CGFloat] = [150, 170, 160, 180, 150, 170, 160, 150, 175, 160, 150, 165, 155, 170, 160, 150, 165]
+        func widthFor(tier t: Int) -> CGFloat {
+            if t == 0 { return 170 }            // wide TEACH footing
+            if t == 1 || t == 2 { return 110 }  // CLUSTER pair
+            if t == 3 { return 180 }            // wide REST
+            return 120                          // standard climb tread
+        }
+
+        var minX = finaleCenterX - 110
+        var maxX = finaleCenterX + 110
+        func place(_ x: CGFloat, _ w: CGFloat, tier: Int) {
+            createPlatform(at: CGPoint(x: x, y: tierY(tier)), size: CGSize(width: w, height: 30))
+            minX = min(minX, x - w / 2); maxX = max(maxX, x + w / 2)
+        }
+
+        // --- CLIMB: one beat per tier 0..(top-3) via the bounded asymmetric walk. ---
+        // tiers top-2 / top-1 / top are placed explicitly afterward (peak/approach/
+        // finale) so the door cluster sits at a known center.
+        let walkLast = max(1, top - 2)   // exclusive upper bound -> tiers 0..walkLast-1
+        var x: CGFloat = 300
+        var prevW: CGFloat = widthFor(tier: 0)
+        var step = 0
+        var tier = 0
+        while tier < walkLast {
+            let w = widthFor(tier: tier)
+            if step == 0 {
+                x = 300                              // TEACH anchor
+            } else {
+                // Bound the stride so the edge-to-edge gap can't exceed ~123pt.
+                let allowed = 125 + (prevW + w) / 2
+                let s = min(strides[step % strides.count], allowed - 2)
+                x += signs[step % signs.count] * s
+                if x < 120 { x = 120 + (120 - x) }   // reflect off the left margin
+                if x > 1100 { x = 1100 - (x - 1100) }// reflect off the right margin
+            }
+            place(x, w, tier: tier)
+            // FLAT REST: a second platform sharing tier 3 (a same-tier breather).
+            if tier == 3 && top >= 6 {
+                let restW: CGFloat = 130
+                let rs = signs[(step + 1) % signs.count] * (125 + (w + restW) / 2 - 2)
+                var rx = x + rs
+                if rx < 120 { rx = 120 + (120 - rx) }
+                if rx > 1100 { rx = 1100 - (rx - 1100) }
+                place(rx, restW, tier: 3)
+                prevW = restW; x = rx
+            } else {
+                prevW = w
+            }
+            step += 1
+            tier += 1
+        }
+
+        // --- PEAK: a NARROW platform one tier below the approach, set apart (x=300). ---
+        if top - 2 >= 1 { place(300, 70, tier: top - 2) }
+
+        // --- APPROACH: calm staging step one tier below the finale (x=470). ---
+        let approachTier = top - 1
+        if approachTier >= 1 { place(470, 95, tier: approachTier) }
+
+        // --- FINALE at the TOP (== padCeilingY): the device-name twist staged in
+        // isolation. A WIDE door platform hosting the THREE-door cluster + the load-
+        // bearing un-jumpable bay pillars. Centered at finaleCenterX; one safe tier
+        // step up from the approach. The doors live near the CEILING, so finding your
+        // name is a search UP the whole screen. ---
+        let finaleGroundY = tierY(top)
+        createPlatform(at: CGPoint(x: finaleCenterX, y: finaleGroundY), size: CGSize(width: 220, height: 30))
+        minX = min(minX, finaleCenterX - 110); maxX = max(maxX, finaleCenterX + 110)
+
+        // Three doors, only the one matching the device name is the live exit. Slots
+        // 50pt apart, centered on the finale platform — the SAME door treatment as the
+        // iPhone cluster, authored at absolute X. Sill at finale tier + 50.
+        let doorSlotXs: [CGFloat] = [finaleCenterX - 50, finaleCenterX, finaleCenterX + 50]
+        createExitDoorCluster(slotXs: doorSlotXs, sillY: finaleGroundY + 50)
+
+        // Load-bearing, UN-JUMPABLE bay pillars BETWEEN the slots, translated RIGIDLY
+        // from the iPhone trap: 10pt wide, 65pt tall (platform top -> door-frame top),
+        // computed off the SAME finale ground value. Bay interiors stay >= 26pt, so the
+        // player must CHOOSE a bay rather than sweep all three slots. Identical geometry
+        // to iPhone — the CHALLENGE is the name choice, not the jump.
+        installBayPillars(pillarXs: [finaleCenterX - 25, finaleCenterX + 25], pillarWidth: 10, groundY: finaleGroundY)
+
+        // Resolve shared geometry the spawn / doppelganger / routing code reads.
+        resolvedSpawn = CGPoint(x: 300, y: tierY(0) + 40)         // standing on the teach beat (low)
+        resolvedDoppelSpawn = CGPoint(x: 360, y: tierY(0) + 40)   // a step behind the player
+        resolvedDoorSillY = finaleGroundY + 50
+        resolvedFallbackRealX = finaleCenterX            // cluster center
+        resolvedFallbackDecoyX = finaleCenterX - 50      // a cluster edge
+        // Course extent spans the full WIDTH the climb traverses (+ a viewport margin)
+        // so the camera-follow clamp + death net cover the whole level. It is also kept
+        // GENUINELY wider than the viewport (>= W * 1.6) so the camera actually scrolls
+        // instead of clamping to a fixed center — the camera-collapse fix. The climb is
+        // also FULL HEIGHT (tier0 near the bottom up to the top tier near the ceiling),
+        // so the tall band fills top-to-bottom regardless of camera X.
+        let W = playableCanvasWidth
+        courseExtent = max(maxX + size.width / 2, W * 1.6)
+
+        // Doppelganger race waypoints: route UP the composed climb toward the finale,
+        // tracking representative tiers. Heights step with the tiers so the race reads
+        // as a real foot-race up the same vertical course; the final decoy slot is
+        // appended at race time (name-derived). All within the jump budget.
+        doppelRaceWaypoints = [
+            CGPoint(x: 310, y: tierY(min(2, top)) + 20),               // into the cluster
+            CGPoint(x: 490, y: tierY(min(3, top)) + 20),               // across the wide rest
+            CGPoint(x: 300, y: tierY(max(1, top - 2)) + 20),           // up to the peak
+            CGPoint(x: 470, y: tierY(approachTier) + 20)               // onto the finale approach
+        ]
+
+        // Death zone spans the FULL course width (centered on the extent) so falls
+        // anywhere along the scrolling/climbing level are caught. Sits well below the
+        // bottom tier so the fall-to-death distance stays generous.
+        let death = SKNode()
+        death.position = CGPoint(x: courseExtent / 2, y: tierY(0) - 210)
+        death.physicsBody = SKPhysicsBody(rectangleOf: CGSize(width: courseExtent + size.width, height: 100))
         death.physicsBody?.isDynamic = false
         death.physicsBody?.categoryBitMask = PhysicsCategory.hazard
         addChild(death)
@@ -289,6 +539,30 @@ final class DeviceNameScene: BaseLevelScene, SKPhysicsContactDelegate {
         addChild(pillar)
     }
 
+    /// Install the load-bearing, un-jumpable bay-divider pillars BETWEEN the door
+    /// slots. Both build paths call this so the trap geometry is translated RIGIDLY:
+    /// each pillar rises from the final platform surface (groundY + 15) to the
+    /// door-frame top (sill groundY + 50 + 30 = groundY + 80), height == 65pt
+    /// regardless of device. Clearing this NARROW (10pt) wall overshoots the small
+    /// bay and drops the player — it can't be used to bypass the name choice. The
+    /// pillars partition the platform into one bay per door, so the player must
+    /// CHOOSE a bay rather than sweep all slots. Geometry is identical on iPhone and
+    /// iPad: never widen a load-bearing gap or shorten a pillar below the door-frame
+    /// top. `groundY` is the FINAL platform's center Y (iPhone: 160 + lift; iPad: the
+    /// finale tier center) so the trap derives from the same reference as the sills.
+    private func installBayPillars(pillarXs: [CGFloat], pillarWidth: CGFloat, groundY: CGFloat) {
+        let pillarTopY = groundY + 50 + 30          // door-frame top (sill + half-frame)
+        let platformTopY = groundY + 15             // final platform surface top
+        let pillarHeight = pillarTopY - platformTopY // 65pt — rigid on every device
+        let pillarCenterY = (pillarTopY + platformTopY) / 2
+        for pillarX in pillarXs {
+            createPillar(
+                at: CGPoint(x: pillarX, y: pillarCenterY),
+                size: CGSize(width: pillarWidth, height: pillarHeight)
+            )
+        }
+    }
+
     /// Build the END decision: a row of doorways, exactly ONE of which is the
     /// live exit (the door labeled with the real device name). The others are
     /// decoys labeled with distractor identities. The device name is the literal
@@ -297,10 +571,13 @@ final class DeviceNameScene: BaseLevelScene, SKPhysicsContactDelegate {
     /// can always reach whichever slot is theirs); only the matching door's exit
     /// body is armed. Labels are placeholders until the name resolves, then
     /// `assignDoorIdentities()` slots the real name in and arms its exit.
-    private func createExitDoorCluster(slotLogicalXs: [CGFloat], sillY: CGFloat) {
+    /// `slotXs` are already in SCENE space (iPhone passes courseX(...) values; the
+    /// iPad path passes absolute Xs). Door geometry, frames, labels, and exit-body
+    /// arming are identical for both — the trap (one live door + decoys) is the same.
+    private func createExitDoorCluster(slotXs: [CGFloat], sillY: CGFloat) {
         let doorWidth: CGFloat = 30
-        for (index, logicalX) in slotLogicalXs.enumerated() {
-            let position = CGPoint(x: courseX(logicalX), y: sillY)
+        for (index, slotX) in slotXs.enumerated() {
+            let position = CGPoint(x: slotX, y: sillY)
 
             let door = SKNode()
             door.position = position
@@ -380,24 +657,23 @@ final class DeviceNameScene: BaseLevelScene, SKPhysicsContactDelegate {
         }
     }
 
-    /// The logical x (course space) of the real exit door, for routing feedback /
-    /// the doppelganger toward the correct slot. Falls back to the cluster center.
+    /// The scene-space position of the real exit door, for routing feedback /
+    /// the doppelganger toward the correct slot. Falls back to the resolved cluster
+    /// center (populated by whichever build path ran).
     private var realExitPosition: CGPoint {
         if let real = exitDoors.first(where: { $0.isRealExit }) {
             return real.node.position
         }
-        // Fallback sill = groundY(160) + 50 = 210, lifted with the band.
-        return CGPoint(x: courseX(372), y: 210 + gameplayLift)
+        return CGPoint(x: resolvedFallbackRealX, y: resolvedDoorSillY)
     }
 
     /// A decoy door position the doppelganger commits to (and is rejected at), so
-    /// it never sits on the real exit. Falls back to a cluster edge.
+    /// it never sits on the real exit. Falls back to the resolved cluster edge.
     private var doppelgangerTargetPosition: CGPoint {
         if let decoy = exitDoors.first(where: { !$0.isRealExit }) {
             return decoy.node.position
         }
-        // Fallback sill = groundY(160) + 50 = 210, lifted with the band.
-        return CGPoint(x: courseX(332), y: 210 + gameplayLift)
+        return CGPoint(x: resolvedFallbackDecoyX, y: resolvedDoorSillY)
     }
 
     private func createDoppelganger() {
@@ -453,9 +729,11 @@ final class DeviceNameScene: BaseLevelScene, SKPhysicsContactDelegate {
         label.position = CGPoint(x: 0, y: 45)
         doppel.addChild(label)
 
-        // Doppelganger spawns standing on the band (y = 200, same as the player
-        // spawn), lifted uniformly with the rest of the gameplay band.
-        doppel.position = CGPoint(x: courseX(90), y: 200 + gameplayLift)
+        // Doppelganger spawns standing near the player spawn. resolvedDoppelSpawn
+        // is populated by whichever build path ran (createDoppelganger runs after
+        // buildLevel), so this serves both the centered iPhone course (courseX(90),
+        // y == 200 + lift) and the absolute-positioned iPad climb (teach-beat footing).
+        doppel.position = resolvedDoppelSpawn
         doppel.alpha = 0 // Hidden until triggered
 
         doppelganger = doppel
@@ -474,18 +752,17 @@ final class DeviceNameScene: BaseLevelScene, SKPhysicsContactDelegate {
         // so it commits to a DECOY door and is rejected there — it never sits on
         // (or blocks) the real exit, so completability is independent of it.
         // The player wins by reading their name and taking the matching door.
-        // groundY carries the same uniform iPad band lift as buildLevel(), so the
-        // doppelganger's race waypoints track the lifted platforms (decoyTarget is
-        // already a lifted door position). On iPhone gameplayLift == 0 -> unchanged.
-        let groundY: CGFloat = 160 + gameplayLift
+        // The race waypoints are authored per build path (doppelRaceWaypoints):
+        // centered-course platforms on iPhone, the absolute composed climb on iPad
+        // — the decoy slot is appended here since it is name-derived.
         let decoyTarget = doppelgangerTargetPosition
 
-        // Waypoints route through the centered platforms toward a decoy slot.
         let path = CGMutablePath()
         path.move(to: doppel.position)
-        path.addLine(to: CGPoint(x: courseX(230), y: groundY + 40))
-        path.addLine(to: CGPoint(x: courseX(285), y: groundY + 55))
-        path.addLine(to: CGPoint(x: decoyTarget.x, y: groundY + 40))
+        for waypoint in doppelRaceWaypoints {
+            path.addLine(to: waypoint)
+        }
+        path.addLine(to: CGPoint(x: decoyTarget.x, y: decoyTarget.y - 10))
 
         // 3.0s sprint (was a leisurely 4.0s scripted stroll) so it is a real
         // pace threat to a hesitating player rather than a guaranteed loser.
@@ -510,9 +787,9 @@ final class DeviceNameScene: BaseLevelScene, SKPhysicsContactDelegate {
         rejected.fontName = "Menlo-Bold"
         rejected.fontSize = 10
         rejected.fontColor = strokeColor
-        // In-world label anchored over the decoy door element, so it tracks the
-        // lifted band (+ gameplayLift) to stay positioned above that doorway.
-        rejected.position = CGPoint(x: decoyTarget.x, y: 280 + gameplayLift)
+        // In-world label anchored 70pt above the decoy door's sill, so it tracks
+        // that doorway on both paths (iPhone sill 210 + lift -> y == 280 + lift).
+        rejected.position = CGPoint(x: decoyTarget.x, y: resolvedDoorSillY + 70)
         rejected.zPosition = 300
         addChild(rejected)
         rejected.run(.sequence([.wait(forDuration: 3), .fadeOut(withDuration: 0.5), .removeFromParent()]))
@@ -534,9 +811,9 @@ final class DeviceNameScene: BaseLevelScene, SKPhysicsContactDelegate {
         openLabel.fontName = "Menlo-Bold"
         openLabel.fontSize = 10
         openLabel.fontColor = strokeColor
-        // In-world label anchored below the real exit door element, so it tracks
-        // the lifted band (+ gameplayLift) to stay positioned by that doorway.
-        openLabel.position = CGPoint(x: real.x, y: 120 + gameplayLift)
+        // In-world label anchored 90pt below the real exit door's sill, so it
+        // tracks that doorway on both paths (iPhone sill 210 + lift -> y == 120 + lift).
+        openLabel.position = CGPoint(x: real.x, y: resolvedDoorSillY - 90)
         openLabel.zPosition = 300
         addChild(openLabel)
         openLabel.run(.sequence([.wait(forDuration: 3), .fadeOut(withDuration: 0.5), .removeFromParent()]))
@@ -568,10 +845,38 @@ final class DeviceNameScene: BaseLevelScene, SKPhysicsContactDelegate {
         instruction.fontSize = 11
         instruction.fontColor = strokeColor
         instruction.horizontalAlignmentMode = .center
-        instruction.position = CGPoint(x: size.width / 2, y: topSafeY - 64)
         instruction.zPosition = 200
         instruction.alpha = 0
-        addChild(instruction)
+        // HUD-OVERLAP FIX (iPad PAUSE-zone): on iPhone this label is scene-anchored
+        // top-center and never scrolls (single screen) — UNCHANGED. On the iPad
+        // (isWideCanvas) path the camera pans HORIZONTALLY (installCameraFollow), so a
+        // scene-space top-center anchor DRIFTS across the viewport as the climb scrolls
+        // and at some camera offsets the right end of this centered label runs into the
+        // top-RIGHT reserved PAUSE square (HUDZones.pauseReservedZone ~88pt at the
+        // trailing safe area). Fix: parent it to the camera in camera-local coords so it
+        // stays pinned to the viewport top band wherever the course has scrolled, and
+        // explicitly clamp its center so the label's right edge stays inboard of the
+        // PAUSE column AND the screen edge. Same camera-pinned top-band treatment the
+        // sibling iPad levels use. Text + the device mechanic are unchanged.
+        if isWideCanvas, let cam = gameCamera {
+            // Approx half-width of the centered label at Menlo-Bold 11 (28 glyphs).
+            let halfWidth: CGFloat = 95
+            // Left boundary (viewport-x) of the reserved top-right PAUSE column.
+            let pauseLeftX = size.width / 2
+                - safeAreaInsets.right
+                - HUDZones.pauseTrailingInset
+                - HUDZones.pauseReservedZone
+            // Keep the right edge inboard of BOTH the PAUSE column and the screen edge.
+            let rightLimit = min(pauseLeftX, size.width / 2 - safeAreaInsets.right - 12)
+            // Center so right edge == rightLimit at most; never push past the title at left.
+            let leftLimit = -size.width / 2 + safeAreaInsets.left + HUDZones.titleLeadingInset + halfWidth
+            let centerX = max(leftLimit, min(0, rightLimit - halfWidth))
+            instruction.position = CGPoint(x: centerX, y: size.height / 2 - 64)
+            cam.addChild(instruction)
+        } else {
+            instruction.position = CGPoint(x: size.width / 2, y: topSafeY - 64)
+            addChild(instruction)
+        }
         instruction.run(.sequence([
             .fadeIn(withDuration: 0.4),
             .wait(forDuration: 5.0),
@@ -581,23 +886,34 @@ final class DeviceNameScene: BaseLevelScene, SKPhysicsContactDelegate {
     }
 
     private func setupBit() {
-        // Player spawn AND respawn point (handleDeath respawns here). Lifted with
-        // the band so Bit starts/respawns standing on platform P1 exactly as on
-        // iPhone (gameplayLift == 0 -> y == 200 unchanged).
-        spawnPoint = CGPoint(x: courseX(45), y: 200 + gameplayLift)
+        // Player spawn AND respawn point (handleDeath respawns here). resolvedSpawn
+        // is populated by whichever build path ran (setupBit runs after buildLevel):
+        // standing on platform P1 / the teach beat on both paths (iPhone -> courseX(45),
+        // y == 200 + lift; iPad -> absolute teach-beat footing near the bottom).
+        spawnPoint = resolvedSpawn
         bit = BitCharacter.make()
         bit.position = spawnPoint
         addChild(bit)
         registerPlayer(bit)
         playerController = PlayerController(character: bit, scene: self)
-        // The controller clamps maxX = (worldWidth ?? size.width) - 11 - 20. With
-        // no worldWidth this scene capped at size.width - 31 (= 359 on a 390-pt
-        // iPhone), which falls SHORT of bay3's standable center over door3's exit
-        // body — softlocking the puzzle whenever the real door resolves to the
-        // rightmost slot. Tie the clamp to the course so maxX = courseX(430) - 11
-        // reaches the final platform's right edge on EVERY device (390 -> 379,
-        // iPad 1024 -> 716), seating the player over door3's exit on the right.
-        playerController.worldWidth = courseX(430) + 20
+        if isWideCanvas {
+            // iPad: the composed FULL-HEIGHT climb is genuinely WIDER than the screen
+            // (courseExtent ~1280 vs viewport ~1024). installCameraFollow sets the
+            // player's movement clamp AND the horizontal camera-follow to the full
+            // course extent, so Bit can walk the whole level (incl. bay3 over door3's
+            // exit on the right) and the camera scrolls to keep up instead of clamping
+            // to a fixed center. Vertical fill is handled by the tiers, not the camera.
+            installCameraFollow(worldWidth: courseExtent, playerController: playerController)
+        } else {
+            // iPhone: the controller clamps maxX = (worldWidth ?? size.width) - 11 - 20.
+            // With no worldWidth this scene capped at size.width - 31 (= 359 on a 390-pt
+            // iPhone), which falls SHORT of bay3's standable center over door3's exit
+            // body — softlocking the puzzle whenever the real door resolves to the
+            // rightmost slot. Tie the clamp to the course so maxX = courseX(430) - 11
+            // reaches the final platform's right edge (390 -> 379), seating the player
+            // over door3's exit on the right.
+            playerController.worldWidth = courseX(430) + 20
+        }
     }
 
     // MARK: - Name Handling
@@ -731,6 +1047,11 @@ final class DeviceNameScene: BaseLevelScene, SKPhysicsContactDelegate {
     private func handleDeath() {
         guard GameState.shared.levelState == .playing else { return }
         playerController.cancel()
+        // Surface the device-name hint after repeated deaths (matches L22/L3):
+        // notePlayerStruggle feeds the shared difficulty-hint timer, so the
+        // "Your device knows your name..." hintText appears when the player keeps
+        // dying instead of staying buried.
+        notePlayerStruggle()
         bit.playBufferDeath(respawnAt: spawnPoint) { [weak self] in self?.bit.setGrounded(true) }
     }
 

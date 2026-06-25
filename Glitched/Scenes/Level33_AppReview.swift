@@ -17,10 +17,52 @@ final class AppReviewScene: BaseLevelScene, SKPhysicsContactDelegate {
 
     // iPad vertical-void fix: uniform lift applied to the entire gameplay band.
     // 0 on iPhone (helper returns 0 for size.height <= 1000), positive on iPad.
-    // Computed in buildLevel() before any gameplay node is positioned, then added
-    // to the groundY anchor AND to the standalone spawn point and death zone so the
-    // whole band moves together and all relative geometry is preserved.
+    // Computed in buildFlatLevel() before any gameplay node is positioned, then
+    // added to the groundY anchor AND to the standalone spawn point and death zone so
+    // the whole band moves together and all relative geometry is preserved.
+    //
+    // BOTH devices now use the SAME FLAT layout (buildFlatLevel). L33 is a deliberately
+    // FLAT finale ("JUST GET TO THE EXIT" — two joke gates + a locked exit on one
+    // ground line; the gag is the review prompt, NOT platforming). It must NEVER become
+    // a vertical climb. The only device difference is FRAMING: on iPad gameplayLift is
+    // positive, so the whole flat band rides up to canvas center (Level9's uniform
+    // vertical lift) instead of bottom-hugging; on iPhone gameplayLift == 0, so the
+    // scene is byte-identical to the shipped phone level.
     private var gameplayLift: CGFloat = 0
+
+    // MARK: - Native-iPad framing (FLAT finale, NOT a climb).
+    //
+    // SOLUTION-DRIFT REVERT (operator: L33 is a deliberately FLAT finale). The shipped
+    // iPhone level is one ground line: spawn, walk right through two JOKE GATES
+    // ("Insert Coin" / "Premium Content") to a padlocked EXIT — the gag is the
+    // optional "validate me" review prompt, NOT platforming. An earlier iPad pass
+    // WRONGLY rebuilt this as an 11+ tier vertical CLIMB, which is a different level.
+    //
+    // THE FIX (iPad only, gated behind isWideCanvas): keep the SAME FLAT layout as
+    // iPhone — same full-width ground, same two gates, same locked exit on one line,
+    // same Bit spawn, same 10s padlock-auto-break — but apply Level9's UNIFORM
+    // VERTICAL LIFT so the whole flat band (ground + gates + exit + spawn + the review
+    // padlock) sits CENTERED in the tall iPad canvas instead of bottom-hugging. The
+    // lift is gameplayVerticalLift(bandBottom:bandTop:), which returns 0 on iPhone
+    // (byte-identical) and a single positive delta on iPad. That SAME delta is added to
+    // the ground anchor (so every platform/gate/trigger/sign/exit rides up with it) AND
+    // to the standalone spawn point and death zone, so the walk, the gate spacing, the
+    // padlock-auto-break, and every gap/rise are byte-identical — only the framing
+    // moves up. NO climb, NO camera scroll, NO new platforming. The now-exposed upper
+    // band is filled with NON-load-bearing decorative structure (gate pillars + girders
+    // extending upward, ceiling framing) so the canvas reads filled, not empty.
+
+    /// Logical design width below which the canvas is treated as iPhone-class. iPad
+    /// portrait (>1000h) at/above this width gets the centered-flat framing (lift +
+    /// decor); the gameplay layout itself is identical to iPhone.
+    private let designWidth: CGFloat = 820
+
+    /// Tall iPad-portrait canvases (height > 1000) at/above the iPhone-class
+    /// designWidth get the centered-flat framing: the SAME flat course as iPhone,
+    /// lifted to canvas center via gameplayVerticalLift and bracketed with decorative
+    /// upper-band structure. Anything narrower/shorter (every shipping iPhone) is
+    /// iPhone-class, where the lift collapses to 0 and the scene is byte-identical.
+    private var isWideCanvas: Bool { size.height > 1000 && size.width >= designWidth }
 
     // Gate system
     private var gate1: SKNode!
@@ -109,13 +151,32 @@ final class AppReviewScene: BaseLevelScene, SKPhysicsContactDelegate {
     // MARK: - Level Construction
 
     private func buildLevel() {
-        // iPad vertical-void fix: on tall iPad canvases this flat, ground-anchored
-        // band renders bottom-stuck with a large empty band above. Lift the ENTIRE
-        // gameplay band uniformly by anchoring everything off `groundY` and adding
-        // the shared helper's lift to that single anchor. Because every platform,
-        // gate, trigger, sign and the exit door derives its Y from `groundY`, and
-        // the standalone spawn/respawn point and death zone are lifted by the SAME
-        // `gameplayVerticalLift`, all gaps/rises/jump distances stay byte-identical.
+        // BOTH devices use the SAME FLAT layout. iPhone gets gameplayLift == 0 (byte-
+        // identical); iPad gets a positive lift so the flat band rides up to center.
+        buildFlatLevel()
+
+        // iPad only: bracket the lifted band's now-exposed upper region with NON-load-
+        // bearing decorative structure so the canvas reads filled, not empty.
+        if isWideCanvas {
+            drawIPadUpperBandDecor()
+        }
+
+        // Decorative "THIS IS THE LAST LEVEL" sign at center top (both layouts).
+        showIntroPanel()
+    }
+
+    // MARK: - Flat layout (BOTH devices). iPhone: byte-identical to the shipped level.
+    //         iPad: same geometry, lifted to center via gameplayLift.
+
+    private func buildFlatLevel() {
+        // iPad vertical-void fix (Level9 uniform vertical lift): on tall iPad canvases
+        // this flat, ground-anchored band would render bottom-stuck with a large empty
+        // band above. Lift the ENTIRE gameplay band uniformly by anchoring everything
+        // off `groundY` and adding the shared helper's lift to that single anchor.
+        // Because every platform, gate, trigger, sign and the exit door derives its Y
+        // from `groundY`, and the standalone spawn/respawn point and death zone are
+        // lifted by the SAME `gameplayLift`, all gaps/rises/jump distances and the
+        // padlock-auto-break timing stay byte-identical — only the framing rises.
         // On iPhone the helper returns 0, so groundY == 120 and the scene is unchanged.
         //
         //   bandBottom = groundY (120, the lowest gameplay surface = ground top)
@@ -159,9 +220,63 @@ final class AppReviewScene: BaseLevelScene, SKPhysicsContactDelegate {
         death.physicsBody?.isDynamic = false
         death.physicsBody?.categoryBitMask = PhysicsCategory.hazard
         addChild(death)
+    }
 
-        // Decorative "THIS IS THE LAST LEVEL" sign at center top
-        showIntroPanel()
+    // MARK: - iPad upper-band decoration (NON-load-bearing)
+    //
+    // The flat course is lifted toward center by gameplayLift, which exposes a tall
+    // band above and below it. This brackets that exposed region with purely VISUAL
+    // industrial structure — vertical support pillars rising past the gates up toward
+    // the ceiling, plus a ceiling girder run — so the canvas reads as a shaft rather
+    // than empty sky. NONE of this has a physics body; it has NO effect on collision,
+    // the walk, the gates, the padlock-auto-break, or completability. Gated behind
+    // isWideCanvas (the call site is too), so iPhone never draws it.
+    private func drawIPadUpperBandDecor() {
+        let groundY: CGFloat = 120 + gameplayLift          // same anchor as buildFlatLevel
+        let ceilingY = playableCeilingY()                   // top of the usable band on iPad
+        let gate1X = size.width * 0.33
+        let gate2X = size.width * 0.66
+
+        // Vertical support pillars rising from just above the ground up to the ceiling,
+        // aligned over each gate so the gates read as set into machinery. Drawn behind
+        // everything (zPosition -8) and translucent, with no physics body.
+        for px in [gate1X, gate2X] {
+            let pillarBottom = groundY + 12.5
+            let pillarTop = ceilingY - 20
+            let h = max(0, pillarTop - pillarBottom)
+            let pillar = SKShapeNode(rectOf: CGSize(width: 12, height: h))
+            pillar.fillColor = fillColor
+            pillar.strokeColor = strokeColor
+            pillar.lineWidth = lineWidth * 0.5
+            pillar.alpha = 0.4
+            pillar.position = CGPoint(x: px, y: (pillarBottom + pillarTop) / 2)
+            pillar.zPosition = -8
+            addChild(pillar)
+
+            // Rivet bolts down the pillar for industrial texture.
+            for ry in stride(from: pillarBottom + 50, through: pillarTop - 50, by: 90) {
+                let bolt = SKShapeNode(circleOfRadius: 2.5)
+                bolt.fillColor = strokeColor
+                bolt.strokeColor = strokeColor
+                bolt.alpha = 0.35
+                bolt.position = CGPoint(x: px, y: ry)
+                bolt.zPosition = -7
+                addChild(bolt)
+            }
+        }
+
+        // Ceiling girder run across the top of the lifted band so the shaft is capped.
+        let beamY = ceilingY - 8
+        for bx in stride(from: 50, through: size.width - 50, by: 80) {
+            let beam = SKShapeNode(rectOf: CGSize(width: 10, height: 26))
+            beam.fillColor = fillColor
+            beam.strokeColor = strokeColor
+            beam.lineWidth = lineWidth * 0.4
+            beam.alpha = 0.45
+            beam.position = CGPoint(x: bx, y: beamY)
+            beam.zPosition = -8
+            addChild(beam)
+        }
     }
 
     private func createPlatform(at position: CGPoint, size: CGSize) {
@@ -420,10 +535,11 @@ final class AppReviewScene: BaseLevelScene, SKPhysicsContactDelegate {
     // MARK: - Player Setup
 
     private func setupBit() {
-        // Spawn AND respawn point (handleDeath uses spawnPoint). 180 == groundY(120)+60.
-        // Lift by the same band lift so the player still spawns the same 60pt above the
-        // (lifted) ground; setupBit() runs after buildLevel(), so gameplayLift is set.
-        // On iPhone gameplayLift == 0 → spawn y == 180 (byte-identical).
+        // Spawn AND respawn point (handleDeath uses spawnPoint). BOTH devices use the
+        // SAME flat spawn: 180 == groundY(120)+60, plus the band lift so the player
+        // still spawns 60pt above the (lifted) ground. gameplayLift == 0 on iPhone
+        // → spawn y == 180 (byte-identical); positive on iPad (rides up with the band).
+        // No camera-follow: the flat course is single-screen on every device.
         spawnPoint = CGPoint(x: 50, y: 180 + gameplayLift)
         bit = BitCharacter.make()
         bit.position = spawnPoint
@@ -668,9 +784,11 @@ final class AppReviewScene: BaseLevelScene, SKPhysicsContactDelegate {
         reviewSequenceStarted = true
         resetProgressTimer()
 
-        // Big terminal — this is the main event
+        // Big terminal — this is the main event. The course is FLAT on both devices, so
+        // the exit sits low (iPhone) / mid-canvas (iPad, lifted); placing the panel
+        // ABOVE the exit keeps it inside the viewport and clear of the ground on both.
         finalTerminal = createLargeTerminal(at: CGPoint(x: exitDoorNode.position.x - 80,
-                                                         y: exitDoorNode.position.y + 80))
+                                                        y: exitDoorNode.position.y + 80))
 
         // The monologue - building up to the ask. Split into beats; the panel is
         // cleared between beats so lines paginate instead of spilling past the floor.
@@ -742,10 +860,13 @@ final class AppReviewScene: BaseLevelScene, SKPhysicsContactDelegate {
         largeTerminalTextLeft = -panelWidth / 2 + 15
 
         // Center the panel within the safe area so it can't run off either edge
-        // (SE 320) or end up marooned at the far right (iPad).
+        // (SE 320) or end up marooned at the far right. The flat course is single-screen
+        // on both devices (camera static at size.width/2), so the viewport center is
+        // simply size.width/2 on iPhone and iPad alike.
         let halfWidth = panelWidth / 2
-        let minCenterX = halfWidth + 16
-        let maxCenterX = size.width - halfWidth - 16
+        let viewportCenterX = size.width / 2
+        let minCenterX = viewportCenterX - size.width / 2 + halfWidth + 16
+        let maxCenterX = viewportCenterX + size.width / 2 - halfWidth - 16
         let clampedX = min(max(position.x, minCenterX), maxCenterX)
 
         let panel = SKNode()
@@ -1064,6 +1185,13 @@ final class AppReviewScene: BaseLevelScene, SKPhysicsContactDelegate {
         guard exitUnlocked, !gameCompleteStarted else { return }
         gameCompleteStarted = true
 
+        // TRUE-FINALE COMPLETION FLAG. L33 is the real last level — the padlock has
+        // broken and the player has reached the exit. Record game-completion HERE, at
+        // the actual end, rather than at L30's credits fake-out (which now only sets
+        // `glitched_reached_credits`). This is the write that was pulled out of L30 so
+        // completion fires at the genuine finish line.
+        UserDefaults.standard.set(true, forKey: "glitched_game_complete")
+
         succeedLevel()
 
         // Freeze player
@@ -1103,58 +1231,29 @@ final class AppReviewScene: BaseLevelScene, SKPhysicsContactDelegate {
     }
 
     private func showGameCompleteText(over overlay: SKNode) {
+        // FINAL SIGN-OFF VOICE. This closing monologue is the campaign's last words —
+        // the same fourth-wall antagonist that OPENED the game speaks here, so it goes
+        // through the shared GlitchedNarrator in the .boss register (lower-center safe
+        // band, danger-red, slow heavy reveal) rather than the old ad-hoc center-screen
+        // SKLabelNodes. Each present() replaces the prior line, so the original delays
+        // still sequence the beats; the per-line audio/haptic beats are preserved.
+        // "THE GLITCH REMEMBERS." is reserved as the final beat (last narrator line).
         let messages: [(String, TimeInterval)] = [
             ("SYSTEM OVERRIDE COMPLETE.", 0.0),
-            ("", 2.0),
             ("THANK YOU FOR PLAYING.", 2.5),
-            ("", 4.5),
             ("YOU DID EVERYTHING WE ASKED.", 5.0),
             ("OR, AT LEAST, EVERYTHING YOU FELT LIKE DOING.", 6.2),
             ("THAT COUNTS.", 7.4),
-            ("", 8.2),
             ("THE GLITCH REMEMBERS.", 8.5),
         ]
 
         for (text, delay) in messages {
-            guard !text.isEmpty else { continue }
-
             run(.sequence([
                 .wait(forDuration: delay),
                 .run { [weak self] in
                     guard let self = self else { return }
 
-                    let label = SKLabelNode(text: "")
-                    label.fontName = "Menlo-Bold"
-                    label.fontSize = text == "SYSTEM OVERRIDE COMPLETE." ? 14 : 11
-                    label.fontColor = .white
-                    label.alpha = 0
-                    label.position = CGPoint(x: self.size.width / 2, y: self.size.height / 2)
-                    label.zPosition = 5100
-                    self.addChild(label)
-
-                    // Typewriter effect
-                    var charIdx = 0
-                    let chars = Array(text)
-                    let typeAction = SKAction.repeat(
-                        .sequence([
-                            .run {
-                                if charIdx < chars.count {
-                                    label.text = (label.text ?? "") + String(chars[charIdx])
-                                    charIdx += 1
-                                }
-                            },
-                            .wait(forDuration: 0.04)
-                        ]),
-                        count: chars.count
-                    )
-
-                    label.run(.sequence([
-                        .fadeIn(withDuration: 0.1),
-                        typeAction,
-                        .wait(forDuration: 1.5),
-                        .fadeOut(withDuration: 0.5),
-                        .removeFromParent()
-                    ]))
+                    GlitchedNarrator.present(text, in: self, style: .boss)
 
                     // Sound for the opening line
                     if text == "SYSTEM OVERRIDE COMPLETE." {
@@ -1260,7 +1359,9 @@ final class AppReviewScene: BaseLevelScene, SKPhysicsContactDelegate {
     override func updatePlaying(deltaTime: TimeInterval) {
         playerController?.update()
 
-        // Detect proximity to exit door when the review sequence hasn't started
+        // Detect proximity to exit door when the review sequence hasn't started.
+        // The course is FLAT on both devices (Bit and the exit share the ground line),
+        // so X-proximity alone is sufficient — same check on iPhone and iPad.
         if !reviewSequenceStarted && gate1Opened && gate2Opened {
             let distToExit = abs(bit.position.x - exitDoorNode.position.x)
             if distToExit < 80 {

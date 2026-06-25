@@ -69,9 +69,18 @@ final class VoiceOverScene: BaseLevelScene, SKPhysicsContactDelegate {
     /// the flat band sits center-ish on tall iPad canvases. The shared helper returns
     /// 0 on iPhone (scene byte-identical) and a positive value on iPad. Because the
     /// SAME `lift` is added to every gameplay Y, all gaps/rises/jump distances are
-    /// unchanged → completability is identical. Computed in buildLevel(), consumed
-    /// there and in setupBit() (which runs after buildLevel()).
+    /// unchanged → completability is identical. Computed in buildPhoneLevel(),
+    /// consumed there and in setupBit() (which runs after buildLevel()).
+    ///
+    /// NOTE: the iPad path no longer uses this lift — it authors a true full-height
+    /// VERTICAL CLIMB via the shared verticalTier API instead (see
+    /// buildComposedIPadLevel). gameplayLift stays 0 there.
     private var gameplayLift: CGFloat = 0
+
+    /// iPad composed-course extent (full scrolling course width). Set in
+    /// buildComposedIPadLevel(); consumed in configureScene() after setupBit() to
+    /// install camera-follow + the player world bound. nil on the iPhone path.
+    private var composedCourseExtent: CGFloat?
 
     // MARK: VoiceOver state
 
@@ -115,6 +124,13 @@ final class VoiceOverScene: BaseLevelScene, SKPhysicsContactDelegate {
         buildLevel()
         showInstructionPanel()
         setupBit()
+
+        // iPad composed course is wider than the viewport: install horizontal
+        // camera-follow now that the player controller exists (built in setupBit).
+        // No-op on iPhone (composedCourseExtent stays nil).
+        if let extent = composedCourseExtent {
+            installCameraFollow(worldWidth: extent, playerController: playerController)
+        }
     }
 
     override func didMove(to view: SKView) {
@@ -161,7 +177,26 @@ final class VoiceOverScene: BaseLevelScene, SKPhysicsContactDelegate {
 
     // MARK: - Level construction
 
+    /// True only on a native iPad canvas (portrait-tall AND portrait-wide). The
+    /// composed hand-authored full-height climb lives behind this gate; every other
+    /// canvas — iPhone in any orientation, Split View, Slide Over — falls through to
+    /// the UNCHANGED procedural `buildPhoneLevel()`, so the phone build is
+    /// byte-identical.
+    private var isWideCanvas: Bool { min(size.width, size.height) >= 700 }
+
     private func buildLevel() {
+        if isWideCanvas {
+            buildComposedIPadLevel()
+        } else {
+            buildPhoneLevel()
+        }
+    }
+
+    /// iPHONE PATH — UNCHANGED. This is verbatim the pre-redesign buildLevel body
+    /// (procedural 2/4/6-stone span layout + uniform gameplayLift, which is 0 on a
+    /// phone). The iPad-native composition is a SEPARATE method behind isWideCanvas,
+    /// so nothing here is touched and phone output stays byte-identical.
+    private func buildPhoneLevel() {
         // Narrow start/exit platforms pushed to the screen edges so the crossing
         // span is genuinely wide on every device (no overlap into a slab).
         //
@@ -241,6 +276,185 @@ final class VoiceOverScene: BaseLevelScene, SKPhysicsContactDelegate {
         // lift==0 leaves it at the original y = -50.
         let death = SKNode()
         death.position = CGPoint(x: size.width / 2, y: -50 + lift)
+        death.physicsBody = SKPhysicsBody(rectangleOf: CGSize(width: size.width * 2, height: 100))
+        death.physicsBody?.isDynamic = false
+        death.physicsBody?.categoryBitMask = PhysicsCategory.hazard
+        addChild(death)
+
+        #if DEBUG
+        createTestButton()
+        #endif
+    }
+
+    // MARK: - Composed iPad course (native, hand-authored vertical climb)
+
+    /// iPAD PATH — a HAND-COMPOSED course that fills the FULL HEIGHT. The VoiceOver
+    /// mechanic is unchanged (stones start invisible + intangible; phasing the path
+    /// in via the real toggle OR the on-screen fallback makes the REAL stones solid
+    /// while DECOYS reveal but never solidify). What changes on iPad is the SHAPE:
+    /// instead of the prior flat band lifted into the lower third (the "top half
+    /// empty" bug), the real stones form a true VERTICAL CLIMB from a low spawn near
+    /// the BOTTOM up through staged beats to a finale near the CEILING.
+    ///
+    ///   spawn (floor) → teach (gentle steps off the floor) → build climb → wide
+    ///   REST platform mid-air breath → tension peak (decoys at their most tempting)
+    ///   → high BREATH platform → ISOLATED FINALE beat near the CEILING (the
+    ///   signature "barred lies" twist gets its own staged moment: a lone real stone
+    ///   flanked by a decoy on each side) → exit door at the top.
+    ///
+    /// VERTICAL FILL is driven entirely by the shared Phase-0 API: every real surface
+    /// Y comes from verticalTier(index, of: tierCount, iphoneGround:), which spans the
+    /// FULL usable band (playableGroundY .. playableCeilingY) and clamps each per-tier
+    /// rise to <= maxJumpableRise (85). Consecutive real surfaces move by AT MOST ONE
+    /// tier index, so every top-to-top rise stays within a safe jump. The route also
+    /// marches left→right across the WIDTH (a diagonal climb, never a centered
+    /// ladder); the course is wider than the iPad viewport, so installCameraFollow
+    /// scrolls it horizontally (camera Y stays centered — the whole climb is visible
+    /// at once). Every consecutive real surface is <= BaseLevelScene.maxJumpableGap
+    /// (130) edge-to-edge horizontal. The death zone + world bound span the whole
+    /// course.
+    private func buildComposedIPadLevel() {
+        // No gameplayLift on this path — vertical positions come from verticalTier
+        // (absolute, band-spanning). On a phone this method never runs.
+        gameplayLift = 0
+
+        // tierCount sized so the band (playableGroundY..playableCeilingY, ~1082pt on
+        // a 1024x1366 iPad) divides into per-tier rises within the safe jump budget:
+        // band/(tierCount-1) <= maxJumpableRise(85) → tierCount-1 >= ~13. 14 tiers
+        // give an even ~83pt step that spans floor→ceiling. Stepping the route by a
+        // SINGLE tier index per surface therefore guarantees rise <= 85 (the helper
+        // also clamps defensively). The route below is a strict +1-tier-per-surface
+        // monotonic climb from tier 0 (floor) to tier 13 (ceiling).
+        let tierCount = 14
+        func tierY(_ idx: Int) -> CGFloat { verticalTier(idx, of: tierCount, iphoneGround: groundY) }
+
+        let floorY = tierY(0)                 // playableGroundY — spawn platform top base
+        let ceilTier = tierCount - 1          // 13 — exit door lives up here
+
+        let edgePlatformW: CGFloat = 84
+        let edgePlatformH: CGFloat = 30
+
+        // --- TRUE VERTICAL FILL — a narrow ZIG-ZAG COLUMN around screen center ---
+        // The old iPad layout marched left→right across a ~1732pt-wide course, so the
+        // 14 tiers stacked DIAGONALLY off-screen RIGHT and the portrait camera rested
+        // on the lone bottom-left spawn under blank dead-sky. Fix: keep the same 14
+        // tiers / +1-tier-per-surface climb, but stack them UPWARD as a slim column
+        // that ALTERNATES left/right of the live screen center as it climbs. The whole
+        // column's horizontal extent is ~250pt (well under 900), centered on
+        // size.width/2, so the entire floor→ceiling climb is visible in ONE resting
+        // frame with NO horizontal camera-follow (composedCourseExtent stays nil).
+        //
+        // x is authored as `center + offset`. Two opposite-side 40-wide stones sit
+        // ±58 apart → center-to-center 116 → edge-to-edge horizontal gap 76 (in the
+        // 40-80 band). Wide pauses (REST 120, BREATH 90) are pushed to one side so
+        // their nearer edge still leaves a ~60pt gap to the neighbouring stone.
+        let center = size.width / 2
+
+        // --- BEAT 0: spawn / teach platform (FLOOR tier, left of center) ---
+        // Start platform top at floorY+15 (createPlatform y is the CENTER). The spawn
+        // in setupBit() uses the same center-58 x so Bit lands here and respawns here.
+        let startCx: CGFloat = center - 58
+        createPlatform(at: CGPoint(x: startCx, y: floorY), size: CGSize(width: edgePlatformW, height: edgePlatformH))
+
+        // Real solution stones authored as (offsetFromCenter, tierIndex). The route
+        // CLIMBS exactly one tier per surface (rise == one ~83pt step <= 85) and
+        // ZIG-ZAGS ±58 around center so consecutive edge-to-edge horizontal gaps land
+        // at 54-76pt (in the 40-80 band, well under maxJumpableGap 130). stoneSize =
+        // 40w x 22h; a stone's top = center.y + 11, so we center each so its TOP ==
+        // tierY(tier).
+        //
+        //   teach: S1 t1 (R),  S2 t2 (L)                    (gentle steps off the floor)
+        //   build: S3 t3 (R),  S4 t4 (L)                    (steady climb)
+        //   (REST wide platform t5 — a deliberate mid-air breath)
+        //   peak:  S5 t6 (L),  S6 t7 (R),  S7 t8 (L)        (push toward the top, decoys hot)
+        //   S8 t9 (R)
+        //   (BREATH platform t10 — short high pause)
+        //   S9 t11 (R)
+        //   FINALE: S10 t12 (L, lone real stone near the ceiling, decoy each side)
+        //   exit:  platform + door t13 (R)
+        struct RealStone { let dx: CGFloat; let tier: Int }
+        let realStones: [RealStone] = [
+            RealStone(dx:  58, tier: 1),
+            RealStone(dx: -58, tier: 2),
+            RealStone(dx:  58, tier: 3),
+            RealStone(dx: -58, tier: 4),
+            // (REST platform, t5)
+            RealStone(dx: -58, tier: 6),
+            RealStone(dx:  58, tier: 7),
+            RealStone(dx: -58, tier: 8),
+            RealStone(dx:  58, tier: 9),
+            // (BREATH platform, t10)
+            RealStone(dx:  58, tier: 11),
+            RealStone(dx: -58, tier: 12)      // isolated finale beat, near the ceiling
+        ]
+
+        // --- REST + BREATH platforms (wider, visually safe pauses on the climb) ---
+        // REST is the >=1 WIDE rest platform required by the design: 120pt wide at
+        // tier 5 between S4(t4, dx-58) and S5(t6, dx-58) — one tier from each. Pushed
+        // RIGHT (center+82) so its left edge (center+22) leaves a 60pt gap to S4's
+        // right edge (center-38). createPlatform y is the CENTER (top = y + height/2),
+        // so center.y = tierY(5)-15 → TOP == tierY(5).
+        let restCx: CGFloat = center + 82
+        let restW: CGFloat = 120
+        createPlatform(at: CGPoint(x: restCx, y: tierY(5) - 15), size: CGSize(width: restW, height: 30))
+
+        // High BREATH: 90pt pause at tier 10 between S8(t9, dx+58) and S9(t11, dx+58)
+        // — one tier from each. Pushed LEFT (center-67) so its right edge (center-22)
+        // leaves a 60pt gap to S8's left edge (center+38). Top == tierY(10).
+        let breathCx: CGFloat = center - 67
+        let breathW: CGFloat = 90
+        createPlatform(at: CGPoint(x: breathCx, y: tierY(10) - 15), size: CGSize(width: breathW, height: 30))
+
+        // --- EXIT platform + door (CEILING tier, right of center) ---
+        // Place the exit platform TOP at tierY(13) so the finale stone (t12) → exit
+        // rise == one tier step (<= 85). center.y = tierY(13)-15 → top == tierY(13).
+        // dx +58 from S10(t12, dx-58) → 76pt edge gap.
+        let exitCx: CGFloat = center + 58
+        let exitTopY = tierY(ceilTier)
+        createPlatform(at: CGPoint(x: exitCx, y: exitTopY - 15), size: CGSize(width: edgePlatformW, height: edgePlatformH))
+        createExitDoor(at: CGPoint(x: exitCx, y: exitTopY + 35))
+
+        // Build the real stones (solid path) at their authored tier heights.
+        for (i, rs) in realStones.enumerated() {
+            let top = tierY(rs.tier)
+            let y = top - stoneSize.height / 2     // center so the stone TOP == tierY
+            let stone = makeStone(at: CGPoint(x: center + rs.dx, y: y), isReal: true, index: i)
+            stones.append(stone)
+        }
+
+        // --- DECOYS — staged per beat, most aggressive at the tension peak and the
+        // finale. Each sits just OFF the true arc (one tier LOWER, nudged to a tempting
+        // side) so the naive "every shimmer is a floor" read walks off into the void.
+        // Decoys reveal but never solidify (intangible → they don't change any reach
+        // math; only readability). They share the column so they stay on-screen with
+        // the climb. Authored as (offsetFromCenter, tierIndex) at VARIED heights.
+        let decoyPlacements: [(dx: CGFloat, tier: Int)] = [
+            ( 58, 0),      // teach: an obvious low hop on the opposite side of the floor
+            (-58, 2),      // build: a tempting under-step below the climb
+            ( 58, 5),      // tension peak: deep under the high stones
+            (-58, 11),     // finale: decoy on the LEFT, beside the lone real stone
+            (118, 11)      // finale: decoy on the RIGHT — the signature twist beat
+        ]
+        for (j, d) in decoyPlacements.enumerated() {
+            let top = tierY(d.tier)
+            let y = top - stoneSize.height / 2
+            let stone = makeStone(at: CGPoint(x: center + d.dx, y: y), isReal: false, index: 1000 + j)
+            stones.append(stone)
+        }
+
+        // --- No camera-follow: the whole climb fits one frame ---
+        // The column's horizontal extent (~250pt centered on size.width/2) is far
+        // narrower than the iPad viewport, so the entire floor→ceiling climb — spawn,
+        // REST t5, BREATH t10, finale t12 and the exit t13 — is visible at once. We
+        // therefore install NO horizontal camera-follow: composedCourseExtent stays
+        // nil (configureScene's installCameraFollow guard is skipped) and the camera
+        // rests at scene center on the climb column, not in a corner.
+        composedCourseExtent = nil
+
+        // Death zone spans the full width well below the FLOOR tier so a fall anywhere
+        // off the column is caught. Same relative offset below groundY as the phone path.
+        let death = SKNode()
+        death.position = CGPoint(x: size.width / 2, y: floorY - 110)
         death.physicsBody = SKPhysicsBody(rectangleOf: CGSize(width: size.width * 2, height: 100))
         death.physicsBody?.isDynamic = false
         death.physicsBody?.categoryBitMask = PhysicsCategory.hazard
@@ -427,7 +641,9 @@ final class VoiceOverScene: BaseLevelScene, SKPhysicsContactDelegate {
         // far-left accessibility column and this pill are the only bottom-leading
         // items and the gap holds. Still above gameplay (stones at y>=160) and the
         // home indicator (bottomSafeY). Mechanic unchanged.
-        let buttonPos = CGPoint(x: 150, y: bottomSafeY + 22)
+        // Camera-aware so the DEBUG toggle stays on screen on the scrolling iPad
+        // course; on iPhone hudPoint/hudHost are identity (byte-identical).
+        let buttonPos = hudPoint(sceneX: 150, sceneY: bottomSafeY + 22)
 
         let button = SKShapeNode(rectOf: CGSize(width: 110, height: 30), cornerRadius: 6)
         button.fillColor = strokeColor
@@ -435,7 +651,7 @@ final class VoiceOverScene: BaseLevelScene, SKPhysicsContactDelegate {
         button.position = buttonPos
         button.zPosition = 500
         button.name = "testVOButton"
-        addChild(button)
+        hudHost().addChild(button)
 
         let label = SKLabelNode(text: "TEST VOICEOVER")
         label.fontName = "Menlo-Bold"
@@ -445,9 +661,32 @@ final class VoiceOverScene: BaseLevelScene, SKPhysicsContactDelegate {
         label.position = buttonPos
         label.zPosition = 501
         label.name = "testVOButton"
-        addChild(label)
+        hudHost().addChild(label)
     }
     #endif
+
+    // MARK: - HUD anchoring (camera-aware on the scrolling iPad course)
+
+    /// Where transient HUD (instruction panel, death hints, DEBUG toggle) should
+    /// attach. On the iPhone path the camera is static at scene center, so scene-space
+    /// coordinates are unchanged (byte-identical). On the iPad composed path the
+    /// camera scrolls with Bit, so HUD must ride the camera or it slides off-screen —
+    /// we attach to gameCamera and convert the intended scene point into
+    /// camera-relative space via hudPoint.
+    private func hudHost() -> SKNode {
+        if isWideCanvas, let cam = gameCamera { return cam }
+        return self
+    }
+
+    /// Convert a desired on-SCREEN scene point to the coordinate space of hudHost().
+    /// For the camera (iPad) this subtracts the camera's resting center; for the
+    /// scene (iPhone) it returns the point unchanged (byte-identical).
+    private func hudPoint(sceneX: CGFloat, sceneY: CGFloat) -> CGPoint {
+        if isWideCanvas, gameCamera != nil {
+            return CGPoint(x: sceneX - size.width / 2, y: sceneY - size.height / 2)
+        }
+        return CGPoint(x: sceneX, y: sceneY)
+    }
 
     private func showInstructionPanel() {
         // The always-on top-right PAUSE button reserves the top-trailing zone
@@ -462,30 +701,32 @@ final class VoiceOverScene: BaseLevelScene, SKPhysicsContactDelegate {
         let panelHeight: CGFloat = 84
         let panelWidth: CGFloat = 300
         let panel = SKNode()
-        panel.position = CGPoint(x: size.width / 2, y: topSafeY - 170)
+        // On iPhone this is scene-space (size.width/2, topSafeY-170) — byte-identical.
+        // On the scrolling iPad course it rides the camera so it stays on screen.
+        panel.position = hudPoint(sceneX: size.width / 2, sceneY: topSafeY - 170)
         panel.zPosition = 300
-        addChild(panel)
+        hudHost().addChild(panel)
 
         let bg = SKShapeNode(rectOf: CGSize(width: panelWidth, height: panelHeight), cornerRadius: 8)
         bg.fillColor = fillColor
         bg.strokeColor = strokeColor
         panel.addChild(bg)
 
-        let text1 = SKLabelNode(text: "THE BRIDGE ISN'T THERE UNTIL YOU")
+        let text1 = SKLabelNode(text: "THE GAP DOESN'T CARE THAT YOU SEE IT.")
         text1.fontName = "Menlo-Bold"
         text1.fontSize = 10
         text1.fontColor = strokeColor
         text1.position = CGPoint(x: 0, y: 16)
         panel.addChild(text1)
 
-        let text2 = SKLabelNode(text: "PERCEIVE IT. TOGGLE VOICEOVER —")
+        let text2 = SKLabelNode(text: "BUT SOMETHING HERE IS LISTENING FOR YOU.")
         text2.fontName = "Menlo"
         text2.fontSize = 9
         text2.fontColor = strokeColor
         text2.position = CGPoint(x: 0, y: 0)
         panel.addChild(text2)
 
-        let text3 = SKLabelNode(text: "OR TAP THE ACCESSIBILITY BUTTON.")
+        let text3 = SKLabelNode(text: "A PATH EXISTS ONLY ONCE IT'S NAMED ALOUD.")
         text3.fontName = "Menlo"
         text3.fontSize = 9
         text3.fontColor = strokeColor
@@ -496,10 +737,20 @@ final class VoiceOverScene: BaseLevelScene, SKPhysicsContactDelegate {
     }
 
     private func setupBit() {
-        // Lift the spawn (and therefore the respawn, which reuses spawnPoint) by the
-        // SAME uniform band lift computed in buildLevel(), which runs before this.
-        // On iPhone gameplayLift==0 so spawn stays at y=200 (byte-identical).
-        spawnPoint = CGPoint(x: 58, y: 200 + gameplayLift)
+        if isWideCanvas {
+            // iPad composed path: spawn ON the start platform of the zig-zag column
+            // (start platform center x = size.width/2 - 58, top at playableGroundY+15).
+            // Use the same floor tier as the composed build so Bit lands on the start
+            // platform and respawns there. Absolute, no lift.
+            let floorY = verticalTier(0, of: 14, iphoneGround: groundY)
+            spawnPoint = CGPoint(x: size.width / 2 - 58, y: floorY + 60)
+        } else {
+            // iPHONE PATH — UNCHANGED. Lift the spawn (and therefore the respawn,
+            // which reuses spawnPoint) by the SAME uniform band lift computed in
+            // buildPhoneLevel(), which runs before this. On iPhone gameplayLift==0 so
+            // spawn stays at y=200 (byte-identical).
+            spawnPoint = CGPoint(x: 58, y: 200 + gameplayLift)
+        }
         bit = BitCharacter.make()
         bit.position = spawnPoint
         addChild(bit)
@@ -538,6 +789,11 @@ final class VoiceOverScene: BaseLevelScene, SKPhysicsContactDelegate {
     /// Make the real stones SOLID (add collision) and reveal all stones visually.
     private func phasePathIn() {
         pathPhasedIn = true
+
+        // PROGRESSIVE HINT WIRING: phasing the path in is the level's clear
+        // forward-progress moment (the gap becomes crossable). Reset the struggle/
+        // stall counters so the player isn't immediately escalated after engaging.
+        notePlayerProgress()
 
         for stone in stones where stone.isReal {
             // Add collision now — this is what makes the gap crossable.
@@ -629,9 +885,11 @@ final class VoiceOverScene: BaseLevelScene, SKPhysicsContactDelegate {
         hint.fontSize = 9
         hint.fontColor = strokeColor
         hint.alpha = 0.6
-        hint.position = CGPoint(x: size.width / 2, y: 116)
+        // Camera-aware so the fallback hint stays visible on the scrolling iPad
+        // course; scene-space (size.width/2, 116) unchanged on iPhone.
+        hint.position = hudPoint(sceneX: size.width / 2, sceneY: 116)
         hint.zPosition = 200
-        addChild(hint)
+        hudHost().addChild(hint)
         hint.run(.sequence([.wait(forDuration: 5), .fadeOut(withDuration: 1), .removeFromParent()]))
     }
 
@@ -707,6 +965,11 @@ final class VoiceOverScene: BaseLevelScene, SKPhysicsContactDelegate {
         playerController.cancel()
         deathCount += 1
 
+        // PROGRESSIVE HINT WIRING: every death is a struggle beat. This escalates the
+        // shared difficulty-hint system (notePlayerStruggle) so repeated failure earns
+        // the hintText() reveal, in addition to the level's own deathCount nudges.
+        notePlayerStruggle()
+
         // Fallback nudges:
         //  * If the player keeps falling before ever phasing the path in, the
         //    always-present accessibility button (and the "CAN'T DO THIS?" hatch)
@@ -722,9 +985,11 @@ final class VoiceOverScene: BaseLevelScene, SKPhysicsContactDelegate {
                 hint.fontSize = 9
                 hint.fontColor = strokeColor
                 hint.alpha = 0.6
-                hint.position = CGPoint(x: size.width / 2, y: 116)
+                // Camera-aware (rides the camera on the scrolling iPad course);
+                // scene-space (size.width/2, 116) unchanged on iPhone.
+                hint.position = hudPoint(sceneX: size.width / 2, sceneY: 116)
                 hint.zPosition = 200
-                addChild(hint)
+                hudHost().addChild(hint)
                 hint.run(.sequence([.wait(forDuration: 5), .fadeOut(withDuration: 1), .removeFromParent()]))
             }
         }
@@ -743,7 +1008,7 @@ final class VoiceOverScene: BaseLevelScene, SKPhysicsContactDelegate {
     }
 
     override func hintText() -> String? {
-        return "Toggle VoiceOver (or tap the accessibility button) to phase the bridge in. Solid tiles are real; barred tiles are voids."
+        return "Toggle VoiceOver in Settings — or tap the accessibility button at the bottom-left — to phase the path in. Once it's solid it STAYS solid: turn VoiceOver back off and cross with normal taps. Land only on the SOLID stones."
     }
 
     override func willMove(from view: SKView) {

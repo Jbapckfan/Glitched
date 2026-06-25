@@ -40,6 +40,24 @@ final class VoiceCommandScene: BaseLevelScene, SKPhysicsContactDelegate {
     /// BRIDGE command is genuinely required, not skippable.
     private let bridgeLogicalWidth: CGFloat = 260
 
+    /// The realized (device-space) physics/visual width of the bridge span, set by
+    /// whichever build path runs. extendBridge() reads this so its physics body
+    /// matches the drawn span on BOTH the iPhone (course-scaled) and the iPad
+    /// (absolute pt) paths instead of unconditionally recomputing the scaled
+    /// iPhone width — which would mismatch the absolute-pt iPad bridge.
+    private var bridgeRealizedWidth: CGFloat = 260
+
+    // MARK: - Native-iPad gate
+    //
+    // iPad-native redesign (Phase 0). Per the L3 template: the iPhone path is kept
+    // byte-identical behind `!isWideCanvas` in buildPhoneLevel(); the iPad path is a
+    // NEW hand-composed buildComposedIPadLevel() authored at ABSOLUTE pt positions
+    // (never size.width fractions, never scaled geometry). designSize.width = 430,
+    // so the gate fires only on a tall, wide canvas (true iPad portrait), never on
+    // any iPhone. Bit's physics are device-independent, so absolute spacing carries
+    // identical reach across devices.
+    private var isWideCanvas: Bool { size.height > 1000 && size.width > designSize.width }
+
     private var bit: BitCharacter!
     private var playerController: PlayerController!
     private var spawnPoint: CGPoint = .zero
@@ -94,14 +112,33 @@ final class VoiceCommandScene: BaseLevelScene, SKPhysicsContactDelegate {
 
     // MARK: - Setup
 
+    /// Attach a SCREEN-anchored node so it stays fixed in the viewport. On the
+    /// composed iPad path the camera scrolls (installCameraFollow), so HUD added
+    /// directly to the scene would scroll off with the world — breaking the mic /
+    /// instruction / fallback affordances the voice mechanic depends on. There we
+    /// parent to gameCamera and convert the intended screen position into camera-
+    /// local space (camera sits at scene center, so local = screen - half-extent).
+    /// On iPhone (no camera-follow) it adds to the scene unchanged, preserving
+    /// byte-identical layout. `screenPos` is the desired position in scene/screen
+    /// coordinates as the existing code already computes it.
+    private func addScreenAnchored(_ node: SKNode, at screenPos: CGPoint) {
+        if isWideCanvas, let camera = gameCamera {
+            node.position = CGPoint(x: screenPos.x - size.width / 2,
+                                    y: screenPos.y - size.height / 2)
+            camera.addChild(node)
+        } else {
+            node.position = screenPos
+            addChild(node)
+        }
+    }
+
     private func setupBackground() {
         // Soundwave pattern decoration
         for i in 0..<8 {
             let wave = createSoundwave(width: 30, height: CGFloat.random(in: 8...25))
-            wave.position = CGPoint(x: CGFloat(i) * 80 + 40, y: topSafeY - 50)
             wave.alpha = 0.1
             wave.zPosition = -10
-            addChild(wave)
+            addScreenAnchored(wave, at: CGPoint(x: CGFloat(i) * 80 + 40, y: topSafeY - 50))
         }
     }
 
@@ -126,10 +163,9 @@ final class VoiceCommandScene: BaseLevelScene, SKPhysicsContactDelegate {
         title.fontName = VisualConstants.Fonts.display
         title.fontSize = 28
         title.fontColor = strokeColor
-        title.position = CGPoint(x: 80, y: topSafeY - 30)
         title.horizontalAlignmentMode = .left
         title.zPosition = 100
-        addChild(title)
+        addScreenAnchored(title, at: CGPoint(x: 80, y: topSafeY - 30))
     }
 
     /// iPad vertical-void fix: uniform upward shift applied to EVERY gameplay
@@ -149,6 +185,19 @@ final class VoiceCommandScene: BaseLevelScene, SKPhysicsContactDelegate {
     }
 
     private func buildLevel() {
+        if isWideCanvas {
+            buildComposedIPadLevel()
+        } else {
+            buildPhoneLevel()
+        }
+    }
+
+    /// iPhone path — BYTE-IDENTICAL to the prior shipped buildLevel(). On any
+    /// iPhone-class canvas `isWideCanvas` is false and this runs unchanged: same
+    /// course-scaled (courseX / courseLen) start/bridge/middle/door/exit geometry,
+    /// same gameplayLift, same death zone, same hint labels. The bridge's realized
+    /// width is recorded so extendBridge() matches the drawn course-scaled span.
+    private func buildPhoneLevel() {
         let groundY: CGFloat = 160 + gameplayLift
 
         // Fits a 390-pt iPhone canvas. Three voice commands gate progress:
@@ -169,7 +218,8 @@ final class VoiceCommandScene: BaseLevelScene, SKPhysicsContactDelegate {
 
         // Bridge: center 205, width 260 -> covers logical [75,335], bridging the
         // 250-pt logical chasm from start.right (80) to middle.left (330).
-        createBridge(at: CGPoint(x: courseX(205), y: groundY), width: courseLen(bridgeLogicalWidth))
+        bridgeRealizedWidth = courseLen(bridgeLogicalWidth)
+        createBridge(at: CGPoint(x: courseX(205), y: groundY), width: bridgeRealizedWidth)
 
         // Middle platform: center 360, width 60 -> logical span [330,390]. The
         // chasm to its left (start.right 80 -> 330) is 250 logical = ~227pt at
@@ -221,6 +271,177 @@ final class VoiceCommandScene: BaseLevelScene, SKPhysicsContactDelegate {
         createHintLabel("SAY \"FLY\"", at: CGPoint(x: courseX(310), y: groundY + 70))
     }
 
+    // MARK: - Composed iPad Level (Phase 0, L3 template)
+
+    /// Hand-composed iPad course. Authored at ABSOLUTE pt positions (NOT
+    /// size.width fractions, NEVER scaled). Spacing is the FIXED jump-reach budget:
+    /// every reachable gap <= BaseLevelScene.maxJumpableGap (130) edge-to-edge and
+    /// every rise <= BaseLevelScene.maxJumpableRise (85) top-to-top.
+    ///
+    /// FULL-HEIGHT FIX (Phase 0 vertical-fill API): the prior pass laid the run on
+    /// small offsets above groundY (+0..+85), so on a tall iPad the whole course
+    /// sat in a low band and the TOP TWO-THIRDS were dead sky. This route now
+    /// CLIMBS THE FULL BAND — a true top-to-bottom ascent like L30 — using
+    /// verticalTier(index, of: N, iphoneGround:160). The floor is now
+    /// playableGroundY = bottomSafeY+90 (near the BOTTOM, so we build UPWARD) and
+    /// the climb tops out at the exit ledge just under playableCeilingY
+    /// (topSafeY-150). N=14 is chosen so the band (≈1080pt on a 1366 iPad) divides
+    /// into SAFE rises: each inter-tier step ≈ 83pt (< maxJumpableRise 85), and
+    /// tier 13 lands on the ceiling. Every CONSECUTIVE platform changes its tier
+    /// index by at most 1, so every authored rise is one safe step. Tiers spread
+    /// LEFT→RIGHT as they climb (never a centered vertical ladder); widths vary for
+    /// rhythm; TWO wide REST platforms give breath beats.
+    ///
+    /// BEATS (paced, per the L3 design philosophy; the signature voice-trap is the
+    /// HIGH/finale beat — this level's vertical FLY beat reaches the highest ledge):
+    ///   1. TEACH         — wide spawn pad on the floor (tier 0) + one easy step.
+    ///   2. STEPPED CLIMB — B/C ascend tier-by-tier (widths vary) building rhythm.
+    ///   3. REST          — a wide breath platform mid-climb (tier 4).
+    ///   4. TENSION CLIMB — D/E push higher (tiers 5→6).
+    ///   5. DIP + RECOVER — F dips one tier (rhythm), then G/H/I re-ascend.
+    ///   6. REST 2        — a second wide breath platform (tier 9) before the push.
+    ///   7. FINALE (high) — the signature TRAP staged near the TOP: J + pre-chasm
+    ///                      land on tiers 10/11, then the 250-pt un-jumpable VOICE
+    ///                      chasm (BRIDGE), the locked door on the far landing
+    ///                      (OPEN), then the FLY-gated +100 rise to the EXIT HIGH
+    ///                      LEDGE near the ceiling. All three commands required, in
+    ///                      order; the chasm is wider than jump reach by design.
+    ///
+    /// The course (extent ~2400pt) is wider than the iPad viewport, so HORIZONTAL
+    /// fill is via installCameraFollow(worldWidth:) (armed in setupBit where the
+    /// player controller exists); VERTICAL fill is via the tiers above. Death zone
+    /// spans the full course width.
+    private func buildComposedIPadLevel() {
+        // iPhone ground value this level hard-codes; the iPad floor is derived from
+        // it (playableGroundY → bottomSafeY+90, near the bottom so we build UPWARD).
+        // This path never runs on iPhone (gated by isWideCanvas).
+        let iphoneGround: CGFloat = 160
+        // 14 evenly-spaced tiers spanning the FULL usable band; each rise auto-clamps
+        // to maxJumpableRise. tier(0) = floor, tier(13) = near ceiling (~83pt/step).
+        let tierCount = 14
+        func tier(_ i: Int) -> CGFloat { verticalTier(i, of: tierCount, iphoneGround: iphoneGround) }
+
+        // BEAT 1 — TEACH: wide spawn pad on the floor, then one easy step up.
+        createPlatform(at: CGPoint(x: 110, y: tier(0)), size: CGSize(width: 90, height: 30)) // start (floor, left)
+        createPlatform(at: CGPoint(x: 240, y: tier(1)), size: CGSize(width: 90, height: 30)) // step A
+
+        // BEAT 2 — STEPPED CLIMB: ascend tier-by-tier, widths vary for rhythm.
+        createPlatform(at: CGPoint(x: 360, y: tier(2)), size: CGSize(width: 80, height: 30)) // B
+        createPlatform(at: CGPoint(x: 470, y: tier(3)), size: CGSize(width: 70, height: 30)) // C
+
+        // BEAT 3 — REST: a wide, deliberate breath platform mid-climb.
+        createPlatform(at: CGPoint(x: 640, y: tier(4)), size: CGSize(width: 180, height: 30)) // REST 1 (wide)
+
+        // BEAT 4 — TENSION CLIMB: push two tiers higher.
+        createPlatform(at: CGPoint(x: 800, y: tier(5)), size: CGSize(width: 80, height: 30)) // D
+        createPlatform(at: CGPoint(x: 915, y: tier(6)), size: CGSize(width: 70, height: 30)) // E
+
+        // BEAT 5 — DIP + RECOVER: drop one tier for rhythm, then re-ascend.
+        createPlatform(at: CGPoint(x: 1030, y: tier(5)), size: CGSize(width: 110, height: 30)) // F dip (breath, wide)
+        createPlatform(at: CGPoint(x: 1150, y: tier(6)), size: CGSize(width: 80, height: 30))  // G
+        createPlatform(at: CGPoint(x: 1265, y: tier(7)), size: CGSize(width: 80, height: 30))  // H
+        createPlatform(at: CGPoint(x: 1380, y: tier(8)), size: CGSize(width: 90, height: 30))  // I
+
+        // BEAT 6 — REST 2: a second wide breath platform before the finale push.
+        createPlatform(at: CGPoint(x: 1540, y: tier(9)), size: CGSize(width: 160, height: 30)) // REST 2 (wide)
+
+        // Climb toward the finale tier.
+        createPlatform(at: CGPoint(x: 1700, y: tier(10)), size: CGSize(width: 80, height: 30)) // J
+
+        // BEAT 7 — FINALE (signature voice-trap, staged HIGH near the ceiling). The
+        // whole finale plays out on one high altitude tier (11) so the trap is the
+        // CLIMAX of the climb, not a low-band afterthought.
+        // Pre-chasm landing. Its RIGHT edge (1815+45 = 1860) opens the trap chasm.
+        let finaleMiddleTop = tier(11)
+        createPlatform(at: CGPoint(x: 1815, y: finaleMiddleTop), size: CGSize(width: 90, height: 30)) // pre-chasm
+
+        // THE TRAP: a 250-pt un-jumpable VOICE chasm. pre-chasm.right (1860) ->
+        // finale-middle.left (2110) = 250pt absolute, FAR beyond the ~130 jump
+        // reach (and beyond any FLY arc from a standing start — FLY is gated behind
+        // BRIDGE+OPEN). This is the load-bearing trap geometry: it is NEVER widened
+        // or narrowed — it is exactly 250pt, the same logical span the iPhone path
+        // makes un-jumpable. Crossing it requires the BRIDGE command.
+        let chasmLeft: CGFloat = 1860           // pre-chasm right edge
+        let chasmWidth: CGFloat = 250           // un-jumpable (matches iPhone trap)
+        let chasmRight = chasmLeft + chasmWidth // 2110 = finale-middle left edge
+
+        // Bridge spans the chasm with 5pt overlap each side (matches the iPhone
+        // span ratio: a 260-wide bridge over a 250 chasm). Center at the chasm
+        // midpoint; physics width recorded for extendBridge().
+        let bridgeWidth: CGFloat = chasmWidth + 10            // 260
+        let bridgeCenterX = chasmLeft + chasmWidth / 2        // 1985
+        bridgeRealizedWidth = bridgeWidth
+        createBridge(at: CGPoint(x: bridgeCenterX, y: finaleMiddleTop), width: bridgeWidth)
+
+        // Finale middle landing (post-bridge). Left edge = chasmRight (2110).
+        let finaleMiddleCenter = chasmRight + 30              // 2140 (width 60)
+        createPlatform(at: CGPoint(x: finaleMiddleCenter, y: finaleMiddleTop), size: CGSize(width: 60, height: 30))
+
+        // Locked DOOR on the finale-middle's right edge — must be UN-jumpable before
+        // OPEN. The platform top is finaleMiddleTop+15; a 107pt-tall blocker with its
+        // bottom on that surface tops out at +107 above the platform, clearing Bit's
+        // ~91pt apex by the project's ~16pt margin (the prior 90pt-tall/+60-centered
+        // door topped out at only +90 — a ~1pt margin a frame-perfect jump could skip).
+        let doorX = finaleMiddleCenter + 30                  // 2170 (middle right edge)
+        createLockedDoor(at: CGPoint(x: doorX, y: finaleMiddleTop + 68.5), height: 107)
+
+        // Small landing after the door (post-OPEN). Overlaps the door x so, once the
+        // door clears, the floor is contiguous out to the FLY ascent point.
+        let smallCenter = doorX + 60                         // 2230 (width 50)
+        createPlatform(at: CGPoint(x: smallCenter, y: finaleMiddleTop), size: CGSize(width: 50, height: 30))
+
+        // Exit plateau + door — the FLY-gated HIGH LEDGE (this level's vertical beat
+        // tied to FLY). The rise from the small landing top (finaleMiddleTop) to the
+        // exit plateau is 100pt > the ~91 jump apex, so FLY is REQUIRED to reach it
+        // (same FLY rise as the iPhone path: groundY -> groundY+100). The plateau
+        // lands ~66pt under playableCeilingY, so the climb genuinely fills to the top.
+        let exitPlateauTop = finaleMiddleTop + 100           // FLY-gated rise (100 > 91)
+        createPlatform(at: CGPoint(x: 2320, y: exitPlateauTop), size: CGSize(width: 70, height: 25))
+        createExitDoor(at: CGPoint(x: 2330, y: exitPlateauTop + 55))
+
+        // Full-course extent for camera-follow + death zone.
+        courseExtentIPad = 2400
+
+        // Death zone spans the FULL course width (centered on the course), catching
+        // falls anywhere along the scrolling level — including into the trap chasm.
+        let groundY = tier(0)
+        let death = SKNode()
+        death.position = CGPoint(x: courseExtentIPad / 2, y: groundY - 210)
+        death.physicsBody = SKPhysicsBody(rectangleOf: CGSize(width: courseExtentIPad + 400, height: 100))
+        death.physicsBody?.isDynamic = false
+        death.physicsBody?.categoryBitMask = PhysicsCategory.hazard
+        addChild(death)
+
+        // On-course command prompts, placed in WORLD space above their beats (the
+        // camera scrolls them into view). Uses the world-space hint helper so they
+        // are NOT clamped to the iPhone-strip right edge.
+        createWorldHintLabel("SAY \"BRIDGE\"", at: CGPoint(x: bridgeCenterX, y: finaleMiddleTop + 70))
+        createWorldHintLabel("SAY \"OPEN\"",   at: CGPoint(x: finaleMiddleCenter, y: finaleMiddleTop + 110))
+        createWorldHintLabel("SAY \"FLY\"",    at: CGPoint(x: smallCenter, y: finaleMiddleTop + 80))
+    }
+
+    /// Full horizontal extent of the composed iPad course (0 on iPhone). Used to
+    /// arm camera-follow and size the death zone. Set by buildComposedIPadLevel().
+    private var courseExtentIPad: CGFloat = 0
+
+    /// World-positioned hint label for the camera-follow iPad course. Unlike
+    /// createHintLabel (which clamps centers to the iPhone strip's right edge so
+    /// on-screen prompts never clip), this places the label at its true world x so
+    /// it scrolls with the course. Same font/pulse so the two paths read alike.
+    private func createWorldHintLabel(_ text: String, at position: CGPoint) {
+        let label = SKLabelNode(text: text)
+        label.fontName = "Menlo"
+        label.fontSize = 13
+        label.fontColor = strokeColor.withAlphaComponent(0.85)
+        label.zPosition = 50
+        label.position = position
+        addChild(label)
+        label.run(.repeatForever(.sequence([
+            .fadeAlpha(to: 0.6, duration: 1.0),
+            .fadeAlpha(to: 1.0, duration: 1.0)
+        ])))
+    }
+
     private func createPlatform(at position: CGPoint, size: CGSize) {
         let platform = SKNode()
         platform.position = position
@@ -255,15 +476,15 @@ final class VoiceCommandScene: BaseLevelScene, SKPhysicsContactDelegate {
         addChild(bridge)
     }
 
-    private func createLockedDoor(at position: CGPoint) {
+    private func createLockedDoor(at position: CGPoint, height: CGFloat = 90) {
         let door = SKNode()
         door.position = position
         door.name = "locked_door"
 
-        // Door frame — 90 pt tall so the top (y=265 at door center y=220)
-        // sits above the player's jump-apex body bottom (~247), preventing
-        // a skip-over before OPEN unlocks it.
-        let frame = SKShapeNode(rectOf: CGSize(width: 10, height: 90))
+        // Door frame. iPhone default (90pt) is unchanged; the iPad finale passes a
+        // taller blocker so its top clears Bit's ~91pt apex with the project's ~16pt
+        // margin (the 90pt default left only a ~1pt margin — frame-perfect skip-over).
+        let frame = SKShapeNode(rectOf: CGSize(width: 10, height: height))
         frame.fillColor = strokeColor
         frame.strokeColor = strokeColor
         frame.lineWidth = lineWidth
@@ -286,7 +507,7 @@ final class VoiceCommandScene: BaseLevelScene, SKPhysicsContactDelegate {
 
         // Physical blocker
         doorBlocker = SKNode()
-        doorBlocker?.physicsBody = SKPhysicsBody(rectangleOf: CGSize(width: 10, height: 90))
+        doorBlocker?.physicsBody = SKPhysicsBody(rectangleOf: CGSize(width: 10, height: height))
         doorBlocker?.physicsBody?.isDynamic = false
         doorBlocker?.physicsBody?.categoryBitMask = PhysicsCategory.ground
         door.addChild(doorBlocker!)
@@ -355,7 +576,7 @@ final class VoiceCommandScene: BaseLevelScene, SKPhysicsContactDelegate {
         // the instruction panel, or the fourth-wall labels on iPhone
         // (390x844 / 402x874) or iPad (1024x1366). Previously at topSafeY-20 it
         // sat directly under the pause button.
-        container.position = CGPoint(x: size.width - 34, y: topSafeY - 160)
+        let micScreenPos = CGPoint(x: size.width - 34, y: topSafeY - 160)
         container.zPosition = 200
 
         // Mic body
@@ -394,7 +615,7 @@ final class VoiceCommandScene: BaseLevelScene, SKPhysicsContactDelegate {
         micPulse = pulse
 
         micIcon = container
-        addChild(container)
+        addScreenAnchored(container, at: micScreenPos)
 
         // Listening pulse animation
         pulse.run(.repeatForever(.sequence([
@@ -421,9 +642,8 @@ final class VoiceCommandScene: BaseLevelScene, SKPhysicsContactDelegate {
         // names it "permissionContinueButton" and removes the whole overlay on
         // dismiss) and only start the timed fade once it is gone, so the
         // instructions are actually read first.
-        panel.position = CGPoint(x: size.width / 2, y: topSafeY - 160)
         panel.zPosition = 300
-        addChild(panel)
+        addScreenAnchored(panel, at: CGPoint(x: size.width / 2, y: topSafeY - 160))
 
         let bg = SKShapeNode(rectOf: CGSize(width: 260, height: 80), cornerRadius: 8)
         bg.fillColor = fillColor
@@ -479,15 +699,31 @@ final class VoiceCommandScene: BaseLevelScene, SKPhysicsContactDelegate {
     }
 
     private func setupBit() {
-        // Spawn (and respawn — handleDeath() respawns at spawnPoint) sits 40pt
-        // above the start platform top (groundY 160 -> spawn 200); lift it by the
-        // same band shift so that relative spawn-over-platform offset is preserved.
-        spawnPoint = CGPoint(x: courseX(45), y: 200 + gameplayLift)
+        if isWideCanvas {
+            // iPad composed path: spawn 40pt above the start pad top. The start pad
+            // is the tier-0 floor platform at x=110 (verticalTier(0) == playableGroundY).
+            // Absolute pt — never course-scaled.
+            let groundY = playableGroundY(iphoneGround: 160)
+            spawnPoint = CGPoint(x: 110, y: groundY + 40)
+        } else {
+            // iPhone path — BYTE-IDENTICAL: spawn (and respawn via handleDeath())
+            // sits 40pt above the start platform top (groundY 160 -> spawn 200);
+            // lifted by the same band shift so spawn-over-platform offset is kept.
+            spawnPoint = CGPoint(x: courseX(45), y: 200 + gameplayLift)
+        }
         bit = BitCharacter.make()
         bit.position = spawnPoint
         addChild(bit)
         registerPlayer(bit)
         playerController = PlayerController(character: bit, scene: self)
+
+        // Camera-follow: the composed iPad course is wider than the viewport, so
+        // arm horizontal scrolling once (player controller now exists). The base
+        // scene ticks the camera in update(); vertical fill is via playableGroundY,
+        // not the camera. Inert on iPhone (never called there).
+        if isWideCanvas, courseExtentIPad > size.width {
+            installCameraFollow(worldWidth: courseExtentIPad, playerController: playerController)
+        }
     }
 
     // MARK: - Voice Command Handling
@@ -495,12 +731,17 @@ final class VoiceCommandScene: BaseLevelScene, SKPhysicsContactDelegate {
     private func extendBridge() {
         guard !bridgeExtended, let bridge = bridgeNode else { return }
         bridgeExtended = true
+        // Forward progress: extending the bridge is a clear gate cleared, so reset
+        // the struggle/hint timers (matches the shared difficulty-hint contract).
+        notePlayerProgress()
 
         // Add physics to bridge. Width must match the visual span created
         // in createBridge() so the walkable surface reaches from the start
         // platform's right edge to the middle platform's left edge. Uses the
-        // same course-scaled logical width as the drawn span.
-        bridge.physicsBody = SKPhysicsBody(rectangleOf: CGSize(width: courseLen(bridgeLogicalWidth), height: 12))
+        // realized width recorded by whichever build path ran (course-scaled on
+        // iPhone, absolute pt on iPad) so the physics never mismatches the drawn
+        // span.
+        bridge.physicsBody = SKPhysicsBody(rectangleOf: CGSize(width: bridgeRealizedWidth, height: 12))
         bridge.physicsBody?.isDynamic = false
         bridge.physicsBody?.categoryBitMask = PhysicsCategory.ground
 
@@ -536,6 +777,9 @@ final class VoiceCommandScene: BaseLevelScene, SKPhysicsContactDelegate {
     private func openDoor() {
         guard !doorOpened, let door = doorNode else { return }
         doorOpened = true
+        // Forward progress: opening the door clears the second gate, so reset the
+        // struggle/hint timers.
+        notePlayerProgress()
 
         // Remove blocker physics
         doorBlocker?.physicsBody?.categoryBitMask = 0
@@ -562,6 +806,9 @@ final class VoiceCommandScene: BaseLevelScene, SKPhysicsContactDelegate {
         }
         flyActive = true
         flyUsed = true
+        // Forward progress: FLY (the ordered final gate) fired successfully, so
+        // reset the struggle/hint timers.
+        notePlayerProgress()
 
         // Brief reduced gravity + upward impulse
         physicsWorld.gravity = CGVector(dx: 0, dy: -5)
@@ -678,8 +925,10 @@ final class VoiceCommandScene: BaseLevelScene, SKPhysicsContactDelegate {
 
         for label in labels {
             let button = makeFallbackButton(text: label)
-            button.position = CGPoint(x: x, y: 50)
-            addChild(button)
+            // Screen-anchored so the no-mic controls stay reachable even while the
+            // composed iPad course scrolls under camera-follow (on iPhone this is a
+            // plain addChild at the same y=50 screen position — unchanged).
+            addScreenAnchored(button, at: CGPoint(x: x, y: 50))
             switch label {
             case "BRIDGE": bridgeButton = button
             case "OPEN": openButton = button
@@ -687,6 +936,15 @@ final class VoiceCommandScene: BaseLevelScene, SKPhysicsContactDelegate {
             }
             x += buttonWidth + spacing
         }
+    }
+
+    /// True when `scenePoint` (a touch in scene space) falls inside `button`,
+    /// regardless of whether the button is parented to the scene (iPhone) or to
+    /// gameCamera (camera-follow iPad). `SKNode.contains` works in the node's
+    /// PARENT space, so we convert the scene point into that parent first.
+    private func fallbackButtonHit(_ button: SKNode?, at scenePoint: CGPoint) -> Bool {
+        guard let button, let parent = button.parent else { return false }
+        return button.contains(convert(scenePoint, to: parent))
     }
 
     private func makeFallbackButton(text: String) -> SKNode {
@@ -712,16 +970,19 @@ final class VoiceCommandScene: BaseLevelScene, SKPhysicsContactDelegate {
 
     /// Brief, self-removing hint mirroring the showFourthWallResponse pattern.
     private func showCommandHint(_ text: String) {
-        childNode(withName: "voiceCommandHint")?.removeFromParent()
+        // Recursive (`//`) so it finds the prior hint whether it was parented to the
+        // scene (iPhone) or to gameCamera (camera-follow iPad).
+        childNode(withName: "//voiceCommandHint")?.removeFromParent()
 
         let label = SKLabelNode(text: text)
         label.name = "voiceCommandHint"
         label.fontName = "Menlo-Bold"
         label.fontSize = 11
         label.fontColor = strokeColor
-        label.position = CGPoint(x: size.width / 2, y: topSafeY - 130)
         label.zPosition = 300
-        addChild(label)
+        // Screen-anchored so the transient hint stays centered in view even under
+        // camera-follow on iPad (plain centered add on iPhone — unchanged).
+        addScreenAnchored(label, at: CGPoint(x: size.width / 2, y: topSafeY - 130))
 
         label.run(.sequence([.wait(forDuration: 2.0), .fadeOut(withDuration: 0.5), .removeFromParent()]))
     }
@@ -774,18 +1035,20 @@ final class VoiceCommandScene: BaseLevelScene, SKPhysicsContactDelegate {
         if handlePermissionOverlayTouch(at: location) { return }
 
         // Fallback command buttons route into the same paths as spoken commands.
-        // Checked before movement so a button tap never moves Bit.
-        if let button = bridgeButton, button.contains(location) {
+        // Checked before movement so a button tap never moves Bit. fallbackButtonHit
+        // converts the touch into each button's parent space so the test works for
+        // both scene-parented (iPhone) and camera-parented (iPad) buttons.
+        if fallbackButtonHit(bridgeButton, at: location) {
             showFourthWallResponse()
             extendBridge()
             return
         }
-        if let button = openButton, button.contains(location) {
+        if fallbackButtonHit(openButton, at: location) {
             showFourthWallResponse()
             openDoor()
             return
         }
-        if let button = flyButton, button.contains(location) {
+        if fallbackButtonHit(flyButton, at: location) {
             showFourthWallResponse()
             activateFly()
             return
@@ -840,6 +1103,10 @@ final class VoiceCommandScene: BaseLevelScene, SKPhysicsContactDelegate {
     private func handleDeath() {
         guard GameState.shared.levelState == .playing else { return }
         playerController.cancel()
+        // Surface the voice-command hint after repeated deaths (matches L22): each
+        // death feeds the shared difficulty-hint timer, so the FLY-must-come-last
+        // hintText escalates when the player keeps falling instead of staying buried.
+        notePlayerStruggle()
         bit.playBufferDeath(respawnAt: spawnPoint) { [weak self] in self?.bit.setGrounded(true) }
     }
 
@@ -854,7 +1121,7 @@ final class VoiceCommandScene: BaseLevelScene, SKPhysicsContactDelegate {
     }
 
     override func hintText() -> String? {
-        return "Speak a command: OPEN, BRIDGE, FLY, or JUMP"
+        return "Speak the commands in order: BRIDGE, then OPEN, then FLY last — FLY only works after the bridge and door."
     }
 
     override func willMove(from view: SKView) {

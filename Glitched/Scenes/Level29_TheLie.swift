@@ -31,18 +31,36 @@ final class TheLieScene: BaseLevelScene, SKPhysicsContactDelegate {
     private var hazardNodes: [SKNode] = []
     private var realExitPlatform: SKNode?
 
+    // NATIVE-iPAD GATE (L3 pattern): a wide AND tall canvas gets a hand-composed
+    // full-height course (buildComposedIPadLevel); everything else keeps the
+    // byte-identical iPhone layout (buildPhoneLevel). Thresholded on BOTH a tall and
+    // a wide canvas so it only ever fires on iPad-class screens, never any iPhone.
+    private var isWideCanvas: Bool { min(size.width, size.height) >= 700 }
+
     // Extended level width for scrolling.
-    // BUG FIX (P1): scale to device so the fake exit at the far right starts
-    // OFF-SCREEN on every device (incl. wide iPads). Factor 2.2 guarantees the
-    // far-right fake exit is >1 screen-width from spawn even on a 1366-wide iPad,
-    // so the camera always scrolls (levelWidth > size.width) and the twist isn't spoiled.
-    private lazy var levelWidth: CGFloat = max(1200, size.width * 2.2)
+    // BUG FIX (P1): on iPhone, scale to device so the fake exit at the far right
+    // starts OFF-SCREEN on every device. Factor 2.2 guarantees the far-right fake
+    // exit is >1 screen-width from spawn, so the camera always scrolls
+    // (levelWidth > size.width) and the twist isn't spoiled.
+    // iPad: a FIXED 1700pt course extent — the hand-composed beats are authored at
+    // absolute positions out to the isolated fake-exit finale, NOT scaled to the
+    // screen, so jump spacing is device-independent. 1700 keeps the lone fake exit
+    // (fakeExitX=1650) well past one iPad screen-width from spawn, so the camera
+    // still scrolls and the real-exit-behind-you twist stays hidden until reached.
+    private lazy var levelWidth: CGFloat = isWideCanvas ? 1700 : max(1200, size.width * 2.2)
 
     // Far-right anchors derived from levelWidth so the fake exit, its trigger,
     // and the reveal trigger all scale consistently.
     private var fakeExitX: CGFloat { levelWidth - 50 }
     private var lastPlatformX: CGFloat { levelWidth - 150 }
     private var revealTriggerX: CGFloat { levelWidth - 100 }
+
+    // Ground baseline. iPhone keeps the historic hard-coded 160; iPad lifts the
+    // floor to near the BOTTOM via the shared helper so the composed course can
+    // climb UPWARD through the full tall canvas instead of hugging a low band. All
+    // gameplay Y is authored ground-/tier-relative, so gaps/rises stay
+    // device-independent.
+    private lazy var groundY: CGFloat = playableGroundY(iphoneGround: 160)
 
     override func configureScene() {
         levelID = LevelID(world: .world4, index: 29)
@@ -95,9 +113,23 @@ final class TheLieScene: BaseLevelScene, SKPhysicsContactDelegate {
         addChild(subtitle)
     }
 
+    // L3 pattern dispatcher: iPhone keeps its exact historic layout; iPad gets a
+    // NEW hand-composed full-height course. The shared mechanic scaffolding (fake
+    // exit, real exit back at spawn, death zone) is identical on both paths.
     private func buildLevel() {
-        let groundY: CGFloat = 160
+        if isWideCanvas {
+            buildComposedIPadLevel()
+        } else {
+            buildPhoneLevel()
+        }
+        buildExitsAndDeathZone()
+    }
 
+    // MARK: - iPhone path (byte-identical to the original layout)
+    //
+    // `groundY` here is the member that returns 160 on iPhone-class canvases, so
+    // every platform Y below is unchanged from the original hard-coded layout.
+    private func buildPhoneLevel() {
         // Start platform
         let startPlat = createPlatformNode(at: CGPoint(x: 80, y: groundY), size: CGSize(width: 120, height: 30))
         addChild(startPlat)
@@ -169,8 +201,145 @@ final class TheLieScene: BaseLevelScene, SKPhysicsContactDelegate {
                 .moveBy(x: 0, y: -40, duration: duration)
             ])), withKey: "movement")
         }
+    }
 
-        // Fake exit door (at far right)
+    // MARK: - iPad path (NEW hand-composed course, full-height vertical climb)
+    //
+    // PROBLEM the prior iPad redesign had: it filled the WIDTH but every beat sat in
+    // a low band, leaving the top half of the tall canvas EMPTY. FIX: route the
+    // "just walk" breather as a true top-to-bottom climb — spawn low, rise tier by
+    // tier to a finale near the CEILING, then descend back to the floor for the
+    // approach. The lie still holds: the fake-exit finale (buildExitsAndDeathZone)
+    // stays at the FLOOR (tier 0) at fakeExitX, and the real exit hides back at spawn.
+    //
+    // Heights come from the shared verticalTier(index, of: tierCount, iphoneGround:160)
+    // API on the base class, which spreads `tierCount` tiers across the FULL usable
+    // band (playableGroundY .. playableCeilingY) and auto-clamps every per-tier rise
+    // to maxJumpableRise (85). So every UPWARD step here is one tier => guaranteed
+    // jumpable; descents are free drops. Tiers are also spread across the WIDTH (X out
+    // to the approach at 1500), not a centered ladder. Geometry is NEVER scaled to the
+    // screen — absolute X + tier-derived Y keep jump spacing device-independent.
+    //
+    // ANALYSIS NOTE applied: this is the "just walk" breather, so the arc is GENTLE —
+    // a single climb-and-descend shape (one rise to the peak, one descent back down),
+    // never a frantic ladder. The signature beat (oscillating spikes) is staged HIGH,
+    // at the finale tier near the ceiling, so the climb has a clear destination.
+    private func buildComposedIPadLevel() {
+        // CRITICAL full-height detail: verticalTier clamps each step to <=85, so to
+        // actually REACH the ceiling the tier COUNT must be large enough that
+        // band/(count-1) <= 85. A small count (e.g. 6) clamps short and leaves the
+        // top empty — the exact bug we're fixing. So derive the count from the real
+        // band per device; then tier(count-1) lands at/near the ceiling on every iPad.
+        let band = playableBandHeight(iphoneGround: 160)
+        let tierCount = max(6, Int(ceil(band / Self.maxJumpableRise)) + 1)
+        let topTier = tierCount - 1
+        func tier(_ i: Int) -> CGFloat { verticalTier(i, of: tierCount, iphoneGround: 160) }
+
+        // X advances steadily across the width as we climb, so the route is a diagonal
+        // staircase (spread across WIDTH, not a centered ladder), reaching the ceiling
+        // mid-course, then descending back to the floor approach. Climbing ONE tier per
+        // beat keeps every upward rise == one tier step (<=85, guaranteed). We place a
+        // platform on EVERY tier from 0..topTier so the climb genuinely fills the full
+        // vertical band top-to-bottom.
+        //
+        // The whole arc (start -> climb -> peak -> descent -> approach) must FIT before
+        // the isolated fake-exit finale at fakeExitX, leaving a single jumpable gap to
+        // it. tierCount grows with the band (more tiers on taller iPads), so X spacing
+        // is DERIVED from the budget rather than fixed: the arc spans
+        // [climbStartX .. approachX], with approachX one safe gap left of the fake exit.
+        // The CLIMB (start..peak) gets the first ~78% of that span; the DESCENT gets the
+        // rest. Spacing is interpolated so peakX is ALWAYS < approachX on every iPad
+        // (even the 12.9" Pro, whose large band makes ~21 tiers). Tighter steps on
+        // taller devices just make a denser staircase — still spread across the width,
+        // still jumpable (overlap only shrinks gaps, never widens them).
+        let climbStartX: CGFloat = 230
+        let approachX = fakeExitX - 150                 // last footing, ~1 jump left of the lie
+        let arcSpan = max(1, approachX - climbStartX)
+        let peakX = climbStartX + arcSpan * 0.78        // ceiling traverse sits ~78% across
+        let climbStepX = (peakX - climbStartX) / CGFloat(max(1, topTier))   // 1 step per tier
+        let restTier = max(1, topTier / 2)              // a mid-climb tier gets the rest pad
+
+        // --- TEACH: generous low start platform. "Just walk." (tier 0 = floor) ---
+        let startPlat = createPlatformNode(at: CGPoint(x: 80, y: tier(0)), size: CGSize(width: 150, height: 30))
+        addChild(startPlat)
+        levelPlatforms.append(startPlat)
+
+        // --- GENTLE CLIMB: one platform per tier from 1..topTier. X marches right so
+        //     the breather has a clear rising SHAPE and the band fills bottom-to-top.
+        //     A mid-climb tier becomes a WIDE REST platform (the breather's pause). ---
+        var lastClimbX = climbStartX
+        for t in 1...topTier {
+            let cx = climbStartX + CGFloat(t - 1) * climbStepX
+            let isRest = (t == restTier)
+            let w: CGFloat = isRest ? 190 : 100
+            let h: CGFloat = isRest ? 30 : 26
+            let p = createPlatformNode(at: CGPoint(x: cx, y: tier(t)), size: CGSize(width: w, height: h))
+            addChild(p)
+            levelPlatforms.append(p)
+            lastClimbX = cx
+        }
+
+        // --- TENSION PEAK / FINALE near the CEILING: a second platform ON the top
+        //     tier just right of the last climb step, so the player traverses along the
+        //     ceiling band — the signature oscillating-spike beat is staged HERE, high,
+        //     giving the climb a clear payoff before the descent. ---
+        let peakPlat = createPlatformNode(at: CGPoint(x: peakX, y: tier(topTier)), size: CGSize(width: 95, height: 26))
+        addChild(peakPlat)
+        levelPlatforms.append(peakPlat)
+
+        // --- DESCENT: drop back toward the floor for the approach. Downward steps are
+        //     free (no rise limit), but each horizontal gap still stays <=130. The arc
+        //     closes gently back to the lie, ending at approachX (tier 0). The two
+        //     descent breaths are interpolated between peakX and approachX so they
+        //     always fit (peakX < approachX guaranteed). ---
+        let descGap = (approachX - peakX) / 3
+        let descent: [(CGFloat, Int, CGFloat, CGFloat)] = [
+            (peakX + descGap,     max(1, topTier * 2 / 3), 130, 28),   // wide-ish breath down
+            (peakX + descGap * 2, max(1, topTier / 3),     110, 26),
+            (approachX,           0,                         90, 25),  // back to the floor: APPROACH
+        ]
+        for (cx, ti, w, h) in descent {
+            let p = createPlatformNode(at: CGPoint(x: cx, y: tier(ti)), size: CGSize(width: w, height: h))
+            addChild(p)
+            levelPlatforms.append(p)
+        }
+
+        // Tension-peak hazards: vertical oscillators tucked into the GAP between the
+        // last climb step and the peak platform (not on top of footing), so they
+        // threaten the HIGH jumps near the ceiling without ever blocking a landing.
+        // Avoidable by timing — the same dodge skill the iPhone path teaches, staged
+        // at the peak. Positioned just ABOVE the top-tier surface to sweep the arc.
+        let peakY = tier(topTier)
+        let hazardPositions: [CGPoint] = [
+            // tucked into the gap between the last climb step and the peak platform
+            CGPoint(x: (lastClimbX + peakX) * 0.5,        y: peakY + 45),
+            // and into the gap between the peak and the first descent breath
+            CGPoint(x: peakX + descGap * 0.5, y: peakY + 50),
+        ]
+        for (i, pos) in hazardPositions.enumerated() {
+            let hazard = createSpike()
+            hazard.position = pos
+            hazard.name = "hazard_\(i)"
+            addChild(hazard)
+            hazardNodes.append(hazard)
+
+            let duration = 1.2 + Double(i) * 0.2
+            hazard.run(.repeatForever(.sequence([
+                .moveBy(x: 0, y: 40, duration: duration),
+                .moveBy(x: 0, y: -40, duration: duration)
+            ])), withKey: "movement")
+        }
+    }
+
+    // MARK: - Shared mechanic scaffolding (both paths)
+    //
+    // The fake exit (far right at fakeExitX), the real exit hidden back at spawn
+    // (x=80), and the full-course death zone. Identical on iPhone and iPad — the ONLY
+    // device difference is the absolute value of levelWidth/fakeExitX and the lifted
+    // groundY, so the walk-right -> fake-exit -> walk-back-to-real-exit mechanic is
+    // preserved in RELATIVE terms on both devices.
+    private func buildExitsAndDeathZone() {
+        // Fake exit door (at far right) — the ISOLATED finale beat staging the lie.
         let fakeExitPlat = createPlatformNode(at: CGPoint(x: fakeExitX, y: groundY), size: CGSize(width: 100, height: 30))
         addChild(fakeExitPlat)
         levelPlatforms.append(fakeExitPlat)
@@ -345,7 +514,11 @@ final class TheLieScene: BaseLevelScene, SKPhysicsContactDelegate {
     }
 
     private func setupBit() {
-        spawnPoint = CGPoint(x: 80, y: 200)
+        // Spawn just above the start platform. Authored ground-relative so iPad's
+        // raised floor (playableGroundY) keeps Bit landing ON the start platform
+        // instead of dropping into the death zone. On iPhone groundY==160, so
+        // groundY+40 == 200 — byte-identical to the original spawn.
+        spawnPoint = CGPoint(x: 80, y: groundY + 40)
         bit = BitCharacter.make()
         bit.position = spawnPoint
         addChild(bit)
@@ -405,6 +578,10 @@ final class TheLieScene: BaseLevelScene, SKPhysicsContactDelegate {
 
     private func revealTruth() {
         hasRevealed = true
+        // PROGRESSIVE-HINT SAFETY NET: the lie is exposed and the real exit
+        // physically opens — a clear forward-progress beat, so reset the struggle
+        // count and stall timer.
+        notePlayerProgress()
 
         // Reveal the real exit at the start
         realExitPlatform?.physicsBody?.categoryBitMask = PhysicsCategory.ground
@@ -680,6 +857,9 @@ final class TheLieScene: BaseLevelScene, SKPhysicsContactDelegate {
 
     private func handleDeath() {
         guard GameState.shared.levelState == .playing else { return }
+        // PROGRESSIVE-HINT SAFETY NET: count this failure so repeated deaths
+        // escalate toward the earned hintText() ("Are you sure the exit is ahead?").
+        notePlayerStruggle()
         playerController.cancel()
         bit.playBufferDeath(respawnAt: spawnPoint) { [weak self] in self?.bit.setGrounded(true) }
     }

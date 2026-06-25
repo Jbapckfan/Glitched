@@ -66,9 +66,21 @@ final class MetaFinaleScene: BaseLevelScene, SKPhysicsContactDelegate {
     // traversal distance stay consistent across devices instead of stretching to
     // fill an iPad. The course never overflows a narrow screen (scale clamps at
     // 1.0), and on a 430-wide iPhone it stays full-bleed (output identical to the
-    // previous hardcoded-iPhone layout). On iPad the course is centered and the
-    // surrounding space is filled by decorative static / titles / panels, which
-    // still key off size.width and the safe-area helpers.
+    // previous hardcoded-iPhone layout).
+    //
+    // PHONE PATH (`buildPhoneLevel`): the original centered-strip course. On a
+    // 430-wide iPhone courseScale == 1.0, so this is byte-identical to the prior
+    // hardcoded layout; on narrower phones it scales down to fit. This path is the
+    // ONLY one that uses courseScale/courseX/courseLen.
+    //
+    // iPAD PATH (`buildComposedIPadLevel`): a HAND-COMPOSED course authored at
+    // ABSOLUTE point positions (never size.width fractions, never courseScale). It is
+    // a true bottom-to-top PURGE CLIMB: the floor sits in the lower band
+    // (playableGroundY) and the route ASCENDS in safe ≤ maxJumpableRise steps across
+    // the full height, staging the corruption gate as the high finale beat that lands
+    // NEAR THE TOP SAFE AREA (no dead sky above), with horizontal camera-follow
+    // (installCameraFollow) spreading the beats across a course wider than the
+    // viewport.
     private let designSize = CGSize(width: 430, height: 932)
     private var courseScale: CGFloat { min(1.0, size.width / designSize.width) }
     private var courseOriginX: CGFloat { (size.width - designSize.width * courseScale) / 2 }
@@ -76,6 +88,28 @@ final class MetaFinaleScene: BaseLevelScene, SKPhysicsContactDelegate {
     private func courseX(_ logicalX: CGFloat) -> CGFloat { courseOriginX + logicalX * courseScale }
     /// Scale a logical length (platform width, etc.) into course space.
     private func courseLen(_ logical: CGFloat) -> CGFloat { logical * courseScale }
+
+    /// iPad-native gate: a genuinely tablet-proportioned canvas (tall AND wide).
+    /// Portrait iPads are ~1024+ wide / ~1366 tall; every iPhone (incl. Pro Max at
+    /// 430pt and any landscape phone height) stays under one of these thresholds,
+    /// so the phone path is never reached on a phone and stays byte-identical.
+    private var isWideCanvas: Bool { size.height > 1000 && size.width > 700 }
+
+    // MARK: - Composed iPad course state
+    // Absolute geometry for the hand-composed iPad climb. Set in
+    // buildComposedIPadLevel(); read by createCorruptionWall()/setupBit()/the
+    // proximity math so the wall, spawn, exit, and death zone all key off the SAME
+    // absolute course instead of the centered logical strip. Left .zero on the phone
+    // path.
+    private var composedGroundY: CGFloat = 0
+    private var composedSpawnX: CGFloat = 0
+    private var composedSpawnY: CGFloat = 0
+    private var composedWallX: CGFloat = 0
+    private var composedWallY: CGFloat = 0
+    private var composedExitX: CGFloat = 0
+    private var composedCourseWidth: CGFloat = 0
+    private var composedDeathCenterX: CGFloat = 0
+    private var composedDeathWidth: CGFloat = 0
 
     private var bit: BitCharacter!
     private var playerController: PlayerController!
@@ -139,22 +173,14 @@ final class MetaFinaleScene: BaseLevelScene, SKPhysicsContactDelegate {
                 .run { [weak self] in
                     guard let self = self else { return }
 
-                    let label = SKLabelNode(fontNamed: "Menlo-Bold")
-                    label.text = warning
-                    label.fontSize = index == 0 ? 32 : 14
-                    label.fontColor = index == 0 ? .red : .white
-                    label.position = CGPoint(x: self.size.width / 2, y: self.size.height / 2)
-                    label.zPosition = 1000
-                    label.alpha = 0
-                    self.addChild(label)
-
-                    // Glitch in
-                    label.run(.sequence([
-                        .fadeIn(withDuration: 0.1),
-                        .wait(forDuration: 0.8),
-                        .fadeOut(withDuration: 0.2),
-                        .removeFromParent()
-                    ]))
+                    // VOICE CONSISTENCY: these are boss-tier fourth-wall purge
+                    // threats ("SYSTEM PURGE", "CORRUPTION LEVEL: TERMINAL", …).
+                    // Route them through the shared narrator in the reserved
+                    // lower-center band instead of ad-hoc center-screen labels so
+                    // the OS's voice reads identically to every other boss beat.
+                    // Each call cleanly replaces the prior line, so the staggered
+                    // 1.2s cadence below still flickers them up one at a time.
+                    GlitchedNarrator.present(warning, in: self, style: .boss)
 
                     // Sound and haptic for each
                     AudioManager.shared.playBeep(frequency: Float(400 + index * 100), duration: 0.1, volume: 0.3)
@@ -183,6 +209,10 @@ final class MetaFinaleScene: BaseLevelScene, SKPhysicsContactDelegate {
         JuiceManager.shared.flash(color: .white, duration: 0.3)
         backgroundColor = fillColor
 
+        // The intro purge-threat lines are spoken through the narrator; clear any
+        // lingering one as the level reveals so it doesn't hold over the gameplay.
+        GlitchedNarrator.dismiss(in: self)
+
         // Setup everything
         setupBackground()
         setupLevelTitle()
@@ -191,27 +221,40 @@ final class MetaFinaleScene: BaseLevelScene, SKPhysicsContactDelegate {
         showInstructionPanel()
         setupBit()
 
-        // Create ominous red pulse overlay
+        // Create ominous red pulse overlay (a full-screen wash). On iPad the camera
+        // pans, so anchor it to the camera (camera-local origin) to keep it covering
+        // the viewport; on phone it stays a scene-space overlay as before.
         warningOverlay = SKShapeNode(rectOf: CGSize(width: size.width * 2, height: size.height * 2))
         warningOverlay?.fillColor = .red
         warningOverlay?.strokeColor = .clear
         warningOverlay?.alpha = 0
         warningOverlay?.zPosition = 500
-        warningOverlay?.position = CGPoint(x: size.width / 2, y: size.height / 2)
-        addChild(warningOverlay!)
+        if isWideCanvas, let cam = gameCamera {
+            warningOverlay?.position = .zero
+            cam.addChild(warningOverlay!)
+        } else {
+            warningOverlay?.position = CGPoint(x: size.width / 2, y: size.height / 2)
+            addChild(warningOverlay!)
+        }
 
         hasShownIntro = true
         checkIfReinstalled()
     }
 
     private func setupBackground() {
-        // Glitchy static pattern
-        for _ in 0..<50 {
+        // Glitchy static pattern. On iPad the camera scrolls a long course, so spread
+        // the decorative static across the FULL course width (and scale the count to
+        // keep density roughly constant) instead of only the first viewport.
+        // setupBackground() runs before buildLevel() sets composedCourseWidth, so use
+        // the same authored extent buildComposedIPadLevel() produces.
+        let staticSpanWidth: CGFloat = isWideCanvas ? composedStaticSpanWidth : size.width
+        let staticCount = isWideCanvas ? Int(50 * (staticSpanWidth / size.width)) : 50
+        for _ in 0..<staticCount {
             let glitch = SKShapeNode(rectOf: CGSize(width: CGFloat.random(in: 5...30),
                                                      height: CGFloat.random(in: 2...8)))
             glitch.fillColor = strokeColor
             glitch.alpha = 0.05
-            glitch.position = CGPoint(x: CGFloat.random(in: 0...size.width),
+            glitch.position = CGPoint(x: CGFloat.random(in: 0...staticSpanWidth),
                                       y: CGFloat.random(in: 0...size.height))
             glitch.zPosition = -10
             glitch.name = "static"
@@ -219,27 +262,56 @@ final class MetaFinaleScene: BaseLevelScene, SKPhysicsContactDelegate {
         }
     }
 
+    /// Authored course extent used by the decorative static spread, kept roughly in
+    /// sync with the exit-plus-margin width buildComposedIPadLevel() produces.
+    /// Declared here because setupBackground() runs before buildLevel() sets
+    /// composedCourseWidth, so the static can't read that field yet. The climb grows
+    /// LONGER on taller iPads (more tiers → more stones), and worldWidth observed
+    /// ≈2.2–3.7x the viewport, so use a generous multiple. Over-spreading only thins
+    /// density slightly; the static is re-scattered within this span every frame.
+    private var composedStaticSpanWidth: CGFloat { max(size.width * 3.8, 2600) }
+
     private func setupLevelTitle() {
         let title = SKLabelNode(text: "LEVEL 20")
         title.fontName = VisualConstants.Fonts.display
         title.fontSize = 28
         title.fontColor = strokeColor
-        title.position = CGPoint(x: 80, y: topSafeY - 30)
         title.horizontalAlignmentMode = .left
         title.zPosition = 100
-        addChild(title)
 
         let subtitle = SKLabelNode(text: "SYSTEM PURGE REQUIRED")
         subtitle.fontName = "Menlo-Bold"
         subtitle.fontSize = 12
         subtitle.fontColor = strokeColor
-        subtitle.position = CGPoint(x: 80, y: topSafeY - 55)
         subtitle.horizontalAlignmentMode = .left
         subtitle.zPosition = 100
-        addChild(subtitle)
+
+        // PHONE: scene-space top-left HUD (no scroll). iPAD: camera-anchored so the
+        // title band stays pinned to the viewport's top-left as the camera scrolls.
+        if isWideCanvas, let cam = gameCamera {
+            title.position = CGPoint(x: -size.width / 2 + 80, y: size.height / 2 - 30)
+            subtitle.position = CGPoint(x: -size.width / 2 + 80, y: size.height / 2 - 55)
+            cam.addChild(title)
+            cam.addChild(subtitle)
+        } else {
+            title.position = CGPoint(x: 80, y: topSafeY - 30)
+            subtitle.position = CGPoint(x: 80, y: topSafeY - 55)
+            addChild(title)
+            addChild(subtitle)
+        }
     }
 
     private func buildLevel() {
+        if isWideCanvas {
+            buildComposedIPadLevel()
+        } else {
+            buildPhoneLevel()
+        }
+    }
+
+    /// PHONE PATH — unchanged. On a 430-wide iPhone courseScale == 1.0 so this is
+    /// byte-identical to the prior hardcoded layout; narrower phones scale to fit.
+    private func buildPhoneLevel() {
         let groundY: CGFloat = 160
 
         // Start platform (logical x=80, w=120)
@@ -256,6 +328,194 @@ final class MetaFinaleScene: BaseLevelScene, SKPhysicsContactDelegate {
         let death = SKNode()
         death.position = CGPoint(x: size.width / 2, y: -50)
         death.physicsBody = SKPhysicsBody(rectangleOf: CGSize(width: size.width * 2, height: 100))
+        death.physicsBody?.isDynamic = false
+        death.physicsBody?.categoryBitMask = PhysicsCategory.hazard
+        addChild(death)
+    }
+
+    // MARK: - iPad tier system (local; reaches the ceiling)
+    //
+    // This branch lacks the base verticalTier/fillTierCount helpers, so the climb's
+    // vertical-fill is authored here from the existing public band helpers
+    // (playableGroundY + topSafeY). tierStep/tierCount are SIZED from the real band so
+    // the top tier lands NEAR THE CEILING on any qualifying iPad — the fix for the
+    // dead-sky bug where a fixed tier count stalled the route mid-screen. Geometry is
+    // absolute points (never scaled); Bit's physics are device-independent.
+
+    /// Center Y of the FLOOR tier (tier 0) on iPad — the device-derived lower-band floor.
+    private func iPadFloorY() -> CGFloat { playableGroundY(iphoneGround: 160) }
+
+    /// Target center Y of the HIGHEST tier: near the top safe area, with headroom
+    /// reserved for the corruption block stack (rises ~100pt above its platform) and
+    /// the exit door (+50). Keeps the finale gate just below the ceiling, not clipped.
+    private func iPadCeilingTargetY() -> CGFloat { topSafeY - 160 }
+
+    /// Number of tier indices (0...tierCount-1) needed to climb floor→ceiling at a
+    /// per-step rise ≤ maxJumpableRise. ceil(band/85)+1 guarantees the step is safe
+    /// AND the top index lands exactly on the ceiling target (no dead sky, no
+    /// over-shoot). Clamped to ≥2 so there's always a floor + a finale tier.
+    private func iPadTierCount() -> Int {
+        let band = max(0, iPadCeilingTargetY() - iPadFloorY())
+        let steps = max(1, Int(ceil(band / BaseLevelScene.maxJumpableRise)))
+        return steps + 1
+    }
+
+    /// Center Y for tier `i` of the iPad climb. Evenly spaced floor→ceiling target so
+    /// every single-index ascent is the SAME ≤85 step and tier (count-1) reaches the
+    /// ceiling. Descents (rest beats) span multiple indices and are gravity-free.
+    private func iPadTierY(_ i: Int) -> CGFloat {
+        let count = iPadTierCount()
+        guard count > 1 else { return iPadFloorY() }
+        let step = (iPadCeilingTargetY() - iPadFloorY()) / CGFloat(count - 1)
+        return iPadFloorY() + step * CGFloat(i)
+    }
+
+    /// iPAD PATH — hand-composed PURGE CLIMB, built UPWARD to span the FULL canvas
+    /// height so the finale gate lands near the ceiling (no dead sky above) and ACROSS
+    /// a course wider than the viewport so the camera genuinely scrolls.
+    ///
+    /// Mechanic preserved EXACTLY: traverse the climb, ASCEND toward the corruption
+    /// gate staged as the high finale beat; physical contact with its blocker (or
+    /// proximity ≥0.6) triggers the simulated purge; once cleared the blocker physics
+    /// vanish and Bit crosses the exactly-130pt post-purge gap to the exit door staged
+    /// just beyond it at the same high tier.
+    ///
+    /// RHYTHM (deliberately NOT an even ladder — varied widths 70..180, asymmetric X,
+    /// flat same-tier rests, an occasional down-step, clustered then spaced beats, a
+    /// true PEAK that stands apart):
+    ///   1. TEACH      — wide spawn platform on the FLOOR (tier 0)
+    ///   2. CLUSTER    — 3 TIGHT platforms stepping up t1→t2→t3 (small gaps = a burst)
+    ///   3. REST       — a WIDE flat breath at t3 (same tier, no rise)
+    ///   4. TRAVERSE   — a stretched VOID then a down-step (t2) and a harder run
+    ///                   t2→t4 (bigger gaps = the difficulty beat)
+    ///   5. PEAK       — a narrow isolated ledge (reached across the widest pre-peak
+    ///                   void) that juts up and stands apart from the cluster below it,
+    ///                   the route's high silhouette landmark mid-climb
+    ///   6. APPROACH   — a flat run-up at the top tier, after a stretched void, that
+    ///                   funnels Bit into the corruption gate
+    ///   7. FINALE     — the corruption gate (staged twist) + the exit platform/door
+    ///                   just beyond it, same top tier, near the ceiling.
+    ///
+    /// Spacing budget (hard ceilings; every transition annotated + recomputed):
+    ///   horizontal gap (edge-to-edge)  ≤ BaseLevelScene.maxJumpableGap  (130)
+    ///   vertical ASCENT (top-to-top)   ≤ BaseLevelScene.maxJumpableRise (85, guaranteed
+    ///                                    by the evenly-spaced iPadTierY step)
+    ///   descents are gravity-free and unconstrained.
+    private func buildComposedIPadLevel() {
+        let platH: CGFloat = 30
+        func tier(_ i: Int) -> CGFloat { iPadTierY(i) }
+        let g = iPadFloorY()
+        composedGroundY = g
+
+        // The top usable tier index — the climb's ceiling beat. iPadTierCount() sizes
+        // this so tier(top) lands near topSafeY regardless of device height.
+        let top = iPadTierCount() - 1
+
+        // ---- Beat 1: TEACH (wide spawn platform on the FLOOR, tier 0) ----
+        let p1x: CGFloat = 200, p1w: CGFloat = 240        // spans [80, 320]
+        createPlatform(at: CGPoint(x: p1x, y: tier(0)), size: CGSize(width: p1w, height: platH))
+        composedSpawnX = p1x
+        composedSpawnY = tier(0) + 40   // spawn 40pt above the floor platform center
+
+        // ---- Beat 2: CLUSTER (3 TIGHT platforms stepping up t1→t2→t3) ----
+        // A burst: small gaps + narrow ledges. gap = prev right edge → next left edge.
+        let p2x: CGFloat = 430, p2w: CGFloat = 90         // t1  gap 320→385 = 65
+        let p3x: CGFloat = 600, p3w: CGFloat = 80         // t2  gap 475→560 = 85
+        let p4x: CGFloat = 760, p4w: CGFloat = 100        // t3  gap 640→710 = 70
+        createPlatform(at: CGPoint(x: p2x, y: tier(1)), size: CGSize(width: p2w, height: platH))
+        createPlatform(at: CGPoint(x: p3x, y: tier(2)), size: CGSize(width: p3w, height: platH))
+        createPlatform(at: CGPoint(x: p4x, y: tier(3)), size: CGSize(width: p4w, height: platH))
+
+        // ---- Beat 3: REST (WIDE flat breath at t3, same tier — no rise) ----
+        let r1x: CGFloat = 1010, r1w: CGFloat = 180       // t3  gap 810→920 = 110, flat
+        createPlatform(at: CGPoint(x: r1x, y: tier(3)), size: CGSize(width: r1w, height: platH))
+
+        // ---- Beat 4: TRAVERSE (a DOWN-STEP, then a harder run up) ----
+        // The difficulty beat: a descent breaks the up-only monotony, then a run back
+        // up at the bigger end of the gap budget. All gaps recomputed ≤130:
+        //   r1.right 1100 → d1.left 1215 = 115  (down-step to t2)
+        //   d1.right 1345 → d2.left 1455 = 110  (back up to t3)
+        //   d2.right 1545 → d3.left 1650 = 105  (up to t4)
+        let d1x: CGFloat = 1280, d1w: CGFloat = 130       // t2 (DOWN-step), wider landing
+        let d2x: CGFloat = 1500, d2w: CGFloat = 90        // t3
+        let d3x: CGFloat = 1700, d3w: CGFloat = 100       // t4
+        createPlatform(at: CGPoint(x: d1x, y: tier(2)), size: CGSize(width: d1w, height: platH))
+        createPlatform(at: CGPoint(x: d2x, y: tier(3)), size: CGSize(width: d2w, height: platH))
+        createPlatform(at: CGPoint(x: d3x, y: tier(4)), size: CGSize(width: d3w, height: platH))
+
+        // ---- Beats 5–6: PEAK + final ascent to the TOP tier ----
+        // The route must climb from tier 4 (d3) up to `top` ONE INDEX AT A TIME — and
+        // `top` varies with the device (≈7 on a tight landscape canvas, ≈11 on a 12.9"
+        // portrait). Hardcoding a fixed number of stones would skip multiple tiers on
+        // tall iPads (an unjumpable >85 rise — the route would stall short of the gate).
+        // So generate one stepping stone PER remaining tier index, each a single safe
+        // step up, with VARIED widths and a stretched void after the PEAK so the rhythm
+        // still reads as: a few stones → an isolated peak that stands apart → a longer
+        // void → the wide finale run-up. Right edge of d3 is the climb's start cursor.
+        //
+        // The PEAK is the first stone at tier 7 (or `top` if the canvas is short): a
+        // narrow ledge reached across the widest pre-peak gap so it visually juts up
+        // and apart from the cluster below it.
+        var cursorRight = d3x + d3w / 2                    // 1750 — d3's right edge
+        let stoneWidths: [CGFloat] = [80, 110, 70, 95, 130, 85, 120, 90]  // varied, cycled
+        let peakIndex = min(7, top)
+        var widthCursor = 0
+        // Climb tier 5 → top-1, one stone per index (the last index `top` is the wide
+        // run-up below). If top ≤ 5 this loop is empty and we go straight to the run-up.
+        var idx = 5
+        while idx < top {
+            // A bigger void right before the PEAK so it lands isolated; tighter elsewhere.
+            let gap: CGFloat = (idx == peakIndex) ? 120 : 95
+            let w = (idx == peakIndex) ? 70 : stoneWidths[widthCursor % stoneWidths.count]
+            widthCursor += 1
+            let leftEdge = cursorRight + gap
+            let cx = leftEdge + w / 2
+            createPlatform(at: CGPoint(x: cx, y: tier(idx)), size: CGSize(width: w, height: platH))
+            cursorRight = cx + w / 2
+            idx += 1
+        }
+
+        // Final run-up: a WIDE flat platform at the TOP tier after a stretched void
+        // (the level's high finale ledge that funnels Bit into the gate).
+        let apW: CGFloat = 240
+        let apLeft = cursorRight + 110                      // stretched void into the finale
+        let apX = apLeft + apW / 2
+        let apY = tier(top)
+        createPlatform(at: CGPoint(x: apX, y: apY), size: CGSize(width: apW, height: platH))
+        let apRight = apX + apW / 2
+
+        // ---- Beat 7: FINALE (corruption gate + exit beyond, near the ceiling) ----
+        // Corruption wall stands just past the approach's right end. Blocker footprint
+        // 70 wide → left face at wallX-35. createCorruptionWall() reads composedWall*.
+        // The block stack rises ~100pt above the top tier so it stands over Bit.
+        // wallX = apRight + 55 → blocker spans [apRight+20, apRight+90].
+        composedWallX = apRight + 55                       // blocker left face apRight+20
+        composedWallY = apY + 100                          // stack rises from the top tier
+
+        // Exit platform BEHIND the wall + the door, at the SAME top tier. After the
+        // purge removes the blocker physics, the OPEN gap approach.right → exit.left is
+        // exactly 130pt at the same height — at the jump budget, so Bit clears it.
+        // exit.left = apRight + 130 → exit center = apRight + 130 + exW/2.
+        let exW: CGFloat = 240
+        let exX = apRight + 130 + exW / 2                   // exit.left == apRight + 130
+        createPlatform(at: CGPoint(x: exX, y: apY), size: CGSize(width: exW, height: platH))
+        composedExitX = exX - 60                            // door, on the platform
+        createExitDoor(at: CGPoint(x: composedExitX, y: apY + 50))
+        let exRight = exX + exW / 2
+
+        // Course extent + death zone (full course width on iPad). worldWidth is
+        // exit-plus-margin and is GENUINELY wider than the viewport (≈1.8–2.4x), so
+        // installCameraFollow scrolls instead of clamping to a fixed center.
+        let courseLeft = p1x - p1w / 2                      // 80
+        composedCourseWidth = exRight + 120                 // right margin past exit
+        composedDeathWidth = composedCourseWidth - courseLeft + 400
+        composedDeathCenterX = (courseLeft + exRight) / 2
+
+        // Death zone sits well below the FLOOR tier (220pt under ground center) so a
+        // missed gap respawns the player; it spans the full course on iPad.
+        let death = SKNode()
+        death.position = CGPoint(x: composedDeathCenterX, y: g - 220)
+        death.physicsBody = SKPhysicsBody(rectangleOf: CGSize(width: composedDeathWidth, height: 100))
         death.physicsBody?.isDynamic = false
         death.physicsBody?.categoryBitMask = PhysicsCategory.hazard
         addChild(death)
@@ -280,9 +540,15 @@ final class MetaFinaleScene: BaseLevelScene, SKPhysicsContactDelegate {
 
     private func createCorruptionWall() {
         corruptionWall = SKNode()
-        // Logical x = 270 (430 - 160); stays in the same coordinate space as Bit so
-        // the proximity fallback math in updatePlaying() still holds (see below).
-        corruptionWall.position = CGPoint(x: courseX(270), y: 260)
+        // PHONE: logical x = 270 (430 - 160). iPAD: the absolute composed wall x/y set
+        // in buildComposedIPadLevel() (high finale tier). Either way the wall lives in
+        // the SAME coordinate space as Bit, so the proximity fallback math in
+        // updatePlaying() still holds (see below).
+        if isWideCanvas {
+            corruptionWall.position = CGPoint(x: composedWallX, y: composedWallY)
+        } else {
+            corruptionWall.position = CGPoint(x: courseX(270), y: 260)
+        }
         corruptionWall.zPosition = 50
         addChild(corruptionWall)
 
@@ -321,36 +587,53 @@ final class MetaFinaleScene: BaseLevelScene, SKPhysicsContactDelegate {
         // stopped by) the wall. Add a contact test against the player so that the purge
         // fires on real physical contact — the player can only reach the wall's face,
         // which is too far for the old proximity threshold to ever trip (see didBegin).
-        // Blocker footprint scales with the course so the wall occupies the same
-        // logical width across devices (height stays screen-space — single-screen
-        // level). At courseScale 1.0 the left face sits at wall.x - 35; Bit (half
-        // width 11) stops at distance 35+11=46 -> proximity 1-46/200 = 0.77 (>0.6).
+        // Blocker footprint. PHONE: scales with the course so the wall occupies the
+        // same logical width across devices (courseLen(70); at courseScale 1.0 left
+        // face at wall.x-35). iPAD: a literal 70 (the course is authored at absolute
+        // spacing). Height stays screen-space (200). Bit (phys half-width ~11 phone,
+        // ~13.75 iPad) stops at the wall face; closest reachable distance is
+        // 35+halfWidth → proximity 1-(35+11)/200=0.77 (phone) / 1-(35+13.75)/200=0.756
+        // (iPad). Both clear the 0.6 fallback; the primary trigger is the physics
+        // contact in didBegin(), and beginSimulatedPurge() is idempotent, so safe.
+        let blockerWidth: CGFloat = isWideCanvas ? 70 : courseLen(70)
         let blocker = SKNode()
-        blocker.physicsBody = SKPhysicsBody(rectangleOf: CGSize(width: courseLen(70), height: 200))
+        blocker.physicsBody = SKPhysicsBody(rectangleOf: CGSize(width: blockerWidth, height: 200))
         blocker.physicsBody?.isDynamic = false
         blocker.physicsBody?.categoryBitMask = PhysicsCategory.ground
         blocker.physicsBody?.contactTestBitMask = PhysicsCategory.player
         blocker.name = "corruption_blocker"
         corruptionWall.addChild(blocker)
 
-        // Hint
-        hintLabel = SKLabelNode(text: "WALK INTO THE CORRUPTION TO PURGE IT")
+        // Hint + progress labels. On the PHONE path the scene doesn't scroll, so
+        // scene-space (size.width/2, y) reads fine. On the iPAD path the camera follows
+        // Bit, so a fixed scene-space x would drift off-screen — anchor both to the
+        // camera (camera-local coords) so they stay pinned near the bottom-center of
+        // the viewport throughout the climb.
+        hintLabel = SKLabelNode(text: "IT WANTS YOU TO TURN BACK. EVERYTHING DOES.")
         hintLabel.fontName = "Menlo"
         hintLabel.fontSize = 9
         hintLabel.fontColor = strokeColor
         hintLabel.alpha = 0.7
-        hintLabel.position = CGPoint(x: size.width / 2, y: 100)
         hintLabel.zPosition = 100
-        addChild(hintLabel)
 
         // Progress saved indicator
-        progressSavedLabel = SKLabelNode(text: "TOUCH THE WALL TO BEGIN PURGE")
+        progressSavedLabel = SKLabelNode(text: "ERR:0x4F21 // SECTOR UNREADABLE")
         progressSavedLabel.fontName = "Menlo"
         progressSavedLabel.fontSize = 10
         progressSavedLabel.fontColor = strokeColor
-        progressSavedLabel.position = CGPoint(x: size.width / 2, y: 80)
         progressSavedLabel.zPosition = 100
-        addChild(progressSavedLabel)
+
+        if isWideCanvas, let cam = gameCamera {
+            hintLabel.position = CGPoint(x: 0, y: -size.height / 2 + 120)
+            progressSavedLabel.position = CGPoint(x: 0, y: -size.height / 2 + 100)
+            cam.addChild(hintLabel)
+            cam.addChild(progressSavedLabel)
+        } else {
+            hintLabel.position = CGPoint(x: size.width / 2, y: 100)
+            progressSavedLabel.position = CGPoint(x: size.width / 2, y: 80)
+            addChild(hintLabel)
+            addChild(progressSavedLabel)
+        }
 
         // Pulse animation for hint
         hintLabel.run(.repeatForever(.sequence([
@@ -401,14 +684,21 @@ final class MetaFinaleScene: BaseLevelScene, SKPhysicsContactDelegate {
         // top-right ~88x88 pause zone (x[302,390], bottom ~topSafeY-88). At the new
         // center the panel spans y[topSafeY-195, topSafeY-95]: top edge topSafeY-95
         // clears the title bottom (topSafeY-58) by ~37pt and the pause-zone bottom
-        // (~topSafeY-88) by ~7pt — zero rect overlap on iPhone 390/402. On iPad
-        // (course centered) the panel x stays well right of the title and well left
-        // of the pause column, so no collision there either.
-        panel.position = CGPoint(x: size.width / 2, y: topSafeY - 145)
+        // (~topSafeY-88) by ~7pt — zero rect overlap on iPhone 390/402. On iPad the
+        // camera scrolls, so anchor the timed panel to the camera (camera-local
+        // top-center) so it stays on-screen for its full 8s instead of drifting off as
+        // Bit climbs. Its camera-local x is 0 (viewport center), clear of the title
+        // band (anchored top-left) and pause zone (top-right).
         panel.zPosition = 300
-        addChild(panel)
+        if isWideCanvas, let cam = gameCamera {
+            panel.position = CGPoint(x: 0, y: size.height / 2 - 145)
+            cam.addChild(panel)
+        } else {
+            panel.position = CGPoint(x: size.width / 2, y: topSafeY - 145)
+            addChild(panel)
+        }
 
-        let bg = SKShapeNode(rectOf: CGSize(width: 280, height: 100), cornerRadius: 8)
+        let bg = SKShapeNode(rectOf: CGSize(width: 320, height: 100), cornerRadius: 8)
         bg.fillColor = fillColor
         bg.strokeColor = strokeColor
         panel.addChild(bg)
@@ -427,14 +717,14 @@ final class MetaFinaleScene: BaseLevelScene, SKPhysicsContactDelegate {
         text2.position = CGPoint(x: 0, y: 5)
         panel.addChild(text2)
 
-        let text3 = SKLabelNode(text: "WALK INTO IT TO PURGE THE CORRUPTION")
+        let text3 = SKLabelNode(text: "IT WANTS YOU TO TURN BACK. EVERYTHING DOES.")
         text3.fontName = "Menlo"
         text3.fontSize = 10
         text3.fontColor = strokeColor
         text3.position = CGPoint(x: 0, y: -15)
         panel.addChild(text3)
 
-        let text4 = SKLabelNode(text: "(YOUR PROGRESS SURVIVES THE PURGE)")
+        let text4 = SKLabelNode(text: "(NOTHING TRUE IS EVER LOST)")
         text4.fontName = "Menlo"
         text4.fontSize = 8
         text4.fontColor = strokeColor
@@ -446,16 +736,30 @@ final class MetaFinaleScene: BaseLevelScene, SKPhysicsContactDelegate {
 
         // A11Y: the gate instruction is purely visual (pulsing label + timed panel).
         // Speak it once so VoiceOver users get the actionable objective.
-        announceObjective("Corrupted data blocks the exit. Walk into the corruption to purge it. Your progress survives the purge.")
+        announceObjective("The corruption gate. Corrupted data blocks the exit. It wants you to turn back. Everything does.")
     }
 
     private func setupBit() {
-        spawnPoint = CGPoint(x: courseX(80), y: 200)
+        if isWideCanvas {
+            // Spawn on the composed FLOOR (tier 0) spawn platform, 40pt above its
+            // center (same vertical offset the phone path uses: 200 - groundY 160).
+            spawnPoint = CGPoint(x: composedSpawnX, y: composedSpawnY)
+        } else {
+            spawnPoint = CGPoint(x: courseX(80), y: 200)
+        }
         bit = BitCharacter.make()
         bit.position = spawnPoint
         addChild(bit)
         registerPlayer(bit)
         playerController = PlayerController(character: bit, scene: self)
+
+        // iPAD: the composed climb is wider than the viewport, so promote to
+        // horizontal camera-follow. worldWidth == the full course extent so the
+        // movement clamp and camera bound match the authored geometry. (No-op on
+        // phone, which stays single-screen.)
+        if isWideCanvas {
+            installCameraFollow(worldWidth: composedCourseWidth, playerController: playerController)
+        }
     }
 
     private func checkIfReinstalled() {
@@ -477,15 +781,25 @@ final class MetaFinaleScene: BaseLevelScene, SKPhysicsContactDelegate {
         guard !isCleared, !hasShownFakeReview else { return }
         hasShownFakeReview = true
 
-        // Phase 1: Fake crash/glitch-out
+        // Phase 1: Fake crash/glitch-out. The full-screen black wash + reboot text are
+        // screen-space. PHONE: keep the exact scene-center literal + addChild so output
+        // is byte-identical (a shake is active here, so anything camera-relative would
+        // jitter). iPAD: the camera has scrolled to the high finale wall, so parent the
+        // wash to the camera (camera-local origin) — it tracks the viewport through any
+        // pan/shake and stays perfectly centered.
         let crashOverlay = SKShapeNode(rectOf: CGSize(width: size.width * 2, height: size.height * 2))
         crashOverlay.fillColor = .black
         crashOverlay.strokeColor = .clear
-        crashOverlay.position = CGPoint(x: size.width / 2, y: size.height / 2)
         crashOverlay.zPosition = 900
         crashOverlay.alpha = 0
         crashOverlay.name = "crashOverlay"
-        addChild(crashOverlay)
+        if isWideCanvas, let cam = gameCamera {
+            crashOverlay.position = .zero
+            cam.addChild(crashOverlay)
+        } else {
+            crashOverlay.position = CGPoint(x: size.width / 2, y: size.height / 2)
+            addChild(crashOverlay)
+        }
 
         // Intense glitch effects. shake/glitchEffect self-guard on Reduce Motion in
         // JuiceManager; the explicit gate here keeps the intent local and skips the
@@ -524,12 +838,19 @@ final class MetaFinaleScene: BaseLevelScene, SKPhysicsContactDelegate {
                     label.text = text
                     label.fontSize = 11
                     label.fontColor = .green
-                    label.position = CGPoint(x: self.size.width / 2,
-                                             y: self.size.height / 2 + 60 - CGFloat(index) * 22)
                     label.zPosition = 1000
                     label.alpha = 0
                     label.name = "crashText"
-                    self.addChild(label)
+                    // PHONE: scene-center literal + addChild (byte-identical). iPAD:
+                    // camera-local so it sits dead-center of the scrolled viewport.
+                    if self.isWideCanvas, let cam = self.gameCamera {
+                        label.position = CGPoint(x: 0, y: 60 - CGFloat(index) * 22)
+                        cam.addChild(label)
+                    } else {
+                        label.position = CGPoint(x: self.size.width / 2,
+                                                 y: self.size.height / 2 + 60 - CGFloat(index) * 22)
+                        self.addChild(label)
+                    }
                     label.run(.fadeIn(withDuration: 0.15))
                     HapticManager.shared.rigid()
                 }
@@ -542,9 +863,13 @@ final class MetaFinaleScene: BaseLevelScene, SKPhysicsContactDelegate {
             .wait(forDuration: delay + 1.0),
             .run { [weak self] in
                 guard let self = self else { return }
-                // Remove crash overlay and text
+                // Remove crash overlay and text. On iPad these are parented to the
+                // camera (so they track the scrolled viewport), so enumerate there too
+                // — scene-only enumeration would leave them on-screen forever.
                 self.enumerateChildNodes(withName: "crashOverlay") { node, _ in node.removeFromParent() }
                 self.enumerateChildNodes(withName: "crashText") { node, _ in node.removeFromParent() }
+                self.gameCamera?.enumerateChildNodes(withName: "crashOverlay") { node, _ in node.removeFromParent() }
+                self.gameCamera?.enumerateChildNodes(withName: "crashText") { node, _ in node.removeFromParent() }
                 JuiceManager.shared.flash(color: .white, duration: 0.5)
                 self.clearCorruption()
             }
@@ -554,6 +879,10 @@ final class MetaFinaleScene: BaseLevelScene, SKPhysicsContactDelegate {
     private func clearCorruption() {
         guard !isCleared else { return }
         isCleared = true
+
+        // PROGRESSIVE HINT: purging the gate is the level's decisive forward-progress
+        // beat — reset the struggle/stall counters so the earned hint won't re-fire.
+        notePlayerProgress()
 
         // EPIC CORRUPTION CLEAR SEQUENCE
 
@@ -645,8 +974,22 @@ final class MetaFinaleScene: BaseLevelScene, SKPhysicsContactDelegate {
         // Remove warning overlay
         warningOverlay?.run(.fadeOut(withDuration: 0.5))
 
-        // Pop text
-        JuiceManager.shared.popText("SYSTEM RESTORED", at: CGPoint(x: size.width / 2, y: size.height / 2 + 50), color: .green, fontSize: 24)
+        // Pop text. popText adds the label to the SCENE at an absolute position.
+        // PHONE: the exact scene-center literal (byte-identical). iPAD: the clamped
+        // camera-center X (a shake is active, so the live camera.x would jitter —
+        // derive the stable clamped target instead) so it lands on-screen at the high
+        // finale, and the Y is lifted toward the gate tier so it reads on the climb.
+        let popX: CGFloat
+        let popY: CGFloat
+        if isWideCanvas {
+            let half = size.width / 2
+            popX = max(half, min(bit.position.x, composedCourseWidth - half))
+            popY = composedWallY + 50
+        } else {
+            popX = size.width / 2
+            popY = size.height / 2 + 50
+        }
+        JuiceManager.shared.popText("SYSTEM RESTORED", at: CGPoint(x: popX, y: popY), color: .green, fontSize: 24)
 
         // Mark as cleared in Keychain
         KeychainHelper.save(key: "level20_cleared", value: "true")
@@ -767,11 +1110,14 @@ final class MetaFinaleScene: BaseLevelScene, SKPhysicsContactDelegate {
             }
         }
 
-        // Animate background static
+        // Animate background static. Re-scatter across the same span it was seeded on
+        // (full course on iPad, viewport on phone) so it doesn't all migrate into the
+        // first screen as the camera scrolls.
+        let staticSpanWidth = isWideCanvas ? composedStaticSpanWidth : size.width
         enumerateChildNodes(withName: "static") { node, _ in
             let staticChance = 5 + Int(self.corruptionProximity * 20)
             if Int.random(in: 0...100) < staticChance {
-                node.position.x = CGFloat.random(in: 0...self.size.width)
+                node.position.x = CGFloat.random(in: 0...staticSpanWidth)
                 node.position.y = CGFloat.random(in: 0...self.size.height)
             }
         }
@@ -808,6 +1154,9 @@ final class MetaFinaleScene: BaseLevelScene, SKPhysicsContactDelegate {
 
     private func handleDeath() {
         guard GameState.shared.levelState == .playing else { return }
+        // PROGRESSIVE HINT: each death is a struggle signal. Repeated failure
+        // escalates toward the earned hintText() reveal.
+        notePlayerStruggle()
         playerController?.cancel()
         bit.playBufferDeath(respawnAt: spawnPoint) { [weak self] in self?.bit.setGrounded(true) }
     }
@@ -828,7 +1177,7 @@ final class MetaFinaleScene: BaseLevelScene, SKPhysicsContactDelegate {
     }
 
     override func hintText() -> String? {
-        return "Some things must be destroyed to be rebuilt..."
+        return "There is no path around the corruption. Stop trying to avoid it — hold toward the wall and push Bit INTO the blocks. The contact is the purge."
     }
 
     override func willMove(from view: SKView) {

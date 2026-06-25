@@ -62,16 +62,60 @@ class BaseLevelScene: SKScene {
     static let maxJumpableGap: CGFloat = 130        // safe edge-to-edge horizontal
     static let absoluteMaxGap: CGFloat = 145
 
-    /// Ground baseline that fills tall canvases instead of pinning gameplay to the
-    /// very bottom. On iPhone-class canvases returns the level's existing low ground
-    /// (so phone layout is unchanged); on iPad it lifts the floor toward lower-third
-    /// so a redesigned course + its added upper tiers fill the screen. Levels pass
-    /// the iPhone ground value they currently hard-code (e.g. 160) and use the
-    /// returned value as their ground origin; all gameplay Y stays ground-relative.
+    /// Ground baseline. On iPhone returns the level's existing low ground (phone
+    /// layout unchanged). On iPad it sits the floor near the BOTTOM of the usable
+    /// area (just above the home indicator) so the level can build UPWARD through
+    /// the full height via tiers (see verticalTier/playableCeilingY) — rather than
+    /// floating a thin band in the lower third. The old version lifted the floor to
+    /// ~22%, which (with no upper tiers) produced the "gameplay in a low strip, top
+    /// half empty" result; native fill comes from USING the height above this floor.
     func playableGroundY(iphoneGround: CGFloat) -> CGFloat {
         guard size.height > 1000 else { return iphoneGround }   // iPhone-class: unchanged
-        // Lift the floor to ~22% up the screen so the band + an upper tier fill iPad.
-        return max(iphoneGround, bottomSafeY + size.height * 0.22)
+        return bottomSafeY + 90
+    }
+
+    /// Top of the usable gameplay band on iPad (just below the title/HUD). Levels
+    /// compose their highest tier/finale up to here so nothing floats in dead sky.
+    /// On iPhone returns a sensible value above the typical low course; callers
+    /// generally only use this on the iPad path.
+    func playableCeilingY(iphoneCeiling: CGFloat = 0) -> CGFloat {
+        guard size.height > 1000 else { return iphoneCeiling > 0 ? iphoneCeiling : size.height * 0.7 }
+        return topSafeY - 150          // clear of the level title + instruction band
+    }
+
+    /// Full usable vertical band on iPad (groundY..ceilingY). Drives how many tiers
+    /// fit at a safe rise.
+    func playableBandHeight(iphoneGround: CGFloat) -> CGFloat {
+        max(0, playableCeilingY() - playableGroundY(iphoneGround: iphoneGround))
+    }
+
+    /// Y for tier `index` of `count` evenly-spaced platform tiers spanning the full
+    /// usable band on iPad, so a multi-tier route fills top-to-bottom. Tier 0 == the
+    /// floor; tier (count-1) == near the ceiling. The per-tier rise is clamped to
+    /// the safe jump rise, and on iPhone this collapses to the level's own ground
+    /// (callers gate the multi-tier layout behind their isWideCanvas check anyway).
+    /// `count` should be chosen so bandHeight/(count-1) <= maxJumpableRise (~85);
+    /// the helper clamps it defensively.
+    func verticalTier(_ index: Int, of count: Int, iphoneGround: CGFloat) -> CGFloat {
+        let ground = playableGroundY(iphoneGround: iphoneGround)
+        guard size.height > 1000, count > 1 else { return ground }
+        let band = playableBandHeight(iphoneGround: iphoneGround)
+        let rawStep = band / CGFloat(count - 1)
+        let step = min(rawStep, Self.maxJumpableRise)   // never exceed a safe jump
+        return ground + CGFloat(index) * step
+    }
+
+    /// The tier count a level should pass to `verticalTier` so a full climb actually
+    /// reaches `playableCeilingY` at the safe per-tier rise. Passing too FEW tiers is
+    /// the common mistake: bandHeight/(count-1) gets clamped to maxJumpableRise, so a
+    /// low count strands the top of the band as dead sky. Use this (optionally clamped
+    /// to a level-specific max) as the route's tier budget. iPhone returns the floor
+    /// count (2) since the multi-tier layout is gated behind isWideCanvas anyway.
+    func fillTierCount(iphoneGround: CGFloat, max upper: Int = 16) -> Int {
+        guard size.height > 1000 else { return 2 }
+        let band = playableBandHeight(iphoneGround: iphoneGround)
+        let needed = Int((band / Self.maxJumpableRise).rounded(.up)) + 1
+        return min(max(2, needed), upper)
     }
 
     /// Logical width available to lay out a single-screen (non-scrolling) course.
@@ -157,6 +201,16 @@ class BaseLevelScene: SKScene {
     private var noProgressHintDelay: TimeInterval {
         let extended = ProgressManager.shared.load().settings.extendedHintTimers
         return extended ? baseNoProgressHintDelay * 1.75 : baseNoProgressHintDelay
+    }
+    // NO-PROGRESS HINT SAFETY-NET: wall-clock timestamp of the last forward
+    // progress (or play start). Drives a time-based fallback so EVERY level can
+    // escalate a hint for a stuck player, even the 27/33 that never call
+    // notePlayerStruggle(). Reset in notePlayerProgress() and at play start.
+    private var lastProgressAt: Date?
+    private let baseNoProgressFallbackDelay: TimeInterval = 22.0
+    private var noProgressFallbackDelay: TimeInterval {
+        let extended = ProgressManager.shared.load().settings.extendedHintTimers
+        return extended ? baseNoProgressFallbackDelay * 1.75 : baseNoProgressFallbackDelay
     }
     private var struggleCount = 0
     private var hintShown = false
@@ -290,48 +344,16 @@ class BaseLevelScene: SKScene {
             return
         }
 
-        let accent = worldAccentColor
-
-        // Back-of-scene wash. This sits at zPosition -1000 and is largely
-        // occluded by opaque level art (the root cause of the "sub-perceptual"
-        // audit finding), so it stays subtle and we rely on the foreground
-        // edge-frame below for the actual per-world read. Modestly bumped from
-        // the old 0.12–0.16 band and tinted with each world's accent.
-        switch levelID.world {
-        case .world0:
-            tint.fillColor = SKColor.black.withAlphaComponent(0.16)
-        case .world1:
-            tint.fillColor = accent.withAlphaComponent(0.16)
-            addCircuitTracePattern(to: container)
-        case .world2:
-            tint.fillColor = accent.withAlphaComponent(0.16)
-            let rain = ParticleFactory.shared.createDigitalRain(in: self)
-            rain.alpha = 0.24
-            container.addChild(rain)
-        case .world3:
-            tint.fillColor = accent.withAlphaComponent(0.17)
-            addCorruptionArtifacts(to: container, color: accent)
-            addDataStreams(to: container, color: accent)
-        case .world4:
-            tint.fillColor = accent.withAlphaComponent(0.18)
-            addRealityTears(to: container)
-        case .world5:
-            tint.fillColor = accent.withAlphaComponent(0.20)
-            addWarningBars(to: container)
-        }
-
-        // Foreground per-world edge frame. This is the key fix: a colored
-        // vignette glow drawn ABOVE the level background/decor (which live in
-        // the ~-100…600 band) but BELOW gameplay-critical overlays and the HUD
-        // (5000+). Because it is an edge-only frame with a fully transparent
-        // center, it makes each world's hue clearly perceptible without
-        // washing the play area, occluding gameplay/HUD, or veiling the
-        // line-art. World 0 stays neutral (no colored frame) to keep the free
-        // tutorial visually plain. Skipped entirely in high-contrast mode via
-        // the early return above.
-        if levelID.world != .world0 {
-            addWorldEdgeFrame(accent: accent)
-        }
+        // Per-world COLOR TINTS removed per operator direction ("I don't like
+        // tints"). No colored back-of-scene wash, no colored edge-frame vignette,
+        // and no colored per-world decorations (circuit traces / digital rain /
+        // corruption artifacts / reality tears / warning bars) — the game reads as
+        // clean black-on-white line art, and each level keeps its own backgroundColor
+        // (so the dark levels — e.g. the flashlight cave — stay dark). The wash node
+        // stays clear; only the neutral mood juice below (black vignette / glitch
+        // rain) remains. worldAccentColor / addWorldEdgeFrame are retained but unused
+        // so a tint can be reinstated later if desired.
+        tint.fillColor = .clear
 
         switch mood {
         case .calm:
@@ -463,6 +485,9 @@ class BaseLevelScene: SKScene {
     func startPlay() {
         isPaused = false
         playStartedAt = Date()
+        // NO-PROGRESS HINT SAFETY-NET: seed the fallback clock at play start so a
+        // player who never makes progress still gets a hint after the timeout.
+        lastProgressAt = Date()
         // Keep the screen awake during active gameplay (SKScene lifecycle runs
         // on the main thread). Reset in willMove(from:) so we never leave the
         // idle timer disabled after leaving a level.
@@ -680,6 +705,18 @@ class BaseLevelScene: SKScene {
             showDifficultyHintIfNeeded()
         }
 
+        // NO-PROGRESS HINT SAFETY-NET: wall-clock fallback so EVERY level escalates
+        // a hint for a stuck player even if it never calls notePlayerStruggle().
+        // Fires once, only while .playing and before any hint has shown, after the
+        // player has gone ~22s (longer with extendedHintTimers) since the last
+        // forward progress / struggle reset. The struggle-count path above still
+        // fires FASTER (8s) on repeated death.
+        if !hintShown,
+           let lastProgressAt,
+           Date().timeIntervalSince(lastProgressAt) >= noProgressFallbackDelay {
+            showDifficultyHintIfNeeded()
+        }
+
         updatePlaying(deltaTime: clampedDt)
 
         // Tick the shared horizontal camera-follow (no-op unless the level called
@@ -697,6 +734,9 @@ class BaseLevelScene: SKScene {
 
     func notePlayerProgress() {
         noProgressTimer = 0
+        // NO-PROGRESS HINT SAFETY-NET: stamp the last forward-progress moment so
+        // the time-based fallback measures elapsed stall time from here.
+        lastProgressAt = Date()
         struggleCount = 0
         hintShown = false
     }
