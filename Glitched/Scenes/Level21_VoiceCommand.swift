@@ -90,7 +90,7 @@ final class VoiceCommandScene: BaseLevelScene, SKPhysicsContactDelegate {
     private var flyButton: SKNode?
 
     override func configureScene() {
-        levelID = LevelID(world: .world3, index: 21)
+        levelID = LevelID(world: .world3, index: 22)
         backgroundColor = fillColor
 
         physicsWorld.gravity = CGVector(dx: 0, dy: -14)
@@ -159,7 +159,7 @@ final class VoiceCommandScene: BaseLevelScene, SKPhysicsContactDelegate {
     }
 
     private func setupLevelTitle() {
-        let title = SKLabelNode(text: "LEVEL 21")
+        let title = SKLabelNode(text: "LEVEL 22")
         title.fontName = VisualConstants.Fonts.display
         title.fontSize = 28
         title.fontColor = strokeColor

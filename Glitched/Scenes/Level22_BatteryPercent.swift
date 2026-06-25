@@ -62,7 +62,7 @@ final class BatteryPercentScene: BaseLevelScene, SKPhysicsContactDelegate {
     private var lastAtmosphereMood: AtmosphereMood?
 
     override func configureScene() {
-        levelID = LevelID(world: .world3, index: 22)
+        levelID = LevelID(world: .world3, index: 23)
         backgroundColor = fillColor
 
         physicsWorld.gravity = CGVector(dx: 0, dy: -14)
@@ -134,7 +134,7 @@ final class BatteryPercentScene: BaseLevelScene, SKPhysicsContactDelegate {
     }
 
     private func setupLevelTitle() {
-        let title = SKLabelNode(text: "LEVEL 22")
+        let title = SKLabelNode(text: "LEVEL 23")
         title.fontName = VisualConstants.Fonts.display
         title.fontSize = 28
         title.fontColor = strokeColor
