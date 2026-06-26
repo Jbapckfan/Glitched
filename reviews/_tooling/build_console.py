@@ -37,7 +37,7 @@ cj = f"{SCRATCH}/claude-reviews.json"
 if os.path.exists(cj):
     for r in json.load(open(cj)).get("reviews", []):
         claude[r["level"]] = r
-codex, gemini, kimi = load_md("codex"), load_md("gemini"), load_md("kimi")
+codex, gemini, kimi, deepseek = load_md("codex"), load_md("gemini"), load_md("kimi"), load_md("deepseek")
 
 def claude_html(r):
     if not r: return "<em>pending</em>"
@@ -72,13 +72,14 @@ for n in range(34):
         <div class="review codex"><div class="cap">CODEX</div>{md_html(codex.get(n),'Codex')}</div>
         <div class="review gemini"><div class="cap">GEMINI</div>{md_html(gemini.get(n),'Gemini')}</div>
         <div class="review kimi"><div class="cap">KIMI K2</div>{md_html(kimi.get(n),'Kimi')}</div>
+        <div class="review deepseek"><div class="cap">DEEPSEEK</div>{md_html(deepseek.get(n),'DeepSeek')}</div>
       </div>
     </section>""")
 
 nav = " ".join(f'<a href="#L{n}">{n}</a>' for n in range(34))
 doc = f"""<!doctype html><html><head><meta charset="utf-8"><title>Glitched — Level Review Console</title>
 <style>
-:root{{--ink:#111;--bg:#fff;--mut:#777;--claude:#6e40c9;--codex:#0969da;--gemini:#1a7f37;--kimi:#cf5b00;}}
+:root{{--ink:#111;--bg:#fff;--mut:#777;--claude:#6e40c9;--codex:#0969da;--gemini:#1a7f37;--kimi:#cf5b00;--deepseek:#0e7c86;}}
 *{{box-sizing:border-box}}
 body{{margin:0;background:var(--bg);color:var(--ink);font:14px/1.5 "SF Mono",Menlo,Consolas,monospace}}
 header{{position:sticky;top:0;background:var(--bg);border-bottom:2px solid var(--ink);padding:12px 20px;z-index:20}}
@@ -94,20 +95,21 @@ figure{{margin:0}} figcaption{{font-size:11px;letter-spacing:2px;color:var(--mut
 .shot{{border:1px solid #ddd;border-radius:8px;display:block;cursor:zoom-in;background:#fafafa}}
 .shot.iphone{{height:600px}} .shot.ipad{{height:740px}}
 .ipadfig figcaption{{color:var(--codex);font-weight:700}}
-.reviews{{display:grid;grid-template-columns:1fr 1fr;gap:18px}}
+.reviews{{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:18px}}
 .review{{border-left:3px solid #eee;padding-left:12px}}
 .review .cap{{font-size:11px;letter-spacing:3px;margin-bottom:6px;font-weight:700}}
 .review.claude{{border-left-color:var(--claude)}} .review.claude .cap{{color:var(--claude)}}
 .review.codex{{border-left-color:var(--codex)}} .review.codex .cap{{color:var(--codex)}}
 .review.gemini{{border-left-color:var(--gemini)}} .review.gemini .cap{{color:var(--gemini)}}
 .review.kimi{{border-left-color:var(--kimi)}} .review.kimi .cap{{color:var(--kimi)}}
+.review.deepseek{{border-left-color:var(--deepseek)}} .review.deepseek .cap{{color:var(--deepseek)}}
 .review p{{margin:6px 0}} .verdict{{font-weight:700;letter-spacing:1px;margin-bottom:6px}}
 #lb{{position:fixed;inset:0;background:rgba(0,0,0,.92);display:none;align-items:center;justify-content:center;z-index:100;cursor:zoom-out}}
 #lb img{{max-width:96vw;max-height:96vh}}
 @media(max-width:1500px){{.row{{grid-template-columns:1fr}} .lhead{{grid-column:1}} .shot.iphone{{height:480px}} .shot.ipad{{height:580px}}}}
 </style></head><body>
 <header><h1>GLITCHED — LEVEL REVIEW CONSOLE</h1>
-<div class="leg"><b style="background:var(--claude)">CLAUDE</b> visual+code &nbsp; <b style="background:var(--codex)">CODEX</b> code &nbsp; <b style="background:var(--gemini)">GEMINI</b> code &nbsp; <b style="background:var(--kimi)">KIMI</b> code</div>
+<div class="leg"><b style="background:var(--claude)">CLAUDE</b> visual+code &nbsp; <b style="background:var(--codex)">CODEX</b> code &nbsp; <b style="background:var(--gemini)">GEMINI</b> code &nbsp; <b style="background:var(--kimi)">KIMI</b> code &nbsp; <b style="background:var(--deepseek)">DEEPSEEK</b> code</div>
 <div class="nav">{nav}</div></header>
 {''.join(rows)}
 <div id="lb" onclick="this.style.display='none'"><img id="lbimg"></div>
@@ -115,4 +117,4 @@ figure{{margin:0}} figcaption{{font-size:11px;letter-spacing:2px;color:var(--mut
 </body></html>"""
 open(OUT,"w").write(doc)
 print(f"wrote {OUT}  ({os.path.getsize(OUT)//1024} KB)")
-print(f"claude:{len(claude)} codex:{len(codex)} gemini:{len(gemini)} kimi:{len(kimi)}  /34")
+print(f"claude:{len(claude)} codex:{len(codex)} gemini:{len(gemini)} kimi:{len(kimi)} deepseek:{len(deepseek)}  /34")
