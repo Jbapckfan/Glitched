@@ -906,6 +906,9 @@ final class WiFiScene: BaseLevelScene, SKPhysicsContactDelegate {
 
     private func handleDeath() {
         guard GameState.shared.levelState == .playing else { return }
+        // PROGRESSIVE HINT: every failure (fall, hazard) escalates the earned hint so
+        // repeated death surfaces the WiFi-toggle reveal (matches sibling scenes).
+        notePlayerStruggle()
         playerController.cancel()
         bit.playBufferDeath(respawnAt: spawnPoint) { [weak self] in self?.bit.setGrounded(true) }
     }

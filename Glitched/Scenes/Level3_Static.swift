@@ -516,74 +516,42 @@ final class StaticScene: BaseLevelScene, SKPhysicsContactDelegate {
         // EXIT ledge, a step DOWN — a comfortable wide finale just under the peak.
         seq.append((max(0, top - 2), wWide, .exit))       // -1
 
-        // 3) Lay the platforms out with VARIED, ASYMMETRIC absolute X spacing (no
-        // constant pitch). The LEAD-IN (spawn / CLUSTER A / REST) and OUTRO (BREATH /
-        // INVERSE / EXIT) march RIGHT with wide, hand-tuned horizontal gaps. The long
-        // CLUSTER B ascent instead climbs as a COMPACT VERTICAL SWITCHBACK: the
-        // center advances only a little per step while platforms ZIG-ZAG left/right,
-        // so the climb gains its full height WITHOUT a long horizontal trek (this is
-        // what keeps the scrolling course ~1.8x the viewport instead of a 4x ladder).
-        // Every jump is one tier (rise auto <= 85); the switchback's horizontal
-        // edge-to-edge stays well under maxJumpableGap (130), so the rise dominates.
+        // 3) Lay the platforms out as a CONFINED, CENTERED ZIG-ZAG COLUMN (ref
+        // Level27/Level15 buildComposedIPadLevel). The OLD layout marched the whole
+        // beat string RIGHT across a ~2-3.5x-viewport course, so on a portrait iPad
+        // the camera followed horizontally and reviewers saw the playfield crammed
+        // into the bottom band with an empty TV-frame interior above. Fix: keep the
+        // SAME tier sequence / SAME +1-tier-per-step climb, but stack every platform
+        // UPWARD as a slim column that ALTERNATES left/right of the live screen
+        // center. The column's horizontal extent is ~250pt (well under the viewport),
+        // centered on size.width/2, so the ENTIRE floor->ceiling climb is visible in
+        // ONE resting frame with NO horizontal camera-follow. Vertical fill comes from
+        // verticalTier (each step is one safe <=85pt rise); horizontal edge-to-edge
+        // gaps stay in the proven ~40-80pt band (well under maxJumpableGap 130).
         let platHeight = courseLen(28)
         var xs: [CGFloat] = Array(repeating: 0, count: seq.count)
 
-        // Horizontal-march helper for the non-switchback beats.
-        func edgeBudget(_ s: (t: Int, w: CGFloat, beat: Beat), _ prev: (t: Int, w: CGFloat, beat: Beat)) -> CGFloat {
-            let enteringGroup = (s.beat != prev.beat) &&
-                (s.beat == .rest || s.beat == .breath || s.beat == .inverseApp || s.beat == .exit)
-            // Wider gap when stepping into a new group beat (a deliberate beat break),
-            // tighter within the lead-in/outro runs. Both <= maxJumpableGap (130).
-            return enteringGroup ? 100 : 84
-        }
-        func wobbleFor(_ i: Int) -> CGFloat {
-            switch seq[i].beat {
-            case .rest, .breath, .exit, .spawn: return 0   // stable wide landings
-            default: return ((i % 3 == 0) ? -12 : (seq[i].t % 2 == 0 ? 10 : -6))
-            }
-        }
-
-        let climbIdxs = seq.indices.filter { seq[$0].beat == .clusterB || seq[$0].beat == .peak }
-        let climbSet = Set(climbIdxs)
-        // CLUSTER B is a TIGHT, mostly-vertical climb (thematically the tense run to
-        // the peak): platforms always advance RIGHT by a small `climbAdvance` so the
-        // course stays compact, with a tiny alternating `climbNudge` for a hand-made
-        // zig feel that NEVER closes the horizontal gap (advance > 2*nudge + widths,
-        // so edge-to-edge is always positive and <= maxJumpableGap). The rise per
-        // step dominates the jump; the small horizontal travel keeps the scrolling
-        // world close to ~2x the viewport rather than a long ladder.
-        // Edge-to-edge per climb step. Kept tight (within the proven Level13/Level31
-        // climb envelope of ~28-58pt edge gaps under one-tier rises) so the steep
-        // diagonal jump is comfortably reachable while the long climb stays compact.
-        let climbEdge: CGFloat = 50
-        let climbNudge: CGFloat = 9         // tiny zig (never backtracks)
-
-        var marchX: CGFloat = 140
-        var climbStep = 0
+        let center = size.width / 2
+        // WIDTH-AWARE SWITCHBACK: every platform flips to the OPPOSITE side of the
+        // centerline from its predecessor, and its NEAR (centerward) edge is held a
+        // fixed `columnGap` off the centerline. Two opposite-side platforms therefore
+        // have EXACTLY `columnGap` edge-to-edge horizontal gap regardless of their
+        // widths — so a wide pause platform (176) never overlaps its narrow neighbour
+        // (the bug a fixed-lane offset would cause). The center of platform i is thus
+        // `sign * (columnGap/2 + w/2)`. With columnGap 50 a narrow (76) stone centers
+        // at +-63 and a wide (176) at +-113, keeping the whole column within ~+-200 of
+        // center (a ~400pt extent, still well under the iPad viewport). Every step's
+        // edge-to-edge gap is a constant 50pt (comfortably under maxJumpableGap 130);
+        // the ~83pt one-tier rise dominates the diagonal jump.
+        let columnGap: CGFloat = 50
+        var prevSign: CGFloat = -1   // spawn sits LEFT of center (matches setupBit)
         for i in seq.indices {
             let s = seq[i]
-            if climbSet.contains(i) {
-                let prev = seq[i - 1]
-                if climbStep == 0 {
-                    // Seed: a normal horizontal gap right of the REST.
-                    marchX += prev.w / 2 + 100 + s.w / 2
-                } else {
-                    // WIDTH-AWARE advance: a fixed tight EDGE gap (not a fixed center
-                    // stride), so even a wider climb landing never overlaps its
-                    // neighbour while the narrow steps stay compact. The +-nudge is
-                    // small enough that the gap stays positive and <= maxJumpableGap.
-                    marchX += prev.w / 2 + climbEdge + s.w / 2
-                }
-                let zig: CGFloat = (climbStep % 2 == 0) ? -climbNudge : climbNudge
-                xs[i] = marchX + zig
-                climbStep += 1
-            } else {
-                if i > 0 {
-                    let prev = seq[i - 1]
-                    marchX += prev.w / 2 + edgeBudget(s, prev) + s.w / 2
-                }
-                xs[i] = marchX + wobbleFor(i)
-            }
+            // Flip side every platform so the path genuinely switchbacks (never two
+            // stones stacked on one side, even across flat same-tier rest landings).
+            let sign: CGFloat = (i == 0) ? -1 : -prevSign
+            xs[i] = center + sign * (columnGap / 2 + s.w / 2)
+            prevSign = sign
             _ = createPlatform(at: CGPoint(x: xs[i], y: tierY(s.t)),
                                size: CGSize(width: s.w, height: platHeight))
         }
@@ -638,17 +606,19 @@ final class StaticScene: BaseLevelScene, SKPhysicsContactDelegate {
 
         createExitDoor(at: CGPoint(x: composedExitDoorX, y: composedExitDoorY + 50 * visualScale))
 
-        // Course extent: genuinely WIDER than the viewport so the camera FOLLOWS
-        // instead of clamping to a fixed center (the camera-collapse fix). The
-        // full-height climb needs ~13 platforms to reach the tall ceiling at the safe
-        // 85pt step, so the scrolling course runs ~2.2-3.5x the viewport (vs the old
-        // ~0.95x single-screen cram). Last platform right edge + margin. Death zone
-        // spans the FULL composed course so a fall anywhere is caught.
-        composedWorldWidth = xs[xs.count - 1] + wWide / 2 + 120
+        // NO horizontal camera-follow: the confined column's horizontal extent
+        // (~400pt centered on size.width/2) is far narrower than the iPad viewport, so
+        // the WHOLE floor->ceiling climb is visible in one resting frame. Leaving
+        // composedWorldWidth at 0 makes setupBit() skip installCameraFollow, so the
+        // camera rests at scene center on the climb column (not chasing a wide course
+        // and stranding the playfield in a low band). The death zone spans the full
+        // viewport width well below the FLOOR tier so a fall off the column is caught.
+        composedWorldWidth = 0
 
+        let floorY = tierY(seq[0].t)
         let deathZone = SKNode()
-        deathZone.position = CGPoint(x: composedWorldWidth / 2, y: -50)
-        deathZone.physicsBody = SKPhysicsBody(rectangleOf: CGSize(width: composedWorldWidth * 2, height: 100))
+        deathZone.position = CGPoint(x: size.width / 2, y: floorY - 130)
+        deathZone.physicsBody = SKPhysicsBody(rectangleOf: CGSize(width: size.width * 2, height: 100))
         deathZone.physicsBody?.isDynamic = false
         deathZone.physicsBody?.categoryBitMask = PhysicsCategory.hazard
         deathZone.name = "death_zone"
@@ -760,29 +730,51 @@ final class StaticScene: BaseLevelScene, SKPhysicsContactDelegate {
     private func addInverseLaserClue(on emitter: SKNode) {
         let badge = SKNode()
         badge.zPosition = 30
-        badge.position = CGPoint(x: 0, y: 34 * visualScale)
+        // Lifted a touch higher (34 -> 42) so the now-larger plate clears the emitter
+        // housing without overlapping the beam head.
+        badge.position = CGPoint(x: 0, y: 42 * visualScale)
 
-        // Plate widened (86 -> 156) so the longer single atmospheric line fits on
-        // one row without clipping; height tightened to match the now single-line label.
-        let plate = SKShapeNode(rectOf: CGSize(width: 156 * visualScale, height: 24 * visualScale), cornerRadius: 4 * visualScale)
+        // Plate enlarged to host the BIGGER label: reviewers flagged the old 7pt cue
+        // as too easy to miss, so the font is bumped to 10.5pt and the plate grows to
+        // match (156x24 -> 224x34) so the single atmospheric line still fits on one
+        // row without clipping.
+        let plate = SKShapeNode(rectOf: CGSize(width: 224 * visualScale, height: 34 * visualScale), cornerRadius: 5 * visualScale)
         plate.fillColor = fillColor
         plate.strokeColor = strokeColor
-        plate.lineWidth = lineWidth * 0.8
+        plate.lineWidth = lineWidth        // heavier border than before (was *0.8)
         badge.addChild(plate)
 
         let top = SKLabelNode(text: "THIS ONE LISTENS DIFFERENTLY.")
         top.fontName = "Menlo-Bold"
-        top.fontSize = 7 * visualScale
+        top.fontSize = 10.5 * visualScale  // bumped from 7 — the cue now reads at a glance
         top.fontColor = strokeColor
         top.verticalAlignmentMode = .center
         top.horizontalAlignmentMode = .center
         top.position = CGPoint(x: 0, y: 0)
         badge.addChild(top)
 
-        // Gentle pulse to draw the eye to the rule reversal.
+        // NOTICEABLE pulse to draw the eye to the rule reversal (the old slow fade
+        // from 0.55 was too subtle to catch). A faster, deeper alpha swing COMBINED
+        // with a gentle scale "breath" makes the placard visibly throb so the player
+        // registers that this barrier is different BEFORE committing — without ever
+        // naming the silence=safe answer. The plate border also flashes between the
+        // ink and a softer tint so the frame itself shimmers.
+        badge.setScale(1.0)
         badge.run(.repeatForever(.sequence([
-            .fadeAlpha(to: 0.55, duration: 0.9),
-            .fadeAlpha(to: 1.0, duration: 0.9)
+            .group([
+                .fadeAlpha(to: 0.35, duration: 0.45),
+                .scale(to: 1.08, duration: 0.45)
+            ]),
+            .group([
+                .fadeAlpha(to: 1.0, duration: 0.45),
+                .scale(to: 1.0, duration: 0.45)
+            ])
+        ])))
+        plate.run(.repeatForever(.sequence([
+            .run { [weak plate, weak self] in plate?.strokeColor = (self?.strokeColor ?? .black).withAlphaComponent(0.4) },
+            .wait(forDuration: 0.45),
+            .run { [weak plate, weak self] in plate?.strokeColor = self?.strokeColor ?? .black },
+            .wait(forDuration: 0.45)
         ])))
 
         emitter.addChild(badge)
@@ -1106,8 +1098,9 @@ final class StaticScene: BaseLevelScene, SKPhysicsContactDelegate {
 
     private func setupBit() {
         // Spawn (and respawn — handleDeath respawns here). On iPad the composed
-        // layout sets composedSpawnX/Y (the leftmost teach ledge); spawn sits a hair
-        // above the deck. On iPhone the spawn is the original P0 — byte-identical.
+        // layout sets composedSpawnX/Y (the FLOOR-tier teach ledge at the base of the
+        // confined column); spawn sits a hair above the deck. On iPhone the spawn is
+        // the original P0 — byte-identical.
         if isWideCanvas {
             spawnPoint = CGPoint(x: composedSpawnX, y: composedSpawnY + 45 * layoutYScale)
         } else {
@@ -1121,10 +1114,12 @@ final class StaticScene: BaseLevelScene, SKPhysicsContactDelegate {
 
         playerController = PlayerController(character: bit, scene: self)
 
-        // NATIVE-iPad: the composed gauntlet is wider than the viewport, so promote
-        // the level to horizontal camera-follow. No-op gate on iPhone (isWideCanvas
-        // false), so the phone stays a static single-screen course.
-        if isWideCanvas {
+        // NATIVE-iPad: the composed climb is a CONFINED column that fits one frame, so
+        // it needs NO horizontal camera-follow (composedWorldWidth stays 0). The guard
+        // keeps this future-proof: only promote to camera-follow if a composed course
+        // ever exceeds the viewport again. No-op on iPhone (isWideCanvas false), so the
+        // phone stays a static single-screen course.
+        if isWideCanvas && composedWorldWidth > size.width {
             installCameraFollow(worldWidth: composedWorldWidth, playerController: playerController)
         }
     }

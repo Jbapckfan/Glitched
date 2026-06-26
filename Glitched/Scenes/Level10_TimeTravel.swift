@@ -89,6 +89,19 @@ final class TimeTravelScene: BaseLevelScene, SKPhysicsContactDelegate {
     // strip the jump ability mid-climb.
     private var groundContacts = 0
 
+    // PRE-HINT (lighter, earlier nudge): the base class only reveals the explicit
+    // hintText() spoiler at the 18s/22s no-progress timer. That's a long stall for
+    // a player who is dying on the climb with no idea the *tree must grow first*.
+    // Surface ONE soft, NON-SPOILER nudge at ~13s of zero progress that frames the
+    // theme ("the tree isn't done growing") WITHOUT naming the background-the-app
+    // device mechanic — that explicit instruction stays earned at the base reveal.
+    // "Zero progress" == no tree growth yet (currentTreeState still .sapling); once
+    // the tree grows even one stage this is suppressed. Accumulated in updatePlaying
+    // (which the base ticks only while .playing), so it measures active play time.
+    private var preHintElapsed: TimeInterval = 0
+    private var preHintShown = false
+    private let preHintDelay: TimeInterval = 13.0
+
     // MARK: - Configuration
 
     override func configureScene() {
@@ -1397,9 +1410,26 @@ final class TimeTravelScene: BaseLevelScene, SKPhysicsContactDelegate {
 
     override func updatePlaying(deltaTime: TimeInterval) {
         playerController.update()
+        tickPreHint(deltaTime: deltaTime)
         // Tick the horizontal camera-follow on the composed iPad course. No-op on
         // iPhone / non-scrolling iPads (cameraFollowWorldWidth is nil).
         updateCameraFollow()
+    }
+
+    // Accumulates active-play time while the tree has NOT yet grown and fires a
+    // single lighter, non-spoiler pre-hint at preHintDelay (~13s). This sits
+    // BEFORE the base class's 18s/22s explicit hintText() reveal so a stuck player
+    // gets a gentle thematic nudge first. Suppressed the moment any tree growth
+    // happens (currentTreeState advances past .sapling). The device mechanic and
+    // tree-growth logic are untouched — this only surfaces narration.
+    private func tickPreHint(deltaTime: TimeInterval) {
+        guard !preHintShown, currentTreeState == .sapling else { return }
+        preHintElapsed += deltaTime
+        guard preHintElapsed >= preHintDelay else { return }
+        preHintShown = true
+        // Non-spoiler: hints that the tree is the gate without naming the
+        // background-the-app mechanic (that stays earned at the base reveal).
+        showCommentaryText("THE TREE ISN'T DONE GROWING. IT NEEDS TIME.")
     }
 
     // MARK: - Input Handling
@@ -1496,6 +1526,15 @@ final class TimeTravelScene: BaseLevelScene, SKPhysicsContactDelegate {
 
     private func handleDeath() {
         guard GameState.shared.levelState == .playing else { return }
+        // Escalate the progressive hint: each failed platforming attempt (a fall
+        // into the death zone) is the "struggle" signal the base class watches
+        // for. Without this, repeated deaths gave NO escalation and a stuck
+        // player only ever hit the slow 18s/22s no-progress timer — so the
+        // hintText() reveal ("Leave the app for a while — time passes") came far
+        // too late after repeated failed climbs. With two falls past ~8s of play
+        // the base class now surfaces the hint quickly. Matches the L7/L8 death
+        // path (struggle note immediately before playerController.cancel()).
+        notePlayerStruggle()
         playerController.cancel()
         bit.playBufferDeath(respawnAt: spawnPoint) { [weak self] in
             self?.bit.setGrounded(true)

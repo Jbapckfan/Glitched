@@ -114,7 +114,10 @@ final class AirDropScene: BaseLevelScene, SKPhysicsContactDelegate {
 
     private func generatePuzzle() {
         let alphabet = AirDropManager.alphabet
-        doorCode = String((0..<6).map { _ in alphabet.randomElement()! })
+        // Fall back to a fixed glyph if the alphabet ever becomes empty (drift-proof:
+        // `randomElement()` returns nil only on an empty collection). The fallback keeps
+        // the code 6 symbols long so all downstream length math (keypad, display) holds.
+        doorCode = String((0..<6).map { _ in alphabet.randomElement() ?? "X" })
         // Shift in 3...(n-3): never 0 (would make cipher == plaintext) and never tiny,
         // so the scramble is always visibly different from the answer.
         shift = Int.random(in: 3...(alphabet.count - 3))
@@ -316,28 +319,30 @@ final class AirDropScene: BaseLevelScene, SKPhysicsContactDelegate {
     }
 
     private func createTerminalScreen(at position: CGPoint) {
-        terminalScreen = SKNode()
-        terminalScreen!.position = position
-        terminalScreen!.zPosition = 50
+        // Build into a local NON-optional reference so every child add is crash-proof
+        // regardless of setup order; publish to the `terminalScreen` property at the end.
+        let screen = SKNode()
+        screen.position = position
+        screen.zPosition = 50
 
         let screenBG = SKShapeNode(rectOf: CGSize(width: 188, height: 138), cornerRadius: 4)
         screenBG.fillColor = strokeColor
         screenBG.strokeColor = strokeColor
         screenBG.lineWidth = 2
-        terminalScreen!.addChild(screenBG)
+        screen.addChild(screenBG)
 
         let bezel = SKShapeNode(rectOf: CGSize(width: 196, height: 146), cornerRadius: 6)
         bezel.fillColor = .clear
         bezel.strokeColor = strokeColor
         bezel.lineWidth = 3
-        terminalScreen!.addChild(bezel)
+        screen.addChild(bezel)
 
         let header = SKLabelNode(text: "SCRAMBLED TRANSMISSION")
         header.fontName = "Menlo-Bold"
         header.fontSize = 8
         header.fontColor = fillColor
         header.position = CGPoint(x: 0, y: 50)
-        terminalScreen!.addChild(header)
+        screen.addChild(header)
 
         // The scrambled ciphertext — this is all the player can read for free.
         cipherDisplayLabel = SKLabelNode(text: cipherText)
@@ -345,7 +350,7 @@ final class AirDropScene: BaseLevelScene, SKPhysicsContactDelegate {
         cipherDisplayLabel.fontSize = 20
         cipherDisplayLabel.fontColor = fillColor
         cipherDisplayLabel.position = CGPoint(x: 0, y: 28)
-        terminalScreen!.addChild(cipherDisplayLabel)
+        screen.addChild(cipherDisplayLabel)
         // The ciphertext is NOT the actionable thing — it can't be solved in-head, so a
         // forever-pulse here mis-aims the player's attention at a dead end. Show it
         // statically at full opacity; the breathing draw belongs on the SHARE button.
@@ -356,7 +361,7 @@ final class AirDropScene: BaseLevelScene, SKPhysicsContactDelegate {
         ruleLabel.fontSize = 9
         ruleLabel.fontColor = fillColor
         ruleLabel.position = CGPoint(x: 0, y: 8)
-        terminalScreen!.addChild(ruleLabel)
+        screen.addChild(ruleLabel)
 
         // Decoded-code slot. Empty until the player SHARES (or uses the fallback);
         // sharing is the only way to populate it. Underscores until then.
@@ -365,14 +370,14 @@ final class AirDropScene: BaseLevelScene, SKPhysicsContactDelegate {
         decodedHeader.fontSize = 8
         decodedHeader.fontColor = fillColor
         decodedHeader.position = CGPoint(x: 0, y: -12)
-        terminalScreen!.addChild(decodedHeader)
+        screen.addChild(decodedHeader)
 
         decodedLabel = SKLabelNode(text: "??????")
         decodedLabel.fontName = "Menlo-Bold"
         decodedLabel.fontSize = 16
         decodedLabel.fontColor = fillColor
         decodedLabel.position = CGPoint(x: 0, y: -30)
-        terminalScreen!.addChild(decodedLabel)
+        screen.addChild(decodedLabel)
 
         // Share button (the decode action).
         let shareBtnNode = SKNode()
@@ -399,7 +404,7 @@ final class AirDropScene: BaseLevelScene, SKPhysicsContactDelegate {
         shareBtnNode.accessibilityTraits = .button
 
         shareButton = shareBtnNode
-        terminalScreen!.addChild(shareBtnNode)
+        screen.addChild(shareBtnNode)
 
         // Gentle idle breathe so attention lands on the actionable SHARE control rather
         // than the un-solvable ciphertext. Suppressed under Reduce Motion (the static
@@ -411,7 +416,8 @@ final class AirDropScene: BaseLevelScene, SKPhysicsContactDelegate {
             ])), withKey: "shareBreathe")
         }
 
-        addChild(terminalScreen!)
+        terminalScreen = screen
+        addChild(screen)
     }
 
     private func createLockedDoor(at position: CGPoint) {
@@ -562,6 +568,13 @@ final class AirDropScene: BaseLevelScene, SKPhysicsContactDelegate {
                 // whatever app they shared to) and open the keypad to type it in.
                 self.revealDecodedCode()
                 self.showKeyboard()
+            } else {
+                // Cancelled / dismissed share (completed == false). The SHARE button is
+                // still on the terminal — only `showKeyboard()` removes it — so the player
+                // can retry immediately and is never stranded with no code, keypad, or
+                // hint. Count the dismissal as a struggle so repeated cancels escalate the
+                // progressive hint ladder (matching the wrong-submit and death paths).
+                self.notePlayerStruggle()
             }
         }
 
@@ -617,8 +630,11 @@ final class AirDropScene: BaseLevelScene, SKPhysicsContactDelegate {
         // Anchor low so the full block (chrome at top, keys, CLEAR at bottom) clears
         // the bottom safe area. baseY=144 puts the CLEAR bottom edge near y=44.
         let baseY: CGFloat = 144
-        keyboardNode = SKNode()
-        keyboardNode!.zPosition = 200
+        // Build into a local NON-optional reference so every child add is crash-proof;
+        // publish to the `keyboardNode` property at the end (the `showKeyboard` guard
+        // keys off nil, so the property must only flip non-nil once fully assembled).
+        let keypad = SKNode()
+        keypad.zPosition = 200
         // On iPad the camera scrolls, so the keypad modal must ride the VIEWPORT, not the
         // world — attach it to the camera and position in camera-local coords (origin =
         // viewport center). On iPhone (no camera-follow) it stays a scene child at the
@@ -663,7 +679,7 @@ final class AirDropScene: BaseLevelScene, SKPhysicsContactDelegate {
         panel.lineWidth = lineWidth
         panel.position = CGPoint(x: 0, y: (panelTop + panelBottom) / 2)
         panel.name = "keypadPanel"   // absorbs stray taps so they don't move Bit
-        keyboardNode!.addChild(panel)
+        keypad.addChild(panel)
 
         // Chrome.
         let enterHeader = SKLabelNode(text: "ENTER DECODED CODE:")
@@ -671,21 +687,21 @@ final class AirDropScene: BaseLevelScene, SKPhysicsContactDelegate {
         enterHeader.fontSize = 10
         enterHeader.fontColor = strokeColor
         enterHeader.position = CGPoint(x: 0, y: headerY)
-        keyboardNode!.addChild(enterHeader)
+        keypad.addChild(enterHeader)
 
         enteredCodeLabel = SKLabelNode(text: "______")
         enteredCodeLabel.fontName = "Menlo-Bold"
         enteredCodeLabel.fontSize = 18
         enteredCodeLabel.fontColor = strokeColor
         enteredCodeLabel.position = CGPoint(x: 0, y: enteredY)
-        keyboardNode!.addChild(enteredCodeLabel)
+        keypad.addChild(enteredCodeLabel)
 
         statusLabel = SKLabelNode(text: "KEYS INCLUDE DECOYS")
         statusLabel.fontName = "Menlo"
         statusLabel.fontSize = 8
         statusLabel.fontColor = strokeColor
         statusLabel.position = CGPoint(x: 0, y: statusY)
-        keyboardNode!.addChild(statusLabel)
+        keypad.addChild(statusLabel)
 
         for (i, char) in keys.enumerated() {
             let row = i / columns
@@ -718,7 +734,7 @@ final class AirDropScene: BaseLevelScene, SKPhysicsContactDelegate {
             btn.accessibilityLabel = "Key \(String(char)), button"
             btn.accessibilityTraits = .button
 
-            keyboardNode!.addChild(btn)
+            keypad.addChild(btn)
         }
 
         // CLEAR / backspace.
@@ -745,17 +761,19 @@ final class AirDropScene: BaseLevelScene, SKPhysicsContactDelegate {
         clearBtn.accessibilityLabel = "Clear, button"
         clearBtn.accessibilityTraits = .button
 
-        keyboardNode!.addChild(clearBtn)
+        keypad.addChild(clearBtn)
 
         if isWideCanvas, let camera = gameCamera {
             // Camera-local: origin is the viewport center, so subtract half the height to
             // place the block at the same on-screen height as the iPhone scene-space baseY.
-            keyboardNode!.position = CGPoint(x: 0, y: baseY - size.height / 2)
-            camera.addChild(keyboardNode!)
+            keypad.position = CGPoint(x: 0, y: baseY - size.height / 2)
+            camera.addChild(keypad)
         } else {
-            keyboardNode!.position = CGPoint(x: size.width / 2, y: baseY)
-            addChild(keyboardNode!)
+            keypad.position = CGPoint(x: size.width / 2, y: baseY)
+            addChild(keypad)
         }
+
+        keyboardNode = keypad
     }
 
     private func handleKeyTap(_ keyName: String) {
@@ -878,8 +896,9 @@ final class AirDropScene: BaseLevelScene, SKPhysicsContactDelegate {
             return
         }
 
-        if let keyNode = tapped.first(where: { ($0.name ?? "").starts(with: "keyBtn_") || $0.name == "keyClear" }) {
-            handleKeyTap(keyNode.name!)
+        if let keyNode = tapped.first(where: { ($0.name ?? "").starts(with: "keyBtn_") || $0.name == "keyClear" }),
+           let keyName = keyNode.name {
+            handleKeyTap(keyName)
             return
         }
 

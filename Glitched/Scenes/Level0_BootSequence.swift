@@ -28,6 +28,13 @@ final class BootSequenceScene: BaseLevelScene {
     private var tutorialStep: TutorialStep?
     private var tutorialDragOrigin: CGPoint?
 
+    // Idle-nudge escalation: if the player never touches the loading handle after
+    // the main UI is revealed, the looping "DRAG TO COMPLETE" hint repeats forever
+    // with no escalation. A one-shot SKAction (keyed `idleNudgeKey`) fires ~6s after
+    // reveal to wiggle/pulse the handle and swap in an explicit slide instruction.
+    private static let idleNudgeKey = "idleNudge"
+    private var playerHasDragged = false
+
     // MARK: - Helpers
 
     private static func currentTimeString() -> String {
@@ -217,6 +224,60 @@ final class BootSequenceScene: BaseLevelScene {
 
         // Start subtle glitch effects
         startAmbientGlitches()
+
+        // Arm the idle-nudge: one-shot, keyed off this reveal. Cancelled the moment
+        // the player grabs the handle (see touchesBegan) or boot completes.
+        scheduleIdleNudge()
+    }
+
+    private func scheduleIdleNudge() {
+        removeAction(forKey: Self.idleNudgeKey)
+        run(.sequence([
+            .wait(forDuration: 6.0),
+            .run { [weak self] in self?.triggerIdleNudge() }
+        ]), withKey: Self.idleNudgeKey)
+    }
+
+    private func triggerIdleNudge() {
+        // Bail if the player already engaged the handle, or boot already finished.
+        guard !playerHasDragged, !bootComplete, !isDraggingHandle else { return }
+        guard let progressHandle else { return }
+
+        // Swap the looping hint for an explicit, plainer instruction and brighten it.
+        if let hint = contentNode.childNode(withName: "hint") as? SKLabelNode {
+            hint.removeAllActions()
+            hint.text = "SLIDE THE WHITE DOT TO THE RIGHT →"
+            hint.fontColor = .black
+            hint.run(.repeatForever(.sequence([
+                .fadeAlpha(to: 0.45, duration: 0.6),
+                .fadeAlpha(to: 1.0, duration: 0.6)
+            ])))
+            announceObjective("Slide the white dot to the right")
+        }
+
+        // Draw the eye to the handle: a gentle pulse always, plus a small lateral
+        // wiggle when motion is allowed. Honors Reduce Motion like the rest of the scene.
+        AudioManager.shared.playBeep(frequency: 660, duration: 0.06, volume: 0.12)
+        HapticManager.shared.light()
+
+        let pulse = SKAction.sequence([
+            .scale(to: 1.25, duration: 0.18),
+            .scale(to: 1.0, duration: 0.18)
+        ])
+
+        if UIAccessibility.isReduceMotionEnabled {
+            progressHandle.run(.repeat(pulse, count: 3))
+        } else {
+            let baseX = progressHandle.position.x
+            let wiggle = SKAction.sequence([
+                .moveBy(x: 10, y: 0, duration: 0.07),
+                .moveBy(x: -16, y: 0, duration: 0.07),
+                .moveBy(x: 16, y: 0, duration: 0.07),
+                .moveBy(x: -10, y: 0, duration: 0.07),
+                .run { [weak self] in self?.progressHandle?.position.x = baseX }
+            ])
+            progressHandle.run(.repeat(.sequence([pulse, wiggle]), count: 3))
+        }
     }
 
     private func addCursor() {
@@ -419,6 +480,12 @@ final class BootSequenceScene: BaseLevelScene {
         let handleFrame = progressHandle.frame.insetBy(dx: -20, dy: -20)
         if handleFrame.contains(contentLocation) {
             isDraggingHandle = true
+            // Real drag detected: disarm the idle nudge and stop any in-flight
+            // wiggle/pulse so it doesn't fight the drag.
+            playerHasDragged = true
+            removeAction(forKey: Self.idleNudgeKey)
+            progressHandle.removeAllActions()
+            progressHandle.setScale(1.0)
             progressHandle.run(.scale(to: 1.2, duration: 0.1))
         }
     }

@@ -172,16 +172,28 @@ final class OrientationScene: BaseLevelScene, SKPhysicsContactDelegate {
         // ipadBandTopLocalY) still bracket the full visible band, giving the now-
         // exposed upper region real structure instead of empty sky.
         //
-        // Center the course's visual strip (floor local -120 .. crusher-top ~+160,
-        // mid ~+20) in the band [bandBottom, ceiling]: the strip center in scene-Y is
-        // ipadWorldOriginY + courseMidLocal = (ground + 120) + 20 = ground + 140, so
-        // solving ground + 140 == (bandBottom + ceiling)/2 lifts the floor to center.
-        let courseMidLocal: CGFloat = 20
-        let courseHalfFromFloor: CGFloat = 120 + courseMidLocal   // floorLocalY offset + mid
-        let bandCenter = (bandBottom + ipadCeilingSceneY) / 2
-        let centeredGround = bandCenter - courseHalfFromFloor
+        // STRONGER LIFT: anchor the WALK LINE (the line the player's eye actually
+        // tracks: floor at local -120, corridor/exit at local -60, traversal mid
+        // ~ -90) at a "center, slightly high" fraction of the band — matching the
+        // shared gameplayVerticalLift's 0.42 "center, slightly high" convention —
+        // rather than centering the full floor..crusher-body strip on true-center.
+        // Because the crusher BULK now extends UP to the ceiling (drawn in
+        // createCrusher), centering on the old strip-mid (+20) left the walk line
+        // sitting BELOW mid-screen with the empty band weighted overhead. Targeting
+        // the walk line at ~0.44 from the bottom lifts the whole flat course so the
+        // playable line reads at/above center and the bulk fills the band above it.
+        // The walk line in scene-Y is ipadWorldOriginY + walkLineLocal, and
+        // ipadWorldOriginY == ipadGroundSceneY - floorLocalY, so:
+        //   walkLineScene = ground + (walkLineLocal - floorLocalY) = ground + walkLineFromFloor.
+        // Solving walkLineScene == bandBottom + 0.44*band gives the lifted ground.
+        let walkLineLocal: CGFloat = -90                       // floor(-120)..exit(-60) mid
+        let walkLineFromFloor = walkLineLocal - floorLocalY    // (-90) - (-120) = +30
+        let bandHeight = max(0, ipadCeilingSceneY - bandBottom)
+        let targetWalkSceneY = bandBottom + bandHeight * 0.44  // center, slightly high
+        let centeredGround = targetWalkSceneY - walkLineFromFloor
         // Never LOWER the floor below the canonical bottom-pin (only lift), and keep
-        // it from rising so far the crusher bulk clips the ceiling band.
+        // it from rising so far the 320pt crusher BODY clips the ceiling band (the
+        // riser above the body is allowed to reach the girders by design).
         ipadGroundSceneY = min(max(ipadGroundSceneY, centeredGround), ipadCeilingSceneY - 320)
     }
 
@@ -334,6 +346,147 @@ final class OrientationScene: BaseLevelScene, SKPhysicsContactDelegate {
         // the ceiling band so the upper region reads as machinery, not dead sky.
         if isWideCanvas {
             drawIPadHazardFraming()
+            drawIPadRightShaft()
+        }
+    }
+
+    /// NON-LOAD-BEARING right-side fill (iPad only). The flat course (spawn ->
+    /// crusher -> corridor -> exit) is centered on `playfieldCenterX` (455), so the
+    /// crusher machinery packs the LEFT band but the region RIGHT of the exit door
+    /// (local 740) out to the far-right support pillar (local ~985) renders as bare
+    /// grid — the ~35% right-side void the operator flagged. This fills it by
+    /// reading the right band as the crusher shaft's DISCHARGE end: a receiving
+    /// hopper just past the exit, a ceiling-hung conveyor rail with hanging girders
+    /// over the upper-right band, and floor-level discharge rollers. Every node here
+    /// is purely visual — NO physics body, NO effect on collision / clamps / creep /
+    /// the corridor gap. It is drawn into `worldNode` so it scales + camera-scrolls
+    /// with the rest of the backdrop, and gated behind `isWideCanvas`, so the phone
+    /// path never runs it (byte-identical). It deliberately stays clear of the live
+    /// gameplay strip: everything sits at local x >= exitX (right of the door), so it
+    /// never overlaps the spawn, crusher creep lane, corridor mouth, or exit trigger.
+    private func drawIPadRightShaft() {
+        let halfW = backdropWidth / 2
+        let cx = playfieldCenterX
+        let bandTop = ipadBackdropCenterY + ipadBackdropHalfHeight - 35
+        let floorTopY = floorLocalY + 12.5            // top surface of the floor slab
+        let exitX: CGFloat = 450 + worldOffsetX       // exit door center (local 740)
+        let rightEdge = cx + halfW - 30               // just inside the far-right pillar
+
+        // 1) Receiving hopper past the exit — an inverted trapezoid descending from
+        //    a feed throat down toward the floor, reading as where the corridor
+        //    "discharges". Centered between the door and the right pillar.
+        let hopperCx = (exitX + rightEdge) / 2
+        let hopperTopY = floorTopY + 150
+        let hopper = SKShapeNode()
+        let hopperPath = CGMutablePath()
+        hopperPath.move(to: CGPoint(x: hopperCx - 90, y: hopperTopY))
+        hopperPath.addLine(to: CGPoint(x: hopperCx + 90, y: hopperTopY))
+        hopperPath.addLine(to: CGPoint(x: hopperCx + 30, y: floorTopY + 14))
+        hopperPath.addLine(to: CGPoint(x: hopperCx - 30, y: floorTopY + 14))
+        hopperPath.closeSubpath()
+        hopper.path = hopperPath
+        hopper.fillColor = fillColor
+        hopper.strokeColor = strokeColor
+        hopper.lineWidth = lineWidth
+        hopper.alpha = 0.85
+        hopper.zPosition = -8
+        worldNode.addChild(hopper)
+        lineElements.append(hopper)
+
+        // Hopper ribs (interior depth lines).
+        for rx in stride(from: hopperCx - 60, through: hopperCx + 60, by: 30) {
+            let rib = SKShapeNode()
+            let ribPath = CGMutablePath()
+            ribPath.move(to: CGPoint(x: rx, y: hopperTopY - 6))
+            ribPath.addLine(to: CGPoint(x: hopperCx + (rx - hopperCx) * 0.33, y: floorTopY + 18))
+            rib.path = ribPath
+            rib.strokeColor = strokeColor
+            rib.lineWidth = lineWidth * 0.3
+            rib.alpha = 0.5
+            rib.zPosition = -7
+            worldNode.addChild(rib)
+            lineElements.append(rib)
+        }
+
+        // 2) Ceiling-hung conveyor rail spanning exit -> right pillar, with short
+        //    hanger struts dropping from the ceiling beams so the upper-right band
+        //    reads as overhead machinery instead of empty grid.
+        let railY = bandTop - 70
+        let railLeft = exitX - 20
+        let rail = SKShapeNode(rectOf: CGSize(width: max(0, rightEdge - railLeft), height: 12))
+        rail.fillColor = fillColor
+        rail.strokeColor = strokeColor
+        rail.lineWidth = lineWidth * 0.7
+        rail.alpha = 0.6
+        rail.position = CGPoint(x: (railLeft + rightEdge) / 2, y: railY)
+        rail.zPosition = -20
+        worldNode.addChild(rail)
+        lineElements.append(rail)
+
+        for hx in stride(from: railLeft + 30, through: rightEdge - 30, by: 90) {
+            let hanger = SKShapeNode(rectOf: CGSize(width: 6, height: max(0, bandTop - 18 - railY)))
+            hanger.fillColor = fillColor
+            hanger.strokeColor = strokeColor
+            hanger.lineWidth = lineWidth * 0.4
+            hanger.alpha = 0.5
+            hanger.position = CGPoint(x: hx, y: (bandTop - 18 + railY) / 2)
+            hanger.zPosition = -21
+            worldNode.addChild(hanger)
+            lineElements.append(hanger)
+
+            // Conveyor bucket hanging from the rail.
+            let bucket = SKShapeNode(rectOf: CGSize(width: 16, height: 12))
+            bucket.fillColor = fillColor
+            bucket.strokeColor = strokeColor
+            bucket.lineWidth = lineWidth * 0.4
+            bucket.alpha = 0.55
+            bucket.position = CGPoint(x: hx, y: railY - 12)
+            bucket.zPosition = -19
+            worldNode.addChild(bucket)
+            lineElements.append(bucket)
+        }
+
+        // 3) Discharge rollers along the floor right of the exit, echoing the
+        //    crusher's grinding motif on the output side.
+        for rx in stride(from: exitX + 40, through: rightEdge - 10, by: 46) {
+            let roller = SKShapeNode(circleOfRadius: 11)
+            roller.fillColor = fillColor
+            roller.strokeColor = strokeColor
+            roller.lineWidth = lineWidth * 0.5
+            roller.alpha = 0.5
+            roller.position = CGPoint(x: rx, y: floorTopY + 11)
+            roller.zPosition = -6
+            worldNode.addChild(roller)
+            lineElements.append(roller)
+
+            let spoke = SKShapeNode()
+            let spokePath = CGMutablePath()
+            spokePath.move(to: CGPoint(x: rx - 7, y: floorTopY + 11))
+            spokePath.addLine(to: CGPoint(x: rx + 7, y: floorTopY + 11))
+            spoke.path = spokePath
+            spoke.strokeColor = strokeColor
+            spoke.lineWidth = lineWidth * 0.3
+            spoke.alpha = 0.5
+            spoke.zPosition = -5
+            worldNode.addChild(spoke)
+            lineElements.append(spoke)
+        }
+
+        // 4) Warning chevrons on the right pillar face so the far-right support
+        //    column reads as a hazard boundary, not a stray line.
+        for cyy in stride(from: floorTopY + 60, through: bandTop - 60, by: 70) {
+            let chevron = SKShapeNode()
+            let chevPath = CGMutablePath()
+            chevPath.move(to: CGPoint(x: rightEdge - 16, y: cyy + 12))
+            chevPath.addLine(to: CGPoint(x: rightEdge, y: cyy))
+            chevPath.addLine(to: CGPoint(x: rightEdge - 16, y: cyy - 12))
+            chevron.path = chevPath
+            chevron.strokeColor = strokeColor
+            chevron.lineWidth = lineWidth * 0.4
+            chevron.alpha = 0.35
+            chevron.zPosition = -20
+            worldNode.addChild(chevron)
+            lineElements.append(chevron)
         }
     }
 
@@ -650,6 +803,70 @@ final class OrientationScene: BaseLevelScene, SKPhysicsContactDelegate {
         body.lineWidth = lineWidth * 2.0
         visuals.addChild(body)
         lineElements.append(body)
+
+        // iPad-only: the crusher BULK EXTENDS UP to fill the now-exposed upper band.
+        // The flat course is lifted toward center, marooning the band above as empty
+        // sky; the crusher is the off-path kill wall on the LEFT, so growing its
+        // VISUAL machine upward (a riser column + hydraulic housing + capping plate)
+        // packs the left-upper region with structure that reads as the engine driving
+        // the crusher. This is PURELY COSMETIC: every node here is a child of
+        // `visuals` (which only shakes for rumble) — NONE has a physics body, and the
+        // lethal check is solely `crusherWall.position.x` + the separate death zone.
+        // The riser top tracks the cached band ceiling so it reaches the girders.
+        // Phone never runs this (isWideCanvas-gated) -> phone path byte-identical.
+        if isWideCanvas {
+            // Local Y of the crusher's standard body top (+160) and of the ceiling
+            // band, expressed in crusherWall-local space. crusherWall sits at world
+            // local y=0, so band-top-local == ipadBandTopLocalY. Cap the riser just
+            // under the ceiling girders so it bridges body-top -> ceiling.
+            let bodyTopLocal: CGFloat = 160
+            let riserTopLocal = max(bodyTopLocal + 60, ipadBandTopLocalY - 40)
+            let riserHeight = riserTopLocal - bodyTopLocal
+
+            // Main riser column rising out of the crusher body up toward the ceiling.
+            let riser = SKShapeNode(rectOf: CGSize(width: 96, height: riserHeight))
+            riser.fillColor = fillColor
+            riser.strokeColor = strokeColor
+            riser.lineWidth = lineWidth * 1.4
+            riser.position = CGPoint(x: 0, y: bodyTopLocal + riserHeight / 2)
+            riser.zPosition = -1
+            visuals.addChild(riser)
+            lineElements.append(riser)
+
+            // Twin hydraulic housings flanking the riser (echo the lower pistons).
+            for side in [-1.0, 1.0] {
+                let housing = SKShapeNode(rectOf: CGSize(width: 22, height: riserHeight * 0.9))
+                housing.fillColor = fillColor
+                housing.strokeColor = strokeColor
+                housing.lineWidth = lineWidth
+                housing.position = CGPoint(x: CGFloat(side) * 58, y: bodyTopLocal + riserHeight / 2)
+                housing.zPosition = -1
+                visuals.addChild(housing)
+                lineElements.append(housing)
+            }
+
+            // Bolt rows up the riser for industrial texture.
+            for ry in stride(from: bodyTopLocal + 40, through: riserTopLocal - 40, by: 70) {
+                for bx in [-28.0, 28.0] {
+                    let bolt = SKShapeNode(circleOfRadius: 3)
+                    bolt.fillColor = strokeColor
+                    bolt.strokeColor = strokeColor
+                    bolt.position = CGPoint(x: CGFloat(bx), y: ry)
+                    visuals.addChild(bolt)
+                    lineElements.append(bolt)
+                }
+            }
+
+            // Capping plate seating the crusher into the ceiling girders.
+            let cap = SKShapeNode(rectOf: CGSize(width: 150, height: 26))
+            cap.fillColor = fillColor
+            cap.strokeColor = strokeColor
+            cap.lineWidth = lineWidth * 1.4
+            cap.position = CGPoint(x: 0, y: riserTopLocal)
+            cap.zPosition = -1
+            visuals.addChild(cap)
+            lineElements.append(cap)
+        }
 
         // Industrial hazard stripes (diagonal warning pattern)
         for i in 0..<7 {

@@ -162,6 +162,16 @@ final class ChargingScene: BaseLevelScene, SKPhysicsContactDelegate {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
                 self?.triggerPlugAnimation()
             }
+        } else {
+            // DE-SPOIL (t=0): the battery icon used to carry a permanent
+            // "PLUG IN YOUR CHARGER" label that handed the trick away on entry.
+            // Replace it with an atmospheric in-voice tease — the dying-battery
+            // dread, with the actual solution withheld for the EARNED hintText()
+            // reveal. The pulsing empty-battery icon stays as the only visual nudge.
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) { [weak self] in
+                guard let self = self else { return }
+                GlitchedNarrator.present("I'M... FADING. SO COLD. FEED ME.", in: self, style: .alert)
+            }
         }
     }
 
@@ -740,20 +750,17 @@ final class ChargingScene: BaseLevelScene, SKPhysicsContactDelegate {
         batteryFill.position = CGPoint(x: 0, y: -30)
         batteryIcon.addChild(batteryFill)
 
-        // Pulsing animation
+        // Pulsing animation. The empty, hatched fill pulsing on the battery is the
+        // ONLY visual nudge — the dying device. The old permanent
+        // "PLUG IN YOUR CHARGER" label that sat below the icon was a t=0 spoiler
+        // (it gave away the device trick on entry) and has been removed; the
+        // explicit solution now lives in the EARNED hintText() reveal, gated behind
+        // the shared difficulty-hint timer / repeated struggle.
         let pulse = SKAction.sequence([
             SKAction.fadeAlpha(to: 0.5, duration: 0.5),
             SKAction.fadeAlpha(to: 1.0, duration: 0.5)
         ])
         batteryIcon.run(SKAction.repeatForever(pulse), withKey: "pulse")
-
-        // Hint text
-        let hintLabel = SKLabelNode(text: "PLUG IN YOUR CHARGER")
-        hintLabel.fontName = "Menlo-Bold"
-        hintLabel.fontSize = 10
-        hintLabel.fontColor = strokeColor
-        hintLabel.position = CGPoint(x: 0, y: -65)
-        batteryIcon.addChild(hintLabel)
     }
 
     private func setBatteryCharging() {
@@ -1153,6 +1160,10 @@ final class ChargingScene: BaseLevelScene, SKPhysicsContactDelegate {
 
     private func handleDeath() {
         guard GameState.shared.levelState == .playing else { return }
+        // PROGRESSIVE HINT: every fall escalates the EARNED hint so a stuck player
+        // surfaces the "plug in your charger" reveal (hintText) instead of being
+        // told the trick at t=0. Mirrors the sibling device-trick levels.
+        notePlayerStruggle()
         // Bit is teleported to spawn on death; didEnd for the plug may not fire,
         // so clear the carry contact to avoid a phantom "riding" state.
         plugContactCount = 0
@@ -1209,7 +1220,11 @@ final class ChargingScene: BaseLevelScene, SKPhysicsContactDelegate {
     }
 
     override func hintText() -> String? {
-        return "Connect your device to a charger"
+        // EARNED REVEAL: this is where the once-spoiled "plug in your charger"
+        // instruction now lives. It surfaces only after the shared difficulty-hint
+        // timer fires (no-progress fallback) or repeated death escalates struggle
+        // via notePlayerStruggle() in handleDeath().
+        return "Plug in your charger — feed the dying device and it will carry you up"
     }
 
     // MARK: - Cleanup

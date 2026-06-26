@@ -31,7 +31,7 @@ final class FocusModeScene: BaseLevelScene, SKPhysicsContactDelegate {
     private func courseX(_ logicalX: CGFloat) -> CGFloat { courseOriginX + logicalX * courseScale }
     private func courseLen(_ logical: CGFloat) -> CGFloat { logical * courseScale }
 
-    // MARK: - Native-iPad composed path
+    // MARK: - Native-iPad composed path (CONFINED full-height vertical column)
     //
     // The iPhone path is UNCHANGED: when NOT isWideCanvas the scene runs the
     // original centered-course layout (buildLevel / createHazards) so phone output
@@ -39,10 +39,29 @@ final class FocusModeScene: BaseLevelScene, SKPhysicsContactDelegate {
     // ASCENDS the FULL vertical band one safe tier at a time — floor near the bottom
     // (playableGroundY) up to the finale near a local ceiling (composedCeilingY) — so
     // gameplay spans top-to-bottom instead of floating a thin low strip with an
-    // empty upper screen. The route is hand-paced (cluster / rest / down-step /
-    // peak), NOT an even diagonal ladder, and the course is wider than the screen so
-    // configureScene installs horizontal camera-follow. The Focus FREEZE + gate
-    // latch is staged as the HIGH finale beat near the ceiling.
+    // empty upper screen.
+    //
+    // VOID FIX (proven CONFINED VERTICAL COLUMN pattern — mirrors Level2_Wind /
+    // Level18_AppSwitcher / Level27_VoiceOver buildComposedIPadLevel): the prior iPad
+    // layout marched the climb LEFT->RIGHT across a course ~1.6-2.0x the viewport (x
+    // advancing every beat) and installed installCameraFollow, so at the start frame
+    // the camera rested low-left on the floor beat while the upper tiers + finale sat
+    // OFF-SCREEN RIGHT — the upper-left was an empty dead-sky band (the iPad VOID
+    // reviewers saw, where Focus/DND froze hazards that were partly off-frame).
+    //
+    // Fix: keep the SAME full-height tier climb, but stack the beats as a slim
+    // VERTICAL ZIG-ZAG COLUMN centered on size.width/2 that ALTERNATES left/right of
+    // center (±composedColOffset) as it ascends. The teach (floor) and finale (door)
+    // beats are CENTERED on the column. The whole column's horizontal extent fits
+    // within ~one iPad portrait width — far narrower than it is tall — so the ENTIRE
+    // floor->ceiling climb (and every frozen-able hazard) is visible in ONE resting
+    // frame with NO horizontal camera-follow (installCameraFollow is dropped on this
+    // path; the camera rests at scene center on the column). Every iPad-only branch
+    // is gated behind isWideCanvas, so the iPhone build stays byte-identical.
+    //
+    // The Focus FREEZE + gate latch is staged as the HIGH finale beat near the
+    // ceiling — only the beat POSITIONS changed (a confined column), never the
+    // freeze/gate mechanic.
 
     /// True only on a genuine iPad-class canvas. Gated on BOTH dimensions so no
     /// large-but-short or rotated phone trips it; iPhone keeps the original path.
@@ -56,9 +75,21 @@ final class FocusModeScene: BaseLevelScene, SKPhysicsContactDelegate {
     /// this so iPhone-class canvases collapse to the unchanged 160 baseline.
     private let iphoneGround: CGFloat = 160
 
-    /// Full horizontal extent (scene-space) of the composed iPad course, set once in
-    /// buildComposedIPadLevel() and reused for the death floor + camera follow.
+    /// Full width of the confined iPad death plane (centered on size.width/2), set
+    /// once in buildComposedIPadLevel(). The climb is a slim vertical COLUMN that fits
+    /// one frame, so this is no longer a scrolling course width / camera-follow bound —
+    /// only the death-zone span.
     private var composedCourseExtent: CGFloat = 0
+
+    /// CONFINED-COLUMN geometry. The climb zig-zags around size.width/2 at
+    /// ±composedColOffset (strict alternation), so two consecutive opposite-side beats
+    /// are 2*composedColOffset apart center-to-center; with climb-rung widths 80-120pt
+    /// the edge-to-edge gap stays <= maxJumpableGap (130). The teach (floor) and finale
+    /// (door) beats are CENTERED on the column so the spawn and the exit both sit on
+    /// screen center, not off in a corner. Column half-extent = colOffset + half the
+    /// widest pad — far narrower than the iPad viewport, so the whole climb fits one
+    /// frame.
+    private let composedColOffset: CGFloat = 105
 
     /// Ground baseline (platform-center Y of tier 0) for the composed iPad course,
     /// derived from playableGroundY (NEAR THE BOTTOM) so the climb builds UPWARD.
@@ -102,13 +133,15 @@ final class FocusModeScene: BaseLevelScene, SKPhysicsContactDelegate {
         createFocusIndicator()
         showInstructionPanel()
         setupBit()
-        // Promote to horizontal camera-follow only on the wider composed course.
-        // worldWidth == composedCourseExtent (genuinely > viewport) so the camera
-        // scrolls and the exit (rightmost/highest beat) stays reachable; no-op on
-        // iPhone (the centered course fits one screen, so no camera-follow).
-        if isWideCanvas {
-            installCameraFollow(worldWidth: composedCourseExtent, playerController: playerController)
-        }
+        // VOID FIX: NO camera-follow. The composed iPad climb is now a CONFINED
+        // vertical zig-zag COLUMN (centered on size.width/2, total horizontal extent
+        // within ~one iPad portrait width), so the whole floor->ceiling climb plus
+        // every orbiting / oscillating hazard is visible in ONE resting frame. The
+        // prior installCameraFollow over a >1.6x-viewport left->right diagonal is
+        // exactly what rested the camera low-left on the floor beat while the upper
+        // tiers + finale sat OFF-SCREEN, leaving the upper-left start frame empty —
+        // the iPad VOID. The camera now rests at scene center on the column; the HUD
+        // (moon indicator / calm overlay / DND toggle) is scene-fixed again.
     }
 
     private func setupBackground() {
@@ -256,71 +289,78 @@ final class FocusModeScene: BaseLevelScene, SKPhysicsContactDelegate {
         return ground + CGFloat(i) * step
     }
 
-    /// THE hand-composed route. Deterministic from `size` (tier count + all X
-    /// absolute), so build + hazards always agree. Authored so the LAST beat sits at
-    /// the top tier (near composedCeilingY) and consecutive beats never exceed a safe
-    /// rise (one tier) or a safe gap (<= 130 edge-to-edge).
+    /// THE hand-composed route, authored as a CONFINED VERTICAL ZIG-ZAG COLUMN
+    /// centered on size.width/2. Deterministic from `size` (tier count + all X
+    /// absolute), so build + hazards always agree. The LAST beat is the FINALE at the
+    /// top tier (near composedCeilingY), CENTERED on the column; consecutive beats
+    /// never exceed a safe rise (one tier, clamped by composedTierY <= 85) or a safe
+    /// edge-to-edge gap (<= 130).
+    ///
+    /// Geometry: the floor TEACH and the top FINALE are CENTERED (x == center). Every
+    /// interior climb rung sits at center ± composedColOffset, STRICTLY ALTERNATING
+    /// side each rung — so two consecutive opposite-side beats are 2*composedColOffset
+    /// (210pt) apart center-to-center, and with rung widths 80-120 the edge-to-edge gap
+    /// is 90-130pt (<= maxJumpableGap). One wide REST is inserted mid-climb as a SECOND
+    /// platform on the SAME tier as the rung before it (rise 0), pushed to the opposite
+    /// side. The column's total horizontal extent is ~center ± (colOffset + half the
+    /// widest pad) — far narrower than the iPad viewport — so the whole floor->ceiling
+    /// climb fits ONE resting frame (no camera-follow).
     private func composedRoute() -> [RouteBeat] {
-        let top = composedTierCount - 1
+        let count = composedTierCount
+        let top = count - 1
+        let center = size.width / 2
+        let off = composedColOffset
         var beats: [RouteBeat] = []
 
-        // BEAT 1 — TEACH: wide low pad on the floor. No pressure: read controls,
-        // the locked door, the Focus prompt.
-        beats.append(RouteBeat(tier: 0, x: 150, width: 200, role: .teach))
+        // BEAT 0 — TEACH: wide low pad on the floor, CENTERED. No pressure: read
+        // controls, the locked door, the Focus prompt. (Spawn rides this pad.)
+        beats.append(RouteBeat(tier: 0, x: center, width: 200, role: .teach))
 
-        // BEATS 2-3 — CLUSTER: a 1-tier hop then a near-flat hop on the SAME tier,
-        // grouped close (a flat run that reads as a rest, not a march), then a gap
-        // before the wide rest. Both lean right but the second sits only slightly
-        // past the first — cluster, not ladder.
-        beats.append(RouteBeat(tier: 1, x: 320, width: 90, role: .cluster))
-        beats.append(RouteBeat(tier: 1, x: 450, width: 80, role: .cluster))
+        // Insert the wide REST roughly mid-climb (a calm breath) as a SECOND platform
+        // on the SAME tier as the rung before it. Choose a tier just below the midpoint
+        // so the rhythm breaks without stranding the top.
+        let restTier = max(1, count / 2)
 
-        // BEAT 4 — REST: a wide breather one tier up; the player gathers before the
-        // real traverse. (Asymmetric: it is far wider than its neighbours.)
-        beats.append(RouteBeat(tier: 2, x: 600, width: 210, role: .rest))
+        // INTERIOR CLIMB RUNGS — tiers 1 .. top-1, one rung per tier, zig-zagging
+        // ±off around center (strict alternation). The first interior rung goes LEFT;
+        // `side` flips every rung so the column stays slim and confined. Roles vary
+        // (cluster / climb / dip / peak) only to drive hazard KIND variety in
+        // createHazardsComposedIPad — they do NOT change the geometry. The rung just
+        // below the finale (tier top-1) is the ISOLATED PEAK.
+        var side: CGFloat = -1
+        for tier in 1...(top - 1) {
+            let x = center + side * off
+            // Width rhythm: alternate 90/80 narrow rungs (so opposite-side edge gaps
+            // stay 90-130pt), a touch wider on the peak's neighbour for a landing.
+            let w: CGFloat = (tier % 2 == 0) ? 90 : 80
+            let role: BeatRole
+            if tier == top - 1 {
+                role = .peak                        // isolated apex below the finale
+            } else if tier % 3 == 0 {
+                role = .dip                         // light-threat beat (hazard variety)
+            } else if tier % 2 == 0 {
+                role = .climb
+            } else {
+                role = .cluster
+            }
+            beats.append(RouteBeat(tier: tier, x: x, width: (role == .peak ? 80 : w), role: role))
 
-        // BEATS 5-6 — CLIMBING TRAVERSE: two rungs up, varied widths, X advancing in
-        // UNEVEN steps (not a constant xStep ladder).
-        beats.append(RouteBeat(tier: 3, x: 780, width: 120, role: .climb))
-        beats.append(RouteBeat(tier: 4, x: 910, width: 100, role: .climb))
+            // Drop the wide REST right after the chosen rest tier: a second platform on
+            // the SAME tier (zero rise), pushed to the OPPOSITE side of the rung that
+            // precedes it so its near edge clears that rung. Skip if it would land on
+            // the peak tier (keep the apex isolated).
+            if tier == restTier && tier < top - 1 {
+                let restX = center - side * (off - 5)
+                beats.append(RouteBeat(tier: tier, x: restX, width: 200, role: .rest))
+            }
 
-        // BEAT 7 — DOWN-STEP DIP: drop ONE tier and push right. Breaks the monotonic
-        // up-and-right read; a deliberate descent before the hard part.
-        beats.append(RouteBeat(tier: 3, x: 1040, width: 110, role: .dip))
-
-        // BEATS 8-9 — HARDER TRAVERSE: regain altitude over two tighter rungs.
-        beats.append(RouteBeat(tier: 4, x: 1170, width: 90, role: .climb))
-        beats.append(RouteBeat(tier: 5, x: 1290, width: 90, role: .climb))
-
-        // Fill any remaining tiers between here and the peak with climbing rungs so
-        // tall iPads still reach the ceiling (the route MUST end at `top`). Jittered
-        // X (not a fixed step) so it never reads as a ladder. Reserve the last TWO
-        // tiers for the PEAK (top-1) and FINALE (top).
-        var nextX: CGFloat = 1420
-        var tier = 6
-        while tier <= top - 2 {
-            let w: CGFloat = (tier % 2 == 0) ? 120 : 95
-            let jitter: CGFloat = (tier % 2 == 0) ? -20 : 15
-            beats.append(RouteBeat(tier: tier, x: nextX + jitter, width: w, role: .climb))
-            nextX += (tier % 2 == 0) ? 135 : 115   // uneven horizontal pacing
-            tier += 1
+            side = -side                            // flip the zig-zag for the next rung
         }
 
-        // Guard for short canvases: if composedTierCount is small the loop above may
-        // not run and tiers top-1 / top could equal earlier tiers — re-anchor X so the
-        // peak/finale still advance rightward from the last placed beat.
-        let lastX = beats.last?.x ?? nextX
-        let peakBaseX = max(nextX, lastX + 130)
-
-        // BEAT (top-1) — ISOLATED PEAK: a narrow rung pushed RIGHT and UP that stands
-        // apart from its neighbours (small landing, clear sky around it) — the visual
-        // apex of the climb before the finale.
-        beats.append(RouteBeat(tier: top - 1, x: peakBaseX + 40, width: 80, role: .peak))
-
-        // BEAT (top) — FINALE near the CEILING: a wide landing rung set BACK-LEFT of
-        // the peak (asymmetric) so the last move is a short descent-traverse onto the
-        // door rung, not another up-right step. Reads as the destination.
-        beats.append(RouteBeat(tier: top, x: peakBaseX, width: 200, role: .finale))
+        // BEAT (top) — FINALE near the CEILING, CENTERED on the column. The signature
+        // Focus FREEZE + gate latch is staged here; the last move is a short
+        // single-tier hop from the isolated peak onto the wide door rung.
+        beats.append(RouteBeat(tier: top, x: center, width: 200, role: .finale))
 
         return beats
     }
@@ -337,23 +377,27 @@ final class FocusModeScene: BaseLevelScene, SKPhysicsContactDelegate {
                            size: CGSize(width: beat.width, height: slab))
         }
 
-        // Exit door on the FINALE rung (last beat), reachable along the top tier.
-        // Door center sits +50 above the rung (same +50 the phone path uses).
+        // Exit door on the FINALE rung (last beat, CENTERED on the column). Nudged
+        // +40 right of the rung center (still on the 200-wide rung, which spans
+        // center±100). Door center sits +50 above the rung (same +50 the phone path
+        // uses).
         let finale = beats.last!
-        createExitDoor(at: CGPoint(x: finale.x + 60, y: composedTierY(finale.tier) + 50))
+        createExitDoor(at: CGPoint(x: finale.x + 40, y: composedTierY(finale.tier) + 50))
 
-        // Course extent = a margin past the rightmost beat / exit so the player clamp
-        // lets Bit reach and stand at the door. The route is hand-spaced to ~1.6-2.0x
-        // the viewport so installCameraFollow genuinely scrolls (no camera collapse).
-        let rightmost = beats.map { $0.x }.max() ?? finale.x
-        composedCourseExtent = max(rightmost, finale.x + 60) + 200
+        // Death-plane span = the confined column's full horizontal extent (left-most
+        // to right-most beat edge), centered on size.width/2. With teach/finale
+        // centered (width 200) and climb rungs at ±composedColOffset (width <= 90), the
+        // widest point is colOffset + 100; use a generous margin so a fall anywhere off
+        // the column is caught. NO camera-follow: this is only the death-zone width.
+        let columnHalfExtent = composedColOffset + 100 + 60
+        composedCourseExtent = columnHalfExtent * 2
 
-        // Death floor spans the FULL composed course (centered on the course, not the
-        // screen) so a fall anywhere along the scrolling level is caught, a fixed
-        // distance below the floor tier.
+        // Death floor spans the FULL column width, CENTERED on size.width/2 (the camera
+        // rests at scene center), so a fall anywhere off the confined climb is fatal, a
+        // fixed distance below the floor tier.
         let death = SKNode()
-        death.position = CGPoint(x: composedCourseExtent / 2, y: composedTierY(0) - 210)
-        death.physicsBody = SKPhysicsBody(rectangleOf: CGSize(width: composedCourseExtent * 2, height: 120))
+        death.position = CGPoint(x: size.width / 2, y: composedTierY(0) - 210)
+        death.physicsBody = SKPhysicsBody(rectangleOf: CGSize(width: composedCourseExtent + 400, height: 120))
         death.physicsBody?.isDynamic = false
         death.physicsBody?.categoryBitMask = PhysicsCategory.hazard
         addChild(death)
@@ -578,30 +622,23 @@ final class FocusModeScene: BaseLevelScene, SKPhysicsContactDelegate {
         // x[80,203]) and above the relocated instruction panel (panel top now
         // T-70), so it overlaps neither TITLE, PAUSE, nor the panel.
         moonIcon.zPosition = 200
-        if isWideCanvas {
-            // Composed iPad scrolls (camera-follow); anchor the status indicator to
-            // the camera (origin = camera center) so it stays in the top-left.
-            moonIcon.position = CGPoint(x: -size.width / 2 + 35, y: size.height / 2 - 20)
-            gameCamera.addChild(moonIcon)
-        } else {
-            moonIcon.position = CGPoint(x: 35, y: topSafeY - 20)
-            addChild(moonIcon)
-        }
+        // Scene-fixed on every path now. The confined-column iPad climb has NO
+        // camera-follow (the camera rests at scene center), so the moon status
+        // indicator sits at the same top-left scene coordinate as the phone — no
+        // camera parenting needed.
+        moonIcon.position = CGPoint(x: 35, y: topSafeY - 20)
+        addChild(moonIcon)
 
-        // Pre-create calming overlay (hidden). Anchor to the camera on the scrolling
-        // iPad course so the full-screen wash stays centered on view.
+        // Pre-create calming overlay (hidden), scene-fixed at scene center. With NO
+        // camera-follow the world never scrolls, so the full-screen wash sits at scene
+        // center exactly like the phone (byte-identical) — no camera parenting needed.
         calmOverlay = SKShapeNode(rectOf: CGSize(width: size.width * 2, height: size.height * 2))
         calmOverlay?.fillColor = SKColor.white
         calmOverlay?.strokeColor = .clear
         calmOverlay?.alpha = 0
         calmOverlay?.zPosition = 50
-        if isWideCanvas {
-            calmOverlay?.position = .zero
-            gameCamera.addChild(calmOverlay!)
-        } else {
-            calmOverlay?.position = CGPoint(x: size.width / 2, y: size.height / 2)
-            addChild(calmOverlay!)
-        }
+        calmOverlay?.position = CGPoint(x: size.width / 2, y: size.height / 2)
+        addChild(calmOverlay!)
 
         // Manual DND toggle button — fallback when real Focus detection is unreliable
         createDNDToggleButton()
@@ -643,18 +680,12 @@ final class FocusModeScene: BaseLevelScene, SKPhysicsContactDelegate {
         label.name = "dndToggle"
         button.addChild(label)
 
-        if isWideCanvas {
-            // Camera-anchored bottom-trailing on the scrolling iPad course so the
-            // fallback affordance never scrolls off-screen. nodes(at:) still hits it:
-            // the touch handler converts to scene coords and the button's world frame
-            // (camera position + this local offset) sits under the tap.
-            button.position = CGPoint(x: size.width / 2 - 16 - buttonW / 2,
-                                      y: -size.height / 2 + bottomSafeY + 40)
-            gameCamera.addChild(button)
-        } else {
-            button.position = CGPoint(x: size.width - 16 - buttonW / 2, y: bottomSafeY + 40)
-            addChild(button)
-        }
+        // Scene-fixed bottom-trailing on every path now. The confined-column iPad climb
+        // has NO camera-follow (the camera rests at scene center), so the fallback
+        // affordance sits at the same bottom-trailing scene coordinate as the phone and
+        // never scrolls off-screen — no camera parenting needed.
+        button.position = CGPoint(x: size.width - 16 - buttonW / 2, y: bottomSafeY + 40)
+        addChild(button)
         dndToggleButton = button
     }
 
@@ -751,11 +782,11 @@ final class FocusModeScene: BaseLevelScene, SKPhysicsContactDelegate {
         // gameplayLift as the band, so Bit still drops onto the first platform.
         // On iPhone gameplayLift == 0 -> spawn y stays 200.
         if isWideCanvas {
-            // Composed iPad: drop onto the tier-0 TEACH platform (first beat,
-            // x=150, top=composedGroundY). Spawn ~40 pt above the slab so Bit
-            // settles on it, the same 40-pt drop the phone path uses (phone
-            // groundY=160, spawn 200).
-            spawnPoint = CGPoint(x: 150, y: composedGroundY + 40)
+            // Composed iPad: drop onto the tier-0 TEACH platform (first beat, CENTERED
+            // on the column at x = size.width/2, top = composedGroundY). Spawn ~40 pt
+            // above the slab so Bit settles on it, the same 40-pt drop the phone path
+            // uses (phone groundY=160, spawn 200).
+            spawnPoint = CGPoint(x: size.width / 2, y: composedGroundY + 40)
         } else {
             spawnPoint = CGPoint(x: courseX(50), y: 200 + gameplayLift)
         }

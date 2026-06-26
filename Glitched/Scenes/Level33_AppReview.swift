@@ -1406,6 +1406,9 @@ final class AppReviewScene: BaseLevelScene, SKPhysicsContactDelegate {
 
     private func handleDeath() {
         guard GameState.shared.levelState == .playing else { return }
+        // PROGRESSIVE HINT: every failure (falling into the death zone) escalates the
+        // earned hint so repeated death surfaces the stuck-player reveal (matches L4).
+        notePlayerStruggle()
         playerController?.cancel()
         bit.playBufferDeath(respawnAt: spawnPoint) { [weak self] in
             self?.bit.setGrounded(true)

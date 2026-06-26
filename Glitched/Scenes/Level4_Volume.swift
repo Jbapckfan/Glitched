@@ -56,24 +56,37 @@ final class VolumeScene: BaseLevelScene, SKPhysicsContactDelegate {
     //   TIER 3  mid traverse (right)
     //   TIER 4  approach (center-left)
     //   TIER 5  WOLF DEN FINALE (right, near the ceiling) -> EXIT above it
-    // Tiers zig-zag left<->right so the climb uses the FULL WIDTH too (no centered
-    // ladder), and the FLOOD now lives in the bottom dead band: rising water tied to
-    // volume submerges the spawn floor / lower tiers, making the volume->water link
-    // visible exactly where the screen used to be empty.
+    // VOID FIX: the tiers are stacked as a CONFINED VERTICAL ZIG-ZAG COLUMN centered
+    // on size.width/2 (each beat strictly alternates ± a fixed offset of screen
+    // center), NOT a left->right diagonal. The prior diagonal + horizontal camera-
+    // follow parked the camera low-left on the spawn floor while the upper climb sat
+    // off-screen — the start-frame upper-left was an empty VOID. The slim column fits
+    // within one iPad portrait width, so the WHOLE floor->ceiling climb is visible in
+    // one resting frame with NO camera-follow. The FLOOD still lives in the bottom
+    // dead band: rising water tied to volume submerges the spawn floor / lower tiers,
+    // making the volume->water link visible where the screen used to be empty.
     //
     // The wolf's mechanic is unchanged in absolute terms — same detection radius,
     // same volume thresholds, same flood/drown rule — it is simply staged as the
     // HIGH finale beat near the ceiling instead of mid-screen. Every tier rise is
-    // <= BaseLevelScene.maxJumpableRise (verticalTier auto-clamps), every lateral
-    // center step is <= BaseLevelScene.maxJumpableGap (<=130), so every hop from
+    // <= BaseLevelScene.maxJumpableRise (verticalTier auto-clamps), every consecutive
+    // edge-to-edge gap is <= BaseLevelScene.maxJumpableGap (<=130), so every hop from
     // spawn to exit is reachable. Everything below is gated on `isWideCanvas`;
     // iPhone output stays byte-identical.
 
-    /// Reverted per operator: the iPad must solve the SAME way as iPhone (a flat
-    /// "keep quiet" walk), not a vertical climb. Forcing this false routes every
-    /// branch to the phone layout, which fills the iPad height via gameplayVerticalLift
-    /// (the flat band lifts to center on tall canvases) without changing the solution.
-    private var isWideCanvas: Bool { false }
+    /// Real iPad detection, matching the sibling levels (Level6/14/18/19/20/23/30/32:
+    /// `size.height > 1000 && size.width > 700`). This routes tall iPad canvases to the
+    /// hand-composed FULL-HEIGHT vertical climb (buildComposedIPadLevel) — a CONFINED
+    /// zig-zag column centered on size.width/2 that fits one frame with NO camera-
+    /// follow, so gameplay fills the whole usable band instead of floating in a thin
+    /// lower strip OR stranding the upper climb off-screen. The wolf mechanic
+    /// (detection radius, volume thresholds, flood drown rule) is unchanged in absolute
+    /// terms — only staged as the high finale.
+    /// Every iPad branch below is gated on this flag; iPhone-class canvases (height
+    /// <= 1000 or width <= 700) fall through to the original flat single-screen
+    /// "keep-quiet" walk (buildPhoneLevel), which stays BYTE-IDENTICAL — its
+    /// activeGroundY still self-centers the flat band via gameplayVerticalLift.
+    private var isWideCanvas: Bool { size.height > 1000 && size.width > 700 }
 
     /// The iPhone ground baseline this level hard-codes; fed to the verticalTier /
     /// playableGroundY / playableCeilingY helpers so they collapse correctly on
@@ -577,6 +590,21 @@ final class VolumeScene: BaseLevelScene, SKPhysicsContactDelegate {
     /// one-tier rise the diagonal hop is always inside Bit's reach.
     private var lateralStepBudget: CGFloat { min(BaseLevelScene.maxJumpableGap, 120) }
 
+    // CONFINED-COLUMN geometry (VOID FIX — mirrors Level2 / Level27
+    // buildComposedIPadLevel). The climb is authored as a slim VERTICAL ZIG-ZAG
+    // COLUMN centered on size.width/2 that strictly ALTERNATES left/right of center
+    // as it ascends, instead of a shallow LEFT->RIGHT diagonal. Two opposite-side
+    // beats sit 2*ipadColOffset apart center-to-center; with a CONSTANT (unscaled)
+    // offset of 90 the consecutive edge-to-edge horizontal gap stays <= maxJumpableGap
+    // (130) across the whole visualScale range (1.0…1.25) even for the narrowest
+    // 74pt pillars, and the widest pads (floor/rest/den, up to ~180pt) only ever
+    // OVERLAP slightly — a reachable single-tier vertical step-up, never a widened
+    // gap. The whole column's horizontal extent is ~center ± (offset + halfWidest) —
+    // far narrower than one iPad portrait width — so the ENTIRE floor->ceiling climb
+    // is visible in ONE resting frame with NO horizontal camera-follow (the start-
+    // frame VOID is gone).
+    private let ipadColOffset: CGFloat = 90
+
     /// The hand-composed iPad course (cached). A single source of truth so the
     /// build, the wolf/exit/flood anchors and the background decor all read the same
     /// beats. Computed once in computeComposedAnchors. NOT an even ladder: it has a
@@ -615,26 +643,30 @@ final class VolumeScene: BaseLevelScene, SKPhysicsContactDelegate {
     ///
     /// Rhythm (operator brief: teach -> cluster -> rest -> harder traverse -> PEAK ->
     /// finale):
-    ///   • TEACH      tier 0, far-left WIDE floor — the safe intro
+    ///   • TEACH      tier 0, column-LEFT WIDE floor — the safe intro
     ///   • CLUSTER    a couple of close +1 steps then a FLAT same-tier beat (2-3
-    ///                platforms grouped) … then a GAP (wide Δx) before the rest
+    ///                platforms grouped)
     ///   • WIDE REST  a generous pedestal at its tier — the breath beat
     ///   • TRAVERSE   +1 steps with a deliberate DOWN-step mid-way (then re-climb),
-    ///                narrow treads, asymmetric Δx — the "harder" stretch
-    ///   • PEAK       a small isolated platform reached over a GAP, with another gap
-    ///                after it — it stands apart from the run (a true summit beat)
+    ///                narrow treads — the "harder" stretch
+    ///   • PEAK       a small isolated platform — a true summit beat
     ///   • STEP-DOWN  drop a tier off the peak onto the approach
     ///   • WOLF DEN   the WIDE finale platform on the TOP tier near the ceiling
     ///
-    /// X advances left->right by a VARIED, ASYMMETRIC fraction of the safe gap (tight
-    /// clusters ~0.5, open gaps ~1.0) — never a constant Δx, never strict L/R
-    /// alternation — and every consecutive |Δx| <= lateralStepBudget (<= maxGap=130).
-    /// So spawn->exit is reachable: every hop is one safe rise AND one safe gap.
+    /// VOID FIX: X is NO LONGER a left->right march (that diagonal stranded the upper
+    /// climb off-screen and left the start-frame upper-left a void). Instead the whole
+    /// route is a CONFINED VERTICAL ZIG-ZAG COLUMN centered on size.width/2: the spawn
+    /// pins to center-ipadColOffset (LEFT) and every subsequent beat STRICTLY
+    /// ALTERNATES side (center ± ipadColOffset). Two opposite-side beats are
+    /// 2*ipadColOffset apart center-to-center, so each consecutive edge-to-edge gap is
+    /// 2*offset - (wA+wB)/2 <= maxJumpableGap (130) for the climb pillars (the widest
+    /// pads only overlap, a reachable single-tier vertical step-up). Paired with the
+    /// one-tier (or flat / down) rise, every hop is reachable, and the slim column
+    /// fits one resting frame with no camera-follow.
     private func makeComposedBeats() -> [ClimbBeat] {
         let top = ipadTierCount - 1
         let s = visualScale
-        let lo = climbLeftX
-        let budget = lateralStepBudget
+        let center = size.width / 2
 
         // Each step = (tierDelta, role, width, Δx-fraction-of-budget). The tier column
         // is a running sum starting at 0; we GUARANTEE the final beat lands on `top`
@@ -689,16 +721,24 @@ final class VolumeScene: BaseLevelScene, SKPhysicsContactDelegate {
 
         let plan = opening + filler + finale
 
-        // Walk the plan, summing tiers and advancing X by the varied gap fraction.
-        // X is NOT clamped here — the world width is sized to fit the route (see
-        // computeComposedAnchors), which keeps the PEAK genuinely isolated by gaps
-        // instead of collapsing platforms against a too-narrow right edge.
+        // CONFINED-COLUMN WALK (VOID FIX). Sum tiers as before, but author X as a
+        // ZIG-ZAG around screen center (center ± ipadColOffset) that strictly
+        // ALTERNATES side each beat — NOT a monotonic left->right march (which sent
+        // the climb diagonally off-screen and left the start-frame upper-left a void).
+        // The spawn (beat 0) is pinned to center-offset (LEFT) so Bit starts on the
+        // column; thereafter the side flips every beat. Every consecutive pair is on
+        // OPPOSITE sides, so the edge-to-edge horizontal gap is 2*offset - (wA+wB)/2,
+        // which stays <= maxJumpableGap (130) for the narrow climb pillars and only
+        // overlaps (a reachable single-tier vertical step-up) for the widest pads.
+        // The column is far narrower than one iPad portrait width, so the whole
+        // floor->ceiling climb fits one resting frame with no camera-follow.
         var beats: [ClimbBeat] = []
         var tier = 0
-        var x = lo
         for (i, step) in plan.enumerated() {
             tier = max(0, min(top, tier + step.dt))
-            if i > 0 { x += step.dx * budget }
+            // side(0) = -1 (spawn LEFT), then strict alternation: (-1)^(i+1).
+            let side: CGFloat = (i % 2 == 0) ? -1 : 1
+            let x = center + side * ipadColOffset
             beats.append(ClimbBeat(tier: tier, x: x, width: step.w * s, role: step.role))
         }
         return beats
@@ -708,31 +748,30 @@ final class VolumeScene: BaseLevelScene, SKPhysicsContactDelegate {
     /// wolf-den finale, exit, total world width). Called before any decor/build so
     /// the background den/flood decor can key off the same numbers. No-op on iPhone.
     ///
-    /// CAMERA FIX: the world is made genuinely WIDER than the viewport so
-    /// installCameraFollow actually scrolls. (The previous version set
-    /// composedWorldWidth = size.width, which made updateCameraFollow clamp targetX
-    /// to a fixed center — the camera never moved and the whole course crammed into
-    /// one screen.) The width is the GREATER of ~1.7x the viewport (guarantees the
-    /// camera follows) and the hand-composed route's own span + a margin (guarantees
-    /// the PEAK + den keep their isolating gaps instead of piling up at a too-narrow
-    /// right edge). With a wider world the per-frame clamp [half, worldWidth-half]
-    /// spans a real range, so the camera tracks Bit across the course.
+    /// VOID FIX: the climb is now a CONFINED VERTICAL ZIG-ZAG COLUMN centered on
+    /// size.width/2 whose horizontal extent fits within ~one iPad portrait width (far
+    /// narrower than it is tall). So the world is NOT made wider than the viewport and
+    /// there is NO horizontal camera-follow — composedWorldWidth == size.width and the
+    /// camera rests at scene center, framing the WHOLE floor->ceiling climb in one
+    /// frame with no empty upper-left band. (The prior version forced
+    /// composedWorldWidth = size.width*1.7 + installCameraFollow, which parked the
+    /// camera low-left on the spawn floor while the upper tiers sat off-screen — the
+    /// start-frame VOID.) The flood (volume->water) still spans the full visible width
+    /// (composedWorldWidth) and the wolf/volume/water mechanic is byte-identical.
     private func computeComposedAnchors() {
         guard isWideCanvas else { return }
         composedFloorY = playableGroundY(iphoneGround: iphoneGroundBaseline)
 
-        // Build the route first (its X is independent of worldWidth), then size the
-        // world to contain it AND to be wide enough that the camera scrolls.
+        // Build the confined column (its X is authored around size.width/2), then size
+        // the world to exactly the viewport — the column fits one frame, so no scroll.
         composedBeats = makeComposedBeats()
-        let routeEndX = (composedBeats.last?.x ?? climbLeftX)
-        let routeSpanWidth = routeEndX + climbMargin
-        composedWorldWidth = max(size.width * 1.7, routeSpanWidth)
+        composedWorldWidth = size.width
         let top = ipadTierCount - 1
 
         let spawn = composedBeats.first { $0.role == "spawn" }
         let den = composedBeats.first { $0.role == "wolf" }
-        composedSpawnX = spawn?.x ?? climbLeftX                       // tier-0 floor (left)
-        composedWolfX = den?.x ?? climbRightX                         // den near the ceiling
+        composedSpawnX = spawn?.x ?? (size.width / 2 - ipadColOffset) // tier-0 floor (column, left)
+        composedWolfX = den?.x ?? (size.width / 2 + ipadColOffset)    // den near the ceiling
         composedWolfY = beatTierY(top, top: top)
         // Exit sits ON the wide den platform but offset 56pt toward screen-center so
         // the door + bobbing arrow stay on the platform and don't render over the
@@ -900,12 +939,13 @@ final class VolumeScene: BaseLevelScene, SKPhysicsContactDelegate {
 
         playerController = PlayerController(character: bit, scene: self)
 
-        // NATIVE-iPad: the composed quiet-traversal course is wider than the
-        // viewport, so promote the level to horizontal camera-follow. No-op on
-        // iPhone (isWideCanvas false), so the phone stays a static one-screen band.
-        if isWideCanvas {
-            installCameraFollow(worldWidth: composedWorldWidth, playerController: playerController)
-        }
+        // VOID FIX: the composed iPad climb is now a CONFINED vertical zig-zag column
+        // centered on size.width/2 that fits within one iPad portrait width, so the
+        // ENTIRE floor->ceiling climb is visible in one resting frame. We therefore
+        // install NO horizontal camera-follow — the camera rests at scene center on
+        // the column. Installing camera-follow here was exactly what parked the camera
+        // low-left on the spawn floor and stranded the upper tiers off-screen (the
+        // start-frame VOID). iPhone never had camera-follow, so it is untouched.
     }
 
     // MARK: - Creature
