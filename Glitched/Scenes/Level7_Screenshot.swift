@@ -64,7 +64,6 @@ final class ScreenshotScene: BaseLevelScene, SKPhysicsContactDelegate {
     // UI
     private var timerDisplay: SKNode?
     private var timerLabel: SKLabelNode?
-    private var instructionPanel: SKNode?
 
     // Cooldown
     private var screenshotCooldown: TimeInterval = 0
@@ -113,7 +112,6 @@ final class ScreenshotScene: BaseLevelScene, SKPhysicsContactDelegate {
         setupLevelTitle()
         buildLevel()
         createGhostBridge()
-        showInstructionPanel()
         setupBit()
         showDiscoveryPanel()
     }
@@ -868,102 +866,15 @@ final class ScreenshotScene: BaseLevelScene, SKPhysicsContactDelegate {
         return cable
     }
 
-    // MARK: - Instruction Panel
-
-    private func showInstructionPanel() {
-        instructionPanel = SKNode()
-        // Sits below the t=0 discovery panel, which now occupies the band
-        // topSafeY-122...-178 (dropped to clear the pause button). The 100pt-tall
-        // detailed panel at topSafeY-245 has its top edge at topSafeY-195, leaving
-        // a ~17pt gap below the discovery panel's bottom (topSafeY-178). Still well
-        // above the play zone, which lifts no higher than groundY+70 (exit) — far
-        // below the HUD band on every canvas (iPhone 390: bottom topSafeY-295 ~=
-        // y502, exit ~= y306).
-        instructionPanel?.position = CGPoint(x: size.width / 2, y: topSafeY - 245)
-        instructionPanel?.zPosition = 200
-        addChild(instructionPanel!)
-
-        // Panel background. Widened 180 -> 300 and grown 100 -> 116 tall so the
-        // atmospheric tease lines fit without clipping. The longest beat ("THE
-        // BRIDGE ONLY EXISTS WHEN NOTHING IS LOOKING. SO LOOK.") is split across
-        // two centered rows (project convention, cf. L3 "MAKE NOISE"/"TO BLOCK
-        // LASERS") so every row stays inside the 300-wide box at Menlo 9pt. Still
-        // well inside the canvas on every device: on iPhone 390 the centered box
-        // spans x[45,345], clear of the title (left) / pause (right) which live in
-        // the HUD band above this panel (topSafeY-245).
-        let panelBG = SKShapeNode(rectOf: CGSize(width: 300, height: 116), cornerRadius: 8)
-        panelBG.fillColor = fillColor
-        panelBG.strokeColor = strokeColor
-        panelBG.lineWidth = lineWidth
-        instructionPanel?.addChild(panelBG)
-
-        // Flash animation. Centered above the tease text now that the camera
-        // body / explicit "SCREENSHOT" copy is gone — keeps the flickering
-        // camera-flash motif (thematic, not a spoiler) at the panel top.
-        let flashBurst = SKShapeNode(circleOfRadius: 8)
-        flashBurst.fillColor = .clear
-        flashBurst.strokeColor = strokeColor
-        flashBurst.lineWidth = lineWidth * 0.5
-        flashBurst.position = CGPoint(x: 0, y: 42)
-        flashBurst.alpha = 0
-        instructionPanel?.addChild(flashBurst)
-
-        let flashAction = SKAction.sequence([
-            SKAction.fadeIn(withDuration: 0.1),
-            SKAction.scale(to: 2.0, duration: 0.2),
-            SKAction.fadeOut(withDuration: 0.1),
-            SKAction.scale(to: 1.0, duration: 0.01),
-            SKAction.wait(forDuration: 1.5)
-        ])
-        flashBurst.run(.repeatForever(flashAction))
-
-        // Atmospheric tease (NO explicit "SCREENSHOT / SIDE + VOLUME UP" spoiler).
-        // Centered rows styled to match the slots they replace (Menlo / strokeColor).
-        // The earned, explicit reveal lives in hintText(), surfaced only after the
-        // player struggles. Three tease beats; the middle beat spans two rows.
-        let label = SKLabelNode(text: "SOME MOMENTS REFUSE TO MOVE...")
-        label.fontName = "Menlo-Bold"
-        label.fontSize = 11
-        label.fontColor = strokeColor
-        label.horizontalAlignmentMode = .center
-        label.position = CGPoint(x: 0, y: 20)
-        instructionPanel?.addChild(label)
-
-        // Middle beat split across two rows so neither overruns the 300-wide box.
-        let subLabelTop = SKLabelNode(text: "THE BRIDGE ONLY EXISTS WHEN")
-        subLabelTop.fontName = "Menlo"
-        subLabelTop.fontSize = 9
-        subLabelTop.fontColor = strokeColor
-        subLabelTop.horizontalAlignmentMode = .center
-        subLabelTop.position = CGPoint(x: 0, y: 2)
-        instructionPanel?.addChild(subLabelTop)
-
-        let subLabelBottom = SKLabelNode(text: "NOTHING IS LOOKING. SO LOOK.")
-        subLabelBottom.fontName = "Menlo"
-        subLabelBottom.fontSize = 9
-        subLabelBottom.fontColor = strokeColor
-        subLabelBottom.horizontalAlignmentMode = .center
-        subLabelBottom.position = CGPoint(x: 0, y: -14)
-        instructionPanel?.addChild(subLabelBottom)
-
-        let gestureLabel = SKLabelNode(text: "CATCH IT BEFORE IT FORGETS ITSELF.")
-        gestureLabel.fontName = "Menlo"
-        gestureLabel.fontSize = 9
-        gestureLabel.fontColor = strokeColor
-        gestureLabel.horizontalAlignmentMode = .center
-        gestureLabel.position = CGPoint(x: 0, y: -34)
-        instructionPanel?.addChild(gestureLabel)
-    }
-
     // MARK: - Timer Display
 
     private func showTimer() {
         timerDisplay = SKNode()
         // The freeze timer is shown the instant the player screenshots, which can
         // happen at t<5s while the t=0 discovery panel is still fading out. The
-        // instruction panel is hidden on freeze, so the timer reuses its slot
-        // (now topSafeY-245, moved down with the rest of the HUD when the discovery
-        // panel was dropped to clear the pause button): r30 -> y[topSafeY-275,
+        // timer occupies the lower HUD slot at topSafeY-245 (moved down with the
+        // rest of the HUD when the discovery panel was dropped to clear the pause
+        // button): r30 -> y[topSafeY-275,
         // topSafeY-215], a ~37pt gap below the discovery panel's bottom
         // (topSafeY-178) and well clear of the title band and the top-right pause
         // zone (both at y >= topSafeY-44 / down to ~topSafeY-115).
@@ -1049,11 +960,17 @@ final class ScreenshotScene: BaseLevelScene, SKPhysicsContactDelegate {
     // MARK: - Screenshot Freeze
 
     private func currentFreezeDuration() -> TimeInterval {
+        // Freeze shrinks on each retry to escalate pressure, but the floor is
+        // clamped to 1.5s (not 1.0s): on late retries the shortest freeze was
+        // getting tight against the ~0.90s chasm crossing once cooldown/coyote
+        // reaction time was spent, so 1.5s keeps the high-finale crossing fair
+        // while preserving the degrade. Still well under the 220/245 ~= 0.90s
+        // cross time, so the screenshot-freeze mechanic is unchanged.
         switch screenshotCount {
         case 0: return 5.0
         case 1: return 3.5
         case 2: return 2.0
-        default: return 1.0
+        default: return 1.5
         }
     }
 
@@ -1123,13 +1040,6 @@ final class ScreenshotScene: BaseLevelScene, SKPhysicsContactDelegate {
 
         // Show timer
         showTimer()
-
-        // Hide instruction panel
-        instructionPanel?.run(.sequence([
-            .fadeOut(withDuration: 0.2),
-            .removeFromParent()
-        ]))
-        instructionPanel = nil
     }
 
     private func unfreezeBridge() {

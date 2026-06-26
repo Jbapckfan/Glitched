@@ -944,6 +944,10 @@ final class FaceIDScene: BaseLevelScene, SKPhysicsContactDelegate {
 
     private func handleDeath() {
         guard GameState.shared.levelState == .playing else { return }
+        // PROGRESSIVE HINT: every failure (fall into the death zone) escalates the
+        // earned hint so repeated death surfaces the Face-ID / vault reveal. Mirrors
+        // the sibling device scenes (e.g. Level4_Volume handleDeath).
+        notePlayerStruggle()
         playerController.cancel()
         bit.playBufferDeath(respawnAt: spawnPoint) { [weak self] in self?.bit.setGrounded(true) }
     }

@@ -54,30 +54,36 @@ final class WindBridgeScene: BaseLevelScene, SKPhysicsContactDelegate {
         return gameplayVerticalLift(bandBottom: bandBottom, bandTop: bandTop)
     }()
 
-    // MARK: - Native-iPad Composed Layout (FULL-HEIGHT vertical climb)
+    // MARK: - Native-iPad Composed Layout (CONFINED full-height vertical climb)
     //
     // The phone path is the flat two-platform-plus-chasm strip below. On a tall, wide
-    // iPad canvas this level instead ASCENDS through evenly-spaced vertical TIERS that
-    // span the FULL usable band (floor near the bottom safe edge up to a finale near
-    // the title/HUD ceiling) so the whole screen fills, instead of leaving the top
-    // third an empty sky. The route (low -> high): a wide low TEACH beat -> a stepped
-    // ascent of three pillars at LOW / MID / HIGH tiers (the analysis note's "vary the
-    // 3 pillar heights"; the MID pillar is the load-bearing switchback step that earns
-    // its purpose) -> a wide REST breath -> a HIGH tension pillar -> then the level's
-    // SIGNATURE wind-bridge chasm staged as the FINALE GUST near the ceiling. Tiers
-    // also spread LEFT-TO-RIGHT as they climb (a switchback, never a centered ladder),
-    // so the full WIDTH stays in play too. The course is wider than the viewport, so
-    // `installCameraFollow` scrolls it horizontally; camera Y stays scene-centered, so
-    // the entire height is always on screen. Every iPad-only branch is gated behind
-    // `isWideCanvas`, so the iPhone build is byte-identical.
+    // iPad canvas this level instead ASCENDS through vertical TIERS that span the FULL
+    // usable band (floor near the bottom safe edge up to the finale near the title/HUD
+    // ceiling) so the whole screen fills, instead of leaving the top third an empty sky.
+    //
+    // VOID FIX (mirrors the proven Level27 / Level15 buildComposedIPadLevel confined-
+    // column pattern): the prior iPad layout marched the climb LEFT->RIGHT across a
+    // course ~2x the viewport and installed `installCameraFollow`, so at spawn the
+    // camera rested low-left on the floor beat while the upper tiers + finale sat
+    // OFF-SCREEN RIGHT — the upper two-thirds of the frame was empty dead-sky (the iPad
+    // VOID reviewers saw). Fix: keep the SAME full-height tier climb, but stack the
+    // beats as a slim VERTICAL ZIG-ZAG COLUMN centered on `size.width/2` that ALTERNATES
+    // left/right of center as it ascends. The whole column's horizontal extent fits
+    // within ~one iPad portrait width (~1024pt) — far narrower than it is tall — so the
+    // ENTIRE floor->ceiling climb is visible in ONE resting frame with NO horizontal
+    // camera-follow (installCameraFollow is dropped on this path; the camera rests at
+    // scene center on the column). Every iPad-only branch is gated behind `isWideCanvas`,
+    // so the iPhone build is byte-identical.
     //
     // CRITICAL: the wind-bridge chasm stays UN-jumpable (235pt edge-to-edge, the same
     // forced-gap design intent as the phone). The shared bridge/wind/chasm code reads
     // `chasmStartX`/`chasmEndX`/`groundHeight`/`bridgeOverlap`, which switch to the
     // iPad finale's absolute anchors when `isWideCanvas`, so the mechanic and its
-    // mic-fallback are preserved verbatim. Every composed (non-chasm) gap is
-    // <= BaseLevelScene.maxJumpableGap (130) and every rise <= maxJumpableRise (85),
-    // the latter guaranteed by `ipadVerticalTier` clamping per-tier spacing.
+    // mic-fallback are preserved verbatim. The finale chasm is the TOP-tier APPROACH
+    // bank (left of center) -> 235pt gap -> EXIT bank (right of center), the whole
+    // finale block centered on size.width/2 as a rigid unit. Every composed (non-chasm)
+    // gap is <= BaseLevelScene.maxJumpableGap (130) and every rise <= maxJumpableRise
+    // (85), the latter guaranteed by `ipadVerticalTier` clamping per-tier spacing.
 
     // iPad-class gate. The app is portrait-locked, so every portrait iPad (744-1024pt
     // wide, >1000pt tall) trips this while every iPhone (<=932 tall) stays false.
@@ -120,61 +126,98 @@ final class WindBridgeScene: BaseLevelScene, SKPhysicsContactDelegate {
 
     // The FINALE finishing-chasm span (edge-to-edge between the approach bank and the
     // exit bank). Same 235pt un-jumpable width as the phone's forced gap, so the
-    // wind-bridge mechanic is the only way across.
+    // wind-bridge mechanic is the only way across. NEVER widened.
     private var ipadChasmWidth: CGFloat { 235 }
+
+    // CONFINED-COLUMN geometry. The climb zig-zags around `size.width/2` at
+    // ±ipadColOffset; two opposite-side beats are 2*offset apart center-to-center, so
+    // with beat widths <= ~150 the consecutive edge-to-edge horizontal gap is ~70-80pt
+    // (positive, no overlap, and well under maxJumpableGap 130). The top-tier finale
+    // block (approach + 235 + exit) is centered on size.width/2 as a rigid unit. The
+    // full column extent is only ~center ± (offset + half the widest finale bank) — far
+    // narrower than the iPad viewport — so the whole floor->ceiling climb fits one
+    // resting frame, no scroll.
+    private let ipadColOffset: CGFloat = 105
+    private let ipadClimbWidth: CGFloat = 130   // each zig-zag pillar
+    private let ipadTeachWidth: CGFloat = 150   // wide, centered spawn / teach pad
+    private let ipadRestWidth: CGFloat = 150    // wide flat REST breath
+    // Finale bank widths (top tier). approach is LEFT of center, exit is RIGHT of center;
+    // the 235pt chasm sits between them, the whole block centered on size.width/2.
+    private let ipadApproachWidth: CGFloat = 150
+    private let ipadExitWidth: CGFloat = 200
 
     // A resolved composed beat at absolute pt. `tier` indexes ipadVerticalTier.
     private struct IPadBeat { let role: String; let cx: CGFloat; let w: CGFloat; let tier: Int }
 
-    /// The full composed iPad route, generated once per access from the device band.
-    /// ONE platform per tier (a true top-to-bottom climb like L30), each step rising a
+    /// The confined composed iPad route, generated once per access from the device band.
+    /// ONE climb platform per tier (a true bottom-to-top climb), each step rising a
     /// single tier (rise == ipadTierSpacing <= 85) except a FLAT wide REST breath in the
-    /// middle (rise 0) and the un-jumpable finale chasm at the top. Widths vary for
-    /// rhythm (wide low teach, alternating mid/narrow pillars, wide rest, wide exit).
-    /// X advances left->right so the climb also sweeps the full WIDTH (a switchback, not
-    /// a centered ladder); every horizontal step is `ipadStepGap` edge-to-edge (<=130).
-    private let ipadStepGap: CGFloat = 105
+    /// middle (rise 0). The climb ZIG-ZAGS around screen center (strictly alternating
+    /// ±offset) so it stays a slim vertical column, NOT a left-to-right switchback. The
+    /// TOP tier holds the un-jumpable finale: an APPROACH bank (left of center) and an
+    /// EXIT bank (right of center) separated by the 235pt wind-bridge chasm, the whole
+    /// block centered on size.width/2. Every consecutive edge-to-edge gap is <= 130 and
+    /// every rise <= 85; the only two horizontal overlaps are vertical STEP-UPS (the
+    /// generous spawn pad -> first pillar, and the final left pillar -> approach bank),
+    /// which are reachable single-tier jumps, never widened gaps.
     private var ipadComposedRoute: [IPadBeat] {
         let count = ipadTierCount
-        var beats: [IPadBeat] = []
-        let restAfterTier = count / 2   // flat breath taken just after reaching this tier
-        for t in 0..<count {
-            let w: CGFloat
-            let role: String
-            if t == 0 {
-                w = 360; role = "teach"            // wide low spawn / teach pad
-            } else if t == count - 1 {
-                w = 220; role = "approach"         // left bank of the finale chasm (top tier)
-            } else if t % 2 == 0 {
-                w = 170; role = "pillar"           // mid-width pillar
-            } else {
-                w = 130; role = "pillar"           // narrow pillar (tension)
-            }
-            beats.append(IPadBeat(role: role, cx: 0, w: w, tier: t))
-            if t == restAfterTier {
-                // FLAT wide REST breath: same tier as its predecessor (rise 0).
-                beats.append(IPadBeat(role: "rest", cx: 0, w: 300, tier: t))
+        let center = size.width / 2
+
+        // --- TOP-TIER FINALE BLOCK, centered on size.width/2 as a rigid unit ---
+        // block span = approachW + chasm(235) + exitW; center it so the whole finale
+        // sits on-screen. approachLeft = center - blockSpan/2.
+        let blockSpan = ipadApproachWidth + ipadChasmWidth + ipadExitWidth
+        let approachLeft = center - blockSpan / 2
+        let approachCx = approachLeft + ipadApproachWidth / 2
+        let exitCx = approachLeft + ipadApproachWidth + ipadChasmWidth + ipadExitWidth / 2
+
+        // --- ORDERED CLIMB SLOTS: tiers 0..(count-2), with one flat REST slot inserted ---
+        // The rest shares its predecessor's tier (rise 0). Slot 0 is the centered teach
+        // pad; the rest are the side beats that zig-zag the column.
+        var slots: [(tier: Int, isRest: Bool)] = []
+        let restAfterTier = max(1, (count - 1) / 2)
+        for t in 0..<(count - 1) {
+            slots.append((tier: t, isRest: false))
+            if t == restAfterTier && t < count - 2 {
+                slots.append((tier: t, isRest: true))
             }
         }
-        // Resolve X left->right with a constant edge-to-edge gap.
+
+        // --- STRICT ALTERNATION with a deterministic PHASE that pins the FINAL climb
+        // beat (the last side slot, which feeds the approach bank) to the LEFT side.
+        // The side beats are slots[1...]; side(k) = startSign * (-1)^k. We choose
+        // startSign so the last side beat (k = nSide-1) is LEFT (-1), i.e. so the final
+        // pillar sits in the approach column and the step up to the approach bank is a
+        // single-tier vertical move (reachable, never a widened gap). Strict alternation
+        // everywhere else keeps every consecutive pair on OPPOSITE sides (~70-80pt gap).
+        let nSide = slots.count - 1
+        // Require the last side beat (k = nSide-1) to be LEFT: side(nSide-1) =
+        // startSign * (-1)^(nSide-1) == -1  ->  startSign = -((-1)^(nSide-1)).
+        //   nSide even -> (nSide-1) odd  -> (-1)^(nSide-1) = -1 -> startSign = +1
+        //   nSide odd  -> (nSide-1) even -> (-1)^(nSide-1) = +1 -> startSign = -1
+        let startSign: CGFloat = (nSide % 2 == 0) ? 1 : -1
+
         var resolved: [IPadBeat] = []
-        var prevRight: CGFloat = 0
-        for (i, b) in beats.enumerated() {
-            let cx: CGFloat
-            if i == 0 {
-                cx = 360
-            } else {
-                cx = prevRight + ipadStepGap + b.w / 2
+        var k = 0
+        for (idx, slot) in slots.enumerated() {
+            if idx == 0 {
+                resolved.append(IPadBeat(role: "teach", cx: center, w: ipadTeachWidth, tier: slot.tier))
+                continue
             }
-            resolved.append(IPadBeat(role: b.role, cx: cx, w: b.w, tier: b.tier))
-            prevRight = cx + b.w / 2
+            let side: CGFloat = startSign * ((k % 2 == 0) ? 1 : -1)   // (-1)^k
+            let cx = center + side * ipadColOffset
+            if slot.isRest {
+                resolved.append(IPadBeat(role: "rest", cx: cx, w: ipadRestWidth, tier: slot.tier))
+            } else {
+                resolved.append(IPadBeat(role: "pillar", cx: cx, w: ipadClimbWidth, tier: slot.tier))
+            }
+            k += 1
         }
-        // Append the exit bank: same (top) tier, 235pt un-jumpable chasm to the right.
-        let approach = resolved[resolved.count - 1]
-        let approachRight = approach.cx + approach.w / 2
-        let exitW: CGFloat = 360
-        let exitCx = approachRight + ipadChasmWidth + exitW / 2
-        resolved.append(IPadBeat(role: "exit", cx: exitCx, w: exitW, tier: count - 1))
+
+        // --- TOP TIER: approach bank (left) then exit bank (right), 235pt chasm between.
+        resolved.append(IPadBeat(role: "approach", cx: approachCx, w: ipadApproachWidth, tier: count - 1))
+        resolved.append(IPadBeat(role: "exit", cx: exitCx, w: ipadExitWidth, tier: count - 1))
         return resolved
     }
     // Cache the route once (it is pure given `size`) so every anchor derives from the
@@ -185,6 +228,9 @@ final class WindBridgeScene: BaseLevelScene, SKPhysicsContactDelegate {
     private var ipadApproachRight: CGFloat { ipadApproachBeat.cx + ipadApproachBeat.w / 2 }
     private var ipadExitBankCx: CGFloat { ipadExitBeat.cx }
     private var ipadExitBankWidth: CGFloat { ipadExitBeat.w }
+    // The confined column's right-most extent (exit bank right edge + margin). Used only
+    // to size the full-width death plane; no longer a scrolling course width (the column
+    // fits one frame, so there is no camera-follow).
     private var ipadCourseExtent: CGFloat { ipadExitBankCx + ipadExitBankWidth / 2 + 60 }
 
     // On iPhone `groundHeight` is the tall pillar height (Bit walks on its top at
@@ -257,36 +303,40 @@ final class WindBridgeScene: BaseLevelScene, SKPhysicsContactDelegate {
         setupHint()
     }
 
-    /// Native-iPad composed path. A full-height ascending climb through vertical tiers,
-    /// with the wind-bridge chasm staged as the high finale. Reuses the SHARED bridge/
-    /// wind/chasm/bit/exit code (those read `chasmStartX`/`chasmEndX`/`groundHeight`,
-    /// which point at the iPad finale chasm when `isWideCanvas`), so the device mechanic
-    /// and its fallback are preserved verbatim. The composed tier platforms are the
-    /// additional hand-authored content the wide canvas earns.
+    /// Native-iPad composed path. A CONFINED full-height climb through a vertical
+    /// zig-zag column centered on size.width/2, with the wind-bridge chasm staged as the
+    /// high finale. Reuses the SHARED bridge/wind/chasm/bit/exit code (those read
+    /// `chasmStartX`/`chasmEndX`/`groundHeight`, which point at the iPad finale chasm
+    /// when `isWideCanvas`), so the device mechanic and its fallback are preserved
+    /// verbatim. The composed tier platforms are the additional hand-authored content
+    /// the wide canvas earns.
     private func buildComposedIPadLevel() {
         setupBackground()
-        buildComposedBeats()      // teach (low) -> low/mid/high ascent -> rest -> high tension -> finale banks
+        buildComposedBeats()      // teach (low) -> zig-zag ascent -> rest -> finale banks (top)
         setupComposedDeathZone()  // full-course death plane (the chasm + below-floor)
         setupChasm()              // hatching visuals inside the finale chasm
         setupBridge()             // shared wind-bridge spanning the finale chasm
-        setupBit()                // spawns on the low teach platform
+        setupBit()                // spawns on the low teach platform (column center)
         setupExit()               // door on the exit bank (high, near ceiling)
         setupWindVisuals()        // wind line indicators over the finale chasm
         setupLevelTitle()
         setupHint()
 
-        // Course is far wider than the iPad viewport -- scroll it horizontally.
-        // worldWidth == the full authored course extent so the exit bank is reachable
-        // and the camera clamps exactly to the course ends. Camera Y stays scene-centered
-        // (the full vertical climb fits the viewport), ticked in BaseLevelScene.update().
-        installCameraFollow(worldWidth: ipadCourseExtent, playerController: playerController)
+        // NO camera-follow. The confined zig-zag column's horizontal extent fits within
+        // ~one iPad portrait width (far narrower than the viewport), so the ENTIRE
+        // floor->ceiling climb — spawn floor, every tier, the REST breath, and the
+        // finale approach/exit banks + bridge — is visible in ONE resting frame. The
+        // camera therefore rests at scene center on the column; installing horizontal
+        // camera-follow here was exactly what stranded the upper band off-screen (the
+        // iPad VOID). Bit's horizontal travel is bounded by the platforms themselves.
     }
 
     /// Builds the hand-composed iPad tier platforms (everything EXCEPT the bridge,
     /// which the shared mechanic owns). Each platform's TOP is `ipadVerticalTier(tier)`;
-    /// tiers climb low->high and spread left->right. Every consecutive step is a 1-tier
-    /// (or same-tier) move, so each rise <= maxJumpableRise (85) and each edge-to-edge
-    /// gap <= maxJumpableGap (130) by construction of the beat spacing.
+    /// tiers climb low->high and ZIG-ZAG around screen center (a confined column, not a
+    /// left-to-right switchback). Every consecutive step is a 1-tier (or same-tier) move,
+    /// so each rise <= maxJumpableRise (85) and each edge-to-edge gap <= maxJumpableGap
+    /// (130) by construction of the beat spacing.
     private func buildComposedBeats() {
         for beat in ipadBeats {
             let top = ipadVerticalTier(beat.tier)

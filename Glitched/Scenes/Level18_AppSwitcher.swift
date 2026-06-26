@@ -43,13 +43,10 @@ final class AppSwitcherScene: BaseLevelScene, SKPhysicsContactDelegate {
     private func courseX(_ logicalX: CGFloat) -> CGFloat { courseOriginX + logicalX * courseScale }
     private func courseLen(_ logical: CGFloat) -> CGFloat { logical * courseScale }
 
-    // Full extent of the composed iPad course (left margin .. exit beat). Used for
-    // the camera-follow world bound and the iPad death-zone width/center.
+    // Full width of the confined iPad death plane (centered on size.width/2). The
+    // climb is a slim vertical COLUMN that fits one frame, so this is no longer a
+    // scrolling course width / camera-follow bound — only the death-zone span.
     private var composedCourseExtent: CGFloat = 0
-
-    // Camera-relative top inset: distance from camera center (scene center on the
-    // iPad path) down to topSafeY, used to pin camera-parented HUD to the safe top.
-    private var effectiveTopInsetForHUD: CGFloat { size.height - topSafeY }
 
     override func configureScene() {
         levelID = LevelID(world: .world2, index: 18)
@@ -73,14 +70,15 @@ final class AppSwitcherScene: BaseLevelScene, SKPhysicsContactDelegate {
         createPeekOverlay()
         showInstructionPanel()
         setupBit()
-        // The composed iPad climb is wider than the viewport, so promote to the
-        // shared horizontal camera-follow. Done AFTER setupBit so the player
-        // controller exists. Camera Y stays at scene center; the freeze overlay /
-        // timer are camera-parented (see createPeekOverlay) so they stay aligned
-        // while the world scrolls. No-op on phone (composedCourseExtent == 0).
-        if isWideCanvas, composedCourseExtent > 0 {
-            installCameraFollow(worldWidth: composedCourseExtent, playerController: playerController)
-        }
+        // VOID FIX: NO camera-follow. The composed iPad climb is now a CONFINED
+        // vertical zig-zag COLUMN (centered on size.width/2, total horizontal extent
+        // within ~one iPad portrait width), so the whole floor->ceiling climb plus
+        // every peek-freeze hazard is visible in ONE resting frame. The prior
+        // installCameraFollow over a >2x-viewport diagonal staircase is exactly what
+        // stranded the spawn (low, left) and the instruction/upper tiers off-screen
+        // with a large dead band — the iPad VOID reviewers saw. The camera now rests
+        // at scene center on the column; HUD (title/instruction/freeze overlay) is
+        // scene-fixed again (see setupLevelTitle/showInstructionPanel/createPeekOverlay).
     }
 
     private func setupBackground() {
@@ -107,15 +105,11 @@ final class AppSwitcherScene: BaseLevelScene, SKPhysicsContactDelegate {
         title.fontColor = strokeColor
         title.horizontalAlignmentMode = .left
         title.zPosition = 100
-        // On the native-iPad path the world scrolls under camera-follow, so the
-        // title rides the camera (camera-relative top-left) to stay pinned.
-        if isWideCanvas, let cam = gameCamera {
-            title.position = CGPoint(x: -size.width / 2 + 80, y: size.height / 2 - effectiveTopInsetForHUD - 30)
-            cam.addChild(title)
-        } else {
-            title.position = CGPoint(x: 80, y: topSafeY - 30)
-            addChild(title)
-        }
+        // Scene-fixed on every path now. The confined-column iPad climb has NO
+        // camera-follow (the camera rests at scene center), so the title sits at the
+        // same top-leading scene coordinate as the phone — no camera parenting needed.
+        title.position = CGPoint(x: 80, y: topSafeY - 30)
+        addChild(title)
     }
 
     // iPad vertical-void fix: uniform upward lift applied to EVERY gameplay node
@@ -155,30 +149,47 @@ final class AppSwitcherScene: BaseLevelScene, SKPhysicsContactDelegate {
         addChild(death)
     }
 
-    // MARK: - Native-iPad Composed Course (full-height vertical climb)
+    // MARK: - Native-iPad Composed Course (CONFINED full-height vertical climb)
     //
-    // Phase-0 redesign: on iPad the old course was a flat low band (every platform
-    // within ~80pt of one ground line) that filled the WIDTH but left the top ~65%
-    // of the tall canvas empty. This rebuild makes the course ASCEND through the
-    // FULL usable band — from a low spawn (playableGroundY, near the bottom) up to
-    // a finale near playableCeilingY — using verticalTier() so every rise is auto-
-    // clamped to a safe jump (<= maxJumpableRise = 85). Tiers are spread LEFT-to-
-    // RIGHT (the course scrolls horizontally under camera-follow) as they climb, so
-    // it reads as a diagonal staircase, NOT a centered ladder, and uses the full
-    // width too.
+    // VOID FIX (proven CONFINED VERTICAL COLUMN pattern — mirrors Level2_Wind /
+    // Level27_VoiceOver buildComposedIPadLevel): the prior iPad course ASCENDED
+    // through the full band but marched LEFT->RIGHT across a course >2x the viewport
+    // (x += stepX every tier) and installed installCameraFollow. At spawn the camera
+    // rested low-left on the floor beat while the upper tiers, the finale, and the
+    // instruction panel sat OFF-SCREEN — the climb was a shallow diagonal that
+    // STRANDED the spawn and the instruction in different zones with large dead
+    // whitespace (the iPad VOID reviewers rated 'rework').
+    //
+    // Fix: keep the SAME full-height tier climb (floor near the bottom up to a finale
+    // near playableCeilingY, one beat per tier, every rise auto-clamped by
+    // verticalTier to <= maxJumpableRise = 85), but stack the beats as a slim
+    // VERTICAL ZIG-ZAG COLUMN centered on size.width/2 that STRICTLY ALTERNATES
+    // left/right of center as it ascends. The whole column's horizontal extent fits
+    // within ~one iPad portrait width (column half-width ~= colOffset + widest pad/2,
+    // far narrower than it is tall), so the ENTIRE floor->ceiling climb + every
+    // peek-freeze hazard is visible in ONE resting frame with NO horizontal scroll —
+    // installCameraFollow is dropped on this path and the camera rests at scene
+    // center on the column.
     //
     // The signature App-Switcher peek (freeze time + read fast-spike trajectories)
-    // escalates UP the climb: a single slow telegraphed spike on the teach beat,
-    // crossing pairs through the mid tiers, and a dense 3-spike crossfire over the
-    // HIGH FINALE landing (createIPadHazards) that is genuinely un-eye-timeable —
-    // the freeze snapshot is the only reliable read before the final step to the
-    // exit. Mechanic + fallback (appBackgrounded / appSwitcherPeeked) are unchanged.
+    // is BYTE-IDENTICAL: it escalates UP the climb — a single slow telegraphed spike
+    // on the teach beat (beat 0), faster crossing spikes through the mid tiers, and a
+    // dense 3-spike crossfire over the HIGH FINALE landing (createIPadHazards) that is
+    // genuinely un-eye-timeable, so the freeze snapshot is the only reliable read
+    // before the final step to the exit. Mechanic + fallback (appBackgrounded /
+    // appSwitcherPeeked) are unchanged; createIPadHazards still stages spikes over
+    // ipadBeats by index, so only the beat POSITIONS changed (centered column), never
+    // the hazard logic.
     //
-    // Reach budget: every center-to-center horizontal step <= maxJumpableGap (130)
-    // and every top-to-top rise is ONE tier (verticalTier clamps each tier step to
-    // <= maxJumpableRise = 85, so consecutive beats are always jumpable).
-    // Beat geometry is captured (ipadBeats) so createIPadHazards() can stage each
-    // spike over the right beat, and setupBit()/death zone reference spawn + extent.
+    // Reach budget: each climb beat sits on the OPPOSITE side of center from the one
+    // before (±colOffset), so the consecutive center-to-center horizontal step is
+    // 2*colOffset; with colOffset 105 that is 210pt center-to-center, but the
+    // platforms are narrow rungs (80-90pt) so the EDGE-TO-EDGE gap is ~120-130pt
+    // (<= maxJumpableGap = 130). The wide REST shares its predecessor's tier (rise 0)
+    // and is pushed to one side so its near edge still clears the neighbour. Every
+    // top-to-top rise is ONE tier (verticalTier clamp <= 85). Beat geometry is
+    // captured (ipadBeats) so createIPadHazards() can stage each spike over the right
+    // beat, and setupBit()/death zone reference spawn + extent.
     private var ipadGroundY: CGFloat = 0
     private var ipadSpawnX: CGFloat = 0
     // Captured (x, y == platform CENTER) per beat, in build order, for hazard staging.
@@ -186,6 +197,15 @@ final class AppSwitcherScene: BaseLevelScene, SKPhysicsContactDelegate {
     // Beat indices needing special hazard handling (resolved in buildComposedIPadLevel).
     private var ipadRestBeatIndex: Int = -1
     private var ipadFinaleBeatIndex: Int = -1
+
+    // CONFINED-COLUMN geometry. The climb zig-zags around size.width/2 at ±colOffset
+    // (strict alternation), so two consecutive opposite-side beats are 2*colOffset
+    // apart center-to-center; with rung widths 80-90pt the edge-to-edge gap is
+    // ~120-130pt (<= maxJumpableGap 130). The teach (beat 0) and finale pads are
+    // CENTERED on the column so the spawn and the exit both sit on screen center,
+    // not off in a corner. Column half-extent = colOffset + half the widest pad —
+    // far narrower than the iPad viewport, so the whole climb fits one frame.
+    private let ipadColOffset: CGFloat = 105
 
     private func buildComposedIPadLevel() {
         // Vertical fill: floor now sits NEAR THE BOTTOM (helper returns bottomSafeY+90
@@ -208,9 +228,10 @@ final class AppSwitcherScene: BaseLevelScene, SKPhysicsContactDelegate {
         // rise is guaranteed <= maxJumpableRise by the helper's clamp.
         func tierY(_ i: Int) -> CGFloat { verticalTier(i, of: tierCount, iphoneGround: 160) }
 
-        // Left start margin so the spawn platform isn't hard against the edge.
-        let m: CGFloat = 110
-        ipadSpawnX = m
+        // CONFINED COLUMN: every beat is authored as center + side*colOffset (or
+        // centered for teach/finale). Spawn rides the teach pad at column center.
+        let center = size.width / 2
+        ipadSpawnX = center
 
         ipadBeats.removeAll()
 
@@ -225,50 +246,57 @@ final class AppSwitcherScene: BaseLevelScene, SKPhysicsContactDelegate {
         // safe) and it widens the rhythm. Choose the tier just below the midpoint.
         let restTier = max(1, tierCount / 2)
 
-        // Walk the tiers bottom -> top, one rung per tier, zig-zagging X across the
-        // FULL width budget (each horizontal step <= maxJumpableGap = 130) so the
-        // climb is a diagonal staircase, not a centered ladder. Vary widths for
-        // rhythm. The TEACH tier (0) and FINALE tier (top) get wide bespoke pads.
-        let stepX: CGFloat = 125        // center-to-center horizontal advance (<=130)
-        // Lateral zig-zag offset applied alternately so tiers fan left/right of the
-        // marching X — keeps gaps within budget while using lateral space.
-        let zig: CGFloat = 22
-        var x = m
+        // Walk the tiers bottom -> top, one rung per tier, ZIG-ZAGGING around screen
+        // center: the teach pad (tier 0) and finale pad (top) are CENTERED; the climb
+        // rungs in between alternate strictly to the LEFT then RIGHT of center at
+        // ±colOffset, so the column is slim and confined (NOT a diagonal staircase).
+        // Each consecutive opposite-side step is 2*colOffset center-to-center; the
+        // narrow rung widths keep the edge-to-edge gap <= maxJumpableGap (130).
+        // `side` flips every climb rung. Vary widths for rhythm.
+        var side: CGFloat = -1          // first climb rung goes LEFT of center
         for tier in 0..<tierCount {
             let isTeach = (tier == 0)
             let isFinale = (tier == tierCount - 1)
             // Width rhythm: wide teach, wide finale, alternating narrow rungs between.
             let w: CGFloat = isTeach ? 150 : (isFinale ? 120 : (tier % 2 == 0 ? 90 : 80))
             let h: CGFloat = (isTeach || isFinale) ? 30 : 26
-            let lateral: CGFloat = (isTeach || isFinale) ? 0 : (tier % 2 == 0 ? zig : -zig)
-            beat(x: x + lateral, y: tierY(tier), w: w, h: h)
+            // Teach + finale centered; climb rungs zig-zag ±colOffset around center.
+            let x: CGFloat = (isTeach || isFinale) ? center : center + side * ipadColOffset
+            beat(x: x, y: tierY(tier), w: w, h: h)
 
             if isFinale {
                 ipadFinaleBeatIndex = ipadBeats.count - 1
-                createExitDoor(at: CGPoint(x: x + lateral + 10, y: tierY(tier) + 50))
+                createExitDoor(at: CGPoint(x: x + 10, y: tierY(tier) + 50))
             }
 
             // Drop the wide REST right after the chosen rest tier: a second platform
-            // on the SAME tier (zero rise) before continuing the climb.
+            // on the SAME tier (zero rise) before continuing the climb. Push it to the
+            // OPPOSITE side of the rung that precedes it so its near edge clears that
+            // rung; its far edge stays well inside the column.
             if tier == restTier && !isFinale {
-                x += stepX
-                beat(x: x, y: tierY(tier), w: 180, h: 30)   // wide breath
+                let restX = center - side * (ipadColOffset - 5)
+                beat(x: restX, y: tierY(tier), w: 150, h: 30)   // wide breath
                 ipadRestBeatIndex = ipadBeats.count - 1
             }
 
-            x += stepX
+            // Flip the zig-zag side for the next climb rung (teach/finale are centered
+            // and don't consume a flip, so the alternation stays clean across them).
+            if !isTeach && !isFinale { side = -side }
         }
 
-        // Course extent for camera-follow + death zone (right edge of the last beat).
-        let lastBeat = ipadBeats.last ?? CGPoint(x: x, y: g)
-        composedCourseExtent = lastBeat.x + 60 + 40   // platform half-width + margin
+        // Column horizontal extent (left-most to right-most beat edge) for the death
+        // plane width/center. With teach/finale centered and rungs at ±colOffset, the
+        // widest point is colOffset + half the widest rung (~90/2). Use a generous
+        // span so a fall anywhere off the column is caught; CENTER it on size.width/2.
+        let columnHalfExtent = ipadColOffset + 90 + 60
+        composedCourseExtent = columnHalfExtent * 2   // full death-plane width (centered)
 
-        // Death zone spanning the FULL composed course (not just the viewport), so
-        // a fall anywhere along the scrolling climb is fatal. Sits the same 210pt
-        // below the LOWEST ground baseline (g, tier 0) as the phone gap below its
-        // ground, well under the lowest platform.
+        // Death zone spanning the FULL column width (centered on size.width/2), so a
+        // fall anywhere off the confined climb is fatal. Sits the same 210pt below the
+        // LOWEST ground baseline (g, tier 0) as the phone gap below its ground, well
+        // under the lowest platform.
         let death = SKNode()
-        death.position = CGPoint(x: composedCourseExtent / 2, y: g - 210)
+        death.position = CGPoint(x: center, y: g - 210)
         death.physicsBody = SKPhysicsBody(rectangleOf: CGSize(width: composedCourseExtent + 400, height: 100))
         death.physicsBody?.isDynamic = false
         death.physicsBody?.categoryBitMask = PhysicsCategory.hazard
@@ -437,13 +465,12 @@ final class AppSwitcherScene: BaseLevelScene, SKPhysicsContactDelegate {
     }
 
     private func createPeekOverlay() {
-        // On the native-iPad path the world scrolls under camera-follow, so the
-        // full-screen freeze dim + timer must ride the camera (origin = camera
-        // center) to stay glued to the viewport. On phone there's no scroll, so
-        // they sit at scene center exactly as before (byte-identical).
-        let onCamera = isWideCanvas && gameCamera != nil
-        let overlayParent: SKNode = onCamera ? gameCamera : self
-        let centerPos: CGPoint = onCamera ? .zero : CGPoint(x: size.width / 2, y: size.height / 2)
+        // Scene-fixed on every path now. The confined-column iPad climb has NO
+        // camera-follow, so the world never scrolls; the full-screen freeze dim +
+        // timer sit at scene center exactly like the phone (byte-identical), with no
+        // camera parenting to keep them glued to a moving viewport.
+        let centerPos = CGPoint(x: size.width / 2, y: size.height / 2)
+        let overlayParent: SKNode = self
 
         peekOverlay = SKShapeNode(rectOf: size)
         peekOverlay.fillColor = strokeColor.withAlphaComponent(0.3)
@@ -497,16 +524,13 @@ final class AppSwitcherScene: BaseLevelScene, SKPhysicsContactDelegate {
         // pause column x[300,390]. Still far above the gameplay (Bit spawns y=200,
         // platforms top out ~y=295; the box bottom sits ~y=575 on iPhone 390).
         panel.zPosition = 300
-        // Native-iPad: ride the camera (camera-relative center-top) so the panel
-        // stays put while the composed climb scrolls. Phone: scene-fixed at the
-        // exact original position (byte-identical).
-        if isWideCanvas, let cam = gameCamera {
-            panel.position = CGPoint(x: 0, y: size.height / 2 - effectiveTopInsetForHUD - 165)
-            cam.addChild(panel)
-        } else {
-            panel.position = CGPoint(x: size.width / 2, y: topSafeY - 165)
-            addChild(panel)
-        }
+        // Scene-fixed on every path now. The confined-column iPad climb has NO
+        // camera-follow, so the panel sits at the same top-center scene coordinate as
+        // the phone (byte-identical) and is in-frame WITH the whole climb — no longer
+        // stranded relative to a scrolled spawn (the old camera-ride was paired with
+        // the VOID staircase that pushed spawn and instruction into different zones).
+        panel.position = CGPoint(x: size.width / 2, y: topSafeY - 165)
+        addChild(panel)
 
         let bg = SKShapeNode(rectOf: CGSize(width: 200, height: 90), cornerRadius: 8)
         bg.fillColor = fillColor

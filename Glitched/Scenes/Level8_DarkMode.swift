@@ -82,6 +82,21 @@ final class DarkModeScene: BaseLevelScene, SKPhysicsContactDelegate {
     // the delayed initial hardware re-read must not clobber it (the Level 5 lesson).
     private var hasReceivedAppearanceInput = false
 
+    // DISCOVERABILITY NUDGE: the core action — the OS Settings / Control-Center
+    // dark-mode switch — is OFF-SCREEN, so a player who never tries it sees nothing
+    // change and has no on-screen cue that the toggle is a SYSTEM control (the
+    // in-game TOGGLE DARK MODE button only exists on the accessibility-fallback
+    // path). After a short grace period of no appearance change, present ONE soft
+    // GlitchedNarrator line pointing at the device's dark-mode switch — enough to
+    // unstick the player without over-spoiling (the t=0 "NIGHT AND DAY..." clue and
+    // the earned, fully-explicit hintText() reveal are both left untouched).
+    // Tracked in play-time and fired at most once; suppressed the instant the player
+    // actually drives an appearance change (hasReceivedAppearanceInput) since that
+    // means they already found the switch.
+    private var timeWithoutAppearanceChange: TimeInterval = 0
+    private let discoverabilityNudgeDelay: TimeInterval = 7.0
+    private var discoverabilityNudgeShown = false
+
     // MARK: - Configuration
 
     override func configureScene() {
@@ -1520,6 +1535,27 @@ final class DarkModeScene: BaseLevelScene, SKPhysicsContactDelegate {
 
     override func updatePlaying(deltaTime: TimeInterval) {
         playerController.update()
+        updateDiscoverabilityNudge(deltaTime: deltaTime)
+    }
+
+    /// Soft discoverability nudge for the invisible core action. If the player has
+    /// gone `discoverabilityNudgeDelay` (~7s) of play time without ever driving an
+    /// appearance change, point them — once — at the SYSTEM dark-mode switch via the
+    /// shared 4th-wall narrator. Suppressed the moment any real appearance input
+    /// arrives (hasReceivedAppearanceInput), so a player who already found the toggle
+    /// never sees it. Deliberately under-spoils: it names WHERE the control lives
+    /// (the device's dark-mode switch) and its effect (what's solid), but leaves the
+    /// exact gesture and the dark-locked-door rule to the earned hintText() reveal.
+    private func updateDiscoverabilityNudge(deltaTime: TimeInterval) {
+        guard !discoverabilityNudgeShown, !hasReceivedAppearanceInput else { return }
+        timeWithoutAppearanceChange += deltaTime
+        guard timeWithoutAppearanceChange >= discoverabilityNudgeDelay else { return }
+        discoverabilityNudgeShown = true
+        GlitchedNarrator.present(
+            "THAT MOON ISN'T DECOR. FLIP YOUR DEVICE'S DARK MODE — IT CHOOSES WHAT'S REAL UNDER YOUR FEET.",
+            in: self,
+            style: .whisper
+        )
     }
 
     // MARK: - Input Handling
