@@ -1,6 +1,6 @@
 # Glitched — Review Console & Fix Campaign — RESUME
 
-Snapshot saved 2026-06-26. This branch (`review-wip`) holds the 4-reviewer console artifacts
+Snapshot saved 2026-06-26. This branch (`review-wip`) holds the 5-reviewer console artifacts
 + the review-driven code fixes, so a future session can continue.
 
 ## State of the game (on `main`)
@@ -9,17 +9,20 @@ Snapshot saved 2026-06-26. This branch (`review-wip`) holds the 4-reviewer conso
 - Review-driven fixes → **PR #15 `fix/review-driven` (DRAFT, NOT merged)** — awaiting operator review.
   iPad-void confines (L2/3/4/14/16/18), L5 de-spoil, hint-net (L9/13/19/24/33), L28 crash-harden.
 
-## The 4-reviewer console
+## The 5-reviewer console
 Every level reviewed by **Claude** (visual+code), **Codex** (gpt-5.5), **Gemini** (2.5-flash, AI Studio),
-**Kimi K2** — all read-only opinion files, no code edits.
+**Kimi K2**, and **DeepSeek** — all read-only opinion files, no code edits.
 - `reviews/claude/` … wait, Claude is in `_tooling/claude-reviews.json` (structured), others are `.md`.
-- `reviews/{codex,gemini,kimi}/<SceneClassName>.md` — first line `Level <N> — <mechanic>`.
+- `reviews/{codex,gemini,kimi,deepseek}/<SceneClassName>.md` — first line `Level <N> — <mechanic>`.
 - `reviews/iphone/L00.png` … `L33.png`, `reviews/ipad/L00.png` … — device screenshots (post-reorder).
-- **Gemini only reached 12/34** (free daily quota). To finish: set `GEMINI_API_KEY` (AI Studio key,
-  `selectedType: gemini-api-key` in ~/.gemini/settings.json) and run `_tooling/gemini_review.py`
-  (it skips existing files). Uses `curl` for the API (system Python urllib has no CA certs).
+- **Coverage: Claude/Codex/Gemini/Kimi 34/34; DeepSeek 23/34.** DeepSeek + the final Gemini pass were
+  both run via the operator's own model accounts over the 23-scene bundle
+  (`~/Desktop/glitched-gemini-remaining.md`), pasted back, then split with `_tooling/parse_reviews.py
+  <response.txt> <tool>`. DeepSeek is missing the FIRST 11 scenes (L0,1,2,3,4,6,9,11,12,13,14 — not in
+  that bundle); re-bundle those + paste-back to reach 34/34. (Old agentic Gemini CLI path is dead:
+  free Code Assist tier deprecated → `IneligibleTierError`.)
 
-## Rebuild the console (4-column HTML: iPhone | iPad | Claude | Codex | Gemini | Kimi)
+## Rebuild the console (5-column HTML: iPhone | iPad | Claude | Codex | Gemini | Kimi | DeepSeek)
 `python3 reviews/_tooling/build_console.py` → writes a self-contained `glitched-console.html`.
 NOTE: the `_tooling/*.py` and `*.js` have HARDCODED scratchpad paths from the original session —
 fix the `CL`/`SCRATCH`/`S` constants to the new clone path before re-running.
