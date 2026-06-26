@@ -1,0 +1,10 @@
+Review each of the 34 Glitched level scenes in Glitched/Scenes/Level*.swift. Glitched is a line-art SpriteKit puzzle-platformer where each level maps to a real iOS device feature (intended design in LEVEL-GUIDE.md). IMPORTANT: levels were just reordered, so a file's NAME may not equal its level NUMBER — trust the levelID set inside each scene's configureScene (e.g. index 9 = Time Travel, 10 = Orientation, 21 = Device Name, 22 = Voice, 23 = Battery).
+
+For EACH scene write a markdown file reviews/gemini/<SceneClassName>.md whose FIRST line is exactly "Level <N> — <mechanic>" (N from its levelID), then a concise, genuinely critical review (~6-8 sentences) covering:
+(1) is the mechanic clear and the puzzle fair on first encounter;
+(2) completability / jump-reach concerns (Bit's safe edge-to-edge gap <= 130, top-to-top rise <= 85);
+(3) clue/hint quality — does the t=0 text AVOID spoiling the trick, and does a stuck player get escalating help via notePlayerStruggle()/hintText();
+(4) any bug or rough edge in the code (e.g. an isWideCanvas hardcoded to a constant, dead code paths, force-unwraps, off-by-one);
+(5) ONE concrete improvement.
+
+This is paired side-by-side with independent Claude, Codex, and Kimi reviews, so be specific and critical, not generic. Do NOT modify any game code; only create the reviews/gemini/*.md files. Work through all 34 scenes before finishing. Create the reviews/gemini directory if it does not exist.

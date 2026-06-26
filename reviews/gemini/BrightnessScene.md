@@ -1,0 +1,6 @@
+Level 6 — Brightness
+The Brightness scene expertly integrates device brightness, offering clear visual feedback on platforms and the UI bar. The mechanic evolves from simple visibility to a nuanced 'sweet spot' challenge, with the `hasBurnedOnce` flag smartly revealing hints only after player discovery, making the puzzle genuinely fair. The adaptive platforming for different canvas sizes, especially the iPad's composed climb, ensures robust completability within strict jump constraints.
+
+Code-wise, the scene still relies on implicitly or explicitly force-unwrapped optionals for key nodes like `playerController`, `instructionPanel`, and hazard elements, which introduces potential runtime risks. While responsive layout logic is present, numerous magic numbers are embedded directly within layout calculations and drawing functions, hindering readability and maintainability. The `updateSinglePlatform` function, although functional, is verbose due to repetitive alpha and physics assignments based on brightness thresholds.
+
+One concrete improvement would be to centralize all hardcoded layout dimensions, offsets, and brightness thresholds into a dedicated `LayoutConstants` or `LevelConfig` struct. This would enhance code readability, simplify future adjustments, and promote consistency across the scene's complex visual and gameplay logic.

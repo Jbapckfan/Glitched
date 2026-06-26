@@ -1,0 +1,6 @@
+Level 2 — Wind
+The Wind Bridge scene expertly implements the microphone mechanic, guiding players with a subtle initial clue ("LOOKS WINDY") that escalates to an explicit "BLOW" hint upon struggle. The asymmetric bridge extension and retraction (fast out, slow in) is a thoughtful design choice, making the puzzle fair and forgiving, aligning perfectly with the intended experience. The level proactively addresses platforming concerns by ensuring the chasm is un-jumpable, thereby enforcing the core mechanic, while other sections remain traversable.
+
+The code features a sophisticated iPad-specific composed layout, though it contributes to a lengthy and dense file, with `isWideCanvas` relying on magic numbers. The extensive inline calculations for positions and sizes, while necessary for responsive design, impact readability. The correct handling of SpriteKit physics for vanishing platforms (`clearGroundedIfStandingOn`) is a robust detail. `playerController` remains an implicitly unwrapped optional.
+
+One concrete improvement would be to externalize the complex iPad layout data and generation logic into a dedicated helper, making the `WindBridgeScene.swift` file more focused on the gameplay mechanics and less on layout definitions.

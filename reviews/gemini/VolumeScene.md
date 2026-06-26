@@ -1,0 +1,6 @@
+Level 4 — Volume
+The Volume scene masterfully integrates the device's volume buttons into a dual-hazard puzzle, where volume controls both a sleeping wolf's alertness and a rising flood. The initial thematic clues are engaging without spoiling the core mechanic. The wolf's contextual sleep-talk provides an organic, subtle hint, while `hintText()` offers explicit guidance for truly stuck players. The dynamic shrinking of the safe zone adds a fair and increasing challenge to the gameplay.
+
+Critically, the `isWideCanvas` property is hardcoded to `false`, which effectively deactivates a significant portion of complex, hand-composed iPad layout code (`buildComposedIPadLevel` and related helpers). This leaves a substantial amount of unused logic in the file, increasing maintenance overhead and complexity without contributing to active gameplay. `playerController` is still an implicitly unwrapped optional. Many hardcoded offsets and sizes in UI elements could benefit from being named constants for improved readability and maintainability.
+
+One concrete improvement would be to either remove the inactive iPad layout code to streamline the file, or, if it's a planned feature, clearly mark it as such and consider externalizing it from the primary scene logic to reduce current file complexity.

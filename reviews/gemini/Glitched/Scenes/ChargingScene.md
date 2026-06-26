@@ -1,0 +1,6 @@
+Level 5 — Charging
+The Charging scene effectively implements the device charging mechanic, clearly communicating the objective through a visible battery icon and explicit instructions. The plug's rising and controlled sinking behavior makes the puzzle fair and recoverable, with safeguards like `plugMaxSink` preventing unrecoverable falls. The narration and `hintText()` offer excellent guidance and thematic feedback.
+
+However, a significant portion of the scene's code, specifically the `buildIPadClimb` function and its extensive iPad-specific layout calculations, is rendered inactive by `isWideCanvas` being hardcoded to `false`. This large block of dead code adds unnecessary complexity and maintenance burden to the file. `playerController` is an implicitly unwrapped optional, a pattern seen across scenes. The layout is also heavily reliant on magic numbers for positioning elements, which, despite detailed comments, makes it less flexible and harder to reason about.
+
+One concrete improvement would be to fully decouple or remove the currently inactive iPad climbing layout code. If the iPad path is a future consideration, it should be isolated in a separate module or feature branch to keep the primary scene file concise and focused solely on active gameplay logic.
