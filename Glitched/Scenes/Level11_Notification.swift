@@ -37,6 +37,23 @@ final class NotificationScene: BaseLevelScene, SKPhysicsContactDelegate {
     private var decoyNotificationId: String?
     private var notificationRequestCount = 0
 
+    // RESIDUAL-1/2 STATE: bind the in-app recovery card to the ATTEMPT that
+    // surfaced it so a stale card can never grant a free unlock.
+    //   - fauxNotificationDoorIndex: the door this card was shown for (the faux
+    //     tap only unlocks THAT door, never a later one).
+    //   - fauxNotificationAttemptId: the pending notification id the card recovers
+    //     (so a re-armed/torn-down attempt's leftover card is inert).
+    // Both are cleared whenever the card is removed.
+    private var fauxNotificationDoorIndex: Int?
+    private var fauxNotificationAttemptId: String?
+
+    // RESIDUAL-2 STATE: wall-clock arm time + delay of the genuine banner for the
+    // current pending attempt. On foreground return we use these to RE-SHOW the
+    // recovery card via a path that does NOT depend on the frozen scene SKAction
+    // — but only once the banner would actually have fired (arm + delay elapsed).
+    private var pendingRequestArmedAt: Date?
+    private var pendingRequestRealDelay: TimeInterval = 0
+
     // 4th-wall notification messages (sequential)
     private let fourthWallMessages = [
         "BIT IS WAITING FOR YOU IN LEVEL 11",
@@ -128,21 +145,45 @@ final class NotificationScene: BaseLevelScene, SKPhysicsContactDelegate {
                 && self.doorStates[self.currentDoorIndex] == false
             guard currentDoorStillLocked, let pendingId = self.pendingNotificationId else { return }
 
-            // Only re-arm if the request was actually torn down. With the
-            // preserveAcrossBackground fix the pending request normally survives a
-            // background/return, so we must NOT clobber a still-valid pending id
-            // (that would orphan a notification that's about to fire). We clear —
-            // and let the player re-tap the bell — only when the manager no longer
-            // tracks the request, i.e. the dead-bolt condition this fix targets.
+            // Two foreground-return cases:
+            //
+            // (A) Request was TORN DOWN (manager no longer tracks it). Clear the
+            //     stale pending id so re-tapping the bell schedules a fresh request
+            //     instead of being blocked by `guard pendingNotificationId == nil`.
+            //     We must NOT clobber a still-valid pending id (that would orphan a
+            //     notification about to fire), hence the hasPendingNotification gate.
+            //
+            // (B) RESIDUAL 2 — request is STILL PENDING (preserved across
+            //     background, the realistic path: the level tells the player to
+            //     leave the app and wait). The recovery card is a scene SKAction
+            //     that FREEZES while backgrounded, so if the OS banner fired and was
+            //     dismissed in the background, the card never appeared and the door
+            //     is soft-stuck. Re-show the card here via a path that does NOT
+            //     depend on the frozen action — but only once the genuine banner
+            //     would actually have fired (arm + delay elapsed in wall-clock), and
+            //     only if no card is already up (no double-show).
             if !NotificationGameManager.shared.hasPendingNotification(id: pendingId) {
                 self.pendingNotificationId = nil
                 self.decoyNotificationId = nil
+                self.pendingRequestArmedAt = nil
+                self.pendingRequestRealDelay = 0
                 // Request was torn down — cancel its pending recovery-card timer so
                 // it can't fire for the cleared id (fire-time id guard also covers
                 // this; cancelling keeps the re-arm a clean full teardown).
                 self.removeAction(forKey: "foregroundRecoveryCard")
+                self.dismissFauxNotification(animated: false)
                 self.waitingIndicator?.removeFromParent()
                 self.waitingIndicator = nil
+            } else if self.fauxNotificationNode == nil,
+                      let armedAt = self.pendingRequestArmedAt,
+                      Date().timeIntervalSince(armedAt) >= self.pendingRequestRealDelay {
+                // Genuine banner would already have fired and may have been
+                // background-dismissed; the frozen SKAction can't be relied on.
+                // Surface the recovery card now (bound to this still-live attempt by
+                // showFauxNotification). Cancel the frozen timer so it can't ALSO
+                // fire on resume and double-show.
+                self.removeAction(forKey: "foregroundRecoveryCard")
+                self.showFauxNotification()
             }
         }
     }
@@ -763,6 +804,10 @@ final class NotificationScene: BaseLevelScene, SKPhysicsContactDelegate {
         // The genuine unlock signal — always from the "GLITCHED" sender.
         // If this is the 3rd+ request, auto-unlock faster (the game gives up).
         let realDelay: TimeInterval = (messageIndex == fourthWallMessages.count - 1) ? 2.0 : 3.0
+        // Record the wall-clock arm time + delay so a foreground return can decide
+        // whether the genuine banner would already have fired (RESIDUAL 2 re-show).
+        pendingRequestArmedAt = Date()
+        pendingRequestRealDelay = realDelay
         NotificationGameManager.shared.scheduleNotification(
             id: id,
             title: "GLITCHED",
@@ -926,6 +971,14 @@ final class NotificationScene: BaseLevelScene, SKPhysicsContactDelegate {
 
         uiLayer.addChild(notif)
         fauxNotificationNode = notif
+        // Bind this card to the attempt that surfaced it so its tap can only ever
+        // unlock the door it was shown for (RESIDUAL 1). pendingNotificationId is
+        // set for both the granted (recovery) and DENIED paths — both arm a request
+        // and assign the id before this runs. The attempt-id guard is only enforced
+        // when an id was actually pending, so a nil id (defensive) still unlocks the
+        // current door via the door-index match.
+        fauxNotificationDoorIndex = currentDoorIndex
+        fauxNotificationAttemptId = pendingNotificationId
 
         // Slide in from top
         notif.alpha = 0
@@ -936,6 +989,24 @@ final class NotificationScene: BaseLevelScene, SKPhysicsContactDelegate {
                 .scale(to: 1.0, duration: 0.8)
             ]))
         ]))
+    }
+
+    /// Remove the in-app recovery card and clear all attempt-binding state. One
+    /// place to tear the card down so every removal path (banner-tap unlock, decoy
+    /// re-arm, foreground re-arm, the card's own tap) leaves NO tappable leftover
+    /// that could grant a second/free unlock (RESIDUAL 1). `animated` fades it out
+    /// (the card's own tap), otherwise it's removed immediately.
+    private func dismissFauxNotification(animated: Bool) {
+        if let node = fauxNotificationNode {
+            if animated {
+                node.run(.sequence([.fadeOut(withDuration: 0.2), .removeFromParent()]))
+            } else {
+                node.removeFromParent()
+            }
+        }
+        fauxNotificationNode = nil
+        fauxNotificationDoorIndex = nil
+        fauxNotificationAttemptId = nil
     }
 
     private func showWaitingIndicator() {
@@ -1010,8 +1081,16 @@ final class NotificationScene: BaseLevelScene, SKPhysicsContactDelegate {
         // surface a stale card after the unlock (the fire-time guard also covers
         // this via the now-nil pendingNotificationId).
         removeAction(forKey: "foregroundRecoveryCard")
+        // RESIDUAL 1: if the recovery card was already on screen (shown at
+        // realDelay) when the genuine OS banner was tapped, remove it now. Leaving
+        // it up let a second tap call unlockCurrentDoor() again and open the NEXT
+        // door for free. Tearing it down here guarantees a banner-tap unlock leaves
+        // no tappable leftover card.
+        dismissFauxNotification(animated: false)
         pendingNotificationId = nil
         decoyNotificationId = nil
+        pendingRequestArmedAt = nil
+        pendingRequestRealDelay = 0
 
         currentDoorIndex += 1
 
@@ -1038,6 +1117,12 @@ final class NotificationScene: BaseLevelScene, SKPhysicsContactDelegate {
         // fire for a now-dead id (the fire-time id guard already covers this, but
         // cancelling keeps the attempt's state fully torn down).
         removeAction(forKey: "foregroundRecoveryCard")
+        // If a recovery card from this voided attempt is already up, remove it so
+        // it can't grant an unlock for a dead attempt (its attempt-id guard would
+        // also reject it, but a clean teardown leaves no confusing leftover card).
+        dismissFauxNotification(animated: false)
+        pendingRequestArmedAt = nil
+        pendingRequestRealDelay = 0
         waitingIndicator?.removeFromParent()
         waitingIndicator = nil
 
@@ -1105,11 +1190,24 @@ final class NotificationScene: BaseLevelScene, SKPhysicsContactDelegate {
             return
         }
 
-        // Check if faux notification tapped (fallback when permissions denied)
+        // Check if faux notification tapped (fallback when permissions denied, or
+        // the granted-but-dismissed recovery card).
         let tapped = nodes(at: location)
         if tapped.contains(where: { $0.name == "fauxNotification" }) {
-            fauxNotificationNode?.run(.sequence([.fadeOut(withDuration: 0.2), .removeFromParent()]))
-            fauxNotificationNode = nil
+            // RESIDUAL 1: the card may only unlock the door it was shown for, and
+            // (when a request was pending) only for that still-live attempt. This
+            // blocks a leftover card from opening the NEXT door for free if it
+            // survived to here. A nil attempt id (defensive) is accepted, gated by
+            // the door-index match.
+            let unlocksCurrentDoor = fauxNotificationDoorIndex == currentDoorIndex
+            let attemptStillValid = fauxNotificationAttemptId == nil
+                || fauxNotificationAttemptId == pendingNotificationId
+            guard unlocksCurrentDoor, attemptStillValid else {
+                // Stale/void card — just clear it; never grant an unlock.
+                dismissFauxNotification(animated: true)
+                return
+            }
+            dismissFauxNotification(animated: true)
             unlockCurrentDoor()
             return
         }

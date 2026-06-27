@@ -878,7 +878,7 @@ final class ChargingScene: BaseLevelScene, SKPhysicsContactDelegate {
     // MARK: - Boarding gate (iPad already-charging / charging deferral)
 
     /// True only when Bit's body is genuinely OVER the plug's rideable carry
-    /// footprint AND resting on the start-platform surface, i.e. boarding the plug
+    /// footprint AND resting at the start-platform surface, i.e. boarding the plug
     /// now is guaranteed to start a real carry (plugContactCount > 0 once the plug
     /// rises). This is the single source of truth for "is it safe to fire the plug".
     ///
@@ -892,8 +892,26 @@ final class ChargingScene: BaseLevelScene, SKPhysicsContactDelegate {
     /// body SUBSTANTIALLY overlaps the carry surface, never balanced on the lip).
     ///
     /// Surface: feet must rest near the start-platform top (body-centre within the
-    /// worst-case half-height + a small margin of the surface) AND Bit must report
-    /// grounded, so the plug only fires under a passenger actually standing on it.
+    /// worst-case half-height + a small margin of the surface), so the plug only
+    /// fires under a passenger actually standing at boarding height.
+    ///
+    /// NOTE — why this deliberately does NOT also require `bit.isGrounded`:
+    /// `isGrounded` is a NAIVE single bool, not ref-counted (see didBegin/didEnd).
+    /// `didEnd` defers `setGrounded(false)` for ANY ending ground contact regardless
+    /// of other still-active ground contacts. The iPad funnel ledge OVERLAPS the
+    /// central start platform (funnel x ~[rightWallX-60, rightWallX+140] abuts the
+    /// start platform x [centerX-130, centerX+130]), so walking off the funnel onto
+    /// the start platform can leave Bit in CONTINUOUS ground contact while the
+    /// funnel-contact `didEnd` clears grounded with NO fresh `didBegin` to re-assert
+    /// it -> isGrounded reads false while he physically stands in the valid window.
+    /// Gating on it there would NEVER satisfy this predicate, the deferred plug would
+    /// NEVER fire, and the only completion path (riding the plug) would be gone =>
+    /// softlock. The x +-55 (inside the +-60 carry body) and y +-30 (body-centre at
+    /// the start-platform surface) terms ALREADY prove Bit is positioned over the
+    /// plug at surface height: the plug bursts its surface top to ~190 (= his feet,
+    /// see animatePlugEntry), so plugContactCount > 0 is guaranteed the moment it
+    /// rises. `isGrounded` was redundant for the no-empty-ride property and only
+    /// added the never-fire failure mode, so it is intentionally dropped.
     private var bitIsRideablePosition: Bool {
         let centerX = size.width / 2
         // Plug body / rideable platform are 120pt wide centred on centerX
@@ -904,8 +922,7 @@ final class ChargingScene: BaseLevelScene, SKPhysicsContactDelegate {
         let worstCaseBodyHalfHeight: CGFloat = 34            // 64 * 0.85 * 1.25 / 2
         let overPlug = abs(bit.position.x - centerX) <= plugCarryHalfFootprint
         let onSurface =
-            abs(bit.position.y - (startPlatformTopY + worstCaseBodyHalfHeight)) <= 30 &&
-            bit.isGrounded
+            abs(bit.position.y - (startPlatformTopY + worstCaseBodyHalfHeight)) <= 30
         return overPlug && onSurface
     }
 
@@ -1168,7 +1185,11 @@ final class ChargingScene: BaseLevelScene, SKPhysicsContactDelegate {
         // plug body, so the trigger could fire while Bit stood to the RIGHT of the
         // plug; the plug then rose with plugContactCount==0 and stranded him. We now
         // require bitIsRideablePosition (x within +-55 of centerX, inside the +-60
-        // body, AND resting/grounded on the surface), guaranteeing plugContactCount>0.
+        // body, at the start-platform surface height), guaranteeing plugContactCount>0
+        // once the plug rises. We deliberately do NOT also require isGrounded here: it
+        // is a naive bool that can read false while Bit stands on the start platform
+        // after stepping off the overlapping funnel ledge, which would make this defer
+        // NEVER fire (softlock). See bitIsRideablePosition for the full rationale.
         if pendingBoardingAutoTrigger && bitIsRideablePosition {
             pendingBoardingAutoTrigger = false
             triggerPlugAnimation()
