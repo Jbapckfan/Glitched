@@ -65,6 +65,13 @@ final class VoiceCommandScene: BaseLevelScene, SKPhysicsContactDelegate {
     // Voice command state
     private var bridgeNode: SKNode?
     private var bridgeExtended = false
+    /// Latched record that BRIDGE has been spoken at least once. `bridgeExtended`
+    /// is the transient live-surface flag that auto-retracts 5s after BRIDGE
+    /// (retractBridge), so a deliberate player who says BRIDGE, crosses the
+    /// ~227pt span, then reaches the FLY point >5s later would be wrongly told to
+    /// "SPEAK BRIDGE AND OPEN FIRST". The FLY gate keys off this latch instead so
+    /// it stays satisfied once BRIDGE has ever fired. Never reset.
+    private var bridgeHasBeenExtended = false
     private var doorNode: SKNode?
     private var doorBlocker: SKNode?
     private var doorOpened = false
@@ -227,10 +234,13 @@ final class VoiceCommandScene: BaseLevelScene, SKPhysicsContactDelegate {
         // only crossable via the extended BRIDGE.
         createPlatform(at: CGPoint(x: courseX(360), y: groundY), size: CGSize(width: courseLen(60), height: 30))
         // Door at the middle platform's right edge (logical 390), centered at
-        // groundY+60 with a 90-pt frame spanning y=175..265 — higher than the
-        // player's jump-apex body bottom (~247), so it can't be cleared by
-        // jumping before OPEN is spoken.
-        createLockedDoor(at: CGPoint(x: courseX(390), y: groundY + 60))
+        // groundY+68.5 with a 107-pt frame spanning y=175..282 — its top clears
+        // Bit's ~91pt jump apex by the project's ~16pt margin so it can't be
+        // skipped by a max-height frame-perfect jump before OPEN is spoken. The
+        // prior 90-pt/+60-centered door topped out at only ~groundY+105, a ~1pt
+        // margin a frame-perfect jump could clear; height 107 matches the iPad
+        // finale door's safe margin.
+        createLockedDoor(at: CGPoint(x: courseX(390), y: groundY + 68.5), height: 107)
 
         // Small platform before the exit plateau: center 400, width 50 -> [375,425].
         // Overlaps the middle platform's right edge (390) so, once OPEN clears
@@ -731,6 +741,9 @@ final class VoiceCommandScene: BaseLevelScene, SKPhysicsContactDelegate {
     private func extendBridge() {
         guard !bridgeExtended, let bridge = bridgeNode else { return }
         bridgeExtended = true
+        // Latch that BRIDGE has fired (never reset) so the FLY gate stays
+        // satisfied even after the 5s auto-retract clears bridgeExtended.
+        bridgeHasBeenExtended = true
         // Forward progress: extending the bridge is a clear gate cleared, so reset
         // the struggle/hint timers (matches the shared difficulty-hint contract).
         notePlayerProgress()
@@ -799,8 +812,12 @@ final class VoiceCommandScene: BaseLevelScene, SKPhysicsContactDelegate {
         // Gate FLY behind the earlier commands so it can't be used to skip
         // BRIDGE (the ~227pt chasm at the 390-pt iPhone) or OPEN (the locked
         // door). Without this, saying FLY at spawn launches the player high
-        // enough to arc over the chasm and the door in one go.
-        guard bridgeExtended && doorOpened else {
+        // enough to arc over the chasm and the door in one go. Uses the LATCHED
+        // bridgeHasBeenExtended (not the transient bridgeExtended, which
+        // auto-retracts 5s after BRIDGE) so a deliberate player who crossed the
+        // span and reaches FLY later is not wrongly rejected. doorOpened is
+        // already a one-way latch, so it is checked directly.
+        guard bridgeHasBeenExtended && doorOpened else {
             showCommandHint("SPEAK BRIDGE AND OPEN FIRST")
             return
         }

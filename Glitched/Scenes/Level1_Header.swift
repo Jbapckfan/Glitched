@@ -667,12 +667,20 @@ final class HeaderScene: BaseLevelScene, SKPhysicsContactDelegate {
             spawnBridge()
         } else {
             notePlayerStruggle()
+            // Scene-authoritative reject: the drop missed, so tell the SwiftUI HUD to
+            // snap the banner back home (no soft-lock — the banner stays available to retry).
+            InputEventBus.shared.post(.hudDropRejected(elementID: "levelHeader"))
         }
     }
 
     private func spawnBridge() {
         bridgeSpawned = true
         notePlayerProgress()
+
+        // Scene-authoritative consume: tell the SwiftUI HUD the drop succeeded so it
+        // finally dismisses the banner. The HUD no longer self-consumes on its own
+        // drop gate, so this confirmation is what retires the LEVEL 1 banner.
+        InputEventBus.shared.post(.hudBridgeConfirmed(elementID: "levelHeader"))
 
         let bridgeWidth = pitEndX - pitStartX + 60 * layoutXScale
         let bridgeHeight: CGFloat = 12 * visualScale

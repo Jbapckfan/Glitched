@@ -48,6 +48,21 @@ final class BatteryPercentScene: BaseLevelScene, SKPhysicsContactDelegate {
     // 4th-wall aside fires once (near the first drain), not on every battery tick.
     private var fourthWallShown = false
 
+    // IDLE-NUDGE (non-death escalation): the base class only reveals the explicit
+    // hintText() spoiler ("Lower your battery %…") at the 18s/22s no-progress timer,
+    // and handleDeath()'s notePlayerStruggle() only escalates on REPEATED DEATH. A
+    // player who is stuck but NOT dying (wandering the high stones, never touching
+    // DRAIN POWER) gets no nudge toward the mechanic. Surface ONE soft, NON-SPOILER
+    // whisper at ~13s of zero progress that points at the DRAIN POWER control WITHOUT
+    // naming the <50%/<60% hidden-exit threshold. "Zero progress" == the player has
+    // not drained any power yet (hasDrained == false); the first drain suppresses it.
+    // Accumulated in updatePlaying (the base ticks that only while .playing), so it
+    // measures active play time, and sits BEFORE the base 18s/22s reveal.
+    private var hasDrained = false
+    private var idleNudgeElapsed: TimeInterval = 0
+    private var idleNudgeShown = false
+    private let idleNudgeDelay: TimeInterval = 13.0
+
     // Hidden exit below platform 5
     private var hiddenExitNode: SKNode?
     private var hiddenExitBody: SKSpriteNode?
@@ -568,12 +583,25 @@ final class BatteryPercentScene: BaseLevelScene, SKPhysicsContactDelegate {
         text1.position = CGPoint(x: 0, y: 12)
         panel.addChild(text1)
 
-        let text2 = SKLabelNode(text: "MORE POWER ISN'T ALWAYS BETTER")
+        // FIRST-ENCOUNTER SIGNAL FIX: "MORE POWER ISN'T ALWAYS BETTER" could be
+        // misread as "add power". Point the player toward LOWERING (DRAIN POWER)
+        // explicitly — and add a subtle downward arrow cue — WITHOUT spoiling the
+        // <50% hidden-exit threshold (we never say how low, only the direction).
+        let text2 = SKLabelNode(text: "DRAINING POWER REVEALS MORE THAN CHARGING DOES")
         text2.fontName = "Menlo"
         text2.fontSize = 10
         text2.fontColor = strokeColor
         text2.position = CGPoint(x: 0, y: -8)
         panel.addChild(text2)
+
+        // Subtle downward cue: reinforce LOWER (not raise) the battery without text.
+        let downCue = SKLabelNode(text: "▼ LOWER ▼")
+        downCue.fontName = "Menlo"
+        downCue.fontSize = 9
+        downCue.fontColor = strokeColor
+        downCue.alpha = 0.6
+        downCue.position = CGPoint(x: 0, y: -26)
+        panel.addChild(downCue)
 
         panel.run(.sequence([.wait(forDuration: 6), .fadeOut(withDuration: 0.5), .removeFromParent()]))
     }
@@ -724,6 +752,12 @@ final class BatteryPercentScene: BaseLevelScene, SKPhysicsContactDelegate {
         }
         simulatedBattery = max(0, (simulatedBattery ?? 100) - 10)
         updateBatteryState(simulatedBattery!)
+
+        // IDLE-NUDGE: lowering power IS the intended progress here, so the first
+        // drain marks progress — suppress the idle nudge and reset the base
+        // no-progress timer so a player actively draining isn't nagged.
+        hasDrained = true
+        notePlayerProgress()
     }
 
     private func showFakeExitTaunt() {
@@ -782,6 +816,24 @@ final class BatteryPercentScene: BaseLevelScene, SKPhysicsContactDelegate {
 
     override func updatePlaying(deltaTime: TimeInterval) {
         playerController.update()
+        tickIdleNudge(deltaTime: deltaTime)
+    }
+
+    // IDLE-NUDGE: accumulate active-play time while the player has NOT yet drained
+    // any power and fire ONE soft, NON-SPOILER nudge toward the DRAIN POWER control
+    // at idleNudgeDelay (~13s). Sits BEFORE the base class's 18s/22s explicit
+    // hintText() reveal so a stuck-but-not-dying player who never touches DRAIN gets
+    // a gentle thematic nudge first. Suppressed the moment the player drains (see
+    // simulateBatteryDrain). Does NOT name the <50%/<60% hidden-exit threshold —
+    // that explicit instruction stays earned at the base reveal.
+    private func tickIdleNudge(deltaTime: TimeInterval) {
+        guard !idleNudgeShown, !hasDrained else { return }
+        idleNudgeElapsed += deltaTime
+        guard idleNudgeElapsed >= idleNudgeDelay else { return }
+        idleNudgeShown = true
+        // 4th-wall whisper (matches showFourthWall's register): points DOWN at the
+        // DRAIN POWER button without spoiling how low to go.
+        GlitchedNarrator.present("STUCK? TRY THE DRAIN POWER BUTTON. DOWN, NOT UP.", in: self, style: .whisper)
     }
 
     // MARK: - Physics Contact

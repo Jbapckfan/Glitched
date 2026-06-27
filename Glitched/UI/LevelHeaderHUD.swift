@@ -1,4 +1,5 @@
 import SwiftUI
+import Combine
 
 // MARK: - Global HUD reserved-zone layout constants
 //
@@ -115,6 +116,25 @@ struct LevelHeaderHUD: View {
                         idlePulse = true
                     }
                 }
+                // FAIRNESS: the SCENE is authoritative over whether a drop bridged the
+                // pit. Wait for its verdict instead of self-consuming on our own gate.
+                //   - .hudBridgeConfirmed -> the bridge spawned; retire the banner.
+                //   - .hudDropRejected    -> the drop missed; snap the banner home so the
+                //                            player can retry (no soft-lock).
+                .onReceive(InputEventBus.shared.events) { event in
+                    switch event {
+                    case .hudBridgeConfirmed(let elementID) where elementID == "levelHeader":
+                        withAnimation(.easeOut(duration: 0.2)) {
+                            hasDropped = true
+                        }
+                    case .hudDropRejected(let elementID) where elementID == "levelHeader":
+                        withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
+                            dragOffset = .zero
+                        }
+                    default:
+                        break
+                    }
+                }
                 // Gesture stays attached to the title CARD (before the expanding
                 // positioning frame) so only the title is draggable — full drag
                 // functionality preserved.
@@ -140,15 +160,20 @@ struct LevelHeaderHUD: View {
 
                             // Check if dropped far enough (below top third of screen)
                             if finalPosition.y > geometry.size.height / 3 {
+                                // FAIRNESS: do NOT optimistically consume the banner here.
+                                // Clearing this HUD gate is NOT the same as the scene
+                                // accepting the drop — a drop that passes here but misses
+                                // the scene's pit gate used to leave the banner gone AND
+                                // no bridge (soft-lock). Instead, just report the drop and
+                                // leave the banner parked at its dropped offset; the scene
+                                // is now authoritative: .hudBridgeConfirmed consumes it,
+                                // .hudDropRejected snaps it home (see .onReceive below).
                                 InputEventBus.shared.post(
                                     .hudDragCompleted(
                                         elementID: "levelHeader",
                                         screenPosition: finalPosition
                                     )
                                 )
-                                withAnimation(.easeOut(duration: 0.2)) {
-                                    hasDropped = true
-                                }
                             } else {
                                 // Snap back
                                 withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {

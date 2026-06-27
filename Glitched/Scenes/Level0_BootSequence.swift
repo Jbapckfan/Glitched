@@ -800,4 +800,12 @@ final class BootSequenceScene: BaseLevelScene {
         let nextLevel = LevelID(world: .world1, index: 1)
         GameState.shared.load(level: nextLevel)
     }
+
+    // Boot-specific copy for the base class's ~18s no-progress hint panel. Without
+    // this the generic "Try using your device's features..." fallback shows, which
+    // is off-theme for a drag-the-loading-bar boot screen. (The 6s idle-nudge in
+    // scheduleIdleNudge/triggerIdleNudge is a separate, earlier escalation.)
+    override func hintText() -> String? {
+        return "Drag the white dot all the way right to boot."
+    }
 }

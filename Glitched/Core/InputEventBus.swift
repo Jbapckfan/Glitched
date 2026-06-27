@@ -88,6 +88,8 @@ extension GameInputEvent {
         case .voiceOverStateChanged: return "voiceOverStateChanged"
         case .airdropReceived: return "airdropReceived"
         case .hudDragCompleted: return "hudDragCompleted"
+        case .hudBridgeConfirmed: return "hudBridgeConfirmed"
+        case .hudDropRejected: return "hudDropRejected"
         case .flashlightChanged: return "flashlightChanged"
         case .flashlightAngleChanged: return "flashlightAngleChanged"
         case .appReviewReturned: return "appReviewReturned"

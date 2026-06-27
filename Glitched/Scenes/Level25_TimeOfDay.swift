@@ -351,13 +351,20 @@ final class TimeOfDayScene: BaseLevelScene, SKPhysicsContactDelegate {
         // to float far left of the centered course, making the puzzle merely
         // cosmetic). y is a screen-space offset and is left unconverted.
         //
-        // Enemy 0 is the REQUIRED-mechanic guard: it patrols across P2's only
-        // safe landing (span [220,310], top y=187.5), so in DAY it sweeps the
-        // landing of the forced P1->P2 jump (lethal-but-fair timing) and the
-        // player must switch to NIGHT to sleep it and land. Enemies 1-2 are
-        // flavor patrols on the same pad / exit pad.
+        // Enemy 0 is the REQUIRED-mechanic guard: it patrols across the FULL of
+        // P2's only safe landing (span [220,310], top y=187.5), so in DAY no
+        // perch — including the far-right corner — survives the forced P1->P2
+        // jump (lethal-but-fair) and the player MUST switch to NIGHT to sleep it
+        // and land. (range 45 -> sweep center [205,295]; with the spike's ±12
+        // base the lethal span reaches [193,307], leaving no dodgeable far-right
+        // gap that a first-timer could exploit to skip the mechanic.) Enemies
+        // 1-2 are flavor patrols on the same pad / exit pad.
         let enemyData: [(logicalX: CGFloat, y: CGFloat, range: CGFloat)] = [
-            (250, groundY + 38, 35),   // GUARD: covers P2 landing [215,285]
+            (250, groundY + 38, 45),   // GUARD: range 45 sweeps [205,295]; with the
+                                       // spike's ±12 base this covers P2's full top
+                                       // [220,310] (far-right perch [285,310] is no
+                                       // longer dodgeable) so the awake DAY guard makes
+                                       // EVERY viable P2 landing lethal -> NIGHT required.
             (300, groundY + 38, 12),   // flavor: P2 right shoulder
             (355, groundY + 23, 15),   // flavor: exit pad
         ]

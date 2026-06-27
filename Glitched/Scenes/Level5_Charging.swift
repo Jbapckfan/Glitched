@@ -22,6 +22,15 @@ final class ChargingScene: BaseLevelScene, SKPhysicsContactDelegate {
     private var hasPlugArrived = false
     private var isCurrentlyCharging = false
 
+    // iPad-only deferral of the already-charging auto-trigger. On the wide canvas
+    // Bit spawns at the bottom-left climb base (setupBit), NOT on the central
+    // boarding platform, so firing the plug at launch rides it to the top EMPTY and
+    // strands a player who later climbs (the plug is hard-gated by hasPlugArrived
+    // and can't be re-summoned). When already charging at launch we instead arm this
+    // flag and summon the plug only once Bit actually reaches the central boarding
+    // platform (detected per-frame in updatePlaying). The iPhone path never sets it.
+    private var pendingBoardingAutoTrigger = false
+
     private let shaftWidth: CGFloat = 300
 
     // MARK: - Native-iPad layout
@@ -159,8 +168,17 @@ final class ChargingScene: BaseLevelScene, SKPhysicsContactDelegate {
 
         if UIDevice.current.batteryState == .charging || UIDevice.current.batteryState == .full {
             isCurrentlyCharging = true
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
-                self?.triggerPlugAnimation()
+            if isWideCanvas {
+                // iPad: Bit spawns at the bottom-left climb base, not on the central
+                // boarding platform. Firing now would ride the plug to the top EMPTY
+                // and strand the climbing player. DEFER the auto-trigger until Bit
+                // actually reaches the boarding platform (see updatePlaying). The
+                // real charging-event path (.deviceCharging) is unchanged.
+                pendingBoardingAutoTrigger = true
+            } else {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
+                    self?.triggerPlugAnimation()
+                }
             }
         } else {
             // DE-SPOIL (t=0): the battery icon used to carry a permanent
@@ -1050,6 +1068,11 @@ final class ChargingScene: BaseLevelScene, SKPhysicsContactDelegate {
         case .deviceCharging(let isPluggedIn):
             isCurrentlyCharging = isPluggedIn
             if isPluggedIn {
+                // A real plug-in event is the canonical trigger; if the iPad
+                // already-charging deferral was still armed, consume it so it can't
+                // re-fire later (triggerPlugAnimation is itself idempotent via its
+                // isPlugAnimating / hasPlugArrived guard).
+                pendingBoardingAutoTrigger = false
                 triggerPlugAnimation()
                 GlitchedNarrator.present("FEEDING ME ELECTRICITY? HOW... NURTURING.", in: self, style: .alert)
             } else if hasPlugArrived {
@@ -1064,6 +1087,28 @@ final class ChargingScene: BaseLevelScene, SKPhysicsContactDelegate {
 
     override func updatePlaying(deltaTime: TimeInterval) {
         playerController.update()
+
+        // iPad already-charging deferral (see pendingBoardingAutoTrigger): the
+        // auto-trigger was held at launch because Bit spawns at the climb base, not
+        // on the central boarding platform. Summon the plug only once he has walked
+        // the full route and is standing on the central start platform — the point
+        // where he can actually board. The start platform spans centerX +- 130
+        // (width shaftWidth-40) with its top surface at groundY(180)+10 = 190; we
+        // accept Bit when his body is within that span and his feet rest near that
+        // top (body-centre within worst-case half-height + margin of the surface).
+        if pendingBoardingAutoTrigger {
+            let centerX = size.width / 2
+            let startPlatformHalfWidth = (shaftWidth - 40) / 2   // 130
+            let startPlatformTopY: CGFloat = 190                 // groundY(180) + height/2(10)
+            let worstCaseBodyHalfHeight: CGFloat = 34            // 64 * 0.85 * 1.25 / 2
+            let onStartPlatform =
+                abs(bit.position.x - centerX) <= startPlatformHalfWidth &&
+                abs(bit.position.y - (startPlatformTopY + worstCaseBodyHalfHeight)) <= 30
+            if onStartPlatform {
+                pendingBoardingAutoTrigger = false
+                triggerPlugAnimation()
+            }
+        }
 
         // Drive the post-arrival sink/rise of the plug platform. (The scripted
         // entry SKAction owns giantPlug.position.y until hasPlugArrived flips.)

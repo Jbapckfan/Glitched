@@ -1001,6 +1001,21 @@ final class NotificationScene: BaseLevelScene, SKPhysicsContactDelegate {
                 // Player tapped the spoofed alert — wrong choice, with consequence.
                 handleDecoyTapped()
             }
+        case .notificationReceived(let id):
+            // SOFTLOCK FIX: the genuine signal has actually FIRED. On the granted
+            // path the only unlock used to be tapping the live OS banner, so a
+            // swipe-dismiss left pendingNotificationId non-nil forever (re-request
+            // guard blocks re-arming, and the manager still tracks the request so
+            // the foreground re-arm never clears it) — the door soft-stuck. Mirror
+            // the permission-DENIED path: surface the SAME tappable in-app faux
+            // notification so the unlock is ALWAYS recoverable in-app. Tapping it
+            // calls unlockCurrentDoor() exactly like the OS-banner tap (see
+            // touchesBegan's "fauxNotification" branch). Only the genuine pending
+            // id qualifies — the decoy and the "__permission_denied" sentinel must
+            // not surface an unlockable alert.
+            if id == pendingNotificationId {
+                showFauxNotification()
+            }
         default:
             break
         }

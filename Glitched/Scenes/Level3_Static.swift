@@ -597,7 +597,21 @@ final class StaticScene: BaseLevelScene, SKPhysicsContactDelegate {
         gapList.append((invL, invR, false, true))               // INVERSE finale
 
         composedLaserSpecs = gapList.map { g in
-            let lx = (xs[g.a] + xs[g.b]) / 2
+            // FAIRNESS: anchor the laser to the GEOMETRIC CENTER OF THE GAP — the
+            // midpoint between the two decks' FACING (centerward) edges — not the
+            // midpoint of their CENTERS. With the switchback layout a wide deck
+            // (e.g. spawn 176) reaches FARTHER toward the centerline than a narrow
+            // neighbour, so the centers-midpoint pulled the beam onto the wide
+            // deck's near edge and its ±5pt hit-zone overlapped the jump-off edge by
+            // ~5pt (a silent player could graze it). Each near edge sits a half-width
+            // off the platform center toward `center`, so derive it from the platform
+            // side: nearEdge = xs - sign*(w/2), sign = side of center. The gap center
+            // clears both decks' edges symmetrically; every other laser is unchanged.
+            func nearEdge(_ i: Int) -> CGFloat {
+                let sign: CGFloat = xs[i] < center ? -1 : 1
+                return xs[i] - sign * (seq[i].w / 2)
+            }
+            let lx = (nearEdge(g.a) + nearEdge(g.b)) / 2
             let deck = min(tierY(seq[g.a].t), tierY(seq[g.b].t))
             let base = deck - 20 * layoutYScale          // just below the lower deck
             let beamTop = deck + (g.high ? 160 : 120) * layoutYScale

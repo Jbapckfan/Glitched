@@ -358,18 +358,35 @@ final class AirplaneModeScene: BaseLevelScene, SKPhysicsContactDelegate {
         let platform = SKNode()
         platform.position = position
 
+        // Flying platforms wobble with turbulence. To keep that wobble PURELY
+        // VISUAL — so it can never jitter the physics body and flicker Bit's
+        // isGrounded / shift the platform top read by flyingPlatformSupportingBit()
+        // — the visible art lives inside an inner container whose LOCAL position is
+        // wobbled in updatePlaying(); the platform node (carrying the physics body)
+        // stays pinned to its flying/landed target. Solid platforms keep their art
+        // directly on the platform node (byte-identical, no wobble).
+        let visual: SKNode
+        if isFlying {
+            let container = SKNode()
+            container.name = "turbulenceVisual"
+            platform.addChild(container)
+            visual = container
+        } else {
+            visual = platform
+        }
+
         let surface = SKShapeNode(rectOf: size)
         surface.fillColor = fillColor
         surface.strokeColor = strokeColor
         surface.lineWidth = lineWidth
-        platform.addChild(surface)
+        visual.addChild(surface)
 
         if isFlying {
             // Add small airplane icon
             let icon = createSmallPlane()
             icon.position = CGPoint(x: 0, y: size.height / 2 + 10)
             icon.setScale(0.4)
-            platform.addChild(icon)
+            visual.addChild(icon)
         }
 
         platform.physicsBody = SKPhysicsBody(rectangleOf: size)
@@ -578,8 +595,10 @@ final class AirplaneModeScene: BaseLevelScene, SKPhysicsContactDelegate {
     /// nil. Used to protect the player from being dropped into the death plane
     /// when Airplane Mode toggles OFF: the landed positions sit inside the death
     /// zone, so animating a platform down out from under Bit is an instant kill.
-    /// We require `isGrounded`, an X overlap against the platform's (current,
-    /// turbulence-included) extent, and Bit's feet resting near the platform top.
+    /// We require `isGrounded`, an X overlap against the platform's physics
+    /// extent, and Bit's feet resting near the platform top. The platform node's
+    /// position is turbulence-FREE (the wobble lives on an inner visual child), so
+    /// these reads match the actual collision surface and never jitter.
     private func flyingPlatformSupportingBit() -> Int? {
         guard bit != nil, bit.isGrounded else { return nil }
         let bitHalfWidth: CGFloat = 22   // Bit is 44 wide
@@ -614,6 +633,11 @@ final class AirplaneModeScene: BaseLevelScene, SKPhysicsContactDelegate {
         // Animate platforms with staggered timing offsets
         for (index, platform) in flyingPlatforms.enumerated() {
             if index == protectedIndex { continue }
+            // Snap the visual wobble back to center so the art (which the
+            // turbulence loop offsets locally while aloft) stays aligned with the
+            // physics body during/after the move. Purely cosmetic; the body is
+            // unaffected.
+            platform.childNode(withName: "turbulenceVisual")?.position = .zero
             let targetPos = enabled ? flyingPositions[index] : landedPositions[index]
             let delay = index < platformDelayOffsets.count ? platformDelayOffsets[index] : 0
             platform.run(.sequence([
@@ -681,19 +705,27 @@ final class AirplaneModeScene: BaseLevelScene, SKPhysicsContactDelegate {
     override func updatePlaying(deltaTime: TimeInterval) {
         playerController.update()
 
-        // Turbulence: when Airplane Mode is ON, flying platforms wobble slightly
+        // Turbulence: when Airplane Mode is ON, flying platforms wobble slightly.
+        // The wobble is PURELY VISUAL — it moves the LOCAL position of each
+        // platform's inner "turbulenceVisual" child, NOT the platform node, so the
+        // physics body (and therefore Bit's isGrounded and the platform-top read in
+        // flyingPlatformSupportingBit()) never jitters. The platform node stays
+        // pinned to its flying target the whole time it is aloft.
         if isAirplaneMode {
             turbulenceTime += deltaTime
             for (index, platform) in flyingPlatforms.enumerated() {
                 guard index < flyingPositions.count else { break }
                 guard platform.action(forKey: "flightMove") == nil else { continue }
+                // Keep the physics-bearing platform node exactly on target.
+                platform.position = flyingPositions[index]
+                guard let visual = platform.childNode(withName: "turbulenceVisual") else { continue }
                 let freq = 3.0 + Double(index) * 0.7
                 let ampX: CGFloat = 1.5
                 let ampY: CGFloat = 2.0
                 let offsetX = ampX * CGFloat(sin(turbulenceTime * freq + Double(index) * 1.2))
                 let offsetY = ampY * CGFloat(cos(turbulenceTime * freq * 0.8 + Double(index) * 0.9))
-                let target = flyingPositions[index]
-                platform.position = CGPoint(x: target.x + offsetX, y: target.y + offsetY)
+                // Local offset on the visual child: art wobbles, body stays put.
+                visual.position = CGPoint(x: offsetX, y: offsetY)
             }
         }
     }

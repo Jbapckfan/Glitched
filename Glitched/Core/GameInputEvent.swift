@@ -58,6 +58,10 @@ enum GameInputEvent {
 
     // HUD interaction
     case hudDragCompleted(elementID: String, screenPosition: CGPoint)
+    // Scene-authoritative verdict on a HUD drop: the scene confirms it bridged
+    // the element (consume the banner) or rejects the drop (snap the banner home).
+    case hudBridgeConfirmed(elementID: String)
+    case hudDropRejected(elementID: String)
 
     // World 5: System Override inputs
     case flashlightChanged(isOn: Bool)

@@ -109,6 +109,20 @@ final class FaceIDScene: BaseLevelScene, SKPhysicsContactDelegate {
     private var hasSurfacedAuthFallback = false
     private static let declinesBeforeFallback = 2
 
+    // Non-death idle nudge. The decline-count fallback above and the base class's
+    // death-gated hint (notePlayerStruggle in handleDeath) both require the player
+    // to actually FAIL — decline the prompt, or fall into the death zone. A player
+    // stuck on the multi-scan / "TAP THE NEXT GATE" ambiguity who is just standing
+    // around (never scanning, never dying) gets no escalation. This per-frame idle
+    // accumulator (mirroring the base class's own noProgressTimer idiom) surfaces a
+    // clearer auth nudge after `idleNudgeDelay` of zero forward progress, then resets
+    // on every real advance (advanceScanStep) so it only fires while genuinely stuck.
+    // It is independent of — and does not touch — the decline-count fallback or the
+    // death-gated hints; it only ADDS the idle path.
+    private var idleNudgeTimer: TimeInterval = 0
+    private var hasShownIdleNudge = false
+    private static let idleNudgeDelay: TimeInterval = 14.0
+
     private var scanAnimation: SKAction?
 
     /// System-level Reduce Motion (Settings > Accessibility > Motion). When on we
@@ -771,6 +785,11 @@ final class FaceIDScene: BaseLevelScene, SKPhysicsContactDelegate {
     private func advanceScanStep() {
         scanStep += 1
 
+        // Real forward progress: reset the non-death idle nudge so it only ever
+        // fires while the player is genuinely stuck between scans, and re-arm it
+        // for the NEXT gate (it stays disarmed once fully unlocked, see updatePlaying).
+        noteScanProgress()
+
         switch scanStep {
         case 1:
             // First scan: "IDENTITY CONFIRMED"
@@ -921,6 +940,61 @@ final class FaceIDScene: BaseLevelScene, SKPhysicsContactDelegate {
 
     override func updatePlaying(deltaTime: TimeInterval) {
         playerController.update()
+        tickIdleNudge(deltaTime: deltaTime)
+    }
+
+    // MARK: - Non-Death Idle Nudge
+
+    /// Reset the idle accumulator on real forward progress (a completed scan).
+    /// Mirrors the base class's notePlayerProgress() reset semantics, scoped to this
+    /// level's own auth-confusion nudge so it never interferes with the shared
+    /// death-gated hint or the decline-count fallback.
+    private func noteScanProgress() {
+        idleNudgeTimer = 0
+        hasShownIdleNudge = false
+    }
+
+    /// Per-frame idle escalation for the NON-DEATH "stuck between scans" case.
+    /// (updatePlaying only runs while .playing, so this is inert during intro/pause.)
+    /// Fires once after `idleNudgeDelay` of no forward progress, then waits for the
+    /// next noteScanProgress() before it can fire again. No-op once the vault is fully
+    /// unlocked (scanStep >= 3) or after the decline-count software fallback has been
+    /// surfaced (that path already points the HUD at the on-screen ID button).
+    private func tickIdleNudge(deltaTime: TimeInterval) {
+        guard scanStep < 3, !hasShownIdleNudge, !hasSurfacedAuthFallback else { return }
+        // Don't talk over an in-flight scan/imposter/exit prompt; let those resolve.
+        guard !isShowingExitNudge else { return }
+        idleNudgeTimer += deltaTime
+        guard idleNudgeTimer >= Self.idleNudgeDelay else { return }
+        hasShownIdleNudge = true
+        showIdleAuthNudge()
+    }
+
+    /// Surface a clearer, context-aware nudge for the stuck-but-not-dying player.
+    /// Step 0 hasn't authenticated at all; steps 1/2 are mid-sequence and the next
+    /// gate is the actionable target. Uses the same statusLabel HUD + announceObjective
+    /// affordance pointer the software-fallback path uses (an instruction, not a
+    /// 4th-wall aside), so it reads consistently with the rest of the level.
+    private func showIdleAuthNudge() {
+        let nudge = scanStep == 0
+            ? "TAP THE VAULT TO AUTHENTICATE"
+            : "APPROACH AND TAP THE NEXT GATE"
+        statusLabel.text = nudge
+        announceObjective(nudge)
+
+        // Draw the eye to the actionable gate with a brief soft pulse (honors the
+        // same single-fade treatment Reduce Motion gets elsewhere in this scene).
+        let target: SKNode? = scanStep == 0 ? vaultDoor : (secondDoor ?? vaultDoor)
+        if systemReduceMotion {
+            target?.run(.sequence([.fadeAlpha(to: 0.6, duration: 0.4), .fadeAlpha(to: 1.0, duration: 0.4)]))
+        } else {
+            target?.run(.sequence([
+                .fadeAlpha(to: 0.5, duration: 0.25),
+                .fadeAlpha(to: 1.0, duration: 0.25),
+                .fadeAlpha(to: 0.5, duration: 0.25),
+                .fadeAlpha(to: 1.0, duration: 0.25)
+            ]))
+        }
     }
 
     func didBegin(_ contact: SKPhysicsContact) {
