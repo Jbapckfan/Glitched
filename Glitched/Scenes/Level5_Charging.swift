@@ -171,10 +171,14 @@ final class ChargingScene: BaseLevelScene, SKPhysicsContactDelegate {
             if isWideCanvas {
                 // iPad: Bit spawns at the bottom-left climb base, not on the central
                 // boarding platform. Firing now would ride the plug to the top EMPTY
-                // and strand the climbing player. DEFER the auto-trigger until Bit
-                // actually reaches the boarding platform (see updatePlaying). The
-                // real charging-event path (.deviceCharging) is unchanged.
-                pendingBoardingAutoTrigger = true
+                // and strand the climbing player. Route through the single boarding
+                // gate, which ARMS the deferral (updatePlaying fires it once Bit is
+                // genuinely over the plug carry footprint) unless he is already
+                // rideable. BatteryManager.activate() also emits an initial-state
+                // .deviceCharging(true) shortly after load; that path now ARMS too
+                // (see handleGameInput), so it can no longer clear this defer and fire
+                // empty at launch.
+                requestChargingTrigger()
             } else {
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
                     self?.triggerPlugAnimation()
@@ -871,6 +875,62 @@ final class ChargingScene: BaseLevelScene, SKPhysicsContactDelegate {
         surfaceTopY - plugSurfaceOffset
     }
 
+    // MARK: - Boarding gate (iPad already-charging / charging deferral)
+
+    /// True only when Bit's body is genuinely OVER the plug's rideable carry
+    /// footprint AND resting on the start-platform surface, i.e. boarding the plug
+    /// now is guaranteed to start a real carry (plugContactCount > 0 once the plug
+    /// rises). This is the single source of truth for "is it safe to fire the plug".
+    ///
+    /// Footprint: the plug body + its rideable platform body are both 120pt wide,
+    /// centred on `centerX` -> x in [centerX-60, centerX+60] (see createGiantPlug).
+    /// The earlier detection used the full start-platform half-width (130), which
+    /// is WIDER than the plug body: the funnel ledge (tier-1 descent landing, to the
+    /// RIGHT) and the right third of the start platform fall inside +-130 but OUTSIDE
+    /// the +-60 plug body, so the plug could rise with NO contact and strand Bit. We
+    /// instead require x within +-55 (inside the +-60 body, with a 5pt margin so his
+    /// body SUBSTANTIALLY overlaps the carry surface, never balanced on the lip).
+    ///
+    /// Surface: feet must rest near the start-platform top (body-centre within the
+    /// worst-case half-height + a small margin of the surface) AND Bit must report
+    /// grounded, so the plug only fires under a passenger actually standing on it.
+    private var bitIsRideablePosition: Bool {
+        let centerX = size.width / 2
+        // Plug body / rideable platform are 120pt wide centred on centerX
+        // (createGiantPlug). Require +-55 so his body substantially overlaps the
+        // +-60 carry footprint rather than teetering on its edge.
+        let plugCarryHalfFootprint: CGFloat = 55
+        let startPlatformTopY: CGFloat = 190                 // groundY(180) + height/2(10)
+        let worstCaseBodyHalfHeight: CGFloat = 34            // 64 * 0.85 * 1.25 / 2
+        let overPlug = abs(bit.position.x - centerX) <= plugCarryHalfFootprint
+        let onSurface =
+            abs(bit.position.y - (startPlatformTopY + worstCaseBodyHalfHeight)) <= 30 &&
+            bit.isGrounded
+        return overPlug && onSurface
+    }
+
+    /// Single entry point for EVERY iPad already-charging / charging trigger. On the
+    /// wide canvas Bit spawns at the bottom-left climb base (setupBit), so firing the
+    /// plug while he is anywhere but ON the plug carry footprint rides it up EMPTY and
+    /// hard-locks (hasPlugArrived can't be reset). So: if the plug hasn't arrived and
+    /// Bit is NOT in a rideable position, ARM the deferral (updatePlaying fires it the
+    /// frame he is genuinely over the plug). If he IS already rideable, trigger now.
+    /// The iPhone path never calls this (it spawns ON the boarding platform).
+    private func requestChargingTrigger() {
+        guard isWideCanvas else {
+            triggerPlugAnimation()
+            return
+        }
+        if !hasPlugArrived && !bitIsRideablePosition {
+            pendingBoardingAutoTrigger = true
+        } else {
+            // Bit is already over the plug (or the plug has arrived and the call is a
+            // no-op via triggerPlugAnimation's hasPlugArrived guard): fire now.
+            pendingBoardingAutoTrigger = false
+            triggerPlugAnimation()
+        }
+    }
+
     // MARK: - Plug Animation
 
     private func triggerPlugAnimation() {
@@ -1068,12 +1128,20 @@ final class ChargingScene: BaseLevelScene, SKPhysicsContactDelegate {
         case .deviceCharging(let isPluggedIn):
             isCurrentlyCharging = isPluggedIn
             if isPluggedIn {
-                // A real plug-in event is the canonical trigger; if the iPad
-                // already-charging deferral was still armed, consume it so it can't
-                // re-fire later (triggerPlugAnimation is itself idempotent via its
-                // isPlugAnimating / hasPlugArrived guard).
-                pendingBoardingAutoTrigger = false
-                triggerPlugAnimation()
+                // Route through the single boarding gate. This handles BOTH:
+                //   (1) BatteryManager.activate()'s initial-state emit, which fires a
+                //       .deviceCharging(true) shortly after load when the device is
+                //       already charging -- previously this cleared the defer flag and
+                //       fired the plug EMPTY at launch, defeating the deferral; and
+                //   (2) a mid-level plug-in while Bit is still on the climb -- which
+                //       likewise must not ride the plug up empty.
+                // On iPad, if Bit is NOT yet over the plug carry footprint the gate
+                // ARMS the deferral (updatePlaying fires it once he is genuinely
+                // rideable); if he IS already over the plug, it fires now. On iPhone
+                // it fires immediately (he spawns ON the boarding platform).
+                // triggerPlugAnimation stays idempotent via its isPlugAnimating /
+                // hasPlugArrived guard.
+                requestChargingTrigger()
                 GlitchedNarrator.present("FEEDING ME ELECTRICITY? HOW... NURTURING.", in: self, style: .alert)
             } else if hasPlugArrived {
                 GlitchedNarrator.present("COLD. SO COLD.", in: self, style: .alert)
@@ -1088,26 +1156,22 @@ final class ChargingScene: BaseLevelScene, SKPhysicsContactDelegate {
     override func updatePlaying(deltaTime: TimeInterval) {
         playerController.update()
 
-        // iPad already-charging deferral (see pendingBoardingAutoTrigger): the
-        // auto-trigger was held at launch because Bit spawns at the climb base, not
-        // on the central boarding platform. Summon the plug only once he has walked
-        // the full route and is standing on the central start platform — the point
-        // where he can actually board. The start platform spans centerX +- 130
-        // (width shaftWidth-40) with its top surface at groundY(180)+10 = 190; we
-        // accept Bit when his body is within that span and his feet rest near that
-        // top (body-centre within worst-case half-height + margin of the surface).
-        if pendingBoardingAutoTrigger {
-            let centerX = size.width / 2
-            let startPlatformHalfWidth = (shaftWidth - 40) / 2   // 130
-            let startPlatformTopY: CGFloat = 190                 // groundY(180) + height/2(10)
-            let worstCaseBodyHalfHeight: CGFloat = 34            // 64 * 0.85 * 1.25 / 2
-            let onStartPlatform =
-                abs(bit.position.x - centerX) <= startPlatformHalfWidth &&
-                abs(bit.position.y - (startPlatformTopY + worstCaseBodyHalfHeight)) <= 30
-            if onStartPlatform {
-                pendingBoardingAutoTrigger = false
-                triggerPlugAnimation()
-            }
+        // iPad already-charging / charging deferral (see pendingBoardingAutoTrigger):
+        // the auto-trigger was held because Bit spawns at the climb base (or plugged
+        // in mid-climb), not on the plug. Summon the plug only once he has walked the
+        // full route and is genuinely OVER the plug carry footprint — the only point
+        // where boarding starts a real carry.
+        //
+        // DEAD-BAND FIX: the old detection used the full start-platform half-width
+        // (130), which is WIDER than the 120pt (+-60) plug body. The funnel ledge and
+        // the right third of the start platform fall inside +-130 but OUTSIDE the
+        // plug body, so the trigger could fire while Bit stood to the RIGHT of the
+        // plug; the plug then rose with plugContactCount==0 and stranded him. We now
+        // require bitIsRideablePosition (x within +-55 of centerX, inside the +-60
+        // body, AND resting/grounded on the surface), guaranteeing plugContactCount>0.
+        if pendingBoardingAutoTrigger && bitIsRideablePosition {
+            pendingBoardingAutoTrigger = false
+            triggerPlugAnimation()
         }
 
         // Drive the post-arrival sink/rise of the plug platform. (The scripted

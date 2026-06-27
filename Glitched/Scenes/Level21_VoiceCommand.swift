@@ -72,6 +72,17 @@ final class VoiceCommandScene: BaseLevelScene, SKPhysicsContactDelegate {
     /// "SPEAK BRIDGE AND OPEN FIRST". The FLY gate keys off this latch instead so
     /// it stays satisfied once BRIDGE has ever fired. Never reset.
     private var bridgeHasBeenExtended = false
+    /// Scene-space x that Bit must be at or past for FLY to fire — i.e. Bit has
+    /// actually CROSSED the chasm onto the far landing. Set by whichever build
+    /// path runs (course-scaled on iPhone, absolute pt on iPad). The latch
+    /// (`bridgeHasBeenExtended`) alone records only that BRIDGE was ever spoken,
+    /// so a player could say BRIDGE, let it auto-retract, say OPEN, then FLY from
+    /// the START platform and arc the powerful ~490pt FLY hop over the un-crossed
+    /// chasm — skipping the bridge crossing entirely. Requiring Bit to be past
+    /// this line (deep on the far side, unreachable without crossing) closes that
+    /// skip while still passing a legitimately-crossed player, who is by
+    /// definition already past it. 0 until a build path sets it.
+    private var farSideMinX: CGFloat = 0
     private var doorNode: SKNode?
     private var doorBlocker: SKNode?
     private var doorOpened = false
@@ -233,6 +244,12 @@ final class VoiceCommandScene: BaseLevelScene, SKPhysicsContactDelegate {
         // the 390-pt iPhone, beyond the ~184-pt horizontal jump reach, so it is
         // only crossable via the extended BRIDGE.
         createPlatform(at: CGPoint(x: courseX(360), y: groundY), size: CGSize(width: courseLen(60), height: 30))
+        // FLY skip-guard line: Bit must be at/past logical 300 (course space) to
+        // have CROSSED the chasm (gap is start.right 80 -> middle.left 330; 300
+        // sits deep on the far side, well past the bridge center 205, and is
+        // unreachable from the start platform without the bridge). A legitimately
+        // crossed player standing on the middle/small/exit run is already past it.
+        farSideMinX = courseX(300)
         // Door at the middle platform's right edge (logical 390), centered at
         // groundY+68.5 with a 107-pt frame spanning y=175..282 — its top clears
         // Bit's ~91pt jump apex by the project's ~16pt margin so it can't be
@@ -386,6 +403,12 @@ final class VoiceCommandScene: BaseLevelScene, SKPhysicsContactDelegate {
         // Finale middle landing (post-bridge). Left edge = chasmRight (2110).
         let finaleMiddleCenter = chasmRight + 30              // 2140 (width 60)
         createPlatform(at: CGPoint(x: finaleMiddleCenter, y: finaleMiddleTop), size: CGSize(width: 60, height: 30))
+        // FLY skip-guard line: Bit must be at/past 2080 (just inside the far
+        // landing's left edge, chasmRight 2110) to have CROSSED the 250pt chasm.
+        // The near side tops out at the pre-chasm right edge (1860), so 2080 is
+        // unreachable without the bridge; a player on the finale-middle/small/exit
+        // run is already past it.
+        farSideMinX = 2080
 
         // Locked DOOR on the finale-middle's right edge — must be UN-jumpable before
         // OPEN. The platform top is finaleMiddleTop+15; a 107pt-tall blocker with its
@@ -819,6 +842,18 @@ final class VoiceCommandScene: BaseLevelScene, SKPhysicsContactDelegate {
         // already a one-way latch, so it is checked directly.
         guard bridgeHasBeenExtended && doorOpened else {
             showCommandHint("SPEAK BRIDGE AND OPEN FIRST")
+            return
+        }
+        // Skip-guard: also require Bit to have actually CROSSED the chasm before
+        // FLY fires. The latch above only records that BRIDGE was ever spoken, so
+        // without this a player could say BRIDGE, let it auto-retract, say OPEN,
+        // then FLY from the start platform — the powerful ~490pt FLY hop arcs over
+        // the un-crossed chasm and skips the bridge. farSideMinX sits deep on the
+        // far landing (unreachable from the near side without the bridge), so a
+        // legitimately-crossed player is already past it and still passes — this
+        // does NOT re-introduce the >5s wrong-rejection the latch fixed.
+        guard bit.position.x >= farSideMinX else {
+            showCommandHint("CROSS THE BRIDGE FIRST")
             return
         }
         flyActive = true

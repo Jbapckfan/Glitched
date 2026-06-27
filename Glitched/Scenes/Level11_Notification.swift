@@ -137,6 +137,10 @@ final class NotificationScene: BaseLevelScene, SKPhysicsContactDelegate {
             if !NotificationGameManager.shared.hasPendingNotification(id: pendingId) {
                 self.pendingNotificationId = nil
                 self.decoyNotificationId = nil
+                // Request was torn down — cancel its pending recovery-card timer so
+                // it can't fire for the cleared id (fire-time id guard also covers
+                // this; cancelling keeps the re-arm a clean full teardown).
+                self.removeAction(forKey: "foregroundRecoveryCard")
                 self.waitingIndicator?.removeFromParent()
                 self.waitingIndicator = nil
             }
@@ -796,6 +800,26 @@ final class NotificationScene: BaseLevelScene, SKPhysicsContactDelegate {
 
         showWaitingIndicator()
 
+        // SOFTLOCK RECOVERY (granted path): if the player has notifications
+        // granted, taps the bell, then swipe-dismisses the FOREGROUND banner
+        // without tapping it, the only unlock used to be the live OS banner — a
+        // dismiss left pendingNotificationId non-nil forever (re-request guard
+        // blocks re-arming; the manager still tracks the request so the foreground
+        // re-arm never clears it) and the door soft-stuck. Surface the SAME
+        // tappable in-app faux card the permission-DENIED path uses so the unlock
+        // is ALWAYS recoverable in-app.
+        //
+        // CRITICAL TIMING: arm this on a scene-local timer for the genuine
+        // notification's own `delay`, so the recovery card appears together
+        // with / just after the real banner — NEVER before. Posting it at
+        // schedule time (the old `.notificationReceived` hook) fired ~instantly
+        // and let the player unlock immediately, bypassing the wait and the
+        // GLITCHED-vs-SYSTEM read. The guard at fire time skips the card if the
+        // door was already unlocked (genuine tap) or the attempt was re-armed
+        // (decoy tapped / foreground re-arm cleared the id), so it only ever
+        // recovers a genuinely-stuck dismiss.
+        armForegroundRecoveryCard(for: id, after: realDelay)
+
         // Animate bell
         bellIcon.run(.sequence([
             .rotate(byAngle: 0.3, duration: 0.1),
@@ -805,6 +829,36 @@ final class NotificationScene: BaseLevelScene, SKPhysicsContactDelegate {
 
         let generator = UIImpactFeedbackGenerator(style: .medium)
         generator.impactOccurred()
+    }
+
+    /// Arm the scene-local timer that surfaces the in-app recovery card NO EARLIER
+    /// than when the genuine OS banner would actually appear (after `delay`). Run
+    /// under a per-attempt key so a fresh request / re-arm cancels a stale pending
+    /// fire. At fire time it only shows the card if THIS attempt is still the live,
+    /// still-locked pending request — so a genuine banner tap (unlockCurrentDoor
+    /// nils pendingNotificationId), a decoy tap (handleDecoyTapped re-arms), or a
+    /// foreground tear-down re-arm all suppress it. Running on the scene means a
+    /// background pauses this timer, which is correct: a backgrounded banner is
+    /// tapped via the delegate's didReceive path and recovered by the
+    /// willEnterForeground re-arm, not by this foreground-only card.
+    private func armForegroundRecoveryCard(for id: String, after delay: TimeInterval) {
+        removeAction(forKey: "foregroundRecoveryCard")
+        run(.sequence([
+            .wait(forDuration: delay),
+            .run { [weak self] in
+                guard let self else { return }
+                // Still working THIS attempt's locked door, and it hasn't been
+                // unlocked / re-armed out from under us.
+                guard self.currentDoorIndex < self.doorStates.count,
+                      self.doorStates[self.currentDoorIndex] == false,
+                      self.pendingNotificationId == id else { return }
+                // Permission-DENIED path already surfaced the card immediately
+                // (its frustration-free escape valve); don't re-spawn / re-animate
+                // a card that's still on screen. Only surface one if none is up.
+                guard self.fauxNotificationNode == nil else { return }
+                self.showFauxNotification()
+            }
+        ]), withKey: "foregroundRecoveryCard")
     }
 
     private func showPermissionDeniedText() {
@@ -952,6 +1006,10 @@ final class NotificationScene: BaseLevelScene, SKPhysicsContactDelegate {
         // Clear waiting state
         waitingIndicator?.removeFromParent()
         waitingIndicator = nil
+        // Door is open — tear down the pending recovery-card timer so it can't
+        // surface a stale card after the unlock (the fire-time guard also covers
+        // this via the now-nil pendingNotificationId).
+        removeAction(forKey: "foregroundRecoveryCard")
         pendingNotificationId = nil
         decoyNotificationId = nil
 
@@ -976,6 +1034,10 @@ final class NotificationScene: BaseLevelScene, SKPhysicsContactDelegate {
         decoyNotificationId = nil
         // Re-arm: clearing the pending id lets requestNotification() run again.
         pendingNotificationId = nil
+        // This attempt is void — cancel its pending recovery-card timer so it can't
+        // fire for a now-dead id (the fire-time id guard already covers this, but
+        // cancelling keeps the attempt's state fully torn down).
+        removeAction(forKey: "foregroundRecoveryCard")
         waitingIndicator?.removeFromParent()
         waitingIndicator = nil
 
@@ -1001,21 +1063,17 @@ final class NotificationScene: BaseLevelScene, SKPhysicsContactDelegate {
                 // Player tapped the spoofed alert — wrong choice, with consequence.
                 handleDecoyTapped()
             }
-        case .notificationReceived(let id):
-            // SOFTLOCK FIX: the genuine signal has actually FIRED. On the granted
-            // path the only unlock used to be tapping the live OS banner, so a
-            // swipe-dismiss left pendingNotificationId non-nil forever (re-request
-            // guard blocks re-arming, and the manager still tracks the request so
-            // the foreground re-arm never clears it) — the door soft-stuck. Mirror
-            // the permission-DENIED path: surface the SAME tappable in-app faux
-            // notification so the unlock is ALWAYS recoverable in-app. Tapping it
-            // calls unlockCurrentDoor() exactly like the OS-banner tap (see
-            // touchesBegan's "fauxNotification" branch). Only the genuine pending
-            // id qualifies — the decoy and the "__permission_denied" sentinel must
-            // not surface an unlockable alert.
-            if id == pendingNotificationId {
-                showFauxNotification()
-            }
+        case .notificationReceived:
+            // NOTE: `.notificationReceived` is posted at SCHEDULE time (from
+            // UNUserNotificationCenter.add's completion), i.e. ~instantly when the
+            // request is accepted — NOT after the `delay`. Surfacing the in-app
+            // recovery card here trivialized the level (instant unlock, bypassing
+            // the wait + GLITCHED-vs-SYSTEM read). The softlock recovery now fires
+            // on a scene-local timer armed for the actual `delay` in
+            // requestNotification() (see armForegroundRecoveryCard), so the card
+            // appears only at/after the real banner — never before. This event is
+            // intentionally inert here.
+            break
         default:
             break
         }

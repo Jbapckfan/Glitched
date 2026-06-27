@@ -952,6 +952,12 @@ final class FaceIDScene: BaseLevelScene, SKPhysicsContactDelegate {
     private func noteScanProgress() {
         idleNudgeTimer = 0
         hasShownIdleNudge = false
+        // Also reset the BASE no-progress hint timers (noProgressTimer +
+        // lastProgressAt fallback that drive the hintText() panel). Without this a
+        // completed scan leaves those base timers running, so the vague base panel
+        // could surface moments AFTER the player made real progress. Treat a scan
+        // advance as genuine forward progress for the shared hint system too.
+        notePlayerProgress()
     }
 
     /// Per-frame idle escalation for the NON-DEATH "stuck between scans" case.
@@ -976,9 +982,19 @@ final class FaceIDScene: BaseLevelScene, SKPhysicsContactDelegate {
     /// affordance pointer the software-fallback path uses (an instruction, not a
     /// 4th-wall aside), so it reads consistently with the rest of the level.
     private func showIdleAuthNudge() {
-        let nudge = scanStep == 0
-            ? "TAP THE VAULT TO AUTHENTICATE"
-            : "APPROACH AND TAP THE NEXT GATE"
+        // Match the real gate flow: step 0 authenticates at the vault (door1);
+        // step 1 moves on to the NEXT gate (door2); step 2 is the final re-scan at
+        // that SAME gate (door2) — there is no further gate, so "next" would be
+        // wrong here.
+        let nudge: String
+        switch scanStep {
+        case 0:
+            nudge = "TAP THE VAULT TO AUTHENTICATE"
+        case 1:
+            nudge = "APPROACH AND TAP THE NEXT GATE"
+        default:
+            nudge = "TAP THE SAME GATE AGAIN TO RESCAN"
+        }
         statusLabel.text = nudge
         announceObjective(nudge)
 
@@ -1048,7 +1064,10 @@ final class FaceIDScene: BaseLevelScene, SKPhysicsContactDelegate {
             .wait(forDuration: 1.5),
             .run { [weak self] in
                 guard let self = self, !self.isUnlocked else { return }
-                self.statusLabel.text = "TAP THE NEXT GATE"
+                // The exit only opens after step 2, so the missing final scan is at
+                // the SAME gate (door2) the player just used — not a further "next"
+                // gate. Point them back to it explicitly.
+                self.statusLabel.text = "TAP THE SAME GATE AGAIN"
                 self.isShowingExitNudge = false
             }
         ]))
@@ -1060,7 +1079,19 @@ final class FaceIDScene: BaseLevelScene, SKPhysicsContactDelegate {
     }
 
     override func hintText() -> String? {
-        return "Authenticate identity"
+        // Concrete, step-matched clue for the base no-progress panel (the panel
+        // reads hintText()). Mirrors the gate flow the idle nudge / touch handler
+        // use: step 0 authenticates at the vault (door1); step 1 moves on to the
+        // next gate (door2); step 2 re-scans at that SAME gate for the final
+        // unlock. Stops short of spoiling the imposter/face-changed twist.
+        switch scanStep {
+        case 0:
+            return "Walk to the vault and tap it to scan your face"
+        case 1:
+            return "Approach the next gate and tap it to scan again"
+        default:
+            return "Tap the same gate again for the final scan"
+        }
     }
 
     override func willMove(from view: SKView) {
