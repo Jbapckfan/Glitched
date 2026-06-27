@@ -2,11 +2,11 @@
 
 Each level's 4–5 blind round-1 reviews reconciled by a fresh adjudicator that read the **current** (post-PR#15) source and tagged every finding `real-unfixed` / `already-fixed` / `false-positive` / `new`.
 
-**Coverage: 28/34 levels.** Missing (re-run pending): [16, 17, 18, 19, 20, 23].
+**Coverage: 34/34 levels.**
 
-- **Survivors to act on (real-unfixed + new): 92**
-- Thrown out — false-positives: 140 · already-fixed (PR#15 etc.): 30
-- Contested (want a Gemini/DeepSeek tiebreak): 0
+- **Survivors to act on (real-unfixed + new): 124**
+- Thrown out — false-positives: 170 · already-fixed (PR#15 etc.): 34
+- Contested (want a Gemini/DeepSeek tiebreak): 22
 
 ## Fix backlog — survivors by severity
 
@@ -37,6 +37,15 @@ Each level's 4–5 blind round-1 reviews reconciled by a fresh adjudicator that 
 - **L11 NotificationScene — iPad decoy fires 1s before genuine; intro never names the GLITCHED sender (first-encounter fairness)** 
   - `Level11_Notification.swift:783 (decoy delay) / 680-699 instruction panel` · raised by: codex,kimi,gemini
   - Decoy 'SYSTEM' alert is scheduled at max(0.5, realDelay-1.0)=2.0s, genuine 'GLITCHED' at 3.0s, so the first banner a first-timer sees is the decoy, and the instruction panel ('WAIT FOR THE ALERT') never tells them to tap the GLITCHED sender vs avoid SYSTEM. Mitigated: tapping the decoy is fully recoverable (handleDecoyTapped re-arms + narrator 'THAT WASN'T ME. TAP THE BELL AGAIN.'), and the give-up auto-unlock skips the decoy. Real but mild — a one-time speed-bump, not a softlock. FIX: brand the genuine sender in the intro ('look for GLITCHED, ignore SYSTEM') or delay the decoy until after the first successful unlock.
+- **L17 AirplaneModeScene — Turbulence wobble can flicker isGrounded false and bypass the death-plane OFF protection** 
+  - `updatePlaying() L685-698 turbulence; flyingPlatformSupportingBit() L584 guard bit.isGrounded; handleGameInput() L653` · raised by: deepseek,kimi,gemini
+  - Turbulence sets platform.position directly (+-1.5 X, +-2 Y) on the static body Bit stands on. didEnd schedules setGrounded(false) after 0.05s, so a wobble that briefly breaks contact flips isGrounded false. flyingPlatformSupportingBit() returns nil when isGrounded is false, so if a real system OFF (NWPathMonitor connectivity restored -> isEnabled:false) lands on that same frame, the protection at L612/L653 is bypassed and the platform under a stationary Bit drops into the hazard -> unfair death. Low probability (requires a wobble-induced ungrounding coincident with a network flip) but a genuine fairness hole. Deepseek's fix is correct and clean: make turbulence purely cosmetic by wobbling a child node and leaving the static physics body position fixed, so grounded never flickers. The panel raised the symptom but did not connect it to the OFF-protection bypass.
+- **L18 AppSwitcherScene — Combined near-max diagonal jump on iPad (125pt edge gap + up to 85pt rise in one leap) is borderline-reachable** 🆕
+  - `Level18_AppSwitcher.swift:229, 257-285; BaseLevelScene.swift:99-106` · raised by: 
+  - The budget treats gap (<=130 edge) and rise (<=85 top-to-top) as separable, but each iPad climb rung jump must clear BOTH simultaneously: a 210pt c2c step (125pt edge gap) WITH a full one-tier rise. With apex ~91pt, a jump that spends ~85pt on rise has little arc left to carry 125pt horizontally — this is the hardest combined case in the level. It is mitigated when tierCount is high (per-tier rise drops below 85, e.g. ~80 on a 13' iPad), and the teach/finale/rest steps are trivial, so most pad pairs are fine; but on the minimum tierCount=5 device the mid rungs sit near the simultaneous gap+rise ceiling. Recommend nudging colOffset down to ~95 (edge gap ~105) OR widening the climb rungs to 95pt to buy timing margin on the diagonal. Borderline, iPad-only, not a hard violation.
+- **L19 FaceIDScene — No escalating hint for the non-death auth-confusion path (multi-scan / 'TAP THE NEXT GATE' ambiguity)** 
+  - `Level19_FaceID.swift:950 (struggle only on death), :799 & :977 ('TAP THE NEXT GATE'), :988-990 (hintText)` · raised by: claude,codex,kimi,deepseek
+  - notePlayerStruggle() now fires only on falling into the death zone. But the genuine stuck-state on THIS level is auth confusion, not falling: a player who reaches door2, taps it once (step2), then doesn't realize the SAME door must be tapped AGAIN for scan 3 never dies, so struggleCount never increments and the only escalation is the generic ~22s wall-clock net surfacing hintText() 'Authenticate identity' — which is vaguer than the t=0 panel and doesn't name the repeated/second gate. The Face-ID DECLINE path is well covered (declinesBeforeFallback=2 -> surfaceAuthFallback). The simple-confusion path is not. Lowest-cost fix: count a struggle (or upgrade the on-screen status) when handleExit's nudge fires repeatedly, and make hintText name the multi-scan ('the gate needs another scan').
 - **L21 DeviceNameScene — iPhone bay3 reachability proof is numerically wrong; Bit squeezes against pillar2 but still contacts door3 exit** 🆕
   - `Level23_DeviceName.swift:908-916 (setupBit clamp) + installBayPillars:553-564` · raised by: adjudicator,kimi
   - The clamp comment claims maxX = courseX(430)-11 = 379, using HALF the real body width. PlayerController uses halfWidth = character.size.width/2 = 22 (body is 44 wide) and boundaryPadding 20, so real maxX on a 390pt iPhone is 368, not 379 (375->353, 393->371). At that clamp Bit's 22pt physics body [357,379] straddles solid pillar2 [351,360] AND overlaps the 30pt-wide door3 exit body [358.7,388.7] from 358.7..379 — so door3 (the rightmost real door, reachable via hash%3) STILL completes on every iPhone width, but only because the exit body is wide; Bit visibly jams against pillar2 at the clamp. Kimi's 'physics squeeze' was directionally right (though wrong that it's a softlock or that bays are < the 44pt body — the body is 22pt). Recommendation: fix the comment's math and either nudge worldWidth ~+12 or shift the rightmost slot/pillar left a few pt so Bit seats cleanly in bay3 instead of relying on exit-body overlap while pinned to a pillar.
@@ -46,6 +55,12 @@ Each level's 4–5 blind round-1 reviews reconciled by a fresh adjudicator that 
 - **L22 VoiceCommandScene — iPhone locked door keeps 90pt height (top ~+105) vs iPad 107pt — ~1pt over-clearance allows a frame-perfect skip on iPhone only** 
   - `buildPhoneLevel() line 233 (door at groundY+60, default height 90); iPad line 386 uses 107` · raised by: deepseek,kimi
   - Real and asymmetric. Door center groundY+60, height 90 -> top groundY+105. Bit body bottom at apex ~groundY+106 (apex ~91 above the platform-top stance at groundY+15), i.e. ~1pt above the door — a max-height frame-perfect jump can clear OPEN's door on iPhone. The iPad path deliberately raised the blocker to 107pt for exactly this margin (per the line 386 comment), so the iPhone path was left with the unsafe margin. Low player impact (requires near-perfect input and only skips one of three gates) but it is the gating mechanic. Fix: pass height:107 on the iPhone door too.
+- **L23 BatteryPercentScene — Hint escalation is death-gated only — a stuck-but-not-dying player never gets nudged toward DRAIN** 
+  - `Level22_BatteryPercent.swift:823 (notePlayerStruggle only in handleDeath); BaseLevelScene.swift:744-750` · raised by: claude,codex,deepseek,kimi
+  - notePlayerStruggle() is reached ONLY through handleDeath(). The level's whole challenge is non-lethal confusion: the player bounces off the fake EXIT? door and wanders, never dying, so struggleCount never increments and the targeted hint ('Lower your battery %') never fires. notePlayerStruggle also requires struggleCount>=2 AND >=8s play, so even death-driven escalation is slow. Fix: add a time/idle/fake-exit-touch trigger that calls notePlayerStruggle() independent of death (e.g. after the player touches fake_exit_trigger twice, or after ~10s with battery still >=60%). This is the single highest-impact survivor.
+- **L23 BatteryPercentScene — First encounter never signals that DRAIN POWER is the answer** 
+  - `Level22_BatteryPercent.swift:550-579 (instruction panel), 511-539 (drain button)` · raised by: claude,gemini,deepseek,kimi
+  - The t=0 panel ('SOME THINGS ONLY APPEAR WHEN YOU'RE RUNNING LOW / MORE POWER ISN'T ALWAYS BETTER') correctly telegraphs the inversion without spoiling, and the DRAIN POWER button is always on-screen so the level IS completable (this refutes deepseek's 'uncompletable on simulator' claim). But nothing links the inversion to the button or to draining as an action — the player can read 'running low' as something to avoid. Lower-cost than building new art: fold this into the escalation fix above (the hint text already says 'lower your battery %'); making that hint reach a non-dying player largely closes this gap too.
 - **L25 TimeOfDayScene — Enemy teleports to patrol origin on switch back to DAY, can hit player unfairly** 
   - `Level25_TimeOfDay.swift:691-701 (applyDayMode snap to patrol.origin)` · raised by: gemini
   - Real but narrow. On a NIGHT/secret->DAY transition a sleeping spike is removeAction'd, hard-snapped to patrol.origin, and re-armed to .hazard in the same frame. Because the guard's origin sits on P2's landing (where the player stands after crossing in NIGHT), if the player cycles all the way back to DAY while standing there, the spike can materialize on top of Bit = an instant death with no visible approach. Low practical reach (requires the player to tap night->secret->day after already crossing, and they have no reason to). The snap is deliberate (avoids patrol center drift per the comment), so don't remove it — but ease/move the spike back over ~0.15s, or re-arm the hazard mask only after it has eased home, to remove the teleport-onto-player frame. Polish-to-fairness; lowest priority of the survivors.
@@ -112,12 +127,48 @@ Each level's 4–5 blind round-1 reviews reconciled by a fresh adjudicator that 
 - **L15 LowPowerScene — No t=0 teaching of the POWER-button -> gravity link (bidirectional toggle undertaught on first encounter)** 
   - `Level15_LowPower.swift:664-691 (instruction panel), 886-888 (hintText)` · raised by: claude,codex,kimi,gemini,deepseek
   - Genuinely present: the t=0 panel ('THE BATTERY IS DYING / EVERYTHING GETS LIGHTER WHEN I LET GO') is atmospheric and never links the bottom-right POWER button to gravity, and the hardest idea (OFF for the narrow drop, ON for the chasm) is untaught until the struggle-gated hint. NOT a softlock: notePlayerStruggle() fires per death (line 871), notePlayerProgress() resets on first low-power engage (line 766), and the BaseLevelScene 22s wall-clock fallback (BaseLevelScene.swift:714-718) both surface hintText(), which names the button location and both toggle directions precisely. Recommendation: add a one-time diegetic cue near the POWER button (or on the chasm's first death) so the button->gravity link is discoverable a beat earlier without spoiling the reversal; low priority since the escalation already prevents a stuck state.
+- **L16 ShakeUndoScene — finalPlatformSurface recovered via children.first as? SKShapeNode (silent break risk)** 
+  - `Level16_ShakeUndo.swift:322 + :497 (capture), :535-551 (createPlatform), :725 (rot telegraph), :1136-1144 (resetTrap)` · raised by: kimi,deepseek
+  - Currently correct: createPlatform adds exactly one child (the surface shape) before returning, so children.first IS the surface at capture time. It's a latent fragility — if createPlatform ever gains another first child the glitch telegraph + trap reset silently no-op (finalPlatformSurface is optional-chained everywhere, so it fails quiet, not crash). Best fix: have createPlatform return the surface explicitly. Polish, not a live bug.
+- **L16 ShakeUndoScene — Worst-case zig-zag rung pairing (two 80pt rungs) is exactly 130pt edge-to-edge — zero margin** 🆕
+  - `Level16_ShakeUndo.swift:414 (colOffset=105), :440 (climbWidths includes 80)` · raised by: 
+  - Opposite-side rungs are 2*colOffset=210pt center-to-center. The narrowest climb width is 80, so an 80/80 pairing yields 210-40-40=130pt edge-to-edge = maxJumpableGap exactly (safe cap, NOT over absoluteMaxGap 145). All other width pairs are tighter. No fairness violation, but the 80-width entry leaves no timing margin on iPad; nudge climbWidths min to 84 to restore headroom.
+- **L17 AirplaneModeScene — iPad first paint reads as a broken/empty void in the OFF state** 
+  - `buildComposedIPadLevel() L292-334; setupBackground() L86-92` · raised by: claude,deepseek
+  - With mode OFF only the 4 solids render (spawn x110/t0 bottom-left, REST x705/t4 far across, breath x1290, finale x1870) while all 12 flyers sit at groundY-220 in the death plane. On the wide iPad frame the middle band is empty and the lone REST outline floats orphaned, so the level looks incomplete until the player toggles. Claude's dashed ghost-silhouette of each flyer at its ON target Y is the strongest surviving fix and makes the puzzle intent legible on load. Real and worth doing; cosmetic-leaning polish, not a blocker.
+- **L17 AirplaneModeScene — Airplane Mode ON does not call notePlayerProgress(), so the stall-hint timer keeps counting after the core idea is solved** 
+  - `updateAirplaneState() L601-642 (no notePlayerProgress); base no-progress fallback BaseLevelScene L708-718` · raised by: codex
+  - Deaths call notePlayerStruggle() but the first ON toggle never resets the progress timer. A player who toggles ON, then carefully studies the now-revealed climb for ~22s, can still trip the base-class no-progress fallback and get the 'Turn ON Airplane Mode' hint spelled out after they already did it. Harmless but slightly dumb. One-line fix: call notePlayerProgress() the first time enabled becomes true in updateAirplaneState().
+- **L17 AirplaneModeScene — iPad upper finale jumps are legal but near the ceiling (rise ~78 + gap ~65) and turbulence X-wobble eats margin** 
+  - `buildComposedIPadLevel() flyingSpec L311-324; verticalTier clamp BaseLevelScene L104` · raised by: claude,kimi
+  - Verified math on an iPad Air canvas: max forward rise 78.3 (<=85) and max edge gap 65 (<=130) across the whole route; verticalTier clamps rise to <=85 so smaller iPads only get easier. Legal. But the finale cluster pairs a near-max single-tier rise with a ~115pt center step while turbulence adds +-1.5pt X to the landing target, so those jumps feel unforgiving on a real device. Tightening the finale flyer X spacing by ~10-15pt or widening the t8-t11 flyers a touch would restore margin. Polish; not required to ship.
+- **L18 AppSwitcherScene — isWideCanvas (height>1000 && width>700) falls back to phone-ish layout on iPad landscape / split-view canvases** 
+  - `Level18_AppSwitcher.swift:34` · raised by: codex
+  - Real but low-impact and consistent with every other level's L3-template gate (the game ships portrait-locked per the shared pattern). In iPad landscape or a narrow split-view the phone course centers via courseX with the 390pt design width and gameplayLift, which is a degraded-but-completable framing, not a crash. Worth a future stable min-dimension audit; not a ship blocker.
+- **L19 FaceIDScene — Make the on-screen fallback ID button pulse after the FIRST declined scan instead of waiting for two** 
+  - `Level19_FaceID.swift:110 (declinesBeforeFallback=2), :667 (>= threshold check)` · raised by: deepseek
+  - Legitimate accessibility polish. Players who need assistive access wait through two full 'IMPOSTER DETECTED' alarm cycles (~4s each) before the fallback appears. A gentle pulse/affordance after the first decline (or showing the button immediately but muted) would help assistive users discover it faster without weakening the gate. Optional; the level is already softlock-safe at 2 declines plus the wall-clock net.
+- **L19 FaceIDScene — Second sequential gate (and the exit-behind-blocker trap) is undiscoverable until after step 1** 
+  - `Level19_FaceID.swift:593-605 (t=0 panel mentions only one vault), :799 ('TAP THE NEXT GATE' first appears post step-1)` · raised by: claude
+  - Mild legibility issue. The t=0 instruction panel ('WALK TO THE VAULT' / 'TAP IT TO SCAN YOUR FACE') intentionally teaches only the verb without spoiling the twist (a deliberate, good de-spoil choice). But the existence of a SECOND gate, and that the exit is trapped behind it, is only revealed after door1 opens. This is by design as a surprise beat; the polish ask is a small on-screen marker/arrow toward door2 once door1 opens so the two-gate structure reads before the player walks into the trapped-exit nudge. Overlaps with the auth-confusion hint finding (the strongest single fix addresses both).
+- **L20 MetaFinaleScene — hintLabel.run(clearedSequence) immediately followed by hintLabel.removeAllActions() cancels the 'CORRUPTION CLEARED' animation** 
+  - `Level20 executeCorruptionClear:955-965` · raised by: gemini
+  - Real. The just-queued fadeOut/recolor/fadeIn/scale sequence is wiped by removeAllActions() on the next line (intent was to stop the repeatForever pulse from line 639). Result: the hint label snaps to green '✓ CORRUPTION CLEARED' with no animation. Not a softlock (label still updates), but the celebratory beat is dead. Fix: move removeAllActions() BEFORE the new run(), or drop it and let the new non-repeating sequence override the pulse.
+- **L20 MetaFinaleScene — isWideCanvas (height>1000 && width>700) mis-routes iPad Pro 11-inch landscape (1194x834) into the phone path** 
+  - `Level20:96 (isWideCanvas)` · raised by: gemini
+  - Accurate: an 11-inch iPad in landscape is 834 tall, under the 1000 threshold, so it gets buildPhoneLevel() (the simple centered strip) instead of the composed climb. The phone path is fully COMPLETABLE on that canvas (it just letterboxes the strip), so no crash/softlock — only a less-impressive layout on one orientation of one device class. The comment frames the threshold as deliberately phone-safe, but it does also catch landscape 11-inch iPads. Polish: gate on a UIUserInterfaceIdiom == .pad check or a lower height threshold if the composed climb is wanted in landscape.
 - **L21 DeviceNameScene — 5s name fallback can fire before the player registers the device-name was the point** 
   - `Level23_DeviceName.swift:126-132, 163-171` · raised by: codex
   - On simulator / no Local-Network-permission, the .deviceNameRead event may not arrive and the 5s fallback resolves to 'PLAYER' (or a parsed owner), so the 'the OS knows your real name' moment can quietly degrade. It's a deliberate anti-softlock net (correctly guarded by nameReceived) and the level stays completable, so this is polish only. Codex's suggestion (gate the fallback behind an explicit 'name unavailable' beat) would preserve the device-feature moment; optional.
 - **L22 VoiceCommandScene — Bridge 5s auto-retract has no visual warning and can strand a hesitating player mid-chasm** 
   - `extendBridge() lines 753-758, retractBridge() lines 764-775` · raised by: claude
   - Real: the 5s retract fires on an invisible clock; a first-timer who walks slowly after BRIDGE falls to the death zone with no telegraph. Not a softlock — respawn works and the struggle/no-progress hint escalates — so polish. Recommend fading the bridge alpha as it nears retraction or a brief 'BRIDGE HOLDING' cue. Note this compounds the new FLY-gate finding above; both are downstream of the same transient-retract design.
+- **L23 BatteryPercentScene — resizeStone width mismatch when a vanished iPad stone reappears (rebuilt at hardcoded 45x18)** 
+  - `Level22_BatteryPercent.swift:374-383 (resizeStone), 627-629 (rebuild at 45x18)` · raised by: codex,kimi,deepseek
+  - iPad stones authored wider than 45 (e.g. 50% plateau w=160) keep the wide visual surface but, on reappearance, updateBatteryState rebuilds the physics body at the default 45x18 — narrower than the drawn lip, so a player standing near the visual edge falls through. UNREACHABLE on the simulated path (simulateBatteryDrain is monotonic-decreasing and once simulatedBattery!=nil real events are ignored at line 743, so stones never reappear). Only reachable on a real device that recharges past a threshold mid-level. The code comment at 369-373 acknowledges it and calls it cosmetic; it is slightly more than cosmetic (collision lip) but narrow. Fix: persist each stone's authored width and rebuild from it.
+- **L23 BatteryPercentScene — Delayed setGrounded(false) on any ground-contact-end uses a boolean, not a contact counter** 🆕
+  - `Level22_BatteryPercent.swift:808-813 (didEnd) + 796-797 (didBegin)` · raised by: 
+  - didEnd schedules setGrounded(false) after 0.05s on ANY ground contact ending. Where stones/platforms are adjacent (e.g. the iPhone 10-stone band, edge-gaps as low as 5-7.5pt on iPad), leaving one platform while still standing on the next can schedule a false setGrounded(false). Mitigated by (a) the 0.05s delay, (b) PlayerController coyote time (PlayerController.swift:74-112), and (c) the next platform's didBegin re-asserting grounded — and this is the shared idiom used by sibling levels, so it is not a new regression here. Flagged for completeness; impact is at most a rare 1-frame jump-eligibility blip, not a softlock. No change recommended unless the shared pattern is reworked globally.
 - **L24 StorageSpaceScene — First-encounter: tapping CAN'T DO THIS? before arming does nothing visible** 
   - `Level24_StorageSpace.swift:932-951` · raised by: deepseek,codex,claude,gemini
   - A pre-arm purge already gets feedback: warning haptic + black vignettePulse + flashTerminalHint() (terminal glow double-pulses) — it points the player back at the terminal. It's adequate but subtle; the panel never explains WHY nothing happened. Optional polish: a one-line 'ARM THE TERMINAL FIRST' toast on the rejected tap would close the loop. Low priority — intro panel + hintText already cover it.
@@ -238,6 +289,36 @@ Each level's 4–5 blind round-1 reviews reconciled by a fresh adjudicator that 
 - **L15 LowPowerScene — iPad spawn comment says '~35pt clear' but code uses +50; dead composedCourseExtent=0 scaffolding** 🆕
   - `Level15_LowPower.swift:703 (+50 vs '~35pt' comment), 487 & 722 (composedCourseExtent==0 camera guard)` · raised by: adjudicator,deepseek
   - Doc/code mismatch: setupBit spawns the iPad player at composedSpawn.y+50 (body-bottom ~23pt above tier-0 top — safe, just a slightly longer settle) while the comment claims it matches the ~35pt phone margin. Separately, composedCourseExtent is hardcoded 0 so the installCameraFollow guard at line 722 is permanently dead. Both are intentional/inert (the guard is retained as a documented future opt-in) and player-invisible; clean up the comment if touching the file, otherwise leave.
+- **L16 ShakeUndoScene — isWideCanvas gate is 700 but the adjacent comment cites 760pt** 
+  - `Level16_ShakeUndo.swift:36 (>=700) vs :32-33 comment (760)` · raised by: kimi
+  - Real comment drift only. The 700 gate is correct (sits above the 430pt widest iPhone, below 768pt iPad portrait). The stale '760-pt width' sentence in the doc comment is the only defect. Cosmetic.
+- **L16 ShakeUndoScene — tierCount double-clamped (16 in ipadFillTierCount, then 13 at call site)** 
+  - `Level16_ShakeUndo.swift:401 (min(ipadFillTierCount(), 13)) vs :67 (max upper: Int = 16)` · raised by: kimi
+  - Cosmetic readability nit. The effective cap is 13 (the call-site min wins); the inner default 16 is dead. On real iPads the natural count is ~14 so the 13 clamp can shave one tier, leaving the ~60pt dead band noted in the iPad-void finding. Harmless but confusing — collapse to a single 13 cap.
+- **L16 ShakeUndoScene — undoLabel.fontName bypasses VisualConstants.Fonts constant** 
+  - `Level16_ShakeUndo.swift:587 (undoLabel.fontName = "Menlo-Bold")` · raised by: kimi
+  - Minor token-consistency nit; the whole file uses hardcoded Menlo/Menlo-Bold for hand-built HUD labels (title uses VisualConstants.Fonts.display, the rest are literal). Cosmetic only.
+- **L16 ShakeUndoScene — didEnd schedules setGrounded(false) on leaving ANY ground even if still touching another platform** 🆕
+  - `Level16_ShakeUndo.swift:1092-1103 (didEnd), :1077-1089 (didBegin sets grounded true on any ground contact)` · raised by: 
+  - Theoretical: didEnd fires a delayed setGrounded(false) whenever Bit leaves a ground body, without ref-counting simultaneous ground contacts. On this level platforms are discrete (confined column + spaced phone course) so Bit never straddles two at once, and any re-contact re-sets grounded via didBegin. No observed effect here; flagged as a latent pattern, cosmetic for L16.
+- **L18 AppSwitcherScene — showTrajectoryLines rebuilds dashed lines with a per-frame while-loop of many tiny segments (perf / frame drops on rapid peeks)** 
+  - `Level18_AppSwitcher.swift:639-678` · raised by: gemini
+  - Real but negligible: at most 3 (phone) or ~7-9 (iPad) hazards, each line ~120pt / (6+4)=~12 dash segments, rebuilt only on peek ENTER (not every frame — showTrajectoryLines is called once in enterPeekMode, then physics is frozen). Total is a few dozen path segments per peek. Gemini's CGPath(dashingWithPhase:lengths:) swap is a clean cleanup but not a measurable hit at this scale.
+- **L18 AppSwitcherScene — showTrajectoryLines hardcodes a 120pt centered dashed line regardless of each spike's actual sweep range** 
+  - `Level18_AppSwitcher.swift:651-654` · raised by: deepseek
+  - True: lineLength is a fixed 120pt rather than the spike's real range (40-60pt). The line slightly over-represents the danger sweep, which is conservative/forgiving for the player (it implies MORE coverage than the spike has), so it never causes an unfair death. Cosmetic accuracy nit only.
+- **L19 FaceIDScene — Dead faceFrameWidth assignments (lines 207, 308) — createVaultDoor hardcodes width 50** 
+  - `Level19_FaceID.swift:74 (default 50), :207 & :308 (reassigned to 50), :477 (faceFrame hardcodes width:50)` · raised by: kimi
+  - Confirmed real but inert. faceFrameWidth is declared, defaulted to 50, and reassigned to 50 in both build paths, yet createVaultDoor's inner faceFrame hardcodes `width: 50` at line 477 and never reads the property. Pure dead state — no behavioral effect, no visual difference (all values are 50). Delete the property and the two assignments, or wire 477 to use it. Cosmetic cleanup only.
+- **L19 FaceIDScene — Redundant Face-ID re-prompt when proximity sensor is covered during an active system prompt (real device)** 🆕
+  - `Level19_FaceID.swift:865-880 (proximityFlipped handler), :630-657 (triggerFaceIDPrompt)` · raised by: 
+  - On a real biometrics device, if the player covers the proximity sensor while the LAContext Face-ID prompt is already on screen, proximityFlipped(isCovered:true) takes the else branch and calls triggerFaceIDPrompt() again, stacking a redundant requestAuthentication. No correctness bug — the scanStep<3 guard in triggerFaceIDPrompt and advanceScanStep-only-on-success prevent any double-advance or over-unlock, and LAContext coalesces — but it can momentarily re-animate 'SCANNING...' and is slightly wasteful. Could guard with an 'authInFlight' flag. Cosmetic.
+- **L20 MetaFinaleScene — peakIndex = min(7, top) is skipped by the loop 'while idx < top' when top == 7, so the isolated PEAK beat (120-gap) never spawns** 
+  - `Level20 buildComposedIPadLevel:461-476` · raised by: gemini
+  - Correct catch: when top==7 the loop runs idx=5,6 and stops before idx=7, so the peakIndex=7 stone is never created — the tier-7 spot is instead filled by the wide run-up (apW at tier(top)). Climb stays CONTINUOUS and fully jumpable (one tier per stone, then the +110 void to the run-up), so it is NOT a completability/jump-reach break — only a lost rhythm beat on canvases where top lands at exactly 7. Cosmetic. Fix: clamp peakIndex = min(7, top-1) or special-case the peak so it always falls inside the loop range.
+- **L20 MetaFinaleScene — Design drift: guide says app deletion/reinstall but code performs an in-app simulated purge (keychain only used for prior-clear shortcut)** 
+  - `Level20:53-56 (doc), checkIfReinstalled:765-773` · raised by: codex
+  - Accurate but a docs/copy concern, not a code defect — the App-Store-safe simulated purge is the correct call (claude agrees the conversion was wise). Update the level guide / in-world copy to 'system purge simulation' so the device-feature mapping matches. No gameplay impact.
 - **L21 DeviceNameScene — Identity fracture: filename Level23, header 'Level 23', but levelID index 21 and title 'LEVEL 21'** 
   - `Level23_DeviceName.swift:4, 142, 229; class DeviceNameScene` · raised by: kimi
   - File is Level23_DeviceName.swift and the doc header says 'Level 23', but levelID = LevelID(world:.world3,index:21) and the on-screen title is 'LEVEL 21', and inline comments mix both numbers. No runtime impact (the level plays as 21), but it makes bug-tracing error-prone. Recommendation: reconcile the filename/header/comments to the canonical index 21.
@@ -247,6 +328,12 @@ Each level's 4–5 blind round-1 reviews reconciled by a fresh adjudicator that 
 - **L22 VoiceCommandScene — Fallback BRIDGE/OPEN/FLY buttons pinned at hardcoded y=50, ignoring bottomSafeY** 
   - `presentFallbackControls() line 931` · raised by: deepseek
   - Minor real cosmetic. Buttons are placed at screen y=50 regardless of the home-indicator inset; on devices with a tall bottom safe area they sit a touch low but the 30pt-tall buttons remain on-screen and tappable. Only appears on the no-mic fallback path. Recommend anchoring to bottomSafeY+something; low priority.
+- **L23 BatteryPercentScene — iPad 40% stone and 50% plateau overlap horizontally by ~42.5pt** 
+  - `Level22_BatteryPercent.swift:284 (40% x=575 w=75), 285 (50% x=650 w=160)` · raised by: claude
+  - Confirmed: 40% surface spans [537.5,612.5], 50% spans [570,730] -> 42.5pt X overlap. BUT they sit on different tiers (tier 2 vs tier 4), so they are vertically separated — no physics intersection, no reach problem, just visual crowding on the scrolled iPad course. Claude was right it exists but overstated it as a layout concern; it is cosmetic. Optional: nudge the 40% stone left or shrink it.
+- **L23 BatteryPercentScene — dimOverlay brightness snaps instantly on each battery step (no color animation)** 
+  - `Level22_BatteryPercent.swift:685 (overlay.fillColor = dimColor set directly)` · raised by: gemini
+  - updateBatteryVisuals assigns overlay.fillColor immediately rather than via an SKAction.colorize/fade, so each 10% DRAIN tap is a hard brightness jump. Purely cosmetic polish; the snap arguably reinforces the 'power dropped' beat. Optional .colorize(with:..., duration:0.2).
 - **L24 StorageSpaceScene — armPromptLabel = panel.children.first as? SKLabelNode is always nil (dead field)** 
   - `Level24_StorageSpace.swift:622, 673` · raised by: deepseek
   - Correct: panel's first child is the bg SKShapeNode (line 648), so the cast yields nil and the armPromptLabel?.removeFromParent() guard at 622 is dead. Harmless because showArmFeedback runs once (armTerminal is guarded by !terminalArmed). Just delete the unused field/line; no player impact.
@@ -301,6 +388,40 @@ Each level's 4–5 blind round-1 reviews reconciled by a fresh adjudicator that 
 - **L14 FocusModeScene — Frozen finale patrols could wall off the door** 🆕
   - `Level14_FocusMode.swift:576-592 (two patrols), :385 (door at finale.x+40)` · raised by: adjudicator
   - Investigated and cleared: when Focus latches the gate open the two patrols are isPaused at arbitrary mid-sweep X, but two 24pt-wide spikes cannot cover the ~104pt finale span continuously, and Bit can hop a single frozen spike to reach the exit body [+120,+160]. Always completable. Not a bug — recording the analysis so it isn't re-raised.
+- **L16 ShakeUndoScene — deltaTime/gameTime resume-spike could wipe the rewind buffer and waste a charge** 🆕
+  - `Level16_ShakeUndo.swift:1056-1059 (gameTime += deltaTime; recordPosition), BaseLevelScene.swift:698 (clampedDt = min(dt, 1/30))` · raised by: 
+  - Investigated and DISMISSED. The base update() clamps dt to 1/30s before calling updatePlaying, so gameTime/platformPhase can never jump on background-resume; the time-windowed trim in recordPosition therefore never wipes the buffer from a spike. No edge bug. Recorded so the panel sees it was checked.
+- **L17 AirplaneModeScene — deltaTime resume-spike and camera/IUO crash hazards on the camera-anchored HUD path** 🆕
+  - `BaseLevelScene update() clampedDt L698; performConfigurationIfReady() L243-261; setupLevelTitle/createAirplaneIndicator/showInstructionPanel camera adds` · raised by: 
+  - Checked for the runtime edges in scope and found them already safe: deltaTime is clamped to 1/30 in the base update before turbulenceTime accumulates, so a background-resume spike cannot launch platforms; gameCamera is guaranteed non-nil before configureScene() runs (set in performConfigurationIfReady/didMove behind the gameCamera==nil guard), so the camera-anchored addChild calls for the title/indicator/panel cannot trap; grounded uses a boolean (not a counter) so there is no contact-counter underflow. Reporting as a clean no-finding for the hunt categories.
+- **L19 FaceIDScene — exit-trap reachability math holds on phone and iPad** 🆕
+  - `Level19_FaceID.swift:216-225 (phone trap), :339-372 (iPad trap), :433 (blocker height)` · raised by: 
+  - Verified, no defect — recording as confirmation. Phone: door2 blocker spans logical x[355,415], exit body x[385,425]; Bit stopped at blocker left edge (355) reaches only ~355, 30pt short of the exit's left edge (385) while closed. iPad: 55pt blocker-center-to-exit-center offset (wider than phone's 20pt) plus a 120pt-tall blocker (top ~115pt above the finale platform, clearing Bit's ~91 apex). Both gates are genuinely un-jumpable and the second scan is mandatory. Completability verified: the software-fallback button posts faceIDResult(true) -> advanceScanStep, door-agnostic, so all three scans (and thus the exit) are reachable without any real biometric hardware.
+
+## Contested — optional external tiebreak
+
+- **L16 ShakeUndoScene**: iPad dead-sky void (claude: real concern; current confined-column build largely fixes it — residual is ~60pt, cosmetic — claude reviewed a stale screenshot)
+- **L16 ShakeUndoScene**: repairTrap not consuming a charge (codex: rough edge to fix; claude + the code's own softlock-guard comment: intentional and required for completability — code is the tiebreaker, codex wrong)
+- **L16 ShakeUndoScene**: Moving-platform 0.2s move (gemini: severe desync; code shows updatePlaying governs Y from the next frame and the .move is effectively a no-op — gemini overstated, polish at most)
+- **L17 AirplaneModeScene**: kimi 'debounce swallows deliberate OFF toggles / unresponsive' — overruled: no in-app OFF affordance exists (only system NWPathMonitor sends OFF), so the debounce is purely protective. codex/gemini/claude treatment of the protection as intentional is correct.
+- **L17 AirplaneModeScene**: codex/kimi 'share composedCourseWidth with the cloud span' — overruled on feasibility: setupBackground() runs before buildLevel(), so composedCourseWidth is 0 at cloud-layout time; the hardcoded 1945 already equals the computed extent. Cosmetic, not a bug.
+- **L17 AirplaneModeScene**: kimi 'platformDelayOffsets covers only 3 of 12 flyers kills the cascade' — downgraded to cosmetic/false-positive: code comments (L24-28, L618) prove the index guard is intentional and animation-only with no gameplay effect.
+- **L17 AirplaneModeScene**: kimi/deepseek 'escalation slams from poetry to tutorial with no pacing' — partially overruled: base-class no-progress fallback (~22s) and the struggle>=2 & 8s death gate both pace the single hint string; the claim of 'no override to pace help' is inaccurate.
+- **L18 AppSwitcherScene**: iPad zig-zag gap: DeepSeek (exceeds 130pt, unreachable) vs Gemini/Kimi/Codex (safe). Current code is the tiebreaker — worst edge-to-edge gap is 125pt across all tier counts, so Gemini/Kimi/Codex are right and DeepSeek is a false-positive (conflated 210pt center-to-center with edge-to-edge).
+- **L18 AppSwitcherScene**: First-encounter fairness: DeepSeek/DeepSeek/Kimi (unfair, no practice space, gesture never named) vs Claude/Codex (fair de-spoil with timed reveal). Tiebreaker: the teach platform is a 150pt safe stand with one slow telegraphed spike, and the 22s no-progress fallback surfaces the explicit swipe-up hintText — Claude/Codex are right; the de-spoil is intentional, not a fairness bug.
+- **L18 AppSwitcherScene**: iPad VOID + camera/gameCamera-ordering: Claude/DeepSeek flagged it as broken; the 'Review-driven fixes' commit already removed installCameraFollow and made the HUD scene-fixed, so both are now already-fixed, not real-unfixed.
+- **L19 FaceIDScene**: isUnlocked step-2-vs-step-3 'mismatch' (deepseek): current-code tiebreaker says FALSE-POSITIVE — it is the intentional 3-scan/2-door design; deepseek's proposed fix would delete the final scan and the finale beat. deepseek was wrong.
+- **L19 FaceIDScene**: 'Deaths don't call notePlayerStruggle' (claude/codex/kimi/deepseek): all four were right on the OLD build, now ALREADY-FIXED at line 950. They were correct historically; current code is the tiebreaker and shows it resolved. A narrower residual (no hint on the non-death auth-confusion path) does survive.
+- **L19 FaceIDScene**: iPad mid-screen void (claude/codex): current-code tiebreaker says FALSE-POSITIVE — the composed path now spans the full playableGround..playableCeiling tier band, and centered camera-Y is the shared intentional iPad convention. Panel saw the pre-fix screenshot.
+- **L19 FaceIDScene**: resolveFallbackName smart-quote bug (gemini): FALSE-POSITIVE for Level 19 — that method lives in Level23_DeviceName, not this scene. gemini reviewed the wrong mechanic.
+- **L20 MetaFinaleScene**: Death-driven hint (claude/codex/gemini said unfixed): current code's base-class ~22s wall-clock fallback fires hintText() for a stuck, never-dying player — the reviewers predated the idle-nudge commit; status already-fixed.
+- **L20 MetaFinaleScene**: First-encounter unfairness (gemini/deepseek/kimi said real): the proximity>0.6 auto-trigger fires within 80pt of the wall center on mere approach, so the player need not deduce 'push in' — overstated; status false-positive/polish.
+- **L20 MetaFinaleScene**: Camera-cleanup leaves a permanent black overlay (deepseek): cleanup enumerates both scene AND camera, so the overlay is always removed — deepseek wrong; status false-positive.
+- **L20 MetaFinaleScene**: 130pt post-purge gap 'zero margin' (claude/codex/kimi): 130 is the SAFE cap (hard cap 145), so it is at-budget by design, not a violation — claude/codex/kimi overstated severity.
+- **L23 BatteryPercentScene**: DeepSeek's 'uncompletable on simulator' — REJECTED: the always-present DRAIN POWER button is the intended completion path; it's a discoverability issue, not uncompletable.
+- **L23 BatteryPercentScene**: Codex/Kimi 'isWideCanvas fires on iPad landscape' — REJECTED: the height>1000 gate excludes landscape, so landscape gets the phone layout by design; current code is the tiebreaker, the comment confirms intent.
+- **L23 BatteryPercentScene**: Codex 'drain button reduces the real mechanic to a knob' — REJECTED as a defect: it's the documented fallback and live battery is still honored until the player opts into simulation.
+- **L23 BatteryPercentScene**: Kimi 'simulatedBattery! force-unwrap' — REJECTED: provably guarded by the non-nil assignment on the preceding line.
 
 ## Per-level verdicts
 
@@ -606,6 +727,120 @@ Each level's 4–5 blind round-1 reviews reconciled by a fresh adjudicator that 
 | new | cosmetic | Grounded state tracked with naive begin/end (no contact counter) — multi-contact desync | `Level15_LowPower.swift:848-865 (didBegin/didEnd)` |
 | new | cosmetic | iPad spawn comment says '~35pt clear' but code uses +50; dead composedCourseExtent=0 scaffolding | `Level15_LowPower.swift:703 (+50 vs '~35pt' comment), 487 & 722 (composedCourseExtent==0 camera guard)` |
 
+### L16 — ShakeUndoScene
+*Solid, completability-hardened level: the forced rotten-platform trap makes shake-to-undo genuinely load-bearing, the free trap-repair undo + undoCount floor + inert-exit gate close every softlock, and deltaTime is base-clamped so no resume/history edge bites. No crash or softlock survives. The only real residual items are minor polish (a redundant competing .move on the moving platform, children.first surface capture, and a stale-against-old-build iPad dead-sky claim that is now ~60pt at worst).*
+
+**Top actions:**
+- Refactor createPlatform to return/store the surface SKShapeNode explicitly so finalPlatformSurface no longer depends on children.first (removes the silent-break risk on the glitch telegraph + trap reset).
+- Drop the redundant movingPlatform.run(.move...) in performUndo and just snap position.y from the restored phase (updatePlaying already governs Y) — removes the competing-action smell gemini flagged.
+- Raise the minimum climbWidths entry from 80 to ~84 so the worst-case iPad zig-zag pairing has margin under the 130pt gap cap instead of sitting exactly on it.
+- Collapse the double tier clamp to a single cap and fix the stale comments (isWideCanvas 700-not-760; tierCount 13-not-16) so the iPad route reaches the ceiling with no confusing dead values.
+
+| status | sev | finding | ref |
+|---|---|---|---|
+| already-fixed | cosmetic | iPad composed climb leaves the top half a dead green void (route not lifted high enough) | `Level16_ShakeUndo.swift:390-457 (buildComposedIPadLevel), :56-84 (ipadCeilingY/ipadTierY/ipadFillTierCount)` |
+| false-positive | n/a | repairTrap() does not consume an undo charge, breaking the limited-undo premise | `Level16_ShakeUndo.swift:917-958 (performUndo softlock guard), :833-850 (repairTrap)` |
+| false-positive | polish | Rewind animates the moving platform over 0.2s instead of snapping, causing physics desync | `Level16_ShakeUndo.swift:978-979 (movingPlatform.run(.move...)), :1066-1067 (updatePlaying Y-write)` |
+| real-unfixed | polish | finalPlatformSurface recovered via children.first as? SKShapeNode (silent break risk) | `Level16_ShakeUndo.swift:322 + :497 (capture), :535-551 (createPlatform), :725 (rot telegraph), :1136-1144 (resetTrap)` |
+| false-positive | n/a | positionHistory grows unbounded on high-refresh devices | `Level16_ShakeUndo.swift:852-861 (recordPosition time-trim)` |
+| false-positive | n/a | Instruction panel's three atmospheric lines never tell the player how to undo (first-encounter fairness) | `Level16_ShakeUndo.swift:655-680 (atmospheric clue), :780-818 (JIT SHAKE TO UNDO prompt), :1158-1160 (hintText)` |
+| real-unfixed | cosmetic | isWideCanvas gate is 700 but the adjacent comment cites 760pt | `Level16_ShakeUndo.swift:36 (>=700) vs :32-33 comment (760)` |
+| real-unfixed | cosmetic | tierCount double-clamped (16 in ipadFillTierCount, then 13 at call site) | `Level16_ShakeUndo.swift:401 (min(ipadFillTierCount(), 13)) vs :67 (max upper: Int = 16)` |
+| real-unfixed | cosmetic | undoLabel.fontName bypasses VisualConstants.Fonts constant | `Level16_ShakeUndo.swift:587 (undoLabel.fontName = "Menlo-Bold")` |
+| new | polish | Worst-case zig-zag rung pairing (two 80pt rungs) is exactly 130pt edge-to-edge — zero margin | `Level16_ShakeUndo.swift:414 (colOffset=105), :440 (climbWidths includes 80)` |
+| new | n/a | deltaTime/gameTime resume-spike could wipe the rewind buffer and waste a charge | `Level16_ShakeUndo.swift:1056-1059 (gameTime += deltaTime; recordPosition), BaseLevelScene.swift:698 (clampedDt = min(dt, 1/30))` |
+| new | cosmetic | didEnd schedules setGrounded(false) on leaving ANY ground even if still touching another platform | `Level16_ShakeUndo.swift:1092-1103 (didEnd), :1077-1089 (didBegin sets grounded true on any ground contact)` |
+
+### L17 — AirplaneModeScene
+*Shippable polish-tier level: clever death-plane Airplane Mode mechanic, completability and jump-reach legal on both phone and iPad paths; the only real residuals are an iPad first-paint void and a rare turbulence-flicker-vs-OFF fairness edge.*
+
+**Top actions:**
+- Make turbulence purely cosmetic: wobble a child node inside each flying platform and leave the static physics body position fixed, so isGrounded never flickers and the death-plane OFF protection can never be bypassed mid-wobble (fairness).
+- Add a dashed ghost-silhouette of each flying platform at its ON/flying target Y while mode is OFF (critical on iPad) so the first paint reads as an intentional 'these will rise' reveal instead of a broken/empty void (polish).
+- Call notePlayerProgress() the first time Airplane Mode turns ON in updateAirplaneState() so the stall-hint timer resets once the core idea is solved (polish, one line).
+- Tighten the iPad finale flyer X spacing (t8-t11) by ~10-15pt or widen those flyers slightly to restore landing margin against the near-max rise+gap plus turbulence X-wobble (polish).
+
+| status | sev | finding | ref |
+|---|---|---|---|
+| real-unfixed | polish | iPad first paint reads as a broken/empty void in the OFF state | `buildComposedIPadLevel() L292-334; setupBackground() L86-92` |
+| real-unfixed | fairness | Turbulence wobble can flicker isGrounded false and bypass the death-plane OFF protection | `updatePlaying() L685-698 turbulence; flyingPlatformSupportingBit() L584 guard bit.isGrounded; handleGameInput() L653` |
+| real-unfixed | polish | Airplane Mode ON does not call notePlayerProgress(), so the stall-hint timer keeps counting after the core idea is solved | `updateAirplaneState() L601-642 (no notePlayerProgress); base no-progress fallback BaseLevelScene L708-718` |
+| real-unfixed | polish | iPad upper finale jumps are legal but near the ceiling (rise ~78 + gap ~65) and turbulence X-wobble eats margin | `buildComposedIPadLevel() flyingSpec L311-324; verticalTier clamp BaseLevelScene L104` |
+| false-positive | cosmetic | platformDelayOffsets only covers 3 of the 12 iPad flyers, so the staggered cascade is lost on iPad | `platformDelayOffsets L29; updateAirplaneState() L618` |
+| false-positive | cosmetic | setupBackground() hardcodes cloud span 1945 instead of sharing composedCourseWidth | `setupBackground() L87; composedCourseWidth set in buildComposedIPadLevel() L342` |
+| false-positive | n/a | OFF-debounce 'swallows deliberate OFF toggles' and feels unresponsive | `handleGameInput() L653; GameRootView.swift L262; NetworkManager.swift L60-65` |
+| false-positive | n/a | Keeping a platform aloft while mode is OFF creates an inconsistent visual/system state | `updateAirplaneState() L612-617 protectedIndex; doc-comment L604-611` |
+| false-positive | cosmetic | First-encounter players may try jumping or hunt for an in-world button instead of toggling a system feature | `showInstructionPanel() L519-540; createAirplaneIndicator() L454-460; accessibility button GameRootView L261; hintText() L739-741` |
+| false-positive | cosmetic | Hint escalation slams from poetry straight to a full Control Center tutorial with no intermediate nudge | `notePlayerStruggle() BaseLevelScene L744-750; no-progress fallback L702-718; hintText() L739` |
+| new | n/a | deltaTime resume-spike and camera/IUO crash hazards on the camera-anchored HUD path | `BaseLevelScene update() clampedDt L698; performConfigurationIfReady() L243-261; setupLevelTitle/createAirplaneIndicator/showInstructionPanel camera adds` |
+
+### L18 — AppSwitcherScene
+*Solid ship-quality level. The headline round-1 concern (broken iPad diagonal-staircase + camera-follow VOID + gameCamera-ordering UI bugs) is fully resolved in the current build — Level18 dropped installCameraFollow entirely and rebuilt the iPad path as a confined center-anchored zig-zag column with scene-fixed HUD. Worst-case iPad gap is 125pt edge-to-edge (within the 130 budget), so DeepSeek's "unreachable gap" finding is a false-positive (it conflated 210pt center-to-center with edge-to-edge). Only one mild real finding survives: the combined near-max diagonal jump (125pt gap + up to 85pt rise at once) is borderline on iPad, plus a cosmetic trajectory-line polish item.*
+
+**Top actions:**
+- iPad only: ease the combined diagonal jump on the zig-zag climb — drop ipadColOffset from 105 to ~95 (edge gap ~105pt) or widen climb rungs from 80/90 to ~95pt — so a full one-tier rise + horizontal carry isn't simultaneously near the budget ceiling on minimum-tier (e.g. 11') iPads.
+- Optional polish: replace the per-segment while-loop dashed trajectory with a single CGPath(dashingWithPhase:lengths:) and base lineLength on each spike's actual range instead of a hardcoded 120pt (Gemini + DeepSeek cleanups, cosmetic).
+- Optional future: add a stable minimum-dimension / landscape audit so an iPad in landscape or split-view doesn't silently fall back to the centered 390pt phone strip (Codex).
+
+| status | sev | finding | ref |
+|---|---|---|---|
+| already-fixed | n/a | iPad diagonal-staircase climb + X-only camera-follow strands spawn/instruction and floats finale hazards (VOID) | `Level18_AppSwitcher.swift:63-82, 152-304, 467-492, 512-533` |
+| false-positive | n/a | iPad zig-zag horizontal gaps exceed the 130pt edge-to-edge limit, making every other jump unreachable | `Level18_AppSwitcher.swift:208, 256-285` |
+| false-positive | n/a | setupLevelTitle/createPeekOverlay/showInstructionPanel touch gameCamera before installCameraFollow creates it, so HUD attaches to world space and scrolls off | `Level18_AppSwitcher.swift:101-113, 467-492, 512-571; BaseLevelScene.swift:222-258` |
+| false-positive | n/a | First encounter is unfair: player must discover swipe-up mid-air with no safe practice space and the panel never names the gesture | `Level18_AppSwitcher.swift:512-571, 573-590, 391-393, 797-799; BaseLevelScene.swift:706-718` |
+| false-positive | n/a | hintText() only repeats the swipe-up instruction; no escalating struggle prompts via notePlayerStruggle to diagnose what the player is stuck on | `Level18_AppSwitcher.swift:780-785, 596-635` |
+| false-positive | n/a | removeTrajectoryLines may leave orphaned nodes in the NEXT scene if a transition happens while lines are active | `Level18_AppSwitcher.swift:639-685, 787-790; BaseLevelScene.swift:522-533` |
+| false-positive | n/a | physicsWorld.speed left at 0 / deltaTime spike on resume after backgrounding the peek | `Level18_AppSwitcher.swift:619, 704, 748-759; BaseLevelScene.swift:693-720` |
+| real-unfixed | polish | isWideCanvas (height>1000 && width>700) falls back to phone-ish layout on iPad landscape / split-view canvases | `Level18_AppSwitcher.swift:34` |
+| real-unfixed | cosmetic | showTrajectoryLines rebuilds dashed lines with a per-frame while-loop of many tiny segments (perf / frame drops on rapid peeks) | `Level18_AppSwitcher.swift:639-678` |
+| real-unfixed | cosmetic | showTrajectoryLines hardcodes a 120pt centered dashed line regardless of each spike's actual sweep range | `Level18_AppSwitcher.swift:651-654` |
+| false-positive | n/a | startDesyncedOscillation nearly always picks goingRight:true because phase<1 is true for all phase except 1.0 | `Level18_AppSwitcher.swift:345-359, 408-415, 426-443` |
+| new | fairness | Combined near-max diagonal jump on iPad (125pt edge gap + up to 85pt rise in one leap) is borderline-reachable | `Level18_AppSwitcher.swift:229, 257-285; BaseLevelScene.swift:99-106` |
+
+### L19 — FaceIDScene
+*Solid and completable — the clever two-door / three-scan biometric trap is well-guarded, the decline-count software fallback prevents any hard biometric softlock, and jump math is inside budget on both phone and iPad. Surviving issues are polish-tier: the multi-scan structure is under-taught and the auth-confusion (non-death) path gets no escalating hint.*
+
+**Top actions:**
+- Add an escalating hint for the non-death auth-confusion path: count a struggle (or upgrade the status label / 4th-wall nudge) when handleExit's 'ONE MORE SCAN' nudge fires repeatedly, and make hintText() name the multi-scan requirement instead of the vague 'Authenticate identity'. This is the single highest-impact fix and also makes the second-gate structure legible.
+- Add a small on-screen marker/arrow toward door2 the moment door1 opens, so the two-gate / trapped-exit structure reads before the player walks into the refusal nudge.
+- Pulse (or show muted) the on-screen fallback ID button after the FIRST declined Face-ID scan rather than waiting for two declines, so assistive-access players discover it ~4s sooner.
+- Delete the dead faceFrameWidth property + its two =50 reassignments (or wire createVaultDoor line 477 to read it) — cosmetic cleanup, no behavior change.
+
+| status | sev | finding | ref |
+|---|---|---|---|
+| false-positive | n/a | isUnlocked stays false until step 3 while door2 blocker clears at step 2 — claimed unlock 'mismatch' | `Level19_FaceID.swift:803-824 (case 2), :826-838 (case 3), :955-965 (handleExit)` |
+| already-fixed | n/a | Deaths do not call notePlayerStruggle(); no struggle-driven hint, only the generic wall-clock net | `Level19_FaceID.swift:945-953 (handleDeath calls notePlayerStruggle at :950)` |
+| real-unfixed | fairness | No escalating hint for the non-death auth-confusion path (multi-scan / 'TAP THE NEXT GATE' ambiguity) | `Level19_FaceID.swift:950 (struggle only on death), :799 & :977 ('TAP THE NEXT GATE'), :988-990 (hintText)` |
+| false-positive | n/a | iPad composed path leaves a mid-screen void; gameplay crammed low, camera Y stays centered so the climb isn't visible | `Level19_FaceID.swift:260-382 (buildComposedIPadLevel), BaseLevelScene.swift:136-140 (installCameraFollow keeps camera Y centered)` |
+| real-unfixed | cosmetic | Dead faceFrameWidth assignments (lines 207, 308) — createVaultDoor hardcodes width 50 | `Level19_FaceID.swift:74 (default 50), :207 & :308 (reassigned to 50), :477 (faceFrame hardcodes width:50)` |
+| false-positive | n/a | resolveFallbackName() fails to trim possessive when device name uses a smart quote | `Level23_DeviceName.swift:179 (resolveFallbackName lives here, NOT Level19)` |
+| false-positive | n/a | faceIDDeclineCount increments on accidental cancel too; fallback surfaces after 2 cancels even if the player wanted Face ID | `Level19_FaceID.swift:659-671 (handleFaceIDResult), :678-687 (surfaceAuthFallback)` |
+| real-unfixed | polish | Make the on-screen fallback ID button pulse after the FIRST declined scan instead of waiting for two | `Level19_FaceID.swift:110 (declinesBeforeFallback=2), :667 (>= threshold check)` |
+| real-unfixed | polish | Second sequential gate (and the exit-behind-blocker trap) is undiscoverable until after step 1 | `Level19_FaceID.swift:593-605 (t=0 panel mentions only one vault), :799 ('TAP THE NEXT GATE' first appears post step-1)` |
+| new | cosmetic | Redundant Face-ID re-prompt when proximity sensor is covered during an active system prompt (real device) | `Level19_FaceID.swift:865-880 (proximityFlipped handler), :630-657 (triggerFaceIDPrompt)` |
+| new | n/a | exit-trap reachability math holds on phone and iPad | `Level19_FaceID.swift:216-225 (phone trap), :339-372 (iPad trap), :433 (blocker height)` |
+
+### L20 — MetaFinaleScene
+*Solid, completable, App-Store-safe finale; the panel's death-driven-hint worry is already neutralized by the base-class idle fallback, and the only real survivors are two cosmetic iPad-rhythm bugs (skipped peak beat, removeAllActions clobbering the cleared animation) plus an 11-inch landscape mis-route.*
+
+**Top actions:**
+- Fix the removeAllActions() ordering in executeCorruptionClear() (move it before hintLabel.run, or delete it) so the 'CORRUPTION CLEARED' animation actually plays — the only survivor with visible player-facing impact.
+- Fix the skipped PEAK beat: clamp peakIndex = min(7, top-1) (or special-case so the peak always lands inside the 'while idx < top' loop) so the isolated 120-gap landmark spawns on top==7 canvases; pure rhythm polish, climb is already completable.
+- Tighten the isWideCanvas gate (idiom == .pad, or a lower height threshold) so an 11-inch iPad Pro in landscape gets the composed climb instead of the phone strip.
+
+| status | sev | finding | ref |
+|---|---|---|---|
+| already-fixed | n/a | Escalating hint is death-driven only; a player who stops at the wall never dies and never earns hintText() | `BaseLevelScene.swift:708-718, :490; Level20 updatePlaying:1037` |
+| false-positive | polish | First-encounter unfairness: 'IT WANTS YOU TO TURN BACK' reads as 'avoid the wall', players will backtrack instead of pushing in | `Level20 updatePlaying:1042-1110, didBegin:1140-1144` |
+| real-unfixed | cosmetic | peakIndex = min(7, top) is skipped by the loop 'while idx < top' when top == 7, so the isolated PEAK beat (120-gap) never spawns | `Level20 buildComposedIPadLevel:461-476` |
+| real-unfixed | polish | hintLabel.run(clearedSequence) immediately followed by hintLabel.removeAllActions() cancels the 'CORRUPTION CLEARED' animation | `Level20 executeCorruptionClear:955-965` |
+| real-unfixed | polish | isWideCanvas (height>1000 && width>700) mis-routes iPad Pro 11-inch landscape (1194x834) into the phone path | `Level20:96 (isWideCanvas)` |
+| false-positive | n/a | showFakeCrashScreen camera-cleanup fails silently if gameCamera not initialized, leaving black overlay permanently on screen | `Level20 showFakeCrashScreen:869-872; beginSimulatedPurge:796-802` |
+| false-positive | polish | Post-purge exit gap is exactly 130pt with zero margin for physics/contact variance | `Level20 buildComposedIPadLevel:498-501` |
+| real-unfixed | cosmetic | Design drift: guide says app deletion/reinstall but code performs an in-app simulated purge (keychain only used for prior-clear shortcut) | `Level20:53-56 (doc), checkIfReinstalled:765-773` |
+| false-positive | n/a | hasShownFakeReview latches true on first purge; if the player misses the crash screen it never replays | `Level20 beginSimulatedPurge:781-782, clearCorruption:880` |
+| false-positive | n/a | Re-entrancy / idempotency of the purge trigger across the dual physics+proximity path | `Level20 beginSimulatedPurge:781-782, didBegin:1140, updatePlaying:1108` |
+
 ### L21 — DeviceNameScene
 *ship — completable on every device (no softlock); 1 new fragile-clamp/squeeze fairness-polish issue on iPhone bay3, ~4 false-positives, identity-naming cosmetic, spoiler is by-design*
 
@@ -648,6 +883,27 @@ Each level's 4–5 blind round-1 reviews reconciled by a fresh adjudicator that 
 | false-positive | n/a | No-mic fallback buttons reveal all command words and flatten the puzzle | `armFallbackTimeout() lines 884-907, presentFallbackControls() 912-939` |
 | false-positive | n/a | iPad tier step ~83pt sits only ~2pt under the 85pt rise cap | `buildComposedIPadLevel() tierCount=14 line 321; verticalTier clamp BaseLevelScene line 104` |
 | false-positive | n/a | bridgeExtended/doorOpened stay true after retract/open, could confuse a player who re-triggers | `extendBridge() line 732 guard, openDoor() line 778 guard` |
+
+### L23 — BatteryPercentScene
+*Solid, completability-safe level — the "drain to win" inversion is airtight (hidden exit inert until <60%, can't be cheesed); the only real survivors are first-encounter discoverability of the DRAIN button and death-gated hint escalation, both fairness-not-crash.*
+
+**Top actions:**
+- Make struggle/hint escalation non-death-gated: trigger notePlayerStruggle() on a timer/idle threshold or after the player touches the fake exit ~twice, so a stuck-but-not-dying player is nudged toward DRAIN POWER (closes both the escalation and discoverability gaps).
+- Persist each iPad stone's authored width and rebuild its physics body from that value in updateBatteryState() instead of the hardcoded 45x18, to remove the visual-vs-collision lip when a wide stone reappears after recharge.
+- Optional polish: nudge/shrink the iPad 40% stone to remove the 42.5pt visual overlap with the 50% plateau, and animate the dimOverlay color change (SKAction.colorize) so DRAIN taps fade rather than snap.
+
+| status | sev | finding | ref |
+|---|---|---|---|
+| real-unfixed | fairness | Hint escalation is death-gated only — a stuck-but-not-dying player never gets nudged toward DRAIN | `Level22_BatteryPercent.swift:823 (notePlayerStruggle only in handleDeath); BaseLevelScene.swift:744-750` |
+| real-unfixed | fairness | First encounter never signals that DRAIN POWER is the answer | `Level22_BatteryPercent.swift:550-579 (instruction panel), 511-539 (drain button)` |
+| false-positive | n/a | DeepSeek: level uncompletable on simulator if player never taps DRAIN | `Level22_BatteryPercent.swift:511-539, 759-762; BatteryLevelManager.swift:44` |
+| real-unfixed | polish | resizeStone width mismatch when a vanished iPad stone reappears (rebuilt at hardcoded 45x18) | `Level22_BatteryPercent.swift:374-383 (resizeStone), 627-629 (rebuild at 45x18)` |
+| real-unfixed | cosmetic | iPad 40% stone and 50% plateau overlap horizontally by ~42.5pt | `Level22_BatteryPercent.swift:284 (40% x=575 w=75), 285 (50% x=650 w=160)` |
+| real-unfixed | cosmetic | dimOverlay brightness snaps instantly on each battery step (no color animation) | `Level22_BatteryPercent.swift:685 (overlay.fillColor = dimColor set directly)` |
+| false-positive | n/a | Codex: permanent drain button reduces a real battery mechanic to an in-game knob | `Level22_BatteryPercent.swift:511-539, 721-727` |
+| false-positive | n/a | Kimi/Codex: isWideCanvas gate also fires on iPad landscape (portrait-authored course) | `Level22_BatteryPercent.swift:37 (size.height > 1000 && size.width > 430)` |
+| false-positive | n/a | simulatedBattery! force-unwrap (line 726) | `Level22_BatteryPercent.swift:725-726` |
+| new | polish | Delayed setGrounded(false) on any ground-contact-end uses a boolean, not a contact counter | `Level22_BatteryPercent.swift:808-813 (didEnd) + 796-797 (didBegin)` |
 
 ### L24 — StorageSpaceScene
 *ship — 0 real crash/softlock, 1 minor polish survivor (pre-arm purge nudge), the rest already-fixed or false-positives (iPad void fixed, struggle-hint wired, cache-delete is intentional teardown)*
